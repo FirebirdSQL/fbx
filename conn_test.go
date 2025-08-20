@@ -10,10 +10,6 @@ import (
 	"testing"
 	"time"
 
-	//"github.com/jackc/pgx/v5"
-	//"github.com/jackc/pgx/v5/pgconn"
-	//"github.com/jackc/pgx/v5/pgtype"
-	//"github.com/jackc/pgx/v5/pgxtest"
 	pgx "github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/pgconn"
 	"github.com/red-soft/fbx/pgtype"

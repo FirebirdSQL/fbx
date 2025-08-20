@@ -6,10 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	//"github.com/jackc/pgx/v5/internal/sanitize"
-	//"github.com/jackc/pgx/v5/internal/stmtcache"
-	//"github.com/jackc/pgx/v5/pgconn"
-	//"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/red-soft/fbx/internal/stmtcache"
 	"github.com/red-soft/fbx/pgconn"
