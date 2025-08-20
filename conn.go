@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/red-soft/fbx/internal/stmtcache"
 	"github.com/red-soft/fbx/pgconn"
@@ -41,24 +43,22 @@ type ConnConfig struct {
 
 // ParseConfigOptions contains options that control how a config is built such as getsslpassword.
 type ParseConfigOptions struct {
-	//pgconn.ParseConfigOptions
+	pgconn.ParseConfigOptions
 }
 
 // Copy returns a deep copy of the config that is safe to use and modify.
 // The only exception is the tls.Config:
 // according to the tls.Config docs it must not be modified after creation.
 func (cc *ConnConfig) Copy() *ConnConfig {
-	//newConfig := new(ConnConfig)
-	//*newConfig = *cc
-	//newConfig.Config = *newConfig.Config.Copy()
-	//return newConfig
-	panic("implement me")
+	newConfig := new(ConnConfig)
+	*newConfig = *cc
+	newConfig.Config = *newConfig.Config.Copy()
+	return newConfig
 }
 
 // ConnString returns the connection string as parsed by pgx.ParseConfig into pgx.ConnConfig.
 func (cc *ConnConfig) ConnString() string {
-	//return cc.connString
-	panic("implement me")
+	return cc.connString
 }
 
 // Conn is a PostgreSQL connection handle. It is not safe for concurrent usage. Use a connection pool to manage access
@@ -68,21 +68,21 @@ type Conn struct {
 	config             *ConnConfig // config used when establishing this connection
 	preparedStatements map[string]*pgconn.StatementDescription
 	statementCache     stmtcache.Cache
-	//descriptionCache   stmtcache.Cache
-	//
-	//queryTracer    QueryTracer
-	//batchTracer    BatchTracer
-	//copyFromTracer CopyFromTracer
-	//prepareTracer  PrepareTracer
-	//
-	//notifications []*pgconn.Notification
-	//
-	//doneChan   chan struct{}
-	//closedChan chan error
-	//
-	//typeMap *pgtype.Map
-	//
-	//wbuf []byte
+	descriptionCache   stmtcache.Cache
+
+	queryTracer    QueryTracer
+	batchTracer    BatchTracer
+	copyFromTracer CopyFromTracer
+	prepareTracer  PrepareTracer
+
+	notifications []*pgconn.Notification
+
+	doneChan   chan struct{}
+	closedChan chan error
+
+	typeMap *pgtype.Map
+
+	wbuf []byte
 	//eqb  ExtendedQueryBuilder
 }
 
@@ -161,61 +161,60 @@ func ConnectConfig(ctx context.Context, connConfig *ConnConfig) (*Conn, error) {
 // ParseConfigWithOptions behaves exactly as ParseConfig does with the addition of options. At the present options is
 // only used to provide a GetSSLPassword function.
 func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*ConnConfig, error) {
-	//config, err := pgconn.ParseConfigWithOptions(connString, options.ParseConfigOptions)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//
-	//statementCacheCapacity := 512
-	//if s, ok := config.RuntimeParams["statement_cache_capacity"]; ok {
-	//	delete(config.RuntimeParams, "statement_cache_capacity")
-	//	n, err := strconv.ParseInt(s, 10, 32)
-	//	if err != nil {
-	//		return nil, fmt.Errorf("cannot parse statement_cache_capacity: %w", err)
-	//	}
-	//	statementCacheCapacity = int(n)
-	//}
-	//
-	//descriptionCacheCapacity := 512
-	//if s, ok := config.RuntimeParams["description_cache_capacity"]; ok {
-	//	delete(config.RuntimeParams, "description_cache_capacity")
-	//	n, err := strconv.ParseInt(s, 10, 32)
-	//	if err != nil {
-	//		return nil, fmt.Errorf("cannot parse description_cache_capacity: %w", err)
-	//	}
-	//	descriptionCacheCapacity = int(n)
-	//}
-	//
-	//defaultQueryExecMode := QueryExecModeCacheStatement
-	//if s, ok := config.RuntimeParams["default_query_exec_mode"]; ok {
-	//	delete(config.RuntimeParams, "default_query_exec_mode")
-	//	switch s {
-	//	case "cache_statement":
-	//		defaultQueryExecMode = QueryExecModeCacheStatement
-	//	case "cache_describe":
-	//		defaultQueryExecMode = QueryExecModeCacheDescribe
-	//	case "describe_exec":
-	//		defaultQueryExecMode = QueryExecModeDescribeExec
-	//	case "exec":
-	//		defaultQueryExecMode = QueryExecModeExec
-	//	case "simple_protocol":
-	//		defaultQueryExecMode = QueryExecModeSimpleProtocol
-	//	default:
-	//		return nil, fmt.Errorf("invalid default_query_exec_mode: %s", s)
-	//	}
-	//}
-	//
-	//connConfig := &ConnConfig{
-	//	Config:                   *config,
-	//	createdByParseConfig:     true,
-	//	StatementCacheCapacity:   statementCacheCapacity,
-	//	DescriptionCacheCapacity: descriptionCacheCapacity,
-	//	DefaultQueryExecMode:     defaultQueryExecMode,
-	//	connString:               connString,
-	//}
-	//
-	//return connConfig, nil
-	panic("implement me")
+	config, err := pgconn.ParseConfigWithOptions(connString, options.ParseConfigOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	statementCacheCapacity := 512
+	if s, ok := config.RuntimeParams["statement_cache_capacity"]; ok {
+		delete(config.RuntimeParams, "statement_cache_capacity")
+		n, err := strconv.ParseInt(s, 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("cannot parse statement_cache_capacity: %w", err)
+		}
+		statementCacheCapacity = int(n)
+	}
+
+	descriptionCacheCapacity := 512
+	if s, ok := config.RuntimeParams["description_cache_capacity"]; ok {
+		delete(config.RuntimeParams, "description_cache_capacity")
+		n, err := strconv.ParseInt(s, 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("cannot parse description_cache_capacity: %w", err)
+		}
+		descriptionCacheCapacity = int(n)
+	}
+
+	defaultQueryExecMode := QueryExecModeCacheStatement
+	if s, ok := config.RuntimeParams["default_query_exec_mode"]; ok {
+		delete(config.RuntimeParams, "default_query_exec_mode")
+		switch s {
+		case "cache_statement":
+			defaultQueryExecMode = QueryExecModeCacheStatement
+		case "cache_describe":
+			defaultQueryExecMode = QueryExecModeCacheDescribe
+		case "describe_exec":
+			defaultQueryExecMode = QueryExecModeDescribeExec
+		case "exec":
+			defaultQueryExecMode = QueryExecModeExec
+		case "simple_protocol":
+			defaultQueryExecMode = QueryExecModeSimpleProtocol
+		default:
+			return nil, fmt.Errorf("invalid default_query_exec_mode: %s", s)
+		}
+	}
+
+	connConfig := &ConnConfig{
+		Config:                   *config,
+		createdByParseConfig:     true,
+		StatementCacheCapacity:   statementCacheCapacity,
+		DescriptionCacheCapacity: descriptionCacheCapacity,
+		DefaultQueryExecMode:     defaultQueryExecMode,
+		connString:               connString,
+	}
+
+	return connConfig, nil
 }
 
 // ParseConfig creates a ConnConfig from a connection string. ParseConfig handles all options that [pgconn.ParseConfig]
@@ -238,72 +237,70 @@ func ParseConfig(connString string) (*ConnConfig, error) {
 
 // connect connects to a database. connect takes ownership of config. The caller must not use or access it again.
 func connect(ctx context.Context, config *ConnConfig) (c *Conn, err error) {
-	//if connectTracer, ok := config.Tracer.(ConnectTracer); ok {
-	//	ctx = connectTracer.TraceConnectStart(ctx, TraceConnectStartData{ConnConfig: config})
-	//	defer func() {
-	//		connectTracer.TraceConnectEnd(ctx, TraceConnectEndData{Conn: c, Err: err})
-	//	}()
-	//}
-	//
-	//// Default values are set in ParseConfig. Enforce initial creation by ParseConfig rather than setting defaults from
-	//// zero values.
-	//if !config.createdByParseConfig {
-	//	panic("config must be created by ParseConfig")
-	//}
-	//
-	//c = &Conn{
-	//	config:      config,
-	//	typeMap:     pgtype.NewMap(),
-	//	queryTracer: config.Tracer,
-	//}
-	//
-	//if t, ok := c.queryTracer.(BatchTracer); ok {
-	//	c.batchTracer = t
-	//}
-	//if t, ok := c.queryTracer.(CopyFromTracer); ok {
-	//	c.copyFromTracer = t
-	//}
-	//if t, ok := c.queryTracer.(PrepareTracer); ok {
-	//	c.prepareTracer = t
-	//}
-	//
-	//// Only install pgx notification system if no other callback handler is present.
-	//if config.Config.OnNotification == nil {
-	//	config.Config.OnNotification = c.bufferNotifications
-	//}
-	//
-	//c.pgConn, err = pgconn.ConnectConfig(ctx, &config.Config)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//
-	//c.preparedStatements = make(map[string]*pgconn.StatementDescription)
-	//c.doneChan = make(chan struct{})
-	//c.closedChan = make(chan error)
-	//c.wbuf = make([]byte, 0, 1024)
-	//
-	//if c.config.StatementCacheCapacity > 0 {
-	//	c.statementCache = stmtcache.NewLRUCache(c.config.StatementCacheCapacity)
-	//}
-	//
-	//if c.config.DescriptionCacheCapacity > 0 {
-	//	c.descriptionCache = stmtcache.NewLRUCache(c.config.DescriptionCacheCapacity)
-	//}
-	//
-	//return c, nil
-	panic("implement me")
+	if connectTracer, ok := config.Tracer.(ConnectTracer); ok {
+		ctx = connectTracer.TraceConnectStart(ctx, TraceConnectStartData{ConnConfig: config})
+		defer func() {
+			connectTracer.TraceConnectEnd(ctx, TraceConnectEndData{Conn: c, Err: err})
+		}()
+	}
+
+	// Default values are set in ParseConfig. Enforce initial creation by ParseConfig rather than setting defaults from
+	// zero values.
+	if !config.createdByParseConfig {
+		panic("config must be created by ParseConfig")
+	}
+
+	c = &Conn{
+		config:      config,
+		typeMap:     pgtype.NewMap(),
+		queryTracer: config.Tracer,
+	}
+
+	if t, ok := c.queryTracer.(BatchTracer); ok {
+		c.batchTracer = t
+	}
+	if t, ok := c.queryTracer.(CopyFromTracer); ok {
+		c.copyFromTracer = t
+	}
+	if t, ok := c.queryTracer.(PrepareTracer); ok {
+		c.prepareTracer = t
+	}
+
+	// Only install pgx notification system if no other callback handler is present.
+	if config.Config.OnNotification == nil {
+		config.Config.OnNotification = c.bufferNotifications
+	}
+
+	c.pgConn, err = pgconn.ConnectConfig(ctx, &config.Config)
+	if err != nil {
+		return nil, err
+	}
+
+	c.preparedStatements = make(map[string]*pgconn.StatementDescription)
+	c.doneChan = make(chan struct{})
+	c.closedChan = make(chan error)
+	c.wbuf = make([]byte, 0, 1024)
+
+	if c.config.StatementCacheCapacity > 0 {
+		c.statementCache = stmtcache.NewLRUCache(c.config.StatementCacheCapacity)
+	}
+
+	if c.config.DescriptionCacheCapacity > 0 {
+		c.descriptionCache = stmtcache.NewLRUCache(c.config.DescriptionCacheCapacity)
+	}
+
+	return c, nil
 }
 
 // Close closes a connection. It is safe to call Close on an already closed
 // connection.
 func (c *Conn) Close(ctx context.Context) error {
-	//if c.IsClosed() {
-	//	return nil
-	//}
-	//
-	//err := c.pgConn.Close(ctx)
-	//return err
-	panic("implement me")
+	if c.IsClosed() {
+		return nil
+	}
+
+	err := c.pgConn.Close(ctx)
+	return err
 }
 
 // Prepare creates a prepared statement with name and sql. sql can contain placeholders for bound parameters. These
@@ -361,82 +358,76 @@ func (c *Conn) Prepare(ctx context.Context, name, sql string) (sd *pgconn.Statem
 
 // Deallocate releases a prepared statement. Calling Deallocate on a non-existent prepared statement will succeed.
 func (c *Conn) Deallocate(ctx context.Context, name string) error {
-	//var psName string
-	//sd := c.preparedStatements[name]
-	//if sd != nil {
-	//	psName = sd.Name
-	//} else {
-	//	psName = name
-	//}
-	//
-	//err := c.pgConn.Deallocate(ctx, psName)
-	//if err != nil {
-	//	return err
-	//}
-	//
-	//if sd != nil {
-	//	delete(c.preparedStatements, name)
-	//}
-	//
-	//return nil
-	panic("implement me")
+	var psName string
+	sd := c.preparedStatements[name]
+	if sd != nil {
+		psName = sd.Name
+	} else {
+		psName = name
+	}
+
+	err := c.pgConn.Deallocate(ctx, psName)
+	if err != nil {
+		return err
+	}
+
+	if sd != nil {
+		delete(c.preparedStatements, name)
+	}
+
+	return nil
 }
 
 // DeallocateAll releases all previously prepared statements from the server and client, where it also resets the statement and description cache.
 func (c *Conn) DeallocateAll(ctx context.Context) error {
-	//c.preparedStatements = map[string]*pgconn.StatementDescription{}
-	//if c.config.StatementCacheCapacity > 0 {
-	//	c.statementCache = stmtcache.NewLRUCache(c.config.StatementCacheCapacity)
-	//}
-	//if c.config.DescriptionCacheCapacity > 0 {
-	//	c.descriptionCache = stmtcache.NewLRUCache(c.config.DescriptionCacheCapacity)
-	//}
-	//_, err := c.pgConn.Exec(ctx, "deallocate all").ReadAll()
-	//return err
-	panic("implement me")
+	c.preparedStatements = map[string]*pgconn.StatementDescription{}
+	if c.config.StatementCacheCapacity > 0 {
+		c.statementCache = stmtcache.NewLRUCache(c.config.StatementCacheCapacity)
+	}
+	if c.config.DescriptionCacheCapacity > 0 {
+		c.descriptionCache = stmtcache.NewLRUCache(c.config.DescriptionCacheCapacity)
+	}
+	_, err := c.pgConn.Exec(ctx, "deallocate all").ReadAll()
+	return err
 }
 
 func (c *Conn) bufferNotifications(_ *pgconn.PgConn, n *pgconn.Notification) {
-	//c.notifications = append(c.notifications, n)
-	panic("implement me")
+	c.notifications = append(c.notifications, n)
 }
 
 // WaitForNotification waits for a PostgreSQL notification. It wraps the underlying pgconn notification system in a
 // slightly more convenient form.
 func (c *Conn) WaitForNotification(ctx context.Context) (*pgconn.Notification, error) {
-	//var n *pgconn.Notification
-	//
-	//// Return already received notification immediately
-	//if len(c.notifications) > 0 {
-	//	n = c.notifications[0]
-	//	c.notifications = c.notifications[1:]
-	//	return n, nil
-	//}
-	//
-	//err := c.pgConn.WaitForNotification(ctx)
-	//if len(c.notifications) > 0 {
-	//	n = c.notifications[0]
-	//	c.notifications = c.notifications[1:]
-	//}
-	//return n, err
-	panic("implement me")
+	var n *pgconn.Notification
+
+	// Return already received notification immediately
+	if len(c.notifications) > 0 {
+		n = c.notifications[0]
+		c.notifications = c.notifications[1:]
+		return n, nil
+	}
+
+	err := c.pgConn.WaitForNotification(ctx)
+	if len(c.notifications) > 0 {
+		n = c.notifications[0]
+		c.notifications = c.notifications[1:]
+	}
+	return n, err
 }
 
 // IsClosed reports if the connection has been closed.
 func (c *Conn) IsClosed() bool {
-	//return c.pgConn.IsClosed()
-	panic("implement me")
+	return c.pgConn.IsClosed()
 }
 
 func (c *Conn) die() {
-	//if c.IsClosed() {
-	//	return
-	//}
-	//
-	//ctx, cancel := context.WithCancel(context.Background())
-	//cancel() // force immediate hard cancel
-	//c.pgConn.Close(ctx)
-	panic("implement me")
+	if c.IsClosed() {
+		return
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // force immediate hard cancel
+	c.pgConn.Close(ctx)
 }
 
 func quoteIdentifier(s string) string {
@@ -445,8 +436,7 @@ func quoteIdentifier(s string) string {
 
 // Ping delegates to the underlying *pgconn.PgConn.Ping.
 func (c *Conn) Ping(ctx context.Context) error {
-	//return c.pgConn.Ping(ctx)
-	panic("implement me")
+	return c.pgConn.Ping(ctx)
 }
 
 // PgConn returns the underlying *pgconn.PgConn. This is an escape hatch method that allows lower level access to the
@@ -455,140 +445,131 @@ func (c *Conn) Ping(ctx context.Context) error {
 // It is strongly recommended that the connection be idle (no in-progress queries) before the underlying *pgconn.PgConn
 // is used and the connection must be returned to the same state before any *pgx.Conn methods are again used.
 func (c *Conn) PgConn() *pgconn.PgConn {
-	//return c.pgConn
-	panic("implement me")
+	return c.pgConn
 }
 
 // TypeMap returns the connection info used for this connection.
 func (c *Conn) TypeMap() *pgtype.Map {
-	//return c.typeMap
-	panic("implement me")
+	return c.typeMap
 }
 
 // Config returns a copy of config that was used to establish this connection.
 func (c *Conn) Config() *ConnConfig {
-	//return c.config.Copy()
-	panic("implement me")
+	return c.config.Copy()
 }
 
 // Exec executes sql. sql can be either a prepared statement name or an SQL string. arguments should be referenced
 // positionally from the sql string as $1, $2, etc.
 func (c *Conn) Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
-	//if c.queryTracer != nil {
-	//	ctx = c.queryTracer.TraceQueryStart(ctx, c, TraceQueryStartData{SQL: sql, Args: arguments})
-	//}
-	//
-	//if err := c.deallocateInvalidatedCachedStatements(ctx); err != nil {
-	//	return pgconn.CommandTag{}, err
-	//}
-	//
-	//commandTag, err := c.exec(ctx, sql, arguments...)
-	//
-	//if c.queryTracer != nil {
-	//	c.queryTracer.TraceQueryEnd(ctx, c, TraceQueryEndData{CommandTag: commandTag, Err: err})
-	//}
-	//
-	//return commandTag, err
-	panic("implement me")
+	if c.queryTracer != nil {
+		ctx = c.queryTracer.TraceQueryStart(ctx, c, TraceQueryStartData{SQL: sql, Args: arguments})
+	}
 
+	if err := c.deallocateInvalidatedCachedStatements(ctx); err != nil {
+		return pgconn.CommandTag{}, err
+	}
+
+	commandTag, err := c.exec(ctx, sql, arguments...)
+
+	if c.queryTracer != nil {
+		c.queryTracer.TraceQueryEnd(ctx, c, TraceQueryEndData{CommandTag: commandTag, Err: err})
+	}
+
+	return commandTag, err
 }
 
 func (c *Conn) exec(ctx context.Context, sql string, arguments ...any) (commandTag pgconn.CommandTag, err error) {
-	//	mode := c.config.DefaultQueryExecMode
-	//	var queryRewriter QueryRewriter
-	//
-	//optionLoop:
-	//	for len(arguments) > 0 {
-	//		switch arg := arguments[0].(type) {
-	//		case QueryExecMode:
-	//			mode = arg
-	//			arguments = arguments[1:]
-	//		case QueryRewriter:
-	//			queryRewriter = arg
-	//			arguments = arguments[1:]
-	//		default:
-	//			break optionLoop
-	//		}
-	//	}
-	//
-	//	if queryRewriter != nil {
-	//		sql, arguments, err = queryRewriter.RewriteQuery(ctx, c, sql, arguments)
-	//		if err != nil {
-	//			return pgconn.CommandTag{}, fmt.Errorf("rewrite query failed: %w", err)
-	//		}
-	//	}
-	//
-	//	// Always use simple protocol when there are no arguments.
-	//	if len(arguments) == 0 {
-	//		mode = QueryExecModeSimpleProtocol
-	//	}
-	//
-	//	if sd, ok := c.preparedStatements[sql]; ok {
-	//		return c.execPrepared(ctx, sd, arguments)
-	//	}
-	//
-	//	switch mode {
-	//	case QueryExecModeCacheStatement:
-	//		if c.statementCache == nil {
-	//			return pgconn.CommandTag{}, errDisabledStatementCache
-	//		}
-	//		sd := c.statementCache.Get(sql)
-	//		if sd == nil {
-	//			sd, err = c.Prepare(ctx, stmtcache.StatementName(sql), sql)
-	//			if err != nil {
-	//				return pgconn.CommandTag{}, err
-	//			}
-	//			c.statementCache.Put(sd)
-	//		}
-	//
-	//		return c.execPrepared(ctx, sd, arguments)
-	//	case QueryExecModeCacheDescribe:
-	//		if c.descriptionCache == nil {
-	//			return pgconn.CommandTag{}, errDisabledDescriptionCache
-	//		}
-	//		sd := c.descriptionCache.Get(sql)
-	//		if sd == nil {
-	//			sd, err = c.Prepare(ctx, "", sql)
-	//			if err != nil {
-	//				return pgconn.CommandTag{}, err
-	//			}
-	//			c.descriptionCache.Put(sd)
-	//		}
-	//
-	//		return c.execParams(ctx, sd, arguments)
-	//	case QueryExecModeDescribeExec:
-	//		sd, err := c.Prepare(ctx, "", sql)
-	//		if err != nil {
-	//			return pgconn.CommandTag{}, err
-	//		}
-	//		return c.execPrepared(ctx, sd, arguments)
-	//	case QueryExecModeExec:
-	//		return c.execSQLParams(ctx, sql, arguments)
-	//	case QueryExecModeSimpleProtocol:
-	//		return c.execSimpleProtocol(ctx, sql, arguments)
-	//	default:
-	//		return pgconn.CommandTag{}, fmt.Errorf("unknown QueryExecMode: %v", mode)
-	//	}
-	panic("implement me")
+	mode := c.config.DefaultQueryExecMode
+	var queryRewriter QueryRewriter
 
+optionLoop:
+	for len(arguments) > 0 {
+		switch arg := arguments[0].(type) {
+		case QueryExecMode:
+			mode = arg
+			arguments = arguments[1:]
+		case QueryRewriter:
+			queryRewriter = arg
+			arguments = arguments[1:]
+		default:
+			break optionLoop
+		}
+	}
+
+	if queryRewriter != nil {
+		sql, arguments, err = queryRewriter.RewriteQuery(ctx, c, sql, arguments)
+		if err != nil {
+			return pgconn.CommandTag{}, fmt.Errorf("rewrite query failed: %w", err)
+		}
+	}
+
+	// Always use simple protocol when there are no arguments.
+	if len(arguments) == 0 {
+		mode = QueryExecModeSimpleProtocol
+	}
+
+	if sd, ok := c.preparedStatements[sql]; ok {
+		return c.execPrepared(ctx, sd, arguments)
+	}
+
+	switch mode {
+	case QueryExecModeCacheStatement:
+		if c.statementCache == nil {
+			return pgconn.CommandTag{}, errDisabledStatementCache
+		}
+		sd := c.statementCache.Get(sql)
+		if sd == nil {
+			sd, err = c.Prepare(ctx, stmtcache.StatementName(sql), sql)
+			if err != nil {
+				return pgconn.CommandTag{}, err
+			}
+			c.statementCache.Put(sd)
+		}
+
+		return c.execPrepared(ctx, sd, arguments)
+	case QueryExecModeCacheDescribe:
+		if c.descriptionCache == nil {
+			return pgconn.CommandTag{}, errDisabledDescriptionCache
+		}
+		sd := c.descriptionCache.Get(sql)
+		if sd == nil {
+			sd, err = c.Prepare(ctx, "", sql)
+			if err != nil {
+				return pgconn.CommandTag{}, err
+			}
+			c.descriptionCache.Put(sd)
+		}
+
+		return c.execParams(ctx, sd, arguments)
+	case QueryExecModeDescribeExec:
+		sd, err := c.Prepare(ctx, "", sql)
+		if err != nil {
+			return pgconn.CommandTag{}, err
+		}
+		return c.execPrepared(ctx, sd, arguments)
+	case QueryExecModeExec:
+		return c.execSQLParams(ctx, sql, arguments)
+	case QueryExecModeSimpleProtocol:
+		return c.execSimpleProtocol(ctx, sql, arguments)
+	default:
+		return pgconn.CommandTag{}, fmt.Errorf("unknown QueryExecMode: %v", mode)
+	}
 }
 
 func (c *Conn) execSimpleProtocol(ctx context.Context, sql string, arguments []any) (commandTag pgconn.CommandTag, err error) {
-	//if len(arguments) > 0 {
-	//	sql, err = c.sanitizeForSimpleQuery(sql, arguments...)
-	//	if err != nil {
-	//		return pgconn.CommandTag{}, err
-	//	}
-	//}
-	//
-	//mrr := c.pgConn.Exec(ctx, sql)
-	//for mrr.NextResult() {
-	//	commandTag, _ = mrr.ResultReader().Close()
-	//}
-	//err = mrr.Close()
-	//return commandTag, err
-	panic("implement me")
+	if len(arguments) > 0 {
+		sql, err = c.sanitizeForSimpleQuery(sql, arguments...)
+		if err != nil {
+			return pgconn.CommandTag{}, err
+		}
+	}
 
+	mrr := c.pgConn.Exec(ctx, sql)
+	for mrr.NextResult() {
+		commandTag, _ = mrr.ResultReader().Close()
+	}
+	err = mrr.Close()
+	return commandTag, err
 }
 
 func (c *Conn) execParams(ctx context.Context, sd *pgconn.StatementDescription, arguments []any) (pgconn.CommandTag, error) {
@@ -631,19 +612,17 @@ func (c *Conn) execSQLParams(ctx context.Context, sql string, args []any) (pgcon
 }
 
 func (c *Conn) getRows(ctx context.Context, sql string, args []any) *baseRows {
-	//r := &baseRows{}
-	//
-	//r.ctx = ctx
-	//r.queryTracer = c.queryTracer
-	//r.typeMap = c.typeMap
-	//r.startTime = time.Now()
-	//r.sql = sql
-	//r.args = args
-	//r.conn = c
-	//
-	//return r
-	panic("implement me")
+	r := &baseRows{}
 
+	r.ctx = ctx
+	r.queryTracer = c.queryTracer
+	r.typeMap = c.typeMap
+	r.startTime = time.Now()
+	r.sql = sql
+	r.args = args
+	r.conn = c
+
+	return r
 }
 
 type QueryExecMode int32

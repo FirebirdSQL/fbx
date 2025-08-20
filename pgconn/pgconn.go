@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"strconv"
 	"strings"
@@ -134,39 +135,38 @@ func ConnectWithOptions(ctx context.Context, connString string, parseConfigOptio
 // authentication error will terminate the chain of attempts (like libpq:
 // https://www.postgresql.org/docs/11/libpq-connect.html#LIBPQ-MULTIPLE-HOSTS) and be returned as the error.
 func ConnectConfig(ctx context.Context, config *Config) (*PgConn, error) {
-	//// Default values are set in ParseConfig. Enforce initial creation by ParseConfig rather than setting defaults from
-	//// zero values.
-	//if !config.createdByParseConfig {
-	//	panic("config must be created by ParseConfig")
-	//}
-	//
-	//var allErrors []error
-	//
-	//connectConfigs, errs := buildConnectOneConfigs(ctx, config)
-	//if len(errs) > 0 {
-	//	allErrors = append(allErrors, errs...)
-	//}
-	//
-	//if len(connectConfigs) == 0 {
-	//	return nil, &ConnectError{Config: config, err: fmt.Errorf("hostname resolving error: %w", errors.Join(allErrors...))}
-	//}
-	//
-	//pgConn, errs := connectPreferred(ctx, config, connectConfigs)
-	//if len(errs) > 0 {
-	//	allErrors = append(allErrors, errs...)
-	//	return nil, &ConnectError{Config: config, err: errors.Join(allErrors...)}
-	//}
-	//
-	//if config.AfterConnect != nil {
-	//	err := config.AfterConnect(ctx, pgConn)
-	//	if err != nil {
-	//		pgConn.conn.Close()
-	//		return nil, &ConnectError{Config: config, err: fmt.Errorf("AfterConnect error: %w", err)}
-	//	}
-	//}
-	//
-	//return pgConn, nil
-	panic("implement me")
+	// Default values are set in ParseConfig. Enforce initial creation by ParseConfig rather than setting defaults from
+	// zero values.
+	if !config.createdByParseConfig {
+		panic("config must be created by ParseConfig")
+	}
+
+	var allErrors []error
+
+	connectConfigs, errs := buildConnectOneConfigs(ctx, config)
+	if len(errs) > 0 {
+		allErrors = append(allErrors, errs...)
+	}
+
+	if len(connectConfigs) == 0 {
+		return nil, &ConnectError{Config: config, err: fmt.Errorf("hostname resolving error: %w", errors.Join(allErrors...))}
+	}
+
+	pgConn, errs := connectPreferred(ctx, config, connectConfigs)
+	if len(errs) > 0 {
+		allErrors = append(allErrors, errs...)
+		return nil, &ConnectError{Config: config, err: errors.Join(allErrors...)}
+	}
+
+	if config.AfterConnect != nil {
+		err := config.AfterConnect(ctx, pgConn)
+		if err != nil {
+			pgConn.conn.Close()
+			return nil, &ConnectError{Config: config, err: fmt.Errorf("AfterConnect error: %w", err)}
+		}
+	}
+
+	return pgConn, nil
 }
 
 // buildConnectOneConfigs resolves hostnames and builds a list of connectOneConfigs to try connecting to. It returns a
@@ -176,9 +176,8 @@ func buildConnectOneConfigs(ctx context.Context, config *Config) ([]*connectOneC
 	// Simplify usage by treating primary config and fallbacks the same.
 	fallbackConfigs := []*FallbackConfig{
 		{
-			Host:      config.Host,
-			Port:      config.Port,
-			TLSConfig: config.TLSConfig,
+			Host: config.Host,
+			Port: config.Port,
 		},
 	}
 	fallbackConfigs = append(fallbackConfigs, config.Fallbacks...)
@@ -195,7 +194,6 @@ func buildConnectOneConfigs(ctx context.Context, config *Config) ([]*connectOneC
 				network:          network,
 				address:          address,
 				originalHostname: fb.Host,
-				tlsConfig:        fb.TLSConfig,
 			})
 
 			continue
@@ -219,7 +217,6 @@ func buildConnectOneConfigs(ctx context.Context, config *Config) ([]*connectOneC
 					network:          network,
 					address:          address,
 					originalHostname: fb.Host,
-					tlsConfig:        fb.TLSConfig,
 				})
 			} else {
 				network, address := NetworkAddress(ip, fb.Port)
@@ -227,7 +224,6 @@ func buildConnectOneConfigs(ctx context.Context, config *Config) ([]*connectOneC
 					network:          network,
 					address:          address,
 					originalHostname: fb.Host,
-					tlsConfig:        fb.TLSConfig,
 				})
 			}
 		}
@@ -302,62 +298,41 @@ func connectPreferred(ctx context.Context, config *Config, connectOneConfigs []*
 func connectOne(ctx context.Context, config *Config, connectConfig *connectOneConfig,
 	ignoreNotPreferredErr bool,
 ) (*PgConn, error) {
-	//pgConn := new(PgConn)
-	//pgConn.config = config
-	//pgConn.cleanupDone = make(chan struct{})
-	//pgConn.customData = make(map[string]any)
-	//
-	//var err error
-	//
-	//newPerDialConnectError := func(msg string, err error) *perDialConnectError {
-	//	err = normalizeTimeoutError(ctx, err)
-	//	e := &perDialConnectError{address: connectConfig.address, originalHostname: connectConfig.originalHostname, err: fmt.Errorf("%s: %w", msg, err)}
-	//	return e
-	//}
-	//
-	//pgConn.conn, err = config.DialFunc(ctx, connectConfig.network, connectConfig.address)
-	//if err != nil {
-	//	return nil, newPerDialConnectError("dial error", err)
-	//}
-	//
-	//if connectConfig.tlsConfig != nil {
-	//	pgConn.contextWatcher = ctxwatch.NewContextWatcher(&DeadlineContextWatcherHandler{Conn: pgConn.conn})
-	//	pgConn.contextWatcher.Watch(ctx)
-	//	var (
-	//		tlsConn net.Conn
-	//		err     error
-	//	)
-	//	if config.SSLNegotiation == "direct" {
-	//		tlsConn = tls.Client(pgConn.conn, connectConfig.tlsConfig)
-	//	} else {
-	//		tlsConn, err = startTLS(pgConn.conn, connectConfig.tlsConfig)
-	//	}
-	//	pgConn.contextWatcher.Unwatch() // Always unwatch `netConn` after TLS.
-	//	if err != nil {
-	//		pgConn.conn.Close()
-	//		return nil, newPerDialConnectError("tls error", err)
-	//	}
-	//
-	//	pgConn.conn = tlsConn
-	//}
-	//
-	//pgConn.contextWatcher = ctxwatch.NewContextWatcher(config.BuildContextWatcherHandler(pgConn))
-	//pgConn.contextWatcher.Watch(ctx)
-	//defer pgConn.contextWatcher.Unwatch()
-	//
-	//pgConn.parameterStatuses = make(map[string]string)
-	//pgConn.status = connStatusConnecting
-	//pgConn.bgReader = bgreader.New(pgConn.conn)
-	//pgConn.slowWriteTimer = time.AfterFunc(time.Duration(math.MaxInt64),
-	//	func() {
-	//		pgConn.bgReader.Start()
-	//		pgConn.bgReaderStarted <- struct{}{}
-	//	},
-	//)
-	//pgConn.slowWriteTimer.Stop()
-	//pgConn.bgReaderStarted = make(chan struct{})
-	//pgConn.frontend = config.BuildFrontend(pgConn.bgReader, pgConn.conn)
-	//
+	pgConn := new(PgConn)
+	pgConn.config = config
+	pgConn.cleanupDone = make(chan struct{})
+	pgConn.customData = make(map[string]any)
+
+	var err error
+
+	newPerDialConnectError := func(msg string, err error) *perDialConnectError {
+		err = normalizeTimeoutError(ctx, err)
+		e := &perDialConnectError{address: connectConfig.address, originalHostname: connectConfig.originalHostname, err: fmt.Errorf("%s: %w", msg, err)}
+		return e
+	}
+
+	pgConn.conn, err = config.DialFunc(ctx, connectConfig.network, connectConfig.address)
+	if err != nil {
+		return nil, newPerDialConnectError("dial error", err)
+	}
+
+	pgConn.contextWatcher = ctxwatch.NewContextWatcher(config.BuildContextWatcherHandler(pgConn))
+	pgConn.contextWatcher.Watch(ctx)
+	defer pgConn.contextWatcher.Unwatch()
+
+	pgConn.parameterStatuses = make(map[string]string)
+	pgConn.status = connStatusConnecting
+	pgConn.bgReader = bgreader.New(pgConn.conn)
+	pgConn.slowWriteTimer = time.AfterFunc(time.Duration(math.MaxInt64),
+		func() {
+			pgConn.bgReader.Start()
+			pgConn.bgReaderStarted <- struct{}{}
+		},
+	)
+	pgConn.slowWriteTimer.Stop()
+	pgConn.bgReaderStarted = make(chan struct{})
+	pgConn.frontend = config.BuildFrontend(pgConn.bgReader, pgConn.conn)
+
 	//startupMsg := pgproto3.StartupMessage{
 	//	ProtocolVersion: pgproto3.ProtocolVersionNumber,
 	//	Parameters:      make(map[string]string),

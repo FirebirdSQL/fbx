@@ -2,11 +2,9 @@ package pgconn_test
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"os"
 	"os/user"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -30,7 +28,7 @@ func getDefaultPort(t *testing.T) uint16 {
 		require.NoError(t, err)
 		return uint16(p)
 	}
-	return 5432
+	return 3050
 }
 
 func getDefaultUser(t *testing.T) string {
@@ -72,142 +70,31 @@ func TestParseConfig(t *testing.T) {
 		// Test all sslmodes
 		{
 			name:       "sslmode not set (prefer)",
-			connString: "postgres://jack:secret@localhost:5432/mydb",
-			config: &pgconn.Config{
-				User:     "jack",
-				Password: "secret",
-				Host:     "localhost",
-				Port:     5432,
-				Database: "mydb",
-				TLSConfig: &tls.Config{
-					InsecureSkipVerify: true,
-					ServerName:         "localhost",
-				},
-				RuntimeParams: map[string]string{},
-				Fallbacks: []*pgconn.FallbackConfig{
-					{
-						Host:      "localhost",
-						Port:      5432,
-						TLSConfig: nil,
-					},
-				},
-			},
-		},
-		{
-			name:       "sslmode disable",
-			connString: "postgres://jack:secret@localhost:5432/mydb?sslmode=disable",
+			connString: "firebird://jack:secret@localhost:5432/mydb",
 			config: &pgconn.Config{
 				User:          "jack",
 				Password:      "secret",
 				Host:          "localhost",
 				Port:          5432,
 				Database:      "mydb",
-				TLSConfig:     nil,
-				RuntimeParams: map[string]string{},
-			},
-		},
-		{
-			name:       "sslmode allow",
-			connString: "postgres://jack:secret@localhost:5432/mydb?sslmode=allow",
-			config: &pgconn.Config{
-				User:          "jack",
-				Password:      "secret",
-				Host:          "localhost",
-				Port:          5432,
-				Database:      "mydb",
-				TLSConfig:     nil,
 				RuntimeParams: map[string]string{},
 				Fallbacks: []*pgconn.FallbackConfig{
 					{
 						Host: "localhost",
 						Port: 5432,
-						TLSConfig: &tls.Config{
-							InsecureSkipVerify: true,
-							ServerName:         "localhost",
-						},
 					},
 				},
-			},
-		},
-		{
-			name:       "sslmode prefer",
-			connString: "postgres://jack:secret@localhost:5432/mydb?sslmode=prefer",
-			config: &pgconn.Config{
-
-				User:     "jack",
-				Password: "secret",
-				Host:     "localhost",
-				Port:     5432,
-				Database: "mydb",
-				TLSConfig: &tls.Config{
-					InsecureSkipVerify: true,
-					ServerName:         "localhost",
-				},
-				RuntimeParams: map[string]string{},
-				Fallbacks: []*pgconn.FallbackConfig{
-					{
-						Host:      "localhost",
-						Port:      5432,
-						TLSConfig: nil,
-					},
-				},
-			},
-		},
-		{
-			name:       "sslmode require",
-			connString: "postgres://jack:secret@localhost:5432/mydb?sslmode=require",
-			config: &pgconn.Config{
-				User:     "jack",
-				Password: "secret",
-				Host:     "localhost",
-				Port:     5432,
-				Database: "mydb",
-				TLSConfig: &tls.Config{
-					InsecureSkipVerify: true,
-					ServerName:         "localhost",
-				},
-				RuntimeParams: map[string]string{},
-			},
-		},
-		{
-			name:       "sslmode verify-ca",
-			connString: "postgres://jack:secret@localhost:5432/mydb?sslmode=verify-ca",
-			config: &pgconn.Config{
-				User:     "jack",
-				Password: "secret",
-				Host:     "localhost",
-				Port:     5432,
-				Database: "mydb",
-				TLSConfig: &tls.Config{
-					InsecureSkipVerify: true,
-					ServerName:         "localhost",
-				},
-				RuntimeParams: map[string]string{},
-			},
-		},
-		{
-			name:       "sslmode verify-full",
-			connString: "postgres://jack:secret@localhost:5432/mydb?sslmode=verify-full",
-			config: &pgconn.Config{
-				User:          "jack",
-				Password:      "secret",
-				Host:          "localhost",
-				Port:          5432,
-				Database:      "mydb",
-				TLSConfig:     &tls.Config{ServerName: "localhost"},
-				RuntimeParams: map[string]string{},
 			},
 		},
 		{
 			name:       "database url everything",
-			connString: "postgres://jack:secret@localhost:5432/mydb?sslmode=disable&application_name=pgxtest&search_path=myschema&connect_timeout=5",
+			connString: "firebird://jack:secret@localhost:5432/mydb?application_name=pgxtest&search_path=myschema&connect_timeout=5",
 			config: &pgconn.Config{
 				User:           "jack",
 				Password:       "secret",
 				Host:           "localhost",
 				Port:           5432,
 				Database:       "mydb",
-				TLSConfig:      nil,
 				ConnectTimeout: 5 * time.Second,
 				RuntimeParams: map[string]string{
 					"application_name": "pgxtest",
@@ -217,135 +104,124 @@ func TestParseConfig(t *testing.T) {
 		},
 		{
 			name:       "database url missing password",
-			connString: "postgres://jack@localhost:5432/mydb?sslmode=disable",
+			connString: "firebird://jack@localhost:5432/mydb",
 			config: &pgconn.Config{
 				User:          "jack",
 				Host:          "localhost",
 				Port:          5432,
 				Database:      "mydb",
-				TLSConfig:     nil,
 				RuntimeParams: map[string]string{},
 			},
 		},
 		{
 			name:       "database url missing user and password",
-			connString: "postgres://localhost:5432/mydb?sslmode=disable",
+			connString: "firebird://localhost:5432/mydb",
 			config: &pgconn.Config{
 				User:          defaultUser,
 				Host:          "localhost",
 				Port:          5432,
 				Database:      "mydb",
-				TLSConfig:     nil,
 				RuntimeParams: map[string]string{},
 			},
 		},
 		{
 			name:       "database url missing port",
-			connString: "postgres://jack:secret@localhost:5432/mydb?sslmode=disable",
+			connString: "firebird://jack:secret@localhost:5432/mydb",
 			config: &pgconn.Config{
 				User:          "jack",
 				Password:      "secret",
 				Host:          "localhost",
 				Port:          5432,
 				Database:      "mydb",
-				TLSConfig:     nil,
 				RuntimeParams: map[string]string{},
 			},
 		},
 		{
 			name:       "database url unix domain socket host",
-			connString: "postgres:///foo?host=/tmp",
+			connString: "firebird:///foo?host=/tmp",
 			config: &pgconn.Config{
 				User:          defaultUser,
 				Host:          "/tmp",
 				Port:          defaultPort,
 				Database:      "foo",
-				TLSConfig:     nil,
 				RuntimeParams: map[string]string{},
 			},
 		},
 		{
 			name:       "database url unix domain socket host on windows",
-			connString: "postgres:///foo?host=C:\\tmp",
+			connString: "firebird:///foo?host=C:\\tmp",
 			config: &pgconn.Config{
 				User:          defaultUser,
 				Host:          "C:\\tmp",
 				Port:          defaultPort,
 				Database:      "foo",
-				TLSConfig:     nil,
 				RuntimeParams: map[string]string{},
 			},
 		},
 		{
 			name:       "database url dbname",
-			connString: "postgres://localhost/?dbname=foo&sslmode=disable",
+			connString: "firebird://localhost/?dbname=foo",
 			config: &pgconn.Config{
 				User:          defaultUser,
 				Host:          "localhost",
 				Port:          defaultPort,
 				Database:      "foo",
-				TLSConfig:     nil,
 				RuntimeParams: map[string]string{},
 			},
 		},
 		{
 			name:       "database url postgresql protocol",
-			connString: "postgresql://jack@localhost:5432/mydb?sslmode=disable",
+			connString: "firebird://jack@localhost:5432/mydb",
 			config: &pgconn.Config{
 				User:          "jack",
 				Host:          "localhost",
 				Port:          5432,
 				Database:      "mydb",
-				TLSConfig:     nil,
 				RuntimeParams: map[string]string{},
 			},
 		},
 		{
 			name:       "database url IPv4 with port",
-			connString: "postgresql://jack@127.0.0.1:5433/mydb?sslmode=disable",
+			connString: "firebird://jack@127.0.0.1:5433/mydb",
 			config: &pgconn.Config{
 				User:          "jack",
 				Host:          "127.0.0.1",
 				Port:          5433,
 				Database:      "mydb",
-				TLSConfig:     nil,
 				RuntimeParams: map[string]string{},
 			},
 		},
 		{
 			name:       "database url IPv6 with port",
-			connString: "postgresql://jack@[2001:db8::1]:5433/mydb?sslmode=disable",
+			connString: "firebird://jack@[2001:db8::1]:5433/mydb",
 			config: &pgconn.Config{
 				User:          "jack",
 				Host:          "2001:db8::1",
 				Port:          5433,
 				Database:      "mydb",
-				TLSConfig:     nil,
 				RuntimeParams: map[string]string{},
 			},
 		},
 		{
 			name:       "database url IPv6 no port",
-			connString: "postgresql://jack@[2001:db8::1]/mydb?sslmode=disable",
+			connString: "firebird://jack@[2001:db8::1]/mydb",
 			config: &pgconn.Config{
 				User:          "jack",
 				Host:          "2001:db8::1",
 				Port:          defaultPort,
 				Database:      "mydb",
-				TLSConfig:     nil,
 				RuntimeParams: map[string]string{},
 			},
 		},
 		{
 			name:       "Key/value everything",
-			connString: "user=jack password=secret host=localhost port=5432 dbname=mydb sslmode=disable application_name=pgxtest search_path=myschema connect_timeout=5",
+			connString: "user=jack password=secret host=localhost port=5432 dbname=mydb application_name=pgxtest search_path=myschema connect_timeout=5",
 			config: &pgconn.Config{
 				User:           "jack",
 				Password:       "secret",
 				Host:           "localhost",
 				Port:           5432,
 				Database:       "mydb",
-				TLSConfig:      nil,
 				ConnectTimeout: 5 * time.Second,
 				RuntimeParams: map[string]string{
 					"application_name": "pgxtest",
@@ -355,420 +231,94 @@ func TestParseConfig(t *testing.T) {
 		},
 		{
 			name:       "Key/value with escaped single quote",
-			connString: "user=jack\\'s password=secret host=localhost port=5432 dbname=mydb sslmode=disable",
+			connString: "user=jack\\'s password=secret host=localhost port=5432 dbname=mydb",
 			config: &pgconn.Config{
 				User:          "jack's",
 				Password:      "secret",
 				Host:          "localhost",
 				Port:          5432,
 				Database:      "mydb",
-				TLSConfig:     nil,
 				RuntimeParams: map[string]string{},
 			},
 		},
 		{
 			name:       "Key/value with escaped backslash",
-			connString: "user=jack password=sooper\\\\secret host=localhost port=5432 dbname=mydb sslmode=disable",
+			connString: "user=jack password=sooper\\\\secret host=localhost port=5432 dbname=mydb",
 			config: &pgconn.Config{
 				User:          "jack",
 				Password:      "sooper\\secret",
 				Host:          "localhost",
 				Port:          5432,
 				Database:      "mydb",
-				TLSConfig:     nil,
 				RuntimeParams: map[string]string{},
 			},
 		},
 		{
 			name:       "Key/value with single quoted values",
-			connString: "user='jack' host='localhost' dbname='mydb' sslmode='disable'",
+			connString: "user='jack' host='localhost' dbname='mydb'",
 			config: &pgconn.Config{
 				User:          "jack",
 				Host:          "localhost",
 				Port:          defaultPort,
 				Database:      "mydb",
-				TLSConfig:     nil,
 				RuntimeParams: map[string]string{},
 			},
 		},
 		{
 			name:       "Key/value with single quoted value with escaped single quote",
-			connString: "user='jack\\'s' host='localhost' dbname='mydb' sslmode='disable'",
+			connString: "user='jack\\'s' host='localhost' dbname='mydb'",
 			config: &pgconn.Config{
 				User:          "jack's",
 				Host:          "localhost",
 				Port:          defaultPort,
 				Database:      "mydb",
-				TLSConfig:     nil,
 				RuntimeParams: map[string]string{},
 			},
 		},
 		{
 			name:       "Key/value with empty single quoted value",
-			connString: "user='jack' password='' host='localhost' dbname='mydb' sslmode='disable'",
+			connString: "user='jack' password='' host='localhost' dbname='mydb'",
 			config: &pgconn.Config{
 				User:          "jack",
 				Host:          "localhost",
 				Port:          defaultPort,
 				Database:      "mydb",
-				TLSConfig:     nil,
 				RuntimeParams: map[string]string{},
 			},
 		},
 		{
 			name:       "Key/value with space between key and value",
-			connString: "user = 'jack' password = '' host = 'localhost' dbname = 'mydb' sslmode='disable'",
+			connString: "user = 'jack' password = '' host = 'localhost' dbname = 'mydb'",
 			config: &pgconn.Config{
 				User:          "jack",
 				Host:          "localhost",
 				Port:          defaultPort,
 				Database:      "mydb",
-				TLSConfig:     nil,
 				RuntimeParams: map[string]string{},
-			},
-		},
-		{
-			name:       "URL multiple hosts",
-			connString: "postgres://jack:secret@foo,bar,baz/mydb?sslmode=disable",
-			config: &pgconn.Config{
-				User:          "jack",
-				Password:      "secret",
-				Host:          "foo",
-				Port:          defaultPort,
-				Database:      "mydb",
-				TLSConfig:     nil,
-				RuntimeParams: map[string]string{},
-				Fallbacks: []*pgconn.FallbackConfig{
-					{
-						Host:      "bar",
-						Port:      defaultPort,
-						TLSConfig: nil,
-					},
-					{
-						Host:      "baz",
-						Port:      defaultPort,
-						TLSConfig: nil,
-					},
-				},
-			},
-		},
-		{
-			name:       "URL multiple hosts and ports",
-			connString: "postgres://jack:secret@foo:1,bar:2,baz:3/mydb?sslmode=disable",
-			config: &pgconn.Config{
-				User:          "jack",
-				Password:      "secret",
-				Host:          "foo",
-				Port:          1,
-				Database:      "mydb",
-				TLSConfig:     nil,
-				RuntimeParams: map[string]string{},
-				Fallbacks: []*pgconn.FallbackConfig{
-					{
-						Host:      "bar",
-						Port:      2,
-						TLSConfig: nil,
-					},
-					{
-						Host:      "baz",
-						Port:      3,
-						TLSConfig: nil,
-					},
-				},
 			},
 		},
 		// https://github.com/jackc/pgconn/issues/72
 		{
 			name:       "URL without host but with port still uses default host",
-			connString: "postgres://jack:secret@:1/mydb?sslmode=disable",
+			connString: "firebird://jack:secret@:1/mydb",
 			config: &pgconn.Config{
 				User:          "jack",
 				Password:      "secret",
 				Host:          defaultHost,
 				Port:          1,
 				Database:      "mydb",
-				TLSConfig:     nil,
-				RuntimeParams: map[string]string{},
-			},
-		},
-		{
-			name:       "Key/value multiple hosts one port",
-			connString: "user=jack password=secret host=foo,bar,baz port=5432 dbname=mydb sslmode=disable",
-			config: &pgconn.Config{
-				User:          "jack",
-				Password:      "secret",
-				Host:          "foo",
-				Port:          5432,
-				Database:      "mydb",
-				TLSConfig:     nil,
-				RuntimeParams: map[string]string{},
-				Fallbacks: []*pgconn.FallbackConfig{
-					{
-						Host:      "bar",
-						Port:      5432,
-						TLSConfig: nil,
-					},
-					{
-						Host:      "baz",
-						Port:      5432,
-						TLSConfig: nil,
-					},
-				},
-			},
-		},
-		{
-			name:       "Key/value multiple hosts multiple ports",
-			connString: "user=jack password=secret host=foo,bar,baz port=1,2,3 dbname=mydb sslmode=disable",
-			config: &pgconn.Config{
-				User:          "jack",
-				Password:      "secret",
-				Host:          "foo",
-				Port:          1,
-				Database:      "mydb",
-				TLSConfig:     nil,
-				RuntimeParams: map[string]string{},
-				Fallbacks: []*pgconn.FallbackConfig{
-					{
-						Host:      "bar",
-						Port:      2,
-						TLSConfig: nil,
-					},
-					{
-						Host:      "baz",
-						Port:      3,
-						TLSConfig: nil,
-					},
-				},
-			},
-		},
-		{
-			name:       "multiple hosts and fallback tls",
-			connString: "user=jack password=secret host=foo,bar,baz dbname=mydb sslmode=prefer",
-			config: &pgconn.Config{
-				User:     "jack",
-				Password: "secret",
-				Host:     "foo",
-				Port:     defaultPort,
-				Database: "mydb",
-				TLSConfig: &tls.Config{
-					InsecureSkipVerify: true,
-					ServerName:         "foo",
-				},
-				RuntimeParams: map[string]string{},
-				Fallbacks: []*pgconn.FallbackConfig{
-					{
-						Host:      "foo",
-						Port:      defaultPort,
-						TLSConfig: nil,
-					},
-					{
-						Host: "bar",
-						Port: defaultPort,
-						TLSConfig: &tls.Config{
-							InsecureSkipVerify: true,
-							ServerName:         "bar",
-						}},
-					{
-						Host:      "bar",
-						Port:      defaultPort,
-						TLSConfig: nil,
-					},
-					{
-						Host: "baz",
-						Port: defaultPort,
-						TLSConfig: &tls.Config{
-							InsecureSkipVerify: true,
-							ServerName:         "baz",
-						}},
-					{
-						Host:      "baz",
-						Port:      defaultPort,
-						TLSConfig: nil,
-					},
-				},
-			},
-		},
-		{
-			name:       "target_session_attrs read-write",
-			connString: "postgres://jack:secret@localhost:5432/mydb?sslmode=disable&target_session_attrs=read-write",
-			config: &pgconn.Config{
-				User:            "jack",
-				Password:        "secret",
-				Host:            "localhost",
-				Port:            5432,
-				Database:        "mydb",
-				TLSConfig:       nil,
-				RuntimeParams:   map[string]string{},
-				ValidateConnect: pgconn.ValidateConnectTargetSessionAttrsReadWrite,
-			},
-		},
-		{
-			name:       "target_session_attrs read-only",
-			connString: "postgres://jack:secret@localhost:5432/mydb?sslmode=disable&target_session_attrs=read-only",
-			config: &pgconn.Config{
-				User:            "jack",
-				Password:        "secret",
-				Host:            "localhost",
-				Port:            5432,
-				Database:        "mydb",
-				TLSConfig:       nil,
-				RuntimeParams:   map[string]string{},
-				ValidateConnect: pgconn.ValidateConnectTargetSessionAttrsReadOnly,
-			},
-		},
-		{
-			name:       "target_session_attrs primary",
-			connString: "postgres://jack:secret@localhost:5432/mydb?sslmode=disable&target_session_attrs=primary",
-			config: &pgconn.Config{
-				User:            "jack",
-				Password:        "secret",
-				Host:            "localhost",
-				Port:            5432,
-				Database:        "mydb",
-				TLSConfig:       nil,
-				RuntimeParams:   map[string]string{},
-				ValidateConnect: pgconn.ValidateConnectTargetSessionAttrsPrimary,
-			},
-		},
-		{
-			name:       "target_session_attrs standby",
-			connString: "postgres://jack:secret@localhost:5432/mydb?sslmode=disable&target_session_attrs=standby",
-			config: &pgconn.Config{
-				User:            "jack",
-				Password:        "secret",
-				Host:            "localhost",
-				Port:            5432,
-				Database:        "mydb",
-				TLSConfig:       nil,
-				RuntimeParams:   map[string]string{},
-				ValidateConnect: pgconn.ValidateConnectTargetSessionAttrsStandby,
-			},
-		},
-		{
-			name:       "target_session_attrs prefer-standby",
-			connString: "postgres://jack:secret@localhost:5432/mydb?sslmode=disable&target_session_attrs=prefer-standby",
-			config: &pgconn.Config{
-				User:            "jack",
-				Password:        "secret",
-				Host:            "localhost",
-				Port:            5432,
-				Database:        "mydb",
-				TLSConfig:       nil,
-				RuntimeParams:   map[string]string{},
-				ValidateConnect: pgconn.ValidateConnectTargetSessionAttrsPreferStandby,
-			},
-		},
-		{
-			name:       "target_session_attrs any",
-			connString: "postgres://jack:secret@localhost:5432/mydb?sslmode=disable&target_session_attrs=any",
-			config: &pgconn.Config{
-				User:          "jack",
-				Password:      "secret",
-				Host:          "localhost",
-				Port:          5432,
-				Database:      "mydb",
-				TLSConfig:     nil,
-				RuntimeParams: map[string]string{},
-			},
-		},
-		{
-			name:       "target_session_attrs not set (any)",
-			connString: "postgres://jack:secret@localhost:5432/mydb?sslmode=disable",
-			config: &pgconn.Config{
-				User:          "jack",
-				Password:      "secret",
-				Host:          "localhost",
-				Port:          5432,
-				Database:      "mydb",
-				TLSConfig:     nil,
-				RuntimeParams: map[string]string{},
-			},
-		},
-		{
-			name:       "SNI is set by default",
-			connString: "postgres://jack:secret@sni.test:5432/mydb?sslmode=require",
-			config: &pgconn.Config{
-				User:     "jack",
-				Password: "secret",
-				Host:     "sni.test",
-				Port:     5432,
-				Database: "mydb",
-				TLSConfig: &tls.Config{
-					InsecureSkipVerify: true,
-					ServerName:         "sni.test",
-				},
-				RuntimeParams: map[string]string{},
-			},
-		},
-		{
-			name:       "SNI is not set for IPv4",
-			connString: "postgres://jack:secret@1.1.1.1:5432/mydb?sslmode=require",
-			config: &pgconn.Config{
-				User:     "jack",
-				Password: "secret",
-				Host:     "1.1.1.1",
-				Port:     5432,
-				Database: "mydb",
-				TLSConfig: &tls.Config{
-					InsecureSkipVerify: true,
-				},
-				RuntimeParams: map[string]string{},
-			},
-		},
-		{
-			name:       "SNI is not set for IPv6",
-			connString: "postgres://jack:secret@[::1]:5432/mydb?sslmode=require",
-			config: &pgconn.Config{
-				User:     "jack",
-				Password: "secret",
-				Host:     "::1",
-				Port:     5432,
-				Database: "mydb",
-				TLSConfig: &tls.Config{
-					InsecureSkipVerify: true,
-				},
-				RuntimeParams: map[string]string{},
-			},
-		},
-		{
-			name:       "SNI is not set when disabled (URL-style)",
-			connString: "postgres://jack:secret@sni.test:5432/mydb?sslmode=require&sslsni=0",
-			config: &pgconn.Config{
-				User:     "jack",
-				Password: "secret",
-				Host:     "sni.test",
-				Port:     5432,
-				Database: "mydb",
-				TLSConfig: &tls.Config{
-					InsecureSkipVerify: true,
-				},
-				RuntimeParams: map[string]string{},
-			},
-		},
-		{
-			name:       "SNI is not set when disabled (key/value style)",
-			connString: "user=jack password=secret host=sni.test dbname=mydb sslmode=require sslsni=0",
-			config: &pgconn.Config{
-				User:     "jack",
-				Password: "secret",
-				Host:     "sni.test",
-				Port:     defaultPort,
-				Database: "mydb",
-				TLSConfig: &tls.Config{
-					InsecureSkipVerify: true,
-				},
 				RuntimeParams: map[string]string{},
 			},
 		},
 	}
 
 	for i, tt := range tests {
-		config, err := pgconn.ParseConfig(tt.connString)
-		if !assert.Nilf(t, err, "Test %d (%s)", i, tt.name) {
-			continue
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			config, err := pgconn.ParseConfig(tt.connString)
+			assert.Nilf(t, err, "Test %d (%s)", i, tt.name)
 
-		assertConfigsEqual(t, tt.config, config, fmt.Sprintf("Test %d (%s)", i, tt.name))
+			assertConfigsEqual(t, tt.config, config, fmt.Sprintf("Test %d (%s)", i, tt.name))
+		})
 	}
 }
 
@@ -809,11 +359,9 @@ func TestConfigCopyOriginalConfigDidNotChange(t *testing.T) {
 
 	copied.Port = uint16(5433)
 	copied.RuntimeParams["foo"] = "bar"
-	copied.Fallbacks[0].Port = uint16(5433)
 
-	assert.Equal(t, uint16(5432), original.Port)
+	assert.Equal(t, uint16(3050), original.Port)
 	assert.Equal(t, "", original.RuntimeParams["foo"])
-	assert.Equal(t, uint16(5432), original.Fallbacks[0].Port)
 }
 
 func TestConfigCopyCanBeUsedToConnect(t *testing.T) {
@@ -834,26 +382,6 @@ func TestNetworkAddress(t *testing.T) {
 		host    string
 		wantNet string
 	}{
-		{
-			name:    "Default Unix socket address",
-			host:    "/var/run/postgresql",
-			wantNet: "unix",
-		},
-		{
-			name:    "Windows Unix socket address (standard drive name)",
-			host:    "C:\\tmp",
-			wantNet: "unix",
-		},
-		{
-			name:    "Windows Unix socket address (first drive name)",
-			host:    "A:\\tmp",
-			wantNet: "unix",
-		},
-		{
-			name:    "Windows Unix socket address (last drive name)",
-			host:    "Z:\\tmp",
-			wantNet: "unix",
-		},
 		{
 			name:    "Assume TCP for unknown formats",
 			host:    "a/tmp",
@@ -896,27 +424,6 @@ func assertConfigsEqual(t *testing.T, expected, actual *pgconn.Config, testName 
 	// Can't test function equality, so just test that they are set or not.
 	assert.Equalf(t, expected.ValidateConnect == nil, actual.ValidateConnect == nil, "%s - ValidateConnect", testName)
 	assert.Equalf(t, expected.AfterConnect == nil, actual.AfterConnect == nil, "%s - AfterConnect", testName)
-
-	if assert.Equalf(t, expected.TLSConfig == nil, actual.TLSConfig == nil, "%s - TLSConfig", testName) {
-		if expected.TLSConfig != nil {
-			assert.Equalf(t, expected.TLSConfig.InsecureSkipVerify, actual.TLSConfig.InsecureSkipVerify, "%s - TLSConfig InsecureSkipVerify", testName)
-			assert.Equalf(t, expected.TLSConfig.ServerName, actual.TLSConfig.ServerName, "%s - TLSConfig ServerName", testName)
-		}
-	}
-
-	if assert.Equalf(t, len(expected.Fallbacks), len(actual.Fallbacks), "%s - Fallbacks", testName) {
-		for i := range expected.Fallbacks {
-			assert.Equalf(t, expected.Fallbacks[i].Host, actual.Fallbacks[i].Host, "%s - Fallback %d - Host", testName, i)
-			assert.Equalf(t, expected.Fallbacks[i].Port, actual.Fallbacks[i].Port, "%s - Fallback %d - Port", testName, i)
-
-			if assert.Equalf(t, expected.Fallbacks[i].TLSConfig == nil, actual.Fallbacks[i].TLSConfig == nil, "%s - Fallback %d - TLSConfig", testName, i) {
-				if expected.Fallbacks[i].TLSConfig != nil {
-					assert.Equalf(t, expected.Fallbacks[i].TLSConfig.InsecureSkipVerify, actual.Fallbacks[i].TLSConfig.InsecureSkipVerify, "%s - Fallback %d - TLSConfig InsecureSkipVerify", testName)
-					assert.Equalf(t, expected.Fallbacks[i].TLSConfig.ServerName, actual.Fallbacks[i].TLSConfig.ServerName, "%s - Fallback %d - TLSConfig ServerName", testName)
-				}
-			}
-		}
-	}
 }
 
 func TestParseConfigEnvLibpq(t *testing.T) {
@@ -946,16 +453,13 @@ func TestParseConfigEnvLibpq(t *testing.T) {
 			config: &pgconn.Config{
 				User: osUserName,
 				Host: "123.123.123.123",
-				Port: 5432,
-				TLSConfig: &tls.Config{
-					InsecureSkipVerify: true,
-				},
+				Port: 3050,
+
 				RuntimeParams: map[string]string{},
 				Fallbacks: []*pgconn.FallbackConfig{
 					{
-						Host:      "123.123.123.123",
-						Port:      5432,
-						TLSConfig: nil,
+						Host: "123.123.123.123",
+						Port: 3050,
 					},
 				},
 			},
@@ -981,7 +485,6 @@ func TestParseConfigEnvLibpq(t *testing.T) {
 				User:           "bar",
 				Password:       "baz",
 				ConnectTimeout: 10 * time.Second,
-				TLSConfig:      nil,
 				RuntimeParams:  map[string]string{"application_name": "pgxtest", "timezone": "America/New_York", "options": "-c search_path=myschema"},
 			},
 		},
@@ -993,148 +496,24 @@ func TestParseConfigEnvLibpq(t *testing.T) {
 				"PGSSLSNI":  "0",
 			},
 			config: &pgconn.Config{
-				User: osUserName,
-				Host: "test.foo",
-				Port: 5432,
-				TLSConfig: &tls.Config{
-					InsecureSkipVerify: true,
-				},
+				User:          osUserName,
+				Host:          "test.foo",
+				Port:          3050,
 				RuntimeParams: map[string]string{},
 			},
 		},
 	}
 
 	for i, tt := range tests {
-		for _, env := range pgEnvvars {
-			t.Setenv(env, tt.envvars[env])
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			for _, env := range pgEnvvars {
+				t.Setenv(env, tt.envvars[env])
+			}
 
-		config, err := pgconn.ParseConfig("")
-		if !assert.Nilf(t, err, "Test %d (%s)", i, tt.name) {
-			continue
-		}
+			config, err := pgconn.ParseConfig("")
+			assert.Nilf(t, err, "Test %d (%s)", i, tt.name)
 
-		assertConfigsEqual(t, tt.config, config, fmt.Sprintf("Test %d (%s)", i, tt.name))
-	}
-}
-
-func TestParseConfigReadsPgPassfile(t *testing.T) {
-	skipOnWindows(t)
-	t.Parallel()
-
-	tfName := filepath.Join(t.TempDir(), "config")
-	err := os.WriteFile(tfName, []byte("test1:5432:curlydb:curly:nyuknyuknyuk"), 0600)
-	require.NoError(t, err)
-
-	connString := fmt.Sprintf("postgres://curly@test1:5432/curlydb?sslmode=disable&passfile=%s", tfName)
-	expected := &pgconn.Config{
-		User:          "curly",
-		Password:      "nyuknyuknyuk",
-		Host:          "test1",
-		Port:          5432,
-		Database:      "curlydb",
-		TLSConfig:     nil,
-		RuntimeParams: map[string]string{},
-	}
-
-	actual, err := pgconn.ParseConfig(connString)
-	assert.NoError(t, err)
-
-	assertConfigsEqual(t, expected, actual, "passfile")
-}
-
-func TestParseConfigReadsPgServiceFile(t *testing.T) {
-	skipOnWindows(t)
-	t.Parallel()
-
-	tfName := filepath.Join(t.TempDir(), "config")
-
-	err := os.WriteFile(tfName, []byte(`
-[abc]
-host=abc.example.com
-port=9999
-dbname=abcdb
-user=abcuser
-
-[def]
-host = def.example.com
-dbname = defdb
-user = defuser
-application_name = spaced string
-`), 0600)
-	require.NoError(t, err)
-
-	defaultPort := getDefaultPort(t)
-
-	tests := []struct {
-		name       string
-		connString string
-		config     *pgconn.Config
-	}{
-		{
-			name:       "abc",
-			connString: fmt.Sprintf("postgres:///?servicefile=%s&service=%s", tfName, "abc"),
-			config: &pgconn.Config{
-				Host:     "abc.example.com",
-				Database: "abcdb",
-				User:     "abcuser",
-				Port:     9999,
-				TLSConfig: &tls.Config{
-					InsecureSkipVerify: true,
-					ServerName:         "abc.example.com",
-				},
-				RuntimeParams: map[string]string{},
-				Fallbacks: []*pgconn.FallbackConfig{
-					{
-						Host:      "abc.example.com",
-						Port:      9999,
-						TLSConfig: nil,
-					},
-				},
-			},
-		},
-		{
-			name:       "def",
-			connString: fmt.Sprintf("postgres:///?servicefile=%s&service=%s", tfName, "def"),
-			config: &pgconn.Config{
-				Host:     "def.example.com",
-				Port:     defaultPort,
-				Database: "defdb",
-				User:     "defuser",
-				TLSConfig: &tls.Config{
-					InsecureSkipVerify: true,
-					ServerName:         "def.example.com",
-				},
-				RuntimeParams: map[string]string{"application_name": "spaced string"},
-				Fallbacks: []*pgconn.FallbackConfig{
-					{
-						Host:      "def.example.com",
-						Port:      defaultPort,
-						TLSConfig: nil,
-					},
-				},
-			},
-		},
-		{
-			name:       "conn string has precedence",
-			connString: fmt.Sprintf("postgres://other.example.com:7777/?servicefile=%s&service=%s&sslmode=disable", tfName, "abc"),
-			config: &pgconn.Config{
-				Host:          "other.example.com",
-				Database:      "abcdb",
-				User:          "abcuser",
-				Port:          7777,
-				TLSConfig:     nil,
-				RuntimeParams: map[string]string{},
-			},
-		},
-	}
-
-	for i, tt := range tests {
-		config, err := pgconn.ParseConfig(tt.connString)
-		if !assert.NoErrorf(t, err, "Test %d (%s)", i, tt.name) {
-			continue
-		}
-
-		assertConfigsEqual(t, tt.config, config, fmt.Sprintf("Test %d (%s)", i, tt.name))
+			assertConfigsEqual(t, tt.config, config, fmt.Sprintf("Test %d (%s)", i, tt.name))
+		})
 	}
 }
