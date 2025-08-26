@@ -1,40 +1,45 @@
-/*******************************************************************************
-The MIT License (MIT)
-
-Copyright (c) 2014-2019 Hajime Nakagami
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software is furnished to do so,
-subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
-FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
-COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
-CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*******************************************************************************/
-// See http://srp.stanford.edu/design.html
-
-package firebirdsql
+package auth
 
 import (
 	"bytes"
 	"crypto/sha1"
 	"crypto/sha256"
+	"encoding/hex"
+	"github.com/red-soft/fbx/fbproto/utils"
 	"hash"
 	"math/big"
 	"math/rand"
-	"time"
-
 	"modernc.org/mathutil"
+	"time"
 )
+
+type SrpAuthPlugin struct {
+	Name         string
+	Digest       hash.Hash
+	ClientPublic *big.Int
+	ClientSecret *big.Int
+}
+
+func NewSrpAuthPlugin() *SrpAuthPlugin {
+	p, s := GetClientSeed()
+	return &SrpAuthPlugin{"Srp", sha1.New(), p, s}
+}
+
+func NewSrp256AuthPlugin() *SrpAuthPlugin {
+	p, s := GetClientSeed()
+	return &SrpAuthPlugin{"Srp256", sha256.New(), p, s}
+}
+
+func (p *SrpAuthPlugin) GetName() string {
+	return "Srp"
+}
+
+func (p *SrpAuthPlugin) GetClientData() []byte {
+	return bytes.NewBufferString(hex.EncodeToString(BigIntToBytes(p.ClientPublic))).Bytes()
+}
+
+func (p *SrpAuthPlugin) SetServerData(data []byte) {
+}
 
 const (
 	SRP_KEY_SIZE      = 128
@@ -67,7 +72,7 @@ func pad(v *big.Int) []byte {
 	return buf[i:]
 }
 
-func bigIntToBytes(v *big.Int) []byte {
+func BigIntToBytes(v *big.Int) []byte {
 	return pad(v)
 }
 
@@ -92,9 +97,9 @@ func bigIntToSha1(n *big.Int) []byte {
 }
 
 func getPrime() (prime *big.Int, g *big.Int, k *big.Int) {
-	prime = bigIntFromHexString("E67D2E994B2F900C3F41F08F5BB2627ED0D49EE1FE767A52EFCD565CD6E768812C3E1E9CE8F0A8BEA6CB13CD29DDEBF7A96D4A93B55D488DF099A15C89DCB0640738EB2CBDD9A8F7BAB561AB1B0DC1C6CDABF303264A08D1BCA932D1F1EE428B619D970F342ABA9A65793B8B2F041AE5364350C16F735F56ECBCA87BD57B29E7")
+	prime = utils.BigIntFromHexString("E67D2E994B2F900C3F41F08F5BB2627ED0D49EE1FE767A52EFCD565CD6E768812C3E1E9CE8F0A8BEA6CB13CD29DDEBF7A96D4A93B55D488DF099A15C89DCB0640738EB2CBDD9A8F7BAB561AB1B0DC1C6CDABF303264A08D1BCA932D1F1EE428B619D970F342ABA9A65793B8B2F041AE5364350C16F735F56ECBCA87BD57B29E7")
 	g = big.NewInt(2)
-	k = bigIntFromString("1277432915985975349439481660349303019122249719989")
+	k = utils.BigIntFromString("1277432915985975349439481660349303019122249719989")
 	return
 }
 
@@ -124,13 +129,13 @@ func getUserHash(salt []byte, user string, password string) *big.Int {
 	return bytesToBigInt(hash2.Sum(nil))
 }
 
-func getClientSeed() (keyA *big.Int, keya *big.Int) {
+func GetClientSeed() (keyA *big.Int, keya *big.Int) {
 	prime, g, _ := getPrime()
 	if DEBUG_SRP {
-		keya = bigIntFromString(DEBUG_PRIVATE_KEY)
+		keya = utils.BigIntFromString(DEBUG_PRIVATE_KEY)
 	} else {
 		keya = new(big.Int).Rand(rand.New(rand.NewSource(time.Now().UnixNano())),
-			bigIntFromString("340282366920938463463374607431768211456")) // 1 << 128
+			utils.BigIntFromString("340282366920938463463374607431768211456")) // 1 << 128
 	}
 
 	keyA = mathutil.ModPowBigInt(g, keya, prime)
@@ -156,7 +161,7 @@ func getVerifier(user string, password string, salt []byte) *big.Int {
 func getServerSeed(v *big.Int) (keyB *big.Int, keyb *big.Int) {
 	prime, g, k := getPrime()
 	keyb = new(big.Int).Rand(rand.New(rand.NewSource(time.Now().UnixNano())),
-		bigIntFromString("340282366920938463463374607431768211456")) // 1 << 128
+		utils.BigIntFromString("340282366920938463463374607431768211456")) // 1 << 128
 	gb := mathutil.ModPowBigInt(g, keyb, prime)              // gb = pow(g, b, N)
 	kv := new(big.Int).Mod(new(big.Int).Mul(k, v), prime)    // kv = (k * v) % N
 	keyB = new(big.Int).Mod(new(big.Int).Add(kv, gb), prime) // B = (kv + gb) % N
@@ -187,7 +192,7 @@ func getServerSession(user string, password string, salt []byte, keyA *big.Int, 
 	return bigIntToSha1(sessionSecret)
 }
 
-func getClientProof(user string, password string, salt []byte, keyA *big.Int, keyB *big.Int, keya *big.Int, pluginName string) (keyM []byte, keyK []byte) {
+func GetClientProof(user string, password string, salt []byte, keyA *big.Int, keyB *big.Int, keya *big.Int, pluginName string) (keyM []byte, keyK []byte) {
 	// M = H(H(N) xor H(g), H(I), s, A, B, K)
 	prime, g, _ := getPrime()
 	keyK = getClientSession(user, password, salt, keyA, keyB, keya)

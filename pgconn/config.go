@@ -28,11 +28,15 @@ type Config struct {
 	Port           uint16
 	Database       string
 	User           string
+	SystemUser     string
 	Password       string
 	ConnectTimeout time.Duration
 	DialFunc       DialFunc   // e.g. net.Dialer.DialContext
 	LookupFunc     LookupFunc // e.g. net.Resolver.LookupHost
 	BuildFrontend  BuildFrontendFunc
+	AuthPlugin     string
+	WireCrypt      bool
+	Encoding       string
 
 	// BuildContextWatcherHandler is called to create a ContextWatcherHandler for a connection. The handler is called
 	// when a context passed to a PgConn method is canceled.
@@ -250,8 +254,8 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		User:                 settings["user"],
 		Password:             settings["password"],
 		RuntimeParams:        make(map[string]string),
-		BuildFrontend: func(r io.Reader, w io.Writer) *pgproto3.Frontend {
-			return pgproto3.NewFrontend(r, w)
+		BuildFrontend: func(r io.Reader, w io.Writer) *pgproto3.Client {
+			return pgproto3.NewClient(r, w)
 		},
 		BuildContextWatcherHandler: func(pgConn *PgConn) ctxwatch.Handler {
 			return &DeadlineContextWatcherHandler{Conn: pgConn.conn}
@@ -263,6 +267,8 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 			}
 			return true
 		},
+		AuthPlugin: settings["auth_plugin"],
+		WireCrypt:  convertToBool(settings["wire_crypt"], true),
 	}
 
 	if connectTimeoutSetting, present := settings["connect_timeout"]; present {
@@ -414,9 +420,8 @@ func parseURLSettings(connString string) (map[string]string, error) {
 		settings["port"] = strings.Join(ports, ",")
 	}
 
-	database := strings.TrimLeft(parsedURL.Path, "/")
-	if database != "" {
-		settings["database"] = database
+	if parsedURL.Path != "" {
+		settings["database"] = parsedURL.Path
 	}
 
 	nameMap := map[string]string{
@@ -649,4 +654,12 @@ func ValidateConnectTargetSessionAttrsPreferStandby(ctx context.Context, pgConn 
 	}
 
 	return nil
+}
+
+func convertToBool(s string, defaultValue bool) bool {
+	v, err := strconv.ParseBool(s)
+	if err != nil {
+		v = defaultValue
+	}
+	return v
 }

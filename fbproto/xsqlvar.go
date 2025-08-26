@@ -21,22 +21,24 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 *******************************************************************************/
 
-package firebirdsql
+package fbproto
 
 import (
 	"bytes"
 	"encoding/binary"
+	"github.com/red-soft/fbx/fbproto/utils"
+	"math"
+	"math/big"
+	"reflect"
+	"strings"
+	"time"
+
 	"github.com/shopspring/decimal"
 	"golang.org/x/text/encoding/charmap"
 	"golang.org/x/text/encoding/japanese"
 	"golang.org/x/text/encoding/korean"
 	"golang.org/x/text/encoding/simplifiedchinese"
 	"golang.org/x/text/encoding/traditionalchinese"
-	"math"
-	"math/big"
-	"reflect"
-	"strings"
-	"time"
 )
 
 const (
@@ -219,13 +221,13 @@ func (x *xSQLVAR) scantype() reflect.Type {
 }
 
 func (x *xSQLVAR) _parseTimezone(raw_value []byte) *time.Location {
-	timezone := getTimezoneNameByID(int(bytes_to_buint16(raw_value)))
+	timezone := getTimezoneNameByID(int(utils.Bytes_to_buint16(raw_value)))
 	tz, _ := time.LoadLocation(timezone)
 	return tz
 }
 
 func (x *xSQLVAR) _parseDate(raw_value []byte) (int, int, int) {
-	nday := int(bytes_to_bint32(raw_value)) + 678882
+	nday := int(utils.Bytes_to_bint32(raw_value)) + 678882
 	century := (4*nday - 1) / 146097
 	nday = 4*nday - 1 - 146097*century
 	day := nday / 4
@@ -248,7 +250,7 @@ func (x *xSQLVAR) _parseDate(raw_value []byte) (int, int, int) {
 }
 
 func (x *xSQLVAR) _parseTime(raw_value []byte) (int, int, int, int) {
-	n := int(bytes_to_bint32(raw_value))
+	n := int(utils.Bytes_to_bint32(raw_value))
 	s := n / 10000
 	m := s / 60
 	h := m / 60
@@ -291,7 +293,7 @@ func (x *xSQLVAR) parseTimestamp(raw_value []byte, timezone string) time.Time {
 func (x *xSQLVAR) parseTimeTz(raw_value []byte) time.Time {
 	h, m, s, n := x._parseTime(raw_value[:4])
 	var tz, loc *time.Location
-	timezone_id := bytes_to_buint16(raw_value[4:6])
+	timezone_id := utils.Bytes_to_buint16(raw_value[4:6])
 	if timezone_id == 0 {
 		tz, _ = time.LoadLocation("GMT")
 		loc = tz
@@ -308,7 +310,7 @@ func (x *xSQLVAR) parseTimeTz(raw_value []byte) time.Time {
 func (x *xSQLVAR) parseTimestampTz(raw_value []byte) time.Time {
 	year, month, day := x._parseDate(raw_value[:4])
 	h, m, s, n := x._parseTime(raw_value[4:8])
-	timezone_id := bytes_to_buint16(raw_value[8:10])
+	timezone_id := utils.Bytes_to_buint16(raw_value[8:10])
 	if timezone_id == 0 {
 		tz, _ := time.LoadLocation("GMT")
 		return time.Date(year, time.Month(month), day, h, m, s, n, tz)
@@ -457,7 +459,7 @@ func (x *xSQLVAR) value(raw_value []byte, timezone string, charset string) (v in
 			v = x.parseString(raw_value, charset)
 		}
 	case SQL_TYPE_SHORT:
-		i16 := int16(bytes_to_bint32(raw_value))
+		i16 := int16(utils.Bytes_to_bint32(raw_value))
 		if x.sqlscale > 0 {
 			v = int64(i16) * int64(math.Pow10(x.sqlscale))
 		} else if x.sqlscale < 0 {
@@ -466,7 +468,7 @@ func (x *xSQLVAR) value(raw_value []byte, timezone string, charset string) (v in
 			v = i16
 		}
 	case SQL_TYPE_LONG:
-		i32 := bytes_to_bint32(raw_value)
+		i32 := utils.Bytes_to_bint32(raw_value)
 		if x.sqlscale > 0 {
 			v = int64(i32) * int64(math.Pow10(x.sqlscale))
 		} else if x.sqlscale < 0 {
@@ -475,7 +477,7 @@ func (x *xSQLVAR) value(raw_value []byte, timezone string, charset string) (v in
 			v = i32
 		}
 	case SQL_TYPE_INT64:
-		i64 := bytes_to_bint64(raw_value)
+		i64 := utils.Bytes_to_bint64(raw_value)
 		if x.sqlscale > 0 {
 			v = i64 * int64(math.Pow10(x.sqlscale))
 		} else if x.sqlscale < 0 {
@@ -559,12 +561,13 @@ func (x *xSQLVAR) value(raw_value []byte, timezone string, charset string) (v in
 		} else {
 			v = raw_value
 		}
-	case SQL_TYPE_DEC_FIXED:
-		v = decimalFixedToDecimal(raw_value, int32(x.sqlscale))
-	case SQL_TYPE_DEC64:
-		v = decimal64ToDecimal(raw_value)
-	case SQL_TYPE_DEC128:
-		v = decimal128ToDecimal(raw_value)
+		//FIXME: fbx
+		//case SQL_TYPE_DEC_FIXED:
+		//	v = decimalFixedToDecimal(raw_value, int32(x.sqlscale))
+		//case SQL_TYPE_DEC64:
+		//	v = decimal64ToDecimal(raw_value)
+		//case SQL_TYPE_DEC128:
+		//	v = decimal128ToDecimal(raw_value)
 	}
 	return
 }

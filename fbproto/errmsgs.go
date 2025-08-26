@@ -11,7 +11,7 @@ rights and limitations under the License.
 
 *****************************************************************************/
 
-package firebirdsql
+package fbproto
 
 var errmsgs = map[int]string{
 	335544321: "arithmetic exception, numeric overflow, or string truncation\n",
@@ -1199,7 +1199,7 @@ var errmsgs = map[int]string{
 	336330802: "unexpected end of file on backup file\n",
 	336330803: "database format @1 is too old to restore to\n",
 	336330804: "array dimension for column @1 is invalid\n",
-	336330807: "Expected XDR record length\n",
+	336330807: "Expected XDRReader record length\n",
 	336330817: "cannot open backup file @1\n",
 	336330818: "cannot open status and error output file @1\n",
 	336330934: "blocking factor parameter missing\n",

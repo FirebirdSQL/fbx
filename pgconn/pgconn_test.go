@@ -20,7 +20,6 @@ import (
 	"github.com/red-soft/fbx/internal/pgio"
 	"github.com/red-soft/fbx/pgconn"
 	"github.com/red-soft/fbx/pgconn/ctxwatch"
-	"github.com/red-soft/fbx/pgproto3"
 	"github.com/red-soft/fbx/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -33,11 +32,7 @@ func TestConnect(t *testing.T) {
 		name string
 		env  string
 	}{
-		{"Unix socket", "PGX_TEST_UNIX_SOCKET_CONN_STRING"},
 		{"TCP", "PGX_TEST_TCP_CONN_STRING"},
-		{"Plain password", "PGX_TEST_PLAIN_PASSWORD_CONN_STRING"},
-		{"MD5 password", "PGX_TEST_MD5_PASSWORD_CONN_STRING"},
-		{"SCRAM password", "PGX_TEST_SCRAM_PASSWORD_CONN_STRING"},
 	}
 
 	for _, tt := range tests {
@@ -64,11 +59,7 @@ func TestConnectWithOptions(t *testing.T) {
 		name string
 		env  string
 	}{
-		{"Unix socket", "PGX_TEST_UNIX_SOCKET_CONN_STRING"},
 		{"TCP", "PGX_TEST_TCP_CONN_STRING"},
-		{"Plain password", "PGX_TEST_PLAIN_PASSWORD_CONN_STRING"},
-		{"MD5 password", "PGX_TEST_MD5_PASSWORD_CONN_STRING"},
-		{"SCRAM password", "PGX_TEST_SCRAM_PASSWORD_CONN_STRING"},
 	}
 
 	for _, tt := range tests {
@@ -177,10 +168,10 @@ func TestConnectTLSPasswordProtectedClientCertWithGetSSLPasswordConfigOption(t *
 
 type pgmockWaitStep time.Duration
 
-func (s pgmockWaitStep) Step(*pgproto3.Backend) error {
-	time.Sleep(time.Duration(s))
-	return nil
-}
+//func (s pgmockWaitStep) Step(*pgproto3.Backend) error {
+//	time.Sleep(time.Duration(s))
+//	return nil
+//}
 
 //FIXME: fbx
 //func TestConnectTimeout(t *testing.T) {
@@ -2205,7 +2196,7 @@ func TestConnCopyFromQuerySyntaxError(t *testing.T) {
 
 	srcBuf := &bytes.Buffer{}
 
-	// Send data even though the COPY FROM command will be rejected with a syntax error. This ensures that this does not
+	// WriteMessage data even though the COPY FROM command will be rejected with a syntax error. This ensures that this does not
 	// break the connection. See https://github.com/jackc/pgconn/pull/127 for context.
 	inputRows := [][][]byte{}
 	for i := 0; i < 1000; i++ {
@@ -3896,7 +3887,7 @@ func testingKey(s string) string { return strings.ReplaceAll(s, "TESTING KEY", "
 //						return
 //					}
 //
-//					// Send SSL acceptance response
+//					// WriteMessage SSL acceptance response
 //					_, err = conn.Write([]byte("S"))
 //					if err != nil {
 //						serverErrCh <- fmt.Errorf("write ssl acceptance error: %w", err)

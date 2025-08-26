@@ -21,7 +21,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 *******************************************************************************/
 
-package firebirdsql
+package fbproto
 
 const (
 	ISC_TIME_SECONDS_PRECISION = 10000
@@ -34,9 +34,24 @@ const (
 	pflag_compress      = 0x100
 	pflag_win_sspi_nego = 0x200
 
+	p_cnct_min_type = 0
+
+	GenericAchitectureClient = 1
+
+	ConnectVersion3 = 3
+
 	// Protocol Version
+	PROTOCOL_VERSION10 = 10
+	PROTOCOL_VERSION11 = 11
+	PROTOCOL_VERSION12 = 12
 	PROTOCOL_VERSION13 = 13
+	PROTOCOL_VERSION14 = 14
+	PROTOCOL_VERSION15 = 15
 	PROTOCOL_VERSION16 = 16
+	PROTOCOL_VERSION17 = 16
+
+	ProtocolFlag = 0x8000
+	ProtocolMask = ^ProtocolFlag & 0xFFFF
 
 	CNCT_user              = 1
 	CNCT_passwd            = 2
@@ -49,7 +64,7 @@ const (
 	CNCT_plugin_list       = 10
 	CNCT_client_crypt      = 11
 
-	isc_info_end            = 1
+	Isc_info_end            = 1
 	isc_info_truncated      = 2
 	isc_info_error          = 3
 	isc_info_data_not_ready = 4
@@ -181,10 +196,10 @@ const (
 	isc_spb_version1          = 1
 	isc_spb_current_version   = 2
 	isc_spb_version           = isc_spb_current_version
-	isc_spb_user_name         = 28 // isc_dpb_user_name
+	isc_spb_user_name         = 28 // Isc_dpb_user_name
 	isc_spb_sys_user_name     = 19 // isc_dpb_sys_user_name
 	isc_spb_sys_user_name_enc = 31 // isc_dpb_sys_user_name_enc
-	isc_spb_password          = 29 // isc_dpb_password
+	isc_spb_password          = 29 // Isc_dpb_password
 	isc_spb_password_enc      = 30 // isc_dpb_password_enc
 	isc_spb_command_line      = 105
 	isc_spb_dbname            = 106
@@ -209,7 +224,7 @@ const (
 
 	isc_spb_connect_timeout       = 57 // isc_dpb_connect_timeout
 	isc_spb_dummy_packet_interval = 58 // isc_dpb_dummy_packet_interval
-	isc_spb_sql_role_name         = 60 // isc_dpb_sql_role_name
+	isc_spb_sql_role_name         = 60 // Isc_dpb_sql_role_name
 
 	// Parameters for isc_action_{add|del|mod|disp)_user
 	isc_spb_sec_userid     = 5
@@ -223,34 +238,35 @@ const (
 	isc_spb_sec_admin      = 13
 
 	//Database Parameter Block Types
-	isc_dpb_version1              = 1
+	Isc_dpb_version1              = 1
+	Isc_dpb_version2              = 2
 	isc_dpb_page_size             = 4
 	isc_dpb_num_buffers           = 5
 	isc_dpb_force_write           = 24
-	isc_dpb_user_name             = 28
-	isc_dpb_password              = 29
+	Isc_dpb_user_name             = 28
+	Isc_dpb_password              = 29
 	isc_dpb_password_enc          = 30
-	isc_dpb_lc_ctype              = 48
+	Isc_dpb_lc_ctype              = 48
 	isc_dpb_overwrite             = 54
 	isc_dpb_connect_timeout       = 57
 	isc_dpb_dummy_packet_interval = 58
-	isc_dpb_sql_role_name         = 60
+	Isc_dpb_sql_role_name         = 60
 	isc_dpb_set_page_buffers      = 61
-	isc_dpb_sql_dialect           = 63
+	Isc_dpb_sql_dialect           = 63
 	isc_dpb_set_db_charset        = 68
-	isc_dpb_process_id            = 71
+	Isc_dpb_process_id            = 71
 	isc_dpb_no_db_triggers        = 72
 	isc_dpb_trusted_auth          = 73
-	isc_dpb_process_name          = 74
-	isc_dpb_utf8_filename         = 77
-	isc_dpb_specific_auth_data    = 84
-	isc_dpb_auth_plugin_list      = 85
-	isc_dpb_auth_plugin_name      = 86
+	Isc_dpb_process_name          = 74
+	Isc_dpb_utf8_filename         = 77
+	Isc_dpb_specific_auth_data    = 84
+	Isc_dpb_auth_plugin_list      = 85
+	Isc_dpb_auth_plugin_name      = 86
 	isc_dpb_config                = 87
 	isc_dpb_nolinger              = 88
 	isc_dpb_reset_icu             = 89
 	isc_dpb_map_attach            = 90
-	isc_dpb_session_time_zone     = 91
+	Isc_dpb_session_time_zone     = 91
 
 	// backup
 	isc_spb_bkp_file               = 5
@@ -422,27 +438,28 @@ const (
 	isc_info_tra_lock_timeout       = 10
 
 	// SQL information items
-	isc_info_sql_select        = 4
-	isc_info_sql_bind          = 5
-	isc_info_sql_num_variables = 6
-	isc_info_sql_describe_vars = 7
-	isc_info_sql_describe_end  = 8
-	isc_info_sql_sqlda_seq     = 9
-	isc_info_sql_message_seq   = 10
-	isc_info_sql_type          = 11
-	isc_info_sql_sub_type      = 12
-	isc_info_sql_scale         = 13
-	isc_info_sql_length        = 14
-	isc_info_sql_null_ind      = 15
-	isc_info_sql_field         = 16
-	isc_info_sql_relation      = 17
-	isc_info_sql_owner         = 18
-	isc_info_sql_alias         = 19
-	isc_info_sql_sqlda_start   = 20
-	isc_info_sql_stmt_type     = 21
-	isc_info_sql_get_plan      = 22
-	isc_info_sql_records       = 23
-	isc_info_sql_batch_fetch   = 24
+	Isc_info_sql_select         = 4
+	isc_info_sql_bind           = 5
+	isc_info_sql_num_variables  = 6
+	isc_info_sql_describe_vars  = 7
+	isc_info_sql_describe_end   = 8
+	isc_info_sql_sqlda_seq      = 9
+	isc_info_sql_message_seq    = 10
+	isc_info_sql_type           = 11
+	isc_info_sql_sub_type       = 12
+	isc_info_sql_scale          = 13
+	isc_info_sql_length         = 14
+	isc_info_sql_null_ind       = 15
+	isc_info_sql_field          = 16
+	isc_info_sql_relation       = 17
+	isc_info_sql_owner          = 18
+	isc_info_sql_alias          = 19
+	isc_info_sql_sqlda_start    = 20
+	Isc_info_sql_stmt_type      = 21
+	isc_info_sql_get_plan       = 22
+	isc_info_sql_records        = 23
+	isc_info_sql_batch_fetch    = 24
+	isc_info_sql_relation_alias = 25
 
 	isc_info_sql_stmt_select         = 1
 	isc_info_sql_stmt_insert         = 2

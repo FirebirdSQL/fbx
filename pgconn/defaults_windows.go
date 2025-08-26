@@ -11,6 +11,8 @@ func defaultSettings() map[string]string {
 
 	settings["host"] = defaultHost()
 	settings["port"] = "3050"
+	settings["auth_plugin"] = "Srp"
+	settings["wire_crypt"] = "true"
 
 	user, err := user.Current()
 	appData := os.Getenv("APPDATA")
@@ -20,6 +22,7 @@ func defaultSettings() map[string]string {
 			username = username[strings.LastIndex(username, "\\")+1:]
 		}
 
+		settings["system_user"] = username
 		settings["user"] = username
 	}
 

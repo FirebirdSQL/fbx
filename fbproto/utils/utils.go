@@ -21,7 +21,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 *******************************************************************************/
 
-package firebirdsql
+package utils
 
 import (
 	"bytes"
@@ -29,14 +29,13 @@ import (
 	"encoding/binary"
 	"math/big"
 	"strconv"
-	"time"
 )
 
-func str_to_bytes(s string) []byte {
+func Str_to_bytes(s string) []byte {
 	return []byte(s)
 }
 
-func int32_to_bytes(i32 int32) []byte {
+func Int32_to_bytes(i32 int32) []byte {
 	bs := []byte{
 		byte(i32 & 0xFF),
 		byte(i32 >> 8 & 0xFF),
@@ -46,7 +45,7 @@ func int32_to_bytes(i32 int32) []byte {
 	return bs
 }
 
-func int64_to_bytes(i64 int64) []byte {
+func Int64_to_bytes(i64 int64) []byte {
 	bs := []byte{
 		byte(i64 & 0xFF),
 		byte(i64 >> 8 & 0xFF),
@@ -60,7 +59,7 @@ func int64_to_bytes(i64 int64) []byte {
 	return bs
 }
 
-func bint64_to_bytes(i64 int64) []byte {
+func Bint64_to_bytes(i64 int64) []byte {
 	bs := []byte{
 		byte(i64 >> 56 & 0xFF),
 		byte(i64 >> 48 & 0xFF),
@@ -74,7 +73,7 @@ func bint64_to_bytes(i64 int64) []byte {
 	return bs
 }
 
-func bint32_to_bytes(i32 int32) []byte {
+func Bint32_to_bytes(i32 int32) []byte {
 	bs := []byte{
 		byte(i32 >> 24 & 0xFF),
 		byte(i32 >> 16 & 0xFF),
@@ -84,22 +83,22 @@ func bint32_to_bytes(i32 int32) []byte {
 	return bs
 }
 
-func int16_to_bytes(i16 int16) []byte {
+func Int16_to_bytes(i16 int16) []byte {
 	bs := []byte{
 		byte(i16 & 0xFF),
 		byte(i16 >> 8 & 0xFF),
 	}
 	return bs
 }
-func bytes_to_str(b []byte) string {
+func Bytes_to_str(b []byte) string {
 	return string(b)
 }
 
-func bytes_to_bint32(b []byte) int32 {
+func Bytes_to_bint32(b []byte) int32 {
 	return int32(binary.BigEndian.Uint32(b))
 }
 
-func bytes_to_int32(b []byte) int32 {
+func Bytes_to_int32(b []byte) int32 {
 	return int32(binary.LittleEndian.Uint32(b))
 }
 
@@ -107,35 +106,35 @@ func bytes_to_bint16(b []byte) int16 {
 	return int16(binary.BigEndian.Uint16(b))
 }
 
-func bytes_to_buint16(b []byte) uint16 {
+func Bytes_to_buint16(b []byte) uint16 {
 	return uint16(binary.BigEndian.Uint16(b))
 }
 
-func bytes_to_int16(b []byte) int16 {
+func Bytes_to_int16(b []byte) int16 {
 	return int16(binary.LittleEndian.Uint16(b))
 }
 
-func bytes_to_bint64(b []byte) int64 {
+func Bytes_to_bint64(b []byte) int64 {
 	return int64(binary.BigEndian.Uint64(b))
 }
 
-func bytes_to_int64(b []byte) int64 {
+func Bytes_to_int64(b []byte) int64 {
 	return int64(binary.LittleEndian.Uint64(b))
 }
 
-func bigIntFromHexString(s string) *big.Int {
+func BigIntFromHexString(s string) *big.Int {
 	ret := new(big.Int)
 	ret.SetString(s, 16)
 	return ret
 }
 
-func bigIntFromString(s string) *big.Int {
+func BigIntFromString(s string) *big.Int {
 	ret := new(big.Int)
 	ret.SetString(s, 10)
 	return ret
 }
 
-func flattenBytes(l *list.List) []byte {
+func FlattenBytes(l *list.List) []byte {
 	n := 0
 	for e := l.Front(); e != nil; e = e.Next() {
 		n += len((e.Value).([]byte))
@@ -154,8 +153,8 @@ func flattenBytes(l *list.List) []byte {
 	return bs
 }
 
-func xdrBytes(bs []byte) []byte {
-	// XDR encoding bytes
+func XdrBytes(bs []byte) []byte {
+	// XDRReader encoding bytes
 	n := len(bs)
 	padding := 0
 	if n%4 != 0 {
@@ -173,79 +172,9 @@ func xdrBytes(bs []byte) []byte {
 }
 
 func xdrString(s string) []byte {
-	// XDR encoding string
+	// XDRReader encoding string
 	bs := bytes.NewBufferString(s).Bytes()
-	return xdrBytes(bs)
-}
-
-func _int64ToBlr(i64 int64) ([]byte, []byte) {
-	v := bint64_to_bytes(i64)
-	blr := []byte{16, 0}
-
-	return blr, v
-}
-
-func _int32ToBlr(i32 int32) ([]byte, []byte) {
-	v := bint32_to_bytes(i32)
-	blr := []byte{8, 0}
-
-	return blr, v
-}
-
-func _float64ToBlr(v float64) ([]byte, []byte) {
-	buf := new(bytes.Buffer)
-	binary.Write(buf, binary.BigEndian, v)
-	blr := []byte{27}
-	return blr, buf.Bytes()
-}
-
-func _bytesToBlr(v []byte) ([]byte, []byte) {
-	nbytes := len(v)
-	pad_length := ((4 - nbytes) & 3)
-	padding := make([]byte, pad_length)
-	v = bytes.Join([][]byte{
-		v,
-		padding,
-	}, nil)
-	blr := []byte{14, byte(nbytes & 255), byte(nbytes >> 8)}
-	return blr, v
-}
-
-func _convert_date(t time.Time) []byte {
-	i := int(t.Month()) + 9
-	jy := t.Year() + (i / 12) - 1
-	jm := i % 12
-	c := jy / 100
-	jy -= 100 * c
-	j := (146097*c)/4 + (1461*jy)/4 + (153*jm+2)/5 + t.Day() - 678882
-	return bint32_to_bytes(int32(j))
-}
-
-func _convert_time(t time.Time) []byte {
-	v := (t.Hour()*3600+t.Minute()*60+t.Second())*10000 + t.Nanosecond()/100000
-	return bint32_to_bytes(int32(v))
-}
-
-func _dateToBlr(t time.Time) ([]byte, []byte) {
-	v := _convert_date(t)
-	blr := []byte{12}
-	return blr, v
-}
-
-func _timeToBlr(t time.Time) ([]byte, []byte) {
-	v := _convert_time(t)
-	blr := []byte{13}
-	return blr, v
-}
-
-func _timestampToBlr(t time.Time) ([]byte, []byte) {
-	v := bytes.Join([][]byte{
-		_convert_date(t),
-		_convert_time(t),
-	}, nil)
-
-	blr := []byte{35}
-	return blr, v
+	return XdrBytes(bs)
 }
 
 func convertToBool(s string, defaultValue bool) bool {

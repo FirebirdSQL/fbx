@@ -83,7 +83,7 @@ type Conn struct {
 	typeMap *pgtype.Map
 
 	wbuf []byte
-	//eqb  ExtendedQueryBuilder
+	eqb  ExtendedQueryBuilder
 }
 
 // Identifier a PostgreSQL identifier or name. Identifiers can be composed of
@@ -465,9 +465,9 @@ func (c *Conn) Exec(ctx context.Context, sql string, arguments ...any) (pgconn.C
 		ctx = c.queryTracer.TraceQueryStart(ctx, c, TraceQueryStartData{SQL: sql, Args: arguments})
 	}
 
-	if err := c.deallocateInvalidatedCachedStatements(ctx); err != nil {
-		return pgconn.CommandTag{}, err
-	}
+	//if err := c.deallocateInvalidatedCachedStatements(ctx); err != nil {
+	//	return pgconn.CommandTag{}, err
+	//}
 
 	commandTag, err := c.exec(ctx, sql, arguments...)
 
@@ -734,140 +734,138 @@ type QueryRewriter interface {
 // QueryResultFormatsByOID may be used as the first args to control exactly how the query is executed. This is rarely
 // needed. See the documentation for those types for details.
 func (c *Conn) Query(ctx context.Context, sql string, args ...any) (Rows, error) {
+	if c.queryTracer != nil {
+		ctx = c.queryTracer.TraceQueryStart(ctx, c, TraceQueryStartData{SQL: sql, Args: args})
+	}
+
+	//if err := c.deallocateInvalidatedCachedStatements(ctx); err != nil {
 	//	if c.queryTracer != nil {
-	//		ctx = c.queryTracer.TraceQueryStart(ctx, c, TraceQueryStartData{SQL: sql, Args: args})
+	//		c.queryTracer.TraceQueryEnd(ctx, c, TraceQueryEndData{Err: err})
 	//	}
+	//	return &baseRows{err: err, closed: true}, err
+	//}
 	//
-	//	if err := c.deallocateInvalidatedCachedStatements(ctx); err != nil {
-	//		if c.queryTracer != nil {
-	//			c.queryTracer.TraceQueryEnd(ctx, c, TraceQueryEndData{Err: err})
-	//		}
-	//		return &baseRows{err: err, closed: true}, err
-	//	}
-	//
-	//	var resultFormats QueryResultFormats
-	//	var resultFormatsByOID QueryResultFormatsByOID
-	//	mode := c.config.DefaultQueryExecMode
-	//	var queryRewriter QueryRewriter
-	//
-	//optionLoop:
-	//	for len(args) > 0 {
-	//		switch arg := args[0].(type) {
-	//		case QueryResultFormats:
-	//			resultFormats = arg
-	//			args = args[1:]
-	//		case QueryResultFormatsByOID:
-	//			resultFormatsByOID = arg
-	//			args = args[1:]
-	//		case QueryExecMode:
-	//			mode = arg
-	//			args = args[1:]
-	//		case QueryRewriter:
-	//			queryRewriter = arg
-	//			args = args[1:]
-	//		default:
-	//			break optionLoop
-	//		}
-	//	}
-	//
-	//	if queryRewriter != nil {
-	//		var err error
-	//		originalSQL := sql
-	//		originalArgs := args
-	//		sql, args, err = queryRewriter.RewriteQuery(ctx, c, sql, args)
-	//		if err != nil {
-	//			rows := c.getRows(ctx, originalSQL, originalArgs)
-	//			err = fmt.Errorf("rewrite query failed: %w", err)
-	//			rows.fatal(err)
-	//			return rows, err
-	//		}
-	//	}
-	//
-	//	// Bypass any statement caching.
-	//	if sql == "" {
-	//		mode = QueryExecModeSimpleProtocol
-	//	}
-	//
-	//	c.eqb.reset()
-	//	rows := c.getRows(ctx, sql, args)
-	//
-	//	var err error
-	//	sd, explicitPreparedStatement := c.preparedStatements[sql]
-	//	if sd != nil || mode == QueryExecModeCacheStatement || mode == QueryExecModeCacheDescribe || mode == QueryExecModeDescribeExec {
-	//		if sd == nil {
-	//			sd, err = c.getStatementDescription(ctx, mode, sql)
-	//			if err != nil {
-	//				rows.fatal(err)
-	//				return rows, err
-	//			}
-	//		}
-	//
-	//		if len(sd.ParamOIDs) != len(args) {
-	//			rows.fatal(fmt.Errorf("expected %d arguments, got %d", len(sd.ParamOIDs), len(args)))
-	//			return rows, rows.err
-	//		}
-	//
-	//		rows.sql = sd.SQL
-	//
-	//		err = c.eqb.Build(c.typeMap, sd, args)
-	//		if err != nil {
-	//			rows.fatal(err)
-	//			return rows, rows.err
-	//		}
-	//
-	//		if resultFormatsByOID != nil {
-	//			resultFormats = make([]int16, len(sd.Fields))
-	//			for i := range resultFormats {
-	//				resultFormats[i] = resultFormatsByOID[uint32(sd.Fields[i].DataTypeOID)]
-	//			}
-	//		}
-	//
-	//		if resultFormats == nil {
-	//			resultFormats = c.eqb.ResultFormats
-	//		}
-	//
-	//		if !explicitPreparedStatement && mode == QueryExecModeCacheDescribe {
-	//			rows.resultReader = c.pgConn.ExecParams(ctx, sql, c.eqb.ParamValues, sd.ParamOIDs, c.eqb.ParamFormats, resultFormats)
-	//		} else {
-	//			rows.resultReader = c.pgConn.ExecPrepared(ctx, sd.Name, c.eqb.ParamValues, c.eqb.ParamFormats, resultFormats)
-	//		}
-	//	} else if mode == QueryExecModeExec {
-	//		err := c.eqb.Build(c.typeMap, nil, args)
-	//		if err != nil {
-	//			rows.fatal(err)
-	//			return rows, rows.err
-	//		}
-	//
-	//		rows.resultReader = c.pgConn.ExecParams(ctx, sql, c.eqb.ParamValues, nil, c.eqb.ParamFormats, c.eqb.ResultFormats)
-	//	} else if mode == QueryExecModeSimpleProtocol {
-	//		sql, err = c.sanitizeForSimpleQuery(sql, args...)
-	//		if err != nil {
-	//			rows.fatal(err)
-	//			return rows, err
-	//		}
-	//
-	//		mrr := c.pgConn.Exec(ctx, sql)
-	//		if mrr.NextResult() {
-	//			rows.resultReader = mrr.ResultReader()
-	//			rows.multiResultReader = mrr
-	//		} else {
-	//			err = mrr.Close()
-	//			rows.fatal(err)
-	//			return rows, err
-	//		}
-	//
-	//		return rows, nil
-	//	} else {
-	//		err = fmt.Errorf("unknown QueryExecMode: %v", mode)
-	//		rows.fatal(err)
-	//		return rows, rows.err
-	//	}
+	var resultFormats QueryResultFormats
+	var resultFormatsByOID QueryResultFormatsByOID
+	mode := c.config.DefaultQueryExecMode
+	var queryRewriter QueryRewriter
+
+optionLoop:
+	for len(args) > 0 {
+		switch arg := args[0].(type) {
+		case QueryResultFormats:
+			resultFormats = arg
+			args = args[1:]
+		case QueryResultFormatsByOID:
+			resultFormatsByOID = arg
+			args = args[1:]
+		case QueryExecMode:
+			mode = arg
+			args = args[1:]
+		case QueryRewriter:
+			queryRewriter = arg
+			args = args[1:]
+		default:
+			break optionLoop
+		}
+	}
+
+	if queryRewriter != nil {
+		var err error
+		originalSQL := sql
+		originalArgs := args
+		sql, args, err = queryRewriter.RewriteQuery(ctx, c, sql, args)
+		if err != nil {
+			rows := c.getRows(ctx, originalSQL, originalArgs)
+			err = fmt.Errorf("rewrite query failed: %w", err)
+			rows.fatal(err)
+			return rows, err
+		}
+	}
+
+	// Bypass any statement caching.
+	if sql == "" {
+		mode = QueryExecModeSimpleProtocol
+	}
+
+	c.eqb.reset()
+	rows := c.getRows(ctx, sql, args)
+
+	var err error
+	sd, explicitPreparedStatement := c.preparedStatements[sql]
+	if sd != nil || mode == QueryExecModeCacheStatement || mode == QueryExecModeCacheDescribe || mode == QueryExecModeDescribeExec {
+		if sd == nil {
+			sd, err = c.getStatementDescription(ctx, mode, sql)
+			if err != nil {
+				rows.fatal(err)
+				return rows, err
+			}
+		}
+
+		if len(sd.ParamOIDs) != len(args) {
+			rows.fatal(fmt.Errorf("expected %d arguments, got %d", len(sd.ParamOIDs), len(args)))
+			return rows, rows.err
+		}
+
+		rows.sql = sd.SQL
+
+		err = c.eqb.Build(c.typeMap, sd, args)
+		if err != nil {
+			rows.fatal(err)
+			return rows, rows.err
+		}
+
+		if resultFormatsByOID != nil {
+			resultFormats = make([]int16, len(sd.Fields))
+			for i := range resultFormats {
+				resultFormats[i] = resultFormatsByOID[uint32(sd.Fields[i].DataTypeOID)]
+			}
+		}
+
+		if resultFormats == nil {
+			resultFormats = c.eqb.ResultFormats
+		}
+
+		if !explicitPreparedStatement && mode == QueryExecModeCacheDescribe {
+			rows.resultReader = c.pgConn.ExecParams(ctx, sql, c.eqb.ParamValues, sd.ParamOIDs, c.eqb.ParamFormats, resultFormats)
+		} else {
+			rows.resultReader = c.pgConn.ExecPrepared(ctx, sd.Name, c.eqb.ParamValues, c.eqb.ParamFormats, resultFormats)
+		}
+	} else if mode == QueryExecModeExec {
+		err := c.eqb.Build(c.typeMap, nil, args)
+		if err != nil {
+			rows.fatal(err)
+			return rows, rows.err
+		}
+
+		rows.resultReader = c.pgConn.ExecParams(ctx, sql, c.eqb.ParamValues, nil, c.eqb.ParamFormats, c.eqb.ResultFormats)
+	} else if mode == QueryExecModeSimpleProtocol {
+		sql, err = c.sanitizeForSimpleQuery(sql, args...)
+		if err != nil {
+			rows.fatal(err)
+			return rows, err
+		}
+
+		mrr := c.pgConn.Exec(ctx, sql)
+		if mrr.NextResult() {
+			rows.resultReader = mrr.ResultReader()
+			rows.multiResultReader = mrr
+		} else {
+			err = mrr.Close()
+			rows.fatal(err)
+			return rows, err
+		}
+
+		return rows, nil
+	} else {
+		err = fmt.Errorf("unknown QueryExecMode: %v", mode)
+		rows.fatal(err)
+		return rows, rows.err
+	}
 	//
 	//	c.eqb.reset() // Allow c.eqb internal memory to be GC'ed as soon as possible.
 	//
-	//	return rows, rows.err
-	panic("implement me")
-
+	return rows, rows.err
 }
 
 // getStatementDescription returns the statement description of the sql query
@@ -916,9 +914,9 @@ func (c *Conn) getStatementDescription(
 // querying is deferred until calling Scan on the returned Row. That Row will
 // error with ErrNoRows if no rows are returned.
 func (c *Conn) QueryRow(ctx context.Context, sql string, args ...any) Row {
-	//rows, _ := c.Query(ctx, sql, args...)
-	//return (*connRow)(rows.(*baseRows))
-	panic("implement me")
+	rows, _ := c.Query(ctx, sql, args...)
+	return (*connRow)(rows.(*baseRows))
+	//panic("implement me")
 }
 
 // SendBatch sends all queued queries to the server at once. All queries are run in an implicit transaction unless
