@@ -220,3 +220,11 @@ func (c *Client) ReceiveFetchResponse() (*OpFetchResponse, error) {
 		return nil, fmt.Errorf("wrong response message type %v instead expected OpFetchResponse", m)
 	}
 }
+
+func (c *Client) ReceiveSQLData(row []FieldDescriptor) (*SQLData, error) {
+	sqlData := SQLData{}
+	if err := sqlData.Read(c.xdrReader, row); err != nil {
+		return nil, err
+	}
+	return &sqlData, nil
+}

@@ -237,3 +237,26 @@ func (p *StatementInfo) GetRowBlr() []byte {
 
 	return blr[:n]
 }
+
+func (f *FieldDescriptor) GetIOLength() int {
+	switch f.Type & ^1 {
+	case SQL_TYPE_TEXT:
+		return f.Length + 1
+	case SQL_TYPE_VARYING:
+		return 0
+	case SQL_TYPE_SHORT, SQL_TYPE_LONG, SQL_TYPE_FLOAT, SQL_TYPE_TIME, SQL_TYPE_DATE:
+		return -4
+	case SQL_TYPE_DOUBLE, SQL_TYPE_TIMESTAMP, SQL_TYPE_BLOB, SQL_TYPE_ARRAY, SQL_TYPE_QUAD, SQL_TYPE_INT64, SQL_TYPE_DEC64, SQL_TYPE_TIME_TZ:
+		return -8
+	case SQL_TYPE_TIMESTAMP_TZ, SQL_TIME_TZ_EX:
+		return -12
+	case SQL_TIMESTAMP_TZ_EX, SQL_TYPE_DEC128, SQL_TYPE_INT128:
+		return -16
+	case SQL_TYPE_NULL:
+		return 0
+	case SQL_TYPE_BOOLEAN:
+		return 1 + 1
+	default:
+		panic(fmt.Sprintf("can not get IO length of unknown field descriptor type: %d", f.Type))
+	}
+}

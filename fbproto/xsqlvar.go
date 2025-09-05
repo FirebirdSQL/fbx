@@ -26,12 +26,13 @@ package fbproto
 import (
 	"bytes"
 	"encoding/binary"
-	"github.com/red-soft/fbx/fbproto/utils"
 	"math"
 	"math/big"
 	"reflect"
 	"strings"
 	"time"
+
+	"github.com/red-soft/fbx/fbproto/utils"
 
 	"github.com/shopspring/decimal"
 	"golang.org/x/text/encoding/charmap"
@@ -59,6 +60,8 @@ const (
 	SQL_TYPE_INT128       = 32752
 	SQL_TYPE_TIMESTAMP_TZ = 32754
 	SQL_TYPE_TIME_TZ      = 32756
+	SQL_TIMESTAMP_TZ_EX   = 32748
+	SQL_TIME_TZ_EX        = 32750
 	SQL_TYPE_DEC_FIXED    = 32758
 	SQL_TYPE_DEC64        = 32760
 	SQL_TYPE_DEC128       = 32762
