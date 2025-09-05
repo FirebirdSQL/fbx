@@ -50,5 +50,11 @@ func (op *OpExecute) Write(x *XDRWriter) error {
 		}
 	*/
 
+	//FIXME fbx protocol version dependent?
+	//statement timeout
+	if err = x.WriteInt32(0); err != nil {
+		return err
+	}
+
 	return nil
 }
