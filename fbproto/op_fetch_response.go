@@ -20,10 +20,5 @@ func (op *OpFetchResponse) Read(x *XDRReader) error {
 		return err
 	}
 
-	// Row Data
-	if op.RowData, err = x.ReadBuffer(); err != nil {
-		return err
-	}
-
 	return nil
 }
