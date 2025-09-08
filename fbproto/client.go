@@ -185,7 +185,7 @@ func (c *Client) ReceiveMessage() (ServerMessage, error) {
 			continue
 		case *OpResponse:
 			if m.Failure {
-				return msg, fmt.Errorf(m.Message)
+				return &ErrorResponse{Object: m.Object, BlobId: m.BlobId, GdsCodes: m.GdsCodes, SqlCode: m.SqlCode, SqlState: m.SqlState, Message: m.Message}, nil
 			}
 		case *OpReject:
 			return msg, fmt.Errorf("server rejected connection")

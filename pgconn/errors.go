@@ -1,6 +1,7 @@
 package pgconn
 
 import (
+	"container/list"
 	"context"
 	"errors"
 	"fmt"
@@ -8,6 +9,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+
+	"github.com/red-soft/fbx/fbproto"
 )
 
 // SafeToRetry checks if the err is guaranteed to have occurred before sending any data to the server.
@@ -24,6 +27,34 @@ func SafeToRetry(err error) bool {
 func Timeout(err error) bool {
 	var timeoutErr *errTimeout
 	return errors.As(err, &timeoutErr)
+}
+
+type FbError struct {
+	Object   int
+	BlobId   int64
+	GdsCodes list.List
+	SqlCode  int
+	SqlState string
+	Message  string
+}
+
+func (e *FbError) SQLState() string {
+	return e.SqlState
+}
+
+func (e *FbError) Error() string {
+	return e.Message + " (SQLSTATE " + e.SqlState + ")"
+}
+
+func ErrorResponseToFbError(errorResponse *fbproto.ErrorResponse) *FbError {
+	return &FbError{
+		Object:   errorResponse.Object,
+		BlobId:   errorResponse.BlobId,
+		GdsCodes: errorResponse.GdsCodes,
+		SqlCode:  errorResponse.SqlCode,
+		SqlState: errorResponse.SqlState,
+		Message:  errorResponse.Message,
+	}
 }
 
 // PgError represents an error reported by the PostgreSQL server. See

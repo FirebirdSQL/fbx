@@ -58,7 +58,7 @@ type BuildFrontendFunc func(r io.Reader, w io.Writer) *pgproto3.Client
 // the connection open. Returning false will cause the connection to be closed immediately. You should return
 // false on any FATAL-severity errors. This will not receive network errors. The *PgConn is provided so the handler is
 // aware of the origin of the error, but it must not invoke any query method.
-type PgErrorHandler func(*PgConn, *PgError) bool
+type PgErrorHandler func(*PgConn, *FbError) bool
 
 // NoticeHandler is a function that can handle notices received from the PostgreSQL server. Notices can be received at
 // any time, usually during handling of a query response. The *PgConn is provided so the handler is aware of the origin

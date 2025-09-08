@@ -108,3 +108,13 @@ func (op *OpResponse) Read(x *XDRReader) error {
 
 	return nil
 }
+
+type ErrorResponse struct {
+	ServerMessage
+	Object   int
+	BlobId   int64
+	GdsCodes list.List
+	SqlCode  int
+	SqlState string
+	Message  string
+}
