@@ -107,6 +107,7 @@ type PgConn struct {
 	fieldDescriptions [16]FieldDescription
 
 	cleanupDone chan struct{}
+	Encoding    *fbproto.Encoding
 }
 
 // Connect establishes a connection to a PostgreSQL server using the environment and connString (in URL or keyword/value
@@ -328,7 +329,7 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 	pgConn.parameterStatuses = make(map[string]string)
 	pgConn.status = connStatusConnecting
 
-	encoding, err := fbproto.NewEncoding("UTF8")
+	pgConn.Encoding, err = fbproto.NewEncoding("UTF8")
 	if err != nil {
 		return nil, err
 	}
@@ -342,7 +343,7 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 	pgConn.slowWriteTimer.Stop()
 	pgConn.bgReaderStarted = make(chan struct{})
 	pgConn.writer = bufio.NewWriter(pgConn.conn)
-	pgConn.client = fbproto.NewClient(pgConn.bgReader, pgConn.writer, encoding)
+	pgConn.client = fbproto.NewClient(pgConn.bgReader, pgConn.writer, pgConn.Encoding)
 
 	authManager := auth.NewAuthManager(config.User, config.Password)
 
@@ -356,7 +357,7 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 		AuthPluginsList: authManager.BuildList(),
 		Options:         nil,
 		WireCrypt:       config.WireCrypt,
-		Encoding:        encoding,
+		Encoding:        pgConn.Encoding,
 	}
 
 	//startupMsg := pgproto3.StartupMessage{
