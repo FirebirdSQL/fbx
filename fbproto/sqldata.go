@@ -7,26 +7,28 @@ import (
 )
 
 type SQLData struct {
-	Nulls   *utils.BitSet
-	RowData [][]byte
+	Nulls         *utils.BitSet
+	RowData       [][]byte
+	RowDescriptor []FieldDescriptor
 }
 
-func (d *SQLData) Read(x *XDRReader, row []FieldDescriptor) error {
+func ReadRows(x *XDRReader, rowDescriptor []FieldDescriptor) (*SQLData, error) {
 	var err error
-	count := len(row)
-	d.RowData = make([][]byte, count)
+	count := len(rowDescriptor)
+	rowData := make([][]byte, count)
 	l := int(math.Ceil(float64(count) / 8))
 	pad := (4 - l) & 3
+	var nullsBitset *utils.BitSet
 	if nulls, err := x.ReadBytes(int64(l + pad)); err == nil {
-		d.Nulls = utils.NewBitSetFromBytes(l, nulls)
+		nullsBitset = utils.NewBitSetFromBytes(l, nulls)
 	} else {
-		return err
+		return nil, err
 	}
 	for i := 0; i < count; i++ {
-		if d.Nulls.Get(i) {
-			d.RowData[i] = nil
+		if nullsBitset.Get(i) {
+			rowData[i] = nil
 		} else {
-			ioLen := row[i].GetIOLength()
+			ioLen := rowDescriptor[i].GetIOLength()
 			var data []byte
 			if ioLen == 0 {
 				data, err = x.ReadBuffer()
@@ -35,15 +37,15 @@ func (d *SQLData) Read(x *XDRReader, row []FieldDescriptor) error {
 			} else {
 				data, err = x.ReadBytes(int64(ioLen - 1))
 				if err != nil {
-					return err
+					return nil, err
 				}
 				err = x.SkipPadding(int64(ioLen - 1))
 			}
 			if err != nil {
-				return err
+				return nil, err
 			}
-			d.RowData[i] = data
+			rowData[i] = data
 		}
 	}
-	return nil
+	return &SQLData{nullsBitset, rowData, rowDescriptor}, nil
 }
