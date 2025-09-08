@@ -21,6 +21,7 @@ import (
 
 	"github.com/red-soft/fbx/fbproto"
 	"github.com/red-soft/fbx/pgconn/ctxwatch"
+	"github.com/red-soft/fbx/pgconn/internal/bgreader"
 	"github.com/red-soft/fbx/pgproto3"
 )
 
@@ -79,12 +80,11 @@ type PgConn struct {
 	parameterStatuses map[string]string // parameters that have been reported by the server
 	txStatus          byte
 	client            *fbproto.Client
-	//bgReader          *bgreader.BGReader
-	reader          *bufio.Reader
-	writer          *bufio.Writer
-	slowWriteTimer  *time.Timer
-	bgReaderStarted chan struct{}
-	dbHandle        int
+	bgReader          *bgreader.BGReader
+	writer            *bufio.Writer
+	slowWriteTimer    *time.Timer
+	bgReaderStarted   chan struct{}
+	dbHandle          int
 
 	customData map[string]any
 
@@ -94,10 +94,10 @@ type PgConn struct {
 
 	bufferingReceive    bool
 	bufferingReceiveMux sync.Mutex
-	//bufferingReceiveMsg pgproto3.Response
+	bufferingReceiveMsg fbproto.ServerMessage
 	bufferingReceiveErr error
 
-	//peekedMsg pgproto3.Response
+	peekedMsg fbproto.ServerMessage
 
 	// Reusable / preallocated resources
 	resultReader      ResultReader
@@ -332,18 +332,17 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 	if err != nil {
 		return nil, err
 	}
-	//pgConn.bgReader = bgreader.New(pgConn.conn)
-	//pgConn.slowWriteTimer = time.AfterFunc(time.Duration(math.MaxInt64),
-	//	func() {
-	//		pgConn.bgReader.Start()
-	//		pgConn.bgReaderStarted <- struct{}{}
-	//	},
-	//)
-	//pgConn.slowWriteTimer.Stop()
-	//pgConn.bgReaderStarted = make(chan struct{})
-	pgConn.reader = bufio.NewReader(pgConn.conn)
+	pgConn.bgReader = bgreader.New(pgConn.conn)
+	pgConn.slowWriteTimer = time.AfterFunc(time.Duration(math.MaxInt64),
+		func() {
+			pgConn.bgReader.Start()
+			pgConn.bgReaderStarted <- struct{}{}
+		},
+	)
+	pgConn.slowWriteTimer.Stop()
+	pgConn.bgReaderStarted = make(chan struct{})
 	pgConn.writer = bufio.NewWriter(pgConn.conn)
-	pgConn.client = fbproto.NewClient(pgConn.reader, pgConn.writer, encoding)
+	pgConn.client = fbproto.NewClient(pgConn.bgReader, pgConn.writer, encoding)
 
 	authManager := auth.NewAuthManager(config.User, config.Password)
 
@@ -383,7 +382,7 @@ connectLoop:
 			return nil, newPerDialConnectError("failed to flush opConnect", err)
 		}
 
-		msg, err := pgConn.client.ReceiveMessage()
+		msg, err := pgConn.receiveMessage()
 		if err != nil {
 			pgConn.conn.Close()
 			return nil, newPerDialConnectError("authentication failed", err)
@@ -429,7 +428,7 @@ connectLoop:
 		return nil, newPerDialConnectError("failed to flush opAttach", err)
 	}
 
-	msg, err := pgConn.client.ReceiveMessage()
+	resp, err := pgConn.receiveResponse()
 	if err != nil {
 		pgConn.conn.Close()
 		return nil, newPerDialConnectError("attachment failed", err)
@@ -709,78 +708,95 @@ func (pgConn *PgConn) ReceiveMessage(ctx context.Context) (pgproto3.Response, er
 }
 
 // peekMessage peeks at the next message without setting up context cancellation.
-func (pgConn *PgConn) peekMessage() (pgproto3.Response, error) {
-	//if pgConn.peekedMsg != nil {
-	//	return pgConn.peekedMsg, nil
-	//}
-	//
-	//var msg pgproto3.Response
-	//var err error
-	//if pgConn.bufferingReceive {
-	//	pgConn.bufferingReceiveMux.Lock()
-	//	msg = pgConn.bufferingReceiveMsg
-	//	err = pgConn.bufferingReceiveErr
-	//	pgConn.bufferingReceiveMux.Unlock()
-	//	pgConn.bufferingReceive = false
-	//
-	//	// If a timeout error happened in the background try the read again.
-	//	var netErr net.Error
-	//	if errors.As(err, &netErr) && netErr.Timeout() {
-	//		msg, err = pgConn.frontend.Receive()
-	//	}
-	//} else {
-	//	msg, err = pgConn.frontend.Receive()
-	//}
-	//
-	//if err != nil {
-	//	// Close on anything other than timeout error - everything else is fatal
-	//	var netErr net.Error
-	//	isNetErr := errors.As(err, &netErr)
-	//	if !(isNetErr && netErr.Timeout()) {
-	//		pgConn.asyncClose()
-	//	}
-	//
-	//	return nil, err
-	//}
-	//
-	//pgConn.peekedMsg = msg
-	//return msg, nil
-	panic("implement me")
+func (pgConn *PgConn) peekMessage() (fbproto.ServerMessage, error) {
+	if pgConn.peekedMsg != nil {
+		return pgConn.peekedMsg, nil
+	}
+
+	var msg fbproto.ServerMessage
+	var err error
+
+	if pgConn.bufferingReceive {
+		pgConn.bufferingReceiveMux.Lock()
+		msg = pgConn.bufferingReceiveMsg
+		err = pgConn.bufferingReceiveErr
+		pgConn.bufferingReceiveMux.Unlock()
+		pgConn.bufferingReceive = false
+
+		// If a timeout error happened in the background try the read again.
+		var netErr net.Error
+		if errors.As(err, &netErr) && netErr.Timeout() {
+			msg, err = pgConn.client.ReceiveMessage()
+		}
+	} else {
+		msg, err = pgConn.client.ReceiveMessage()
+	}
+
+	if err != nil {
+		// Close on anything other than timeout error - everything else is fatal
+		var netErr net.Error
+		isNetErr := errors.As(err, &netErr)
+		if !(isNetErr && netErr.Timeout()) {
+			pgConn.asyncClose()
+		}
+
+		return nil, err
+	}
+
+	pgConn.peekedMsg = msg
+	return msg, nil
 }
 
 // receiveMessage receives a message without setting up context cancellation
-func (pgConn *PgConn) receiveMessage() (pgproto3.Response, error) {
-	//msg, err := pgConn.peekMessage()
-	//if err != nil {
-	//	return nil, err
-	//}
-	//pgConn.peekedMsg = nil
-	//
-	//switch msg := msg.(type) {
-	//case *pgproto3.ReadyForQuery:
-	//	pgConn.txStatus = msg.TxStatus
-	//case *pgproto3.ParameterStatus:
-	//	pgConn.parameterStatuses[msg.Name] = msg.Value
-	//case *pgproto3.ErrorResponse:
-	//	err := ErrorResponseToPgError(msg)
-	//	if pgConn.config.OnPgError != nil && !pgConn.config.OnPgError(pgConn, err) {
-	//		pgConn.status = connStatusClosed
-	//		pgConn.conn.Close() // Ignore error as the connection is already broken and there is already an error to return.
-	//		close(pgConn.cleanupDone)
-	//		return nil, err
-	//	}
-	//case *pgproto3.NoticeResponse:
-	//	if pgConn.config.OnNotice != nil {
-	//		pgConn.config.OnNotice(pgConn, noticeResponseToNotice(msg))
-	//	}
-	//case *pgproto3.NotificationResponse:
-	//	if pgConn.config.OnNotification != nil {
-	//		pgConn.config.OnNotification(pgConn, &Notification{PID: msg.PID, Channel: msg.Channel, Payload: msg.Payload})
-	//	}
-	//}
-	//
-	//return msg, nil
-	panic("implement me")
+func (pgConn *PgConn) receiveMessage() (fbproto.ServerMessage, error) {
+	msg, err := pgConn.peekMessage()
+	if err != nil {
+		return nil, err
+	}
+	pgConn.peekedMsg = nil
+
+	switch msg := msg.(type) {
+	case *fbproto.ErrorResponse:
+		err := ErrorResponseToFbError(msg)
+		if pgConn.config.OnPgError != nil && !pgConn.config.OnPgError(pgConn, err) {
+			pgConn.status = connStatusClosed
+			pgConn.conn.Close() // Ignore error as the connection is already broken and there is already an error to return.
+			close(pgConn.cleanupDone)
+			return nil, err
+		}
+	}
+
+	return msg, nil
+}
+
+// receiveResponse receives message and expect it is OpResponse type
+func (pgConn *PgConn) receiveResponse() (*fbproto.OpResponse, error) {
+	msg, err := pgConn.receiveMessage()
+
+	if err != nil {
+		return nil, err
+	}
+	switch m := msg.(type) {
+	case *fbproto.OpResponse:
+		return m, nil
+	default:
+		return nil, fmt.Errorf("wrong response message type %v instead expected OpResponse", m)
+	}
+}
+
+// receiveFetchResponse receives message and expect it is OpFetchResponse type
+func (pgConn *PgConn) receiveFetchResponse() (*fbproto.OpFetchResponse, error) {
+	msg, err := pgConn.receiveMessage()
+
+	if err != nil {
+		return nil, err
+	}
+	switch m := msg.(type) {
+	case *fbproto.OpFetchResponse:
+		return m, nil
+	default:
+		return nil, fmt.Errorf("wrong response message type %v instead expected OpFetchResponse", m)
+	}
 }
 
 // Conn returns the underlying net.Conn. This rarely necessary. If the connection will be directly used for reading or
@@ -910,28 +926,26 @@ func (pgConn *PgConn) IsBusy() bool {
 
 // lock locks the connection.
 func (pgConn *PgConn) lock() error {
-	//switch pgConn.status {
-	//case connStatusBusy:
-	//	return &connLockError{status: "conn busy"} // This only should be possible in case of an application bug.
-	//case connStatusClosed:
-	//	return &connLockError{status: "conn closed"}
-	//case connStatusUninitialized:
-	//	return &connLockError{status: "conn uninitialized"}
-	//}
-	//pgConn.status = connStatusBusy
-	//return nil
-	panic("implement me")
+	switch pgConn.status {
+	case connStatusBusy:
+		return &connLockError{status: "conn busy"} // This only should be possible in case of an application bug.
+	case connStatusClosed:
+		return &connLockError{status: "conn closed"}
+	case connStatusUninitialized:
+		return &connLockError{status: "conn uninitialized"}
+	}
+	pgConn.status = connStatusBusy
+	return nil
 }
 
 func (pgConn *PgConn) unlock() {
-	//switch pgConn.status {
-	//case connStatusBusy:
-	//	pgConn.status = connStatusIdle
-	//case connStatusClosed:
-	//default:
-	//	panic("BUG: cannot unlock unlocked connection") // This should only be possible if there is a bug in this package.
-	//}
-	panic("implement me")
+	switch pgConn.status {
+	case connStatusBusy:
+		pgConn.status = connStatusIdle
+	case connStatusClosed:
+	default:
+		panic("BUG: cannot unlock unlocked connection") // This should only be possible if there is a bug in this package.
+	}
 }
 
 // ParameterStatus returns the value of a parameter reported by the server (e.g.
