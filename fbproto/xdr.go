@@ -165,6 +165,14 @@ func (x *XDRWriter) WritePadding(len int) error {
 	return x.WriteBytes(make([]byte, len))
 }
 
+func (x *XDRWriter) WriteCustomPadding(len int, paddingByte byte) error {
+	buf := make([]byte, len)
+	for i := range len {
+		buf[i] = paddingByte
+	}
+	return x.WriteBytes(buf)
+}
+
 func (x *XDRWriter) WriteString(s string, encoding *Encoding) error {
 
 	if res, err := encoding.Encoder.String(s); err != nil {

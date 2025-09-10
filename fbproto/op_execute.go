@@ -3,9 +3,11 @@ package fbproto
 // https://firebirdsql.org/file/documentation/html/en/firebirddocs/wireprotocol/firebird-wire-protocol.html#wireprotocol-op-cont-auth
 
 type OpExecute struct {
-	StatementHandle   int
-	TransactionHandle int
-	SQLData           []byte
+	StatementHandle       int
+	TransactionHandle     int
+	SQLDataBlr            []byte
+	SQLData               [][]byte
+	ParametersDescriptors []FieldDescriptor
 }
 
 func (op *OpExecute) Write(x *XDRWriter) error {
@@ -26,7 +28,7 @@ func (op *OpExecute) Write(x *XDRWriter) error {
 	}
 
 	//p_sqldata_blr
-	if err = x.WriteBuffer(op.SQLData); err != nil {
+	if err = x.WriteBuffer(op.SQLDataBlr); err != nil {
 		return err
 	}
 
@@ -35,20 +37,21 @@ func (op *OpExecute) Write(x *XDRWriter) error {
 		return err
 	}
 
-	parameters := 0
-	//p_sqldata_messages
-	if err = x.WriteInt32(parameters); err != nil {
-		return err
-	}
-
-	/*
-		if parameters != 0 {
-			// Row data
-			if err = x.WriteBuffer(values); err != nil {
-				return err
-			}
+	if op.SQLData == nil {
+		//p_sqldata_messages
+		if err = x.WriteInt32(0); err != nil {
+			return err
 		}
-	*/
+	} else {
+		//p_sqldata_messages
+		if err = x.WriteInt32(1); err != nil {
+			return err
+		}
+		// Row data
+		if err = WriteRowData(x, op.ParametersDescriptors, op.SQLData); err != nil {
+			return err
+		}
+	}
 
 	//FIXME fbx protocol version dependent?
 	//statement timeout

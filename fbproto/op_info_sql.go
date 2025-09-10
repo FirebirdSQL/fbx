@@ -68,5 +68,14 @@ func GetSelectDescribeInfoItems() []byte {
 		isc_info_sql_owner,
 		isc_info_sql_alias,
 		isc_info_sql_describe_end,
+
+		isc_info_sql_bind,
+		isc_info_sql_describe_vars,
+		isc_info_sql_sqlda_seq,
+		isc_info_sql_type,
+		isc_info_sql_sub_type,
+		isc_info_sql_scale,
+		isc_info_sql_length,
+		isc_info_sql_describe_end,
 	}
 }

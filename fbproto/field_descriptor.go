@@ -14,19 +14,20 @@ type FieldDescriptor struct {
 	Subtype           int
 	Length            int
 	NullOk            bool
-	FieldName         string
+	Name              string
 	TableAliasName    string
 	RelName           string
 	OwnerName         string
 	OriginalName      string
 	OriginalTableName string
+	Nullable          bool
 }
 
 type StatementInfo struct {
-	RowDescriptor        []FieldDescriptor
-	ParametersDescriptor []FieldDescriptor
-	StatementType        int
-	currentDescriptor    *[]FieldDescriptor
+	FieldDescriptors      []FieldDescriptor
+	ParametersDescriptors []FieldDescriptor
+	StatementType         int
+	currentDescriptor     *[]FieldDescriptor
 }
 
 func (p *StatementInfo) Parse(buf []byte) error {
@@ -42,8 +43,13 @@ func (p *StatementInfo) Parse(buf []byte) error {
 			return nil
 		case Isc_info_sql_stmt_type:
 			p.StatementType = p.readIntValue(reader)
+		case isc_info_sql_bind:
+			p.currentDescriptor = &p.ParametersDescriptors
+			if err = p.feedDescriptors(reader); err != nil {
+				return err
+			}
 		case Isc_info_sql_select:
-			p.currentDescriptor = &p.RowDescriptor
+			p.currentDescriptor = &p.FieldDescriptors
 			if err = p.feedDescriptors(reader); err != nil {
 				return err
 			}
@@ -104,6 +110,8 @@ func (p *StatementInfo) feedDescriptors(reader *bytes.Buffer) error {
 			field.Index = p.readIntValue(reader)
 		case isc_info_sql_type:
 			field.Type = p.readIntValue(reader)
+			field.Nullable = (field.Type & 1) != 0
+			field.Type &= ^1
 		case isc_info_sql_sub_type:
 			field.Subtype = p.readIntValue(reader)
 		case isc_info_sql_scale:
@@ -113,7 +121,7 @@ func (p *StatementInfo) feedDescriptors(reader *bytes.Buffer) error {
 		case isc_info_sql_field:
 			field.OriginalName = p.readStringValue(reader)
 		case isc_info_sql_alias:
-			field.FieldName = p.readStringValue(reader)
+			field.Name = p.readStringValue(reader)
 		case isc_info_sql_relation:
 			field.OriginalTableName = p.readStringValue(reader)
 		case isc_info_sql_relation_alias:
@@ -133,7 +141,15 @@ func (p *StatementInfo) feedDescriptors(reader *bytes.Buffer) error {
 }
 
 func (p *StatementInfo) GetRowBlr() []byte {
-	ln := len(p.RowDescriptor) * 2
+	return p.CalculateBlr(p.FieldDescriptors)
+}
+
+func (p *StatementInfo) GetParametersBlr() []byte {
+	return p.CalculateBlr(p.ParametersDescriptors)
+}
+
+func (p *StatementInfo) CalculateBlr(descriptors []FieldDescriptor) []byte {
+	ln := len(descriptors) * 2
 	blr := make([]byte, (ln*4)+8)
 	blr[0] = 5
 	blr[1] = 2
@@ -143,7 +159,7 @@ func (p *StatementInfo) GetRowBlr() []byte {
 	blr[5] = byte(ln >> 8)
 	n := 6
 
-	for _, x := range p.RowDescriptor {
+	for _, x := range descriptors {
 		sqlscale := x.Scale
 		if sqlscale < 0 {
 			sqlscale += 256
@@ -224,6 +240,8 @@ func (p *StatementInfo) GetRowBlr() []byte {
 		case SQL_TYPE_TIMESTAMP_TZ:
 			blr[n] = 29
 			n++
+		default:
+			panic(fmt.Sprintf("unknown SQL type %d", x.Type))
 		}
 		// [blr_short, 0]
 		blr[n] = 7
@@ -239,7 +257,7 @@ func (p *StatementInfo) GetRowBlr() []byte {
 }
 
 func (f *FieldDescriptor) GetIOLength() int {
-	switch f.Type & ^1 {
+	switch f.Type {
 	case SQL_TYPE_TEXT:
 		return f.Length + 1
 	case SQL_TYPE_VARYING:
@@ -258,5 +276,41 @@ func (f *FieldDescriptor) GetIOLength() int {
 		return 1 + 1
 	default:
 		panic(fmt.Sprintf("can not get IO length of unknown field descriptor type: %d", f.Type))
+	}
+}
+
+func (f *FieldDescriptor) CalculateIoLength(fieldData []byte) int {
+	t := f.Type
+	if t == SQL_TYPE_TEXT {
+		return len(fieldData) + 1
+	}
+	return f.GetIOLength()
+}
+
+func (f *FieldDescriptor) GetPaddingByte() byte {
+	switch f.Type {
+	case SQL_TYPE_TEXT, SQL_TYPE_VARYING:
+		{
+			if f.GetCharacterSetId() == CS_BINARY {
+				return 0x00
+			}
+			return 0x20
+		}
+	default:
+		return 0x00
+	}
+}
+
+func (f *FieldDescriptor) GetCharacterSetId() int {
+	switch f.Type {
+	case SQL_TYPE_TEXT, SQL_TYPE_VARYING:
+		return f.Subtype & 0xFF
+	case SQL_TYPE_BLOB:
+		if f.Subtype == BLOB_SUB_TYPE_TEXT {
+			return f.Scale & 0xFF
+		}
+		return CS_BINARY
+	default:
+		return CS_dynamic
 	}
 }

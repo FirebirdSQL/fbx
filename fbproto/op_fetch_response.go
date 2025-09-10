@@ -5,7 +5,6 @@ package fbproto
 type OpFetchResponse struct {
 	SQLDataStatus int
 	Messages      int
-	RowData       []byte
 }
 
 func (op *OpFetchResponse) Read(x *XDRReader) error {
@@ -21,4 +20,12 @@ func (op *OpFetchResponse) Read(x *XDRReader) error {
 	}
 
 	return nil
+}
+
+func (op *OpFetchResponse) MoreRows() bool {
+	return op.SQLDataStatus == 0 && op.Messages > 0
+}
+
+func (op *OpFetchResponse) EndOfCursor() bool {
+	return op.SQLDataStatus == 100 && op.Messages == 0
 }

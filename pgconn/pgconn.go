@@ -108,6 +108,9 @@ type PgConn struct {
 
 	cleanupDone chan struct{}
 	Encoding    *fbproto.Encoding
+	Transaction *FBTransaction
+
+	preparedMap map[string]*StatementDescription
 }
 
 // Connect establishes a connection to a PostgreSQL server using the environment and connString (in URL or keyword/value
@@ -308,6 +311,7 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 	pgConn.config = config
 	pgConn.cleanupDone = make(chan struct{})
 	pgConn.customData = make(map[string]any)
+	pgConn.preparedMap = make(map[string]*StatementDescription)
 
 	var err error
 
@@ -360,17 +364,6 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 		Encoding:        pgConn.Encoding,
 	}
 
-	//startupMsg := pgproto3.StartupMessage{
-	//	ProtocolVersionDescriptor: pgproto3.ProtocolVersionNumber,
-	//	Parameters:      make(map[string]string),
-	//}
-	//
-	//// Copy default run-time params
-	//for k, v := range config.RuntimeParams {
-	//	startupMsg.Parameters[k] = v
-	//}
-	//
-
 	if err = pgConn.client.WriteMessage(&opConnect); err != nil {
 		pgConn.conn.Close()
 		return nil, newPerDialConnectError("failed to send opConnect", err)
@@ -394,6 +387,9 @@ connectLoop:
 			fmt.Println(msg)
 		case *fbproto.OpDataAccept:
 			break connectLoop
+		case *fbproto.ErrorResponse:
+			pgConn.conn.Close()
+			return nil, newPerDialConnectError("authentication failed", ErrorResponseToFbError(msg))
 		default:
 			pgConn.conn.Close()
 			return nil, newPerDialConnectError("authentication failed", fmt.Errorf("unexpected message type %T", msg))
@@ -434,161 +430,16 @@ connectLoop:
 		pgConn.conn.Close()
 		return nil, newPerDialConnectError("attachment failed", err)
 	}
-	switch m := msg.(type) {
-	case *fbproto.OpResponse:
-		pgConn.dbHandle = m.Object
-	default:
-		pgConn.conn.Close()
-		return nil, newPerDialConnectError(fmt.Sprintf("wrong response message type %v", m), nil)
-	}
 
-	if err = pgConn.client.WriteMessage(&fbproto.OpAllocateStatement{}); err != nil {
-		pgConn.conn.Close()
-		return nil, newPerDialConnectError("failed to send OpAllocateStatement", err)
-	}
-	if err = pgConn.client.WriteMessage(&fbproto.OpPrepareStatement{
-		Encoding:          encoding,
-		TransactionHandle: 0xFFFF,
-		StatementHandle:   0xFFFF,
-		Dialect:           3,
-		Query:             "select * from rdb$database",
-	}); err != nil {
-		pgConn.conn.Close()
-		return nil, newPerDialConnectError("failed to send OpPrepareStatement", err)
-	}
-	if err = pgConn.writer.Flush(); err != nil {
-		pgConn.conn.Close()
-		return nil, newPerDialConnectError("failed to flush", err)
-	}
+	pgConn.dbHandle = resp.Object
 
-	var handle int
-	msg, err = pgConn.client.ReceiveMessage()
-	if err != nil {
-		pgConn.conn.Close()
-		return nil, newPerDialConnectError("OpPrepareStatement failed", err)
-	}
-	switch m := msg.(type) {
-	case *fbproto.OpResponse:
-		pgConn.dbHandle = m.Object
-		handle = m.Object
-	default:
-		pgConn.conn.Close()
-		return nil, newPerDialConnectError(fmt.Sprintf("wrong response message type %v", m), nil)
-	}
-
-	if err = pgConn.client.WriteMessage(&fbproto.OpExecute{
-		TransactionHandle: 0xFFFF,
-		StatementHandle:   handle,
-	}); err != nil {
-		pgConn.conn.Close()
-		return nil, newPerDialConnectError("failed to send OpExecute", err)
-	}
-	if err = pgConn.writer.Flush(); err != nil {
-		pgConn.conn.Close()
-		return nil, newPerDialConnectError("failed to flush OpExecute", err)
-	}
-
-	msg, err = pgConn.client.ReceiveMessage()
-	if err != nil {
-		pgConn.conn.Close()
-		return nil, newPerDialConnectError("OpExecute failed", err)
-	}
-	switch m := msg.(type) {
-	case *fbproto.OpResponse:
-		pgConn.dbHandle = m.Object
-		handle = m.Object
-	default:
-		pgConn.conn.Close()
-		return nil, newPerDialConnectError(fmt.Sprintf("wrong response message type %v", m), nil)
-	}
-
-	//msg, err := pgConn.client.ReadMessage()
-
-	//pgConn.frontend.WriteMessage(&startupMsg)
-	//if err := pgConn.flushWithPotentialWriteReadDeadlock(); err != nil {
-	//	pgConn.conn.Close()
-	//	return nil, newPerDialConnectError("failed to write startup message", err)
-	//}
-	//
-	//for {
-	//	msg, err := pgConn.receiveMessage()
-	//	if err != nil {
-	//		pgConn.conn.Close()
-	//		if err, ok := err.(*PgError); ok {
-	//			return nil, newPerDialConnectError("server error", err)
-	//		}
-	//		return nil, newPerDialConnectError("failed to receive message", err)
-	//	}
-	//
-	//	switch msg := msg.(type) {
-	//	case *pgproto3.BackendKeyData:
-	//		pgConn.pid = msg.ProcessID
-	//		pgConn.secretKey = msg.SecretKey
-	//
-	//	case *pgproto3.AuthenticationOk:
-	//	case *pgproto3.AuthenticationCleartextPassword:
-	//		err = pgConn.txPasswordMessage(pgConn.config.Password)
-	//		if err != nil {
-	//			pgConn.conn.Close()
-	//			return nil, newPerDialConnectError("failed to write password message", err)
-	//		}
-	//	case *pgproto3.AuthenticationMD5Password:
-	//		digestedPassword := "md5" + hexMD5(hexMD5(pgConn.config.Password+pgConn.config.User)+string(msg.Salt[:]))
-	//		err = pgConn.txPasswordMessage(digestedPassword)
-	//		if err != nil {
-	//			pgConn.conn.Close()
-	//			return nil, newPerDialConnectError("failed to write password message", err)
-	//		}
-	//	case *pgproto3.AuthenticationSASL:
-	//		err = pgConn.scramAuth(msg.AuthMechanisms)
-	//		if err != nil {
-	//			pgConn.conn.Close()
-	//			return nil, newPerDialConnectError("failed SASL auth", err)
-	//		}
-	//	case *pgproto3.AuthenticationGSS:
-	//		err = pgConn.gssAuth()
-	//		if err != nil {
-	//			pgConn.conn.Close()
-	//			return nil, newPerDialConnectError("failed GSS auth", err)
-	//		}
-	//	case *pgproto3.ReadyForQuery:
-	//		pgConn.status = connStatusIdle
-	//		if config.ValidateConnect != nil {
-	//			// ValidateConnect may execute commands that cause the context to be watched again. Unwatch first to avoid
-	//			// the watch already in progress panic. This is that last thing done by this method so there is no need to
-	//			// restart the watch after ValidateConnect returns.
-	//			//
-	//			// See https://github.com/jackc/pgconn/issues/40.
-	//			pgConn.contextWatcher.Unwatch()
-	//
-	//			err := config.ValidateConnect(ctx, pgConn)
-	//			if err != nil {
-	//				if _, ok := err.(*NotPreferredError); ignoreNotPreferredErr && ok {
-	//					return pgConn, nil
-	//				}
-	//				pgConn.conn.Close()
-	//				return nil, newPerDialConnectError("ValidateConnect failed", err)
-	//			}
-	//		}
-	//		return pgConn, nil
-	//	case *pgproto3.ParameterStatus, *pgproto3.NoticeResponse:
-	//		// handled by ReceiveMessage
-	//	case *pgproto3.ErrorResponse:
-	//		pgConn.conn.Close()
-	//		return nil, newPerDialConnectError("server error", ErrorResponseToPgError(msg))
-	//	default:
-	//		pgConn.conn.Close()
-	//		return nil, newPerDialConnectError("received unexpected message", err)
-	//	}
-	//}
-	//panic("implement me")
 	return pgConn, nil
 }
 
-func (pgConn *PgConn) getStatementInfo(statementHandle int) (error, *fbproto.StatementInfo) {
+func (pgConn *PgConn) getStatementInfo(statementHandle int) (*fbproto.StatementInfo, error) {
 	var err error
 	var continueIndex int
-	infoSize := 1024
+	infoSize := 10240
 	info := fbproto.StatementInfo{}
 	for {
 		if err = pgConn.client.WriteMessage(&fbproto.OpInfoSQL{
@@ -596,18 +447,24 @@ func (pgConn *PgConn) getStatementInfo(statementHandle int) (error, *fbproto.Sta
 			StatementInformationItems: fbproto.GetSelectDescribeInfoItemsContinue(continueIndex),
 			MaxBufferLength:           infoSize,
 		}); err != nil {
-			return err, nil
+			return nil, err
 		}
 		if err = pgConn.writer.Flush(); err != nil {
-			return err, nil
+			return nil, err
 		}
 
-		resp, err := pgConn.client.ReceiveResponse()
-		if err != nil {
-			return err, nil
+		msg, err := pgConn.receiveMessage()
+		var respData []byte
+		switch m := msg.(type) {
+		case *fbproto.OpResponse:
+			respData = m.Data
+		case *fbproto.ErrorResponse:
+			return nil, ErrorResponseToFbError(m)
+		default:
+			return nil, fmt.Errorf("received unexpected message: %v", m)
 		}
 
-		err = info.Parse(resp.Data)
+		err = info.Parse(respData)
 		if err != nil {
 			truncError := fbproto.StatementInfoTruncationError{}
 			if errors.As(err, &truncError) {
@@ -615,13 +472,13 @@ func (pgConn *PgConn) getStatementInfo(statementHandle int) (error, *fbproto.Sta
 				continueIndex = truncError.Index
 				infoSize *= 2
 			} else {
-				return fmt.Errorf("failed to parse statement info: %v", err), nil
+				return nil, fmt.Errorf("failed to parse statement info: %v", err)
 			}
 		} else {
 			break
 		}
 	}
-	return nil, &info
+	return &info, nil
 }
 
 func startTLS(conn net.Conn, tlsConfig *tls.Config) (net.Conn, error) {
@@ -680,32 +537,31 @@ func (pgConn *PgConn) signalMessage() chan struct{} {
 //
 // This is a very low level method that requires deep understanding of the PostgreSQL wire protocol to use correctly.
 // See https://www.postgresql.org/docs/current/protocol.html.
-func (pgConn *PgConn) ReceiveMessage(ctx context.Context) (pgproto3.Response, error) {
-	//if err := pgConn.lock(); err != nil {
-	//	return nil, err
-	//}
-	//defer pgConn.unlock()
-	//
-	//if ctx != context.Background() {
-	//	select {
-	//	case <-ctx.Done():
-	//		return nil, newContextAlreadyDoneError(ctx)
-	//	default:
-	//	}
-	//	pgConn.contextWatcher.Watch(ctx)
-	//	defer pgConn.contextWatcher.Unwatch()
-	//}
-	//
-	//msg, err := pgConn.receiveMessage()
-	//if err != nil {
-	//	err = &pgconnError{
-	//		msg:         "receive message failed",
-	//		err:         normalizeTimeoutError(ctx, err),
-	//		safeToRetry: true,
-	//	}
-	//}
-	//return msg, err
-	panic("implement me")
+func (pgConn *PgConn) ReceiveMessage(ctx context.Context) (fbproto.ServerMessage, error) {
+	if err := pgConn.lock(); err != nil {
+		return nil, err
+	}
+	defer pgConn.unlock()
+
+	if ctx != context.Background() {
+		select {
+		case <-ctx.Done():
+			return nil, newContextAlreadyDoneError(ctx)
+		default:
+		}
+		pgConn.contextWatcher.Watch(ctx)
+		defer pgConn.contextWatcher.Unwatch()
+	}
+
+	msg, err := pgConn.receiveMessage()
+	if err != nil {
+		err = &pgconnError{
+			msg:         "receive message failed",
+			err:         normalizeTimeoutError(ctx, err),
+			safeToRetry: true,
+		}
+	}
+	return msg, err
 }
 
 // peekMessage peeks at the next message without setting up context cancellation.
@@ -780,6 +636,8 @@ func (pgConn *PgConn) receiveResponse() (*fbproto.OpResponse, error) {
 	switch m := msg.(type) {
 	case *fbproto.OpResponse:
 		return m, nil
+	case *fbproto.ErrorResponse:
+		return nil, ErrorResponseToFbError(m)
 	default:
 		return nil, fmt.Errorf("wrong response message type %v instead expected OpResponse", m)
 	}
@@ -795,6 +653,8 @@ func (pgConn *PgConn) receiveFetchResponse() (*fbproto.OpFetchResponse, error) {
 	switch m := msg.(type) {
 	case *fbproto.OpFetchResponse:
 		return m, nil
+	case *fbproto.ErrorResponse:
+		return nil, ErrorResponseToFbError(m)
 	default:
 		return nil, fmt.Errorf("wrong response message type %v instead expected OpFetchResponse", m)
 	}
@@ -1047,10 +907,11 @@ type FieldDescription struct {
 //}
 
 type StatementDescription struct {
-	Name      string
-	SQL       string
-	ParamOIDs []uint32
-	Fields    []FieldDescription
+	Name            string
+	SQL             string
+	StatementInfo   *fbproto.StatementInfo
+	StatementHandle int
+	Fields          []fbproto.FieldDescriptor
 }
 
 // Prepare creates a prepared statement. If the name is empty, the anonymous prepared statement will be used. This
@@ -1059,6 +920,7 @@ type StatementDescription struct {
 // Prepare does not send a PREPARE statement to the server. It uses the PostgreSQL Parse and Describe protocol messages
 // directly.
 func (pgConn *PgConn) Prepare(ctx context.Context, name, sql string, paramOIDs []uint32) (*StatementDescription, error) {
+	var err error
 	if err := pgConn.lock(); err != nil {
 		return nil, err
 	}
@@ -1074,45 +936,71 @@ func (pgConn *PgConn) Prepare(ctx context.Context, name, sql string, paramOIDs [
 		defer pgConn.contextWatcher.Unwatch()
 	}
 
-	//	pgConn.frontend.SendParse(&pgproto3.Parse{Name: name, Query: sql, ParameterOIDs: paramOIDs})
-	//	pgConn.frontend.SendDescribe(&pgproto3.Describe{ObjectType: 'S', Name: name})
-	//	pgConn.frontend.SendSync(&pgproto3.Sync{})
-	//	err := pgConn.flushWithPotentialWriteReadDeadlock()
-	//	if err != nil {
-	//		pgConn.asyncClose()
-	//		return nil, err
-	//	}
-	//
-	//	psd := &StatementDescription{Name: name, SQL: sql}
-	//
-	//	var parseErr error
-	//
-	//readloop:
-	//	for {
-	//		msg, err := pgConn.receiveMessage()
-	//		if err != nil {
-	//			pgConn.asyncClose()
-	//			return nil, normalizeTimeoutError(ctx, err)
-	//		}
-	//
-	//		switch msg := msg.(type) {
-	//		case *pgproto3.ParameterDescription:
-	//			psd.ParamOIDs = make([]uint32, len(msg.ParameterOIDs))
-	//			copy(psd.ParamOIDs, msg.ParameterOIDs)
-	//		case *pgproto3.RowDescription:
-	//			psd.Fields = pgConn.convertRowDescription(nil, msg)
-	//		case *pgproto3.ErrorResponse:
-	//			parseErr = ErrorResponseToPgError(msg)
-	//		case *pgproto3.ReadyForQuery:
-	//			break readloop
-	//		}
-	//	}
-	//
-	//	if parseErr != nil {
-	//		return nil, parseErr
-	//	}
-	//	return psd, nil
-	panic("implement me")
+	if pgConn.Transaction == nil {
+		if pgConn.Transaction, err = pgConn.StartTransaction(nil); err != nil {
+			pgConn.asyncClose()
+			return nil, err
+		}
+	}
+
+	if err = pgConn.client.WriteMessage(&fbproto.OpAllocateStatement{}); err != nil {
+		pgConn.asyncClose()
+		return nil, err
+	}
+	if err = pgConn.client.WriteMessage(&fbproto.OpPrepareStatement{
+		Encoding:          pgConn.Encoding,
+		TransactionHandle: pgConn.Transaction.Handle,
+		StatementHandle:   0xFFFF,
+		Dialect:           3,
+		Query:             sql,
+	}); err != nil {
+		pgConn.asyncClose()
+		return nil, err
+	}
+	if err = pgConn.writer.Flush(); err != nil {
+		pgConn.asyncClose()
+		return nil, err
+	}
+
+	msg, err := pgConn.receiveMessage()
+	if err != nil {
+		pgConn.asyncClose()
+		return nil, err
+	}
+
+	var statementHandle int
+	switch m := msg.(type) {
+	case *fbproto.OpResponse:
+		statementHandle = m.Object
+	case *fbproto.ErrorResponse:
+		return nil, ErrorResponseToFbError(m)
+	}
+
+	msg, err = pgConn.receiveMessage()
+	if err != nil {
+		pgConn.asyncClose()
+		return nil, err
+	}
+	switch m := msg.(type) {
+	case *fbproto.ErrorResponse:
+		return nil, ErrorResponseToFbError(m)
+	}
+
+	statementInfo, err := pgConn.getStatementInfo(statementHandle)
+	if err != nil {
+		var fbError *FbError
+		switch {
+		case errors.As(err, &fbError):
+			return nil, err
+		default:
+			pgConn.asyncClose()
+			return nil, err
+		}
+	}
+
+	st := StatementDescription{Name: name, SQL: sql, Fields: statementInfo.FieldDescriptors, StatementHandle: statementHandle, StatementInfo: statementInfo}
+	pgConn.preparedMap[name] = &st
+	return &st, nil
 }
 
 // Deallocate deallocates a prepared statement.
@@ -1374,72 +1262,92 @@ func (pgConn *PgConn) ExecParams(ctx context.Context, sql string, paramValues []
 //
 // ResultReader must be closed before PgConn can be used again.
 func (pgConn *PgConn) ExecPrepared(ctx context.Context, stmtName string, paramValues [][]byte, paramFormats []int16, resultFormats []int16) *ResultReader {
-	//result := pgConn.execExtendedPrefix(ctx, paramValues)
-	//if result.closed {
-	//	return result
-	//}
-	//
-	//pgConn.frontend.SendBind(&pgproto3.Bind{PreparedStatement: stmtName, ParameterFormatCodes: paramFormats, Parameters: paramValues, ResultFormatCodes: resultFormats})
-	//
-	//pgConn.execExtendedSuffix(result)
-	//
-	//return result
-	panic("implement me")
+	pgConn.resultReader = ResultReader{
+		pgConn: pgConn,
+		ctx:    ctx,
+	}
+	result := &pgConn.resultReader
+
+	st := pgConn.preparedMap[stmtName]
+	if st == nil {
+		result.concludeCommand(CommandTag{}, fmt.Errorf("query '%s' was not prepared", stmtName))
+		return result
+	}
+	pgConn.resultReader.statementDescription = st
+	pgConn.resultReader.fieldDescriptions = st.Fields
+
+	if err := pgConn.lock(); err != nil {
+		result.concludeCommand(CommandTag{}, err)
+		result.closed = true
+		return result
+	}
+
+	if ctx != context.Background() {
+		select {
+		case <-ctx.Done():
+			result.concludeCommand(CommandTag{}, newContextAlreadyDoneError(ctx))
+			result.closed = true
+			pgConn.unlock()
+			return result
+		default:
+		}
+		pgConn.contextWatcher.Watch(ctx)
+	}
+
+	var err error
+	if err = pgConn.client.WriteMessage(&fbproto.OpExecute{
+		TransactionHandle:     pgConn.Transaction.Handle,
+		StatementHandle:       st.StatementHandle,
+		ParametersDescriptors: st.StatementInfo.ParametersDescriptors,
+		SQLDataBlr:            st.StatementInfo.GetParametersBlr(),
+		SQLData:               paramValues,
+	}); err != nil {
+		pgConn.asyncClose()
+		result.concludeCommand(CommandTag{}, err)
+		pgConn.contextWatcher.Unwatch()
+		result.closed = true
+		pgConn.unlock()
+		return result
+	}
+
+	if err = pgConn.writer.Flush(); err != nil {
+		pgConn.asyncClose()
+		result.concludeCommand(CommandTag{}, err)
+		pgConn.contextWatcher.Unwatch()
+		result.closed = true
+		pgConn.unlock()
+		return result
+	}
+
+	_, err = pgConn.receiveResponse()
+	if err != nil {
+		pgConn.asyncClose()
+		result.concludeCommand(CommandTag{}, err)
+		pgConn.contextWatcher.Unwatch()
+		result.closed = true
+		pgConn.unlock()
+		return result
+	}
+
+	return result
 }
 
-func (pgConn *PgConn) execExtendedPrefix(ctx context.Context, paramValues [][]byte) *ResultReader {
-	//pgConn.resultReader = ResultReader{
-	//	pgConn: pgConn,
-	//	ctx:    ctx,
-	//}
-	//result := &pgConn.resultReader
-	//
-	//if err := pgConn.lock(); err != nil {
-	//	result.concludeCommand(CommandTag{}, err)
-	//	result.closed = true
-	//	return result
-	//}
-	//
-	//if len(paramValues) > math.MaxUint16 {
-	//	result.concludeCommand(CommandTag{}, fmt.Errorf("extended protocol limited to %v parameters", math.MaxUint16))
-	//	result.closed = true
-	//	pgConn.unlock()
-	//	return result
-	//}
-	//
-	//if ctx != context.Background() {
-	//	select {
-	//	case <-ctx.Done():
-	//		result.concludeCommand(CommandTag{}, newContextAlreadyDoneError(ctx))
-	//		result.closed = true
-	//		pgConn.unlock()
-	//		return result
-	//	default:
-	//	}
-	//	pgConn.contextWatcher.Watch(ctx)
-	//}
-	//
-	//return result
-	panic("implement me")
-}
+//func (pgConn *PgConn) execExtendedPrefix(ctx context.Context, paramValues [][]byte) *ResultReader {
+//
+//	//if len(paramValues) > math.MaxUint16 {
+//	//	result.concludeCommand(CommandTag{}, fmt.Errorf("extended protocol limited to %v parameters", math.MaxUint16))
+//	//	result.closed = true
+//	//	pgConn.unlock()
+//	//	return result
+//	//}
+//
+//	return result
+//}
 
-func (pgConn *PgConn) execExtendedSuffix(result *ResultReader) {
-	//pgConn.frontend.SendDescribe(&pgproto3.Describe{ObjectType: 'P'})
-	//pgConn.frontend.SendExecute(&pgproto3.Execute{})
-	//pgConn.frontend.SendSync(&pgproto3.Sync{})
-	//
-	//err := pgConn.flushWithPotentialWriteReadDeadlock()
-	//if err != nil {
-	//	pgConn.asyncClose()
-	//	result.concludeCommand(CommandTag{}, err)
-	//	pgConn.contextWatcher.Unwatch()
-	//	result.closed = true
-	//	pgConn.unlock()
-	//	return
-	//}
-	//
-	//result.readUntilRowDescription()
-}
+//func (pgConn *PgConn) execExtendedSuffix(statement *StatementDescription, result *ResultReader) {
+//
+//	//result.readUntilRowDescription()
+//}
 
 // CopyTo executes the copy command sql and copies the results to w.
 func (pgConn *PgConn) CopyTo(ctx context.Context, w io.Writer, sql string) (CommandTag, error) {
@@ -1732,20 +1640,23 @@ func (mrr *MultiResultReader) Close() error {
 type ResultReader struct {
 	pgConn            *PgConn
 	multiResultReader *MultiResultReader
-	pipeline          *Pipeline
-	ctx               context.Context
+	//pipeline          *Pipeline
+	ctx context.Context
 
-	fieldDescriptions []FieldDescription
+	fieldDescriptions []fbproto.FieldDescriptor
 	rowValues         [][]byte
 	commandTag        CommandTag
 	commandConcluded  bool
 	closed            bool
 	err               error
+
+	statementDescription *StatementDescription
+	lastFetchResponse    *fbproto.OpFetchResponse
 }
 
 // Result is the saved query response that is returned by calling Read on a ResultReader.
 type Result struct {
-	FieldDescriptions []FieldDescription
+	FieldDescriptions []fbproto.FieldDescriptor
 	Rows              [][][]byte
 	CommandTag        CommandTag
 	Err               error
@@ -1757,7 +1668,7 @@ func (rr *ResultReader) Read() *Result {
 
 	for rr.NextRow() {
 		if br.FieldDescriptions == nil {
-			br.FieldDescriptions = make([]FieldDescription, len(rr.FieldDescriptions()))
+			br.FieldDescriptions = make([]fbproto.FieldDescriptor, len(rr.FieldDescriptions()))
 			copy(br.FieldDescriptions, rr.FieldDescriptions())
 		}
 
@@ -1779,27 +1690,46 @@ func (rr *ResultReader) Read() *Result {
 
 // NextRow advances the ResultReader to the next row and returns true if a row is available.
 func (rr *ResultReader) NextRow() bool {
-	//for !rr.commandConcluded {
-	//	msg, err := rr.receiveMessage()
-	//	if err != nil {
-	//		return false
-	//	}
-	//
-	//	switch msg := msg.(type) {
-	//	case *pgproto3.DataRow:
-	//		rr.rowValues = msg.Values
-	//		return true
-	//	}
-	//}
-	//
-	//return false
-	panic("implement me")
+	var err error
+	for !rr.commandConcluded {
+		if rr.lastFetchResponse != nil && rr.lastFetchResponse.MoreRows() {
+			row, err := rr.pgConn.client.ReceiveSQLData(rr.statementDescription.StatementInfo.FieldDescriptors)
+			if err != nil {
+				return false
+			}
+			rr.lastFetchResponse = &row.FetchResponse
+			rr.rowValues = row.RowData
+			return true
+		} else if rr.lastFetchResponse == nil || !rr.lastFetchResponse.EndOfCursor() {
+			if err = rr.pgConn.client.WriteMessage(&fbproto.OpFetch{
+				StatementHandle: rr.statementDescription.StatementHandle,
+				//FIXME: fbx need only on first fetch
+				RowBlr:   rr.statementDescription.StatementInfo.GetRowBlr(),
+				Messages: 400,
+			}); err != nil {
+				return false
+			}
+			if err = rr.pgConn.writer.Flush(); err != nil {
+				return false
+			}
+
+			fr, err := rr.pgConn.receiveFetchResponse()
+			if err != nil {
+				return false
+			}
+			rr.lastFetchResponse = fr
+		} else {
+			return false
+		}
+	}
+
+	return false
 }
 
 // FieldDescriptions returns the field descriptions for the current result set. The returned slice is only valid until
 // the ResultReader is closed. It may return nil (for example, if the query did not return a result set or an error was
 // encountered.)
-func (rr *ResultReader) FieldDescriptions() []FieldDescription {
+func (rr *ResultReader) FieldDescriptions() []fbproto.FieldDescriptor {
 	return rr.fieldDescriptions
 }
 
@@ -1812,11 +1742,11 @@ func (rr *ResultReader) Values() [][]byte {
 // Close consumes any remaining result data and returns the command tag or
 // error.
 func (rr *ResultReader) Close() (CommandTag, error) {
-	//if rr.closed {
-	//	return rr.commandTag, rr.err
-	//}
-	//rr.closed = true
-	//
+	if rr.closed {
+		return rr.commandTag, rr.err
+	}
+	rr.closed = true
+
 	//for !rr.commandConcluded {
 	//	_, err := rr.receiveMessage()
 	//	if err != nil {
@@ -1843,8 +1773,7 @@ func (rr *ResultReader) Close() (CommandTag, error) {
 	//	}
 	//}
 	//
-	//return rr.commandTag, rr.err
-	panic("implement me")
+	return rr.commandTag, rr.err
 }
 
 // readUntilRowDescription ensures the ResultReader's fieldDescriptions are loaded. It does not return an error as any
@@ -2076,15 +2005,15 @@ func (pgConn *PgConn) makeCommandTag(buf []byte) CommandTag {
 // enterPotentialWriteReadDeadlock must be called before a write that could deadlock if the server is simultaneously
 // blocked writing to us.
 func (pgConn *PgConn) enterPotentialWriteReadDeadlock() {
-	//// The time to wait is somewhat arbitrary. A Write should only take as long as the syscall and memcpy to the OS
-	//// outbound network buffer unless the buffer is full (which potentially is a block). It needs to be long enough for
-	//// the normal case, but short enough not to kill performance if a block occurs.
-	////
-	//// In addition, on Windows the default timer resolution is 15.6ms. So setting the timer to less than that is
-	//// ineffective.
-	//if pgConn.slowWriteTimer.Reset(15 * time.Millisecond) {
-	//	panic("BUG: slow write timer already active")
-	//}
+	// The time to wait is somewhat arbitrary. A Write should only take as long as the syscall and memcpy to the OS
+	// outbound network buffer unless the buffer is full (which potentially is a block). It needs to be long enough for
+	// the normal case, but short enough not to kill performance if a block occurs.
+	//
+	// In addition, on Windows the default timer resolution is 15.6ms. So setting the timer to less than that is
+	// ineffective.
+	if pgConn.slowWriteTimer.Reset(15 * time.Millisecond) {
+		panic("BUG: slow write timer already active")
+	}
 }
 
 // exitPotentialWriteReadDeadlock must be called after a call to enterPotentialWriteReadDeadlock.
@@ -2102,7 +2031,7 @@ func (pgConn *PgConn) exitPotentialWriteReadDeadlock() {
 }
 
 func (pgConn *PgConn) flushWithPotentialWriteReadDeadlock() error {
-	//pgConn.enterPotentialWriteReadDeadlock()
+	pgConn.enterPotentialWriteReadDeadlock()
 	//defer pgConn.exitPotentialWriteReadDeadlock()
 	//err := pgConn.frontend.Flush()
 	//return err
@@ -2359,6 +2288,66 @@ func (s *pipelineState) PendingSync() bool {
 
 func (s *pipelineState) ExpectedReadyForQuery() int {
 	return s.expectedReadyForQueryCount
+}
+
+func (pgConn *PgConn) StartTransaction(tpb []byte) (*FBTransaction, error) {
+	var err error
+	opTransaction := fbproto.OpTransaction{
+		TPB: tpb,
+	}
+	if err = pgConn.client.WriteMessage(&opTransaction); err != nil {
+		return nil, err
+	}
+
+	if err = pgConn.writer.Flush(); err != nil {
+		return nil, err
+	}
+
+	if resp, err := pgConn.receiveResponse(); err == nil {
+		return &FBTransaction{resp.Object}, nil
+	} else {
+		return nil, err
+	}
+}
+
+func (pgConn *PgConn) CommitTransaction(transaction *FBTransaction) error {
+	var err error
+	opTransaction := fbproto.OpCommit{
+		TransactionHandle: transaction.Handle,
+	}
+	if err = pgConn.client.WriteMessage(&opTransaction); err != nil {
+		return err
+	}
+
+	if err = pgConn.writer.Flush(); err != nil {
+		return err
+	}
+
+	if _, err = pgConn.receiveResponse(); err == nil {
+		return err
+	}
+
+	return nil
+}
+
+func (pgConn *PgConn) RollbackTransaction(transaction *FBTransaction) error {
+	var err error
+	opTransaction := fbproto.OpRollback{
+		TransactionHandle: transaction.Handle,
+	}
+	if err = pgConn.client.WriteMessage(&opTransaction); err != nil {
+		return err
+	}
+
+	if err = pgConn.writer.Flush(); err != nil {
+		return err
+	}
+
+	if _, err = pgConn.receiveResponse(); err == nil {
+		return err
+	}
+
+	return nil
 }
 
 // StartPipeline switches the connection to pipeline mode and returns a *Pipeline. In pipeline mode requests can be sent

@@ -608,3 +608,25 @@ const (
 	//ShutdownModeExDenyNewTransactions Disable new transactions for N seconds then shutdown
 	ShutdownModeExDenyNewTransactions ShutdownModeEx = isc_spb_prp_transactions_shutdown
 )
+
+// op_free_statement p_sqlfree_option
+const (
+	DSQL_close     = 1
+	DSQL_drop      = 2
+	DSQL_unprepare = 4
+)
+
+const (
+	CS_NONE    = 0
+	CS_BINARY  = 1
+	CS_dynamic = 127
+)
+
+const (
+	isc_blob_untyped = 0
+	isc_blob_text    = 1
+)
+const (
+	BLOB_SUB_TYPE_BINARY = isc_blob_untyped
+	BLOB_SUB_TYPE_TEXT   = isc_blob_text
+)

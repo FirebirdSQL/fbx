@@ -10,9 +10,10 @@ type SQLData struct {
 	Nulls         *utils.BitSet
 	RowData       [][]byte
 	RowDescriptor []FieldDescriptor
+	FetchResponse OpFetchResponse
 }
 
-func ReadRows(x *XDRReader, rowDescriptor []FieldDescriptor) (*SQLData, error) {
+func ReadRowData(x *XDRReader, rowDescriptor []FieldDescriptor) (*SQLData, error) {
 	var err error
 	count := len(rowDescriptor)
 	rowData := make([][]byte, count)
@@ -47,5 +48,69 @@ func ReadRows(x *XDRReader, rowDescriptor []FieldDescriptor) (*SQLData, error) {
 			rowData[i] = data
 		}
 	}
-	return &SQLData{nullsBitset, rowData, rowDescriptor}, nil
+
+	resp := OpFetchResponse{}
+	if resp.Read(x) != nil {
+		return nil, err
+	}
+
+	return &SQLData{nullsBitset, rowData, rowDescriptor, resp}, nil
+}
+
+func WriteRowData(x *XDRWriter, rowDescriptor []FieldDescriptor, values [][]byte) error {
+	var err error
+	nulls := utils.NewBitSet(len(rowDescriptor))
+	for n, value := range values {
+		if value == nil {
+			nulls.Set(n)
+		}
+	}
+	if err = x.WriteBytes(nulls.AlignedBuf()); err != nil {
+		return err
+	}
+
+	for n, field := range rowDescriptor {
+		if !nulls.Get(n) {
+			if field.Type == SQL_TYPE_NULL {
+				continue
+			}
+			valueBuf := values[n]
+			valueBufLen := len(valueBuf)
+			l := field.CalculateIoLength(values[n])
+			if l == 0 {
+				if err = x.WriteInt32(valueBufLen); err != nil {
+					return err
+				}
+				if err = x.WriteBytes(valueBuf); err != nil {
+					return err
+				}
+				if err = x.WriteCustomPadding((4-valueBufLen)&3, field.GetPaddingByte()); err != nil {
+					return err
+				}
+			} else if l < 0 {
+				if err = x.WriteBytes(valueBuf); err != nil {
+					return err
+				}
+			} else {
+				realFieldLen := l - 1
+
+				if valueBufLen >= realFieldLen {
+					if err = x.WriteBytes(valueBuf[:realFieldLen]); err != nil {
+						return err
+					}
+					if err = x.WriteCustomPadding((4-realFieldLen)&3, field.GetPaddingByte()); err != nil {
+						return err
+					}
+				} else {
+					if err = x.WriteBytes(valueBuf); err != nil {
+						return err
+					}
+					if err = x.WriteCustomPadding(realFieldLen-valueBufLen+((4-realFieldLen)&3), field.GetPaddingByte()); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+	return nil
 }

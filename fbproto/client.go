@@ -222,5 +222,5 @@ func (c *Client) ReceiveFetchResponse() (*OpFetchResponse, error) {
 }
 
 func (c *Client) ReceiveSQLData(row []FieldDescriptor) (*SQLData, error) {
-	return ReadRows(c.xdrReader, row)
+	return ReadRowData(c.xdrReader, row)
 }
