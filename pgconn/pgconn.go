@@ -400,7 +400,9 @@ connectLoop:
 	dpb.PutInt32(fbproto.Isc_dpb_sql_dialect, 3)
 	dpb.PutString(fbproto.Isc_dpb_lc_ctype, config.Encoding)
 	dpb.PutString(fbproto.Isc_dpb_user_name, config.User)
-	//dpb.PutString(fbproto.Isc_dpb_sql_role_name, config.Role)
+	if config.Role != "" {
+		dpb.PutString(fbproto.Isc_dpb_sql_role_name, config.Role)
+	}
 	dpb.PutInt32(fbproto.Isc_dpb_process_id, int32(os.Getpid()))
 	dpb.PutString(fbproto.Isc_dpb_process_name, "fbx")
 	//dpb.AppendTag(fbproto.Isc_dpb_session_time_zone)

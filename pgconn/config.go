@@ -28,6 +28,7 @@ type Config struct {
 	Port           uint16
 	Database       string
 	User           string
+	Role           string
 	SystemUser     string
 	Password       string
 	ConnectTimeout time.Duration
@@ -253,6 +254,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		Database:             settings["database"],
 		User:                 settings["user"],
 		Password:             settings["password"],
+		Role:                 settings["role"],
 		RuntimeParams:        make(map[string]string),
 		BuildFrontend: func(r io.Reader, w io.Writer) *pgproto3.Client {
 			return pgproto3.NewClient(r, w)
@@ -260,7 +262,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		BuildContextWatcherHandler: func(pgConn *PgConn) ctxwatch.Handler {
 			return &DeadlineContextWatcherHandler{Conn: pgConn.conn}
 		},
-		OnPgError: func(_ *PgConn, pgErr *PgError) bool {
+		OnPgError: func(_ *PgConn, pgErr *FbError) bool {
 			// we want to automatically close any fatal errors
 			if strings.EqualFold(pgErr.Severity, "FATAL") {
 				return false
