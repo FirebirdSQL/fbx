@@ -10,6 +10,7 @@ import (
 type FieldDescriptor struct {
 	Index             int
 	Type              int
+	Format            int16 // 0 - binary, 1 - text
 	Scale             int
 	Subtype           int
 	Length            int
@@ -129,6 +130,7 @@ func (p *StatementInfo) feedDescriptors(reader *bytes.Buffer) error {
 		case isc_info_sql_owner:
 			field.OwnerName = p.readStringValue(reader)
 		case isc_info_sql_describe_end:
+			field.Format = FbTypeIntoFormat(field.Type, field.Subtype)
 			*p.currentDescriptor = append(*p.currentDescriptor, field)
 		case isc_info_sql_null_ind:
 			field.NullOk = p.readIntValue(reader) == 1
@@ -138,6 +140,14 @@ func (p *StatementInfo) feedDescriptors(reader *bytes.Buffer) error {
 			return fmt.Errorf("unknown descriptor info item: %d", item)
 		}
 	}
+}
+
+func FbTypeIntoFormat(fbtype int, subtype int) int16 {
+	switch fbtype {
+	case SQL_TYPE_VARYING, SQL_TYPE_TEXT:
+		return 1
+	}
+	return 0
 }
 
 func (p *StatementInfo) GetRowBlr() []byte {
