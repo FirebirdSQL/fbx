@@ -1250,7 +1250,7 @@ func TestConnExecPreparedMaxNumberOfParams(t *testing.T) {
 	psd, err := pgConn.Prepare(ctx, "ps1", sql, nil)
 	require.NoError(t, err)
 	require.NotNil(t, psd)
-	assert.Len(t, psd.ParamOIDs, paramCount)
+	assert.Len(t, psd.Parameters, paramCount)
 	assert.Len(t, psd.Fields, 1)
 
 	result := pgConn.ExecPrepared(ctx, "ps1", args, nil, nil).Read()
@@ -1287,7 +1287,7 @@ func TestConnExecPreparedTooManyParams(t *testing.T) {
 		// PostgreSQL accepts preparing a statement with more than 65535 parameters and only fails when executing it through the extended protocol.
 		require.NoError(t, err)
 		require.NotNil(t, psd)
-		assert.Len(t, psd.ParamOIDs, paramCount)
+		assert.Len(t, psd.Parameters, paramCount)
 		assert.Len(t, psd.Fields, 1)
 
 		result := pgConn.ExecPrepared(ctx, "ps1", args, nil, nil).Read()
@@ -2744,7 +2744,7 @@ func TestPipelinePrepare(t *testing.T) {
 	require.Truef(t, ok, "expected StatementDescription, got: %#v", results)
 	require.Len(t, sd.Fields, 1)
 	require.Equal(t, "a", string(sd.Fields[0].Name))
-	require.Equal(t, []uint32{pgtype.Int8OID}, sd.ParamOIDs)
+	require.Equal(t, []uint32{pgtype.Int8OID}, sd.Parameters[0].Type)
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
@@ -2752,7 +2752,7 @@ func TestPipelinePrepare(t *testing.T) {
 	require.Truef(t, ok, "expected StatementDescription, got: %#v", results)
 	require.Len(t, sd.Fields, 1)
 	require.Equal(t, "b", string(sd.Fields[0].Name))
-	require.Equal(t, []uint32{pgtype.TextOID}, sd.ParamOIDs)
+	require.Equal(t, []uint32{pgtype.TextOID}, sd.Parameters[0].Type)
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
@@ -2760,21 +2760,21 @@ func TestPipelinePrepare(t *testing.T) {
 	require.Truef(t, ok, "expected StatementDescription, got: %#v", results)
 	require.Len(t, sd.Fields, 1)
 	require.Equal(t, "c", string(sd.Fields[0].Name))
-	require.Equal(t, []uint32{}, sd.ParamOIDs)
+	require.Len(t, sd.Parameters, 0)
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
 	sd, ok = results.(*pgconn.StatementDescription)
 	require.Truef(t, ok, "expected StatementDescription, got: %#v", results)
 	require.Len(t, sd.Fields, 0)
-	require.Equal(t, []uint32{pgtype.TextOID}, sd.ParamOIDs)
+	require.Equal(t, []uint32{pgtype.TextOID}, sd.Parameters[0].Type)
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
 	sd, ok = results.(*pgconn.StatementDescription)
 	require.Truef(t, ok, "expected StatementDescription, got: %#v", results)
 	require.Len(t, sd.Fields, 0)
-	require.Len(t, sd.ParamOIDs, 0)
+	require.Len(t, sd.Parameters, 0)
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
@@ -2814,7 +2814,7 @@ func TestPipelinePrepareError(t *testing.T) {
 	require.Truef(t, ok, "expected StatementDescription, got: %#v", results)
 	require.Len(t, sd.Fields, 1)
 	require.Equal(t, "a", string(sd.Fields[0].Name))
-	require.Equal(t, []uint32{pgtype.Int8OID}, sd.ParamOIDs)
+	require.Equal(t, []uint32{pgtype.Int8OID}, sd.Parameters[0].Type)
 
 	results, err = pipeline.GetResults()
 	var pgErr *pgconn.PgError
@@ -2858,7 +2858,7 @@ func TestPipelinePrepareAndDeallocate(t *testing.T) {
 	require.Truef(t, ok, "expected StatementDescription, got: %#v", results)
 	require.Len(t, sd.Fields, 1)
 	require.Equal(t, "a", string(sd.Fields[0].Name))
-	require.Equal(t, []uint32{pgtype.Int8OID}, sd.ParamOIDs)
+	require.Equal(t, []uint32{pgtype.Int8OID}, sd.Parameters[0].Type)
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
@@ -2995,7 +2995,7 @@ func TestPipelinePrepareQuery(t *testing.T) {
 	require.Truef(t, ok, "expected StatementDescription, got: %#v", results)
 	require.Len(t, sd.Fields, 1)
 	require.Equal(t, "msg", string(sd.Fields[0].Name))
-	require.Equal(t, []uint32{pgtype.TextOID}, sd.ParamOIDs)
+	require.Equal(t, []uint32{pgtype.TextOID}, sd.Parameters[0].Type)
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
@@ -3162,7 +3162,7 @@ func TestPipelineFlushForSingleRequests(t *testing.T) {
 	require.Truef(t, ok, "expected StatementDescription, got: %#v", results)
 	require.Len(t, sd.Fields, 1)
 	require.Equal(t, "msg", string(sd.Fields[0].Name))
-	require.Equal(t, []uint32{pgtype.TextOID}, sd.ParamOIDs)
+	require.Equal(t, []uint32{pgtype.TextOID}, sd.Parameters[0].Type)
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
@@ -3259,7 +3259,7 @@ func TestPipelineFlushForRequestSeries(t *testing.T) {
 	require.Truef(t, ok, "expected StatementDescription, got: %#v", results)
 	require.Len(t, sd.Fields, 1)
 	require.Equal(t, "num", string(sd.Fields[0].Name))
-	require.Equal(t, []uint32{pgtype.Int8OID}, sd.ParamOIDs)
+	require.Equal(t, []uint32{pgtype.Int8OID}, sd.Parameters[0].Type)
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
@@ -3557,11 +3557,12 @@ func TestConnOnPgError(t *testing.T) {
 
 	config, err := pgconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
-	config.OnPgError = func(c *pgconn.PgConn, pgErr *pgconn.PgError) bool {
+	config.OnPgError = func(c *pgconn.PgConn, pgErr *pgconn.FbError) bool {
 		require.NotNil(t, c)
 		require.NotNil(t, pgErr)
 		// close connection on undefined tables only
-		if pgErr.Code == "42P01" {
+		//FIXME: fbx set proper code
+		if pgErr.SqlCode == 12345 {
 			return false
 		}
 		return true

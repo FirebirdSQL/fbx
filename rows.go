@@ -153,54 +153,53 @@ func (rows *baseRows) FieldDescriptions() []pgconn.FieldDescription {
 }
 
 func (rows *baseRows) Close() {
-	//if rows.closed {
-	//	return
-	//}
+	if rows.closed {
+		return
+	}
+
+	rows.closed = true
+
+	if rows.resultReader != nil {
+		var closeErr error
+		rows.commandTag, closeErr = rows.resultReader.Close()
+		if rows.err == nil {
+			rows.err = closeErr
+		}
+	}
+
+	if rows.multiResultReader != nil {
+		closeErr := rows.multiResultReader.Close()
+		if rows.err == nil {
+			rows.err = closeErr
+		}
+	}
+
+	if rows.err != nil && rows.conn != nil && rows.sql != "" {
+		if sc := rows.conn.statementCache; sc != nil {
+			sc.Invalidate(rows.sql)
+		}
+
+		if sc := rows.conn.descriptionCache; sc != nil {
+			sc.Invalidate(rows.sql)
+		}
+	}
+
+	if rows.batchTracer != nil {
+		rows.batchTracer.TraceBatchQuery(rows.ctx, rows.conn, TraceBatchQueryData{SQL: rows.sql, Args: rows.args, CommandTag: rows.commandTag, Err: rows.err})
+	} else if rows.queryTracer != nil {
+		rows.queryTracer.TraceQueryEnd(rows.ctx, rows.conn, TraceQueryEndData{rows.commandTag, rows.err})
+	}
+
+	// Zero references to other memory allocations. This allows them to be GC'd even when the Rows still referenced. In
+	// particular, when using pgxpool GC could be delayed as pgxpool.poolRows are allocated in large slices.
 	//
-	//rows.closed = true
-	//
-	//if rows.resultReader != nil {
-	//	var closeErr error
-	//	rows.commandTag, closeErr = rows.resultReader.Close()
-	//	if rows.err == nil {
-	//		rows.err = closeErr
-	//	}
-	//}
-	//
-	//if rows.multiResultReader != nil {
-	//	closeErr := rows.multiResultReader.Close()
-	//	if rows.err == nil {
-	//		rows.err = closeErr
-	//	}
-	//}
-	//
-	//if rows.err != nil && rows.conn != nil && rows.sql != "" {
-	//	if sc := rows.conn.statementCache; sc != nil {
-	//		sc.Invalidate(rows.sql)
-	//	}
-	//
-	//	if sc := rows.conn.descriptionCache; sc != nil {
-	//		sc.Invalidate(rows.sql)
-	//	}
-	//}
-	//
-	//if rows.batchTracer != nil {
-	//	rows.batchTracer.TraceBatchQuery(rows.ctx, rows.conn, TraceBatchQueryData{SQL: rows.sql, Args: rows.args, CommandTag: rows.commandTag, Err: rows.err})
-	//} else if rows.queryTracer != nil {
-	//	rows.queryTracer.TraceQueryEnd(rows.ctx, rows.conn, TraceQueryEndData{rows.commandTag, rows.err})
-	//}
-	//
-	//// Zero references to other memory allocations. This allows them to be GC'd even when the Rows still referenced. In
-	//// particular, when using pgxpool GC could be delayed as pgxpool.poolRows are allocated in large slices.
-	////
-	//// https://github.com/jackc/pgx/pull/2269
-	//rows.values = nil
-	//rows.scanPlans = nil
-	//rows.scanTypes = nil
-	//rows.ctx = nil
-	//rows.sql = ""
-	//rows.args = nil
-	panic("implement me")
+	// https://github.com/jackc/pgx/pull/2269
+	rows.values = nil
+	rows.scanPlans = nil
+	rows.scanTypes = nil
+	rows.ctx = nil
+	rows.sql = ""
+	rows.args = nil
 }
 
 func (rows *baseRows) CommandTag() pgconn.CommandTag {
@@ -268,7 +267,7 @@ func (rows *baseRows) Scan(dest ...any) error {
 		rows.scanPlans = make([]pgtype.ScanPlan, len(values))
 		rows.scanTypes = make([]reflect.Type, len(values))
 		for i := range dest {
-			rows.scanPlans[i] = m.PlanScan(fieldDescriptions[i].DataTypeOID, fieldDescriptions[i].Format, dest[i])
+			rows.scanPlans[i] = m.PlanScan(fieldDescriptions[i].Type, fieldDescriptions[i].Format, dest[i])
 			rows.scanTypes[i] = reflect.TypeOf(dest[i])
 		}
 	}
@@ -279,7 +278,7 @@ func (rows *baseRows) Scan(dest ...any) error {
 		}
 
 		if rows.scanTypes[i] != reflect.TypeOf(dst) {
-			rows.scanPlans[i] = m.PlanScan(fieldDescriptions[i].DataTypeOID, fieldDescriptions[i].Format, dest[i])
+			rows.scanPlans[i] = m.PlanScan(fieldDescriptions[i].Type, fieldDescriptions[i].Format, dest[i])
 			rows.scanTypes[i] = reflect.TypeOf(dest[i])
 		}
 
@@ -310,8 +309,8 @@ func (rows *baseRows) Values() ([]any, error) {
 			continue
 		}
 
-		if dt, ok := rows.typeMap.TypeForOID(fd.DataTypeOID); ok {
-			value, err := dt.Codec.DecodeValue(rows.typeMap, fd.DataTypeOID, fd.Format, buf)
+		if dt, ok := rows.typeMap.TypeForOID(fd.Type); ok {
+			value, err := dt.Codec.DecodeValue(rows.typeMap, fd.Type, fd.Format, buf)
 			if err != nil {
 				rows.fatal(err)
 			}
@@ -382,7 +381,7 @@ func ScanRow(typeMap *pgtype.Map, fieldDescriptions []pgconn.FieldDescription, v
 			continue
 		}
 
-		err := typeMap.Scan(fieldDescriptions[i].DataTypeOID, fieldDescriptions[i].Format, values[i], d)
+		err := typeMap.Scan(fieldDescriptions[i].Type, fieldDescriptions[i].Format, values[i], d)
 		if err != nil {
 			return ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: err}
 		}

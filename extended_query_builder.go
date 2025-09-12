@@ -2,6 +2,7 @@ package pgx
 
 import (
 	"fmt"
+
 	"github.com/red-soft/fbx/pgconn"
 	"github.com/red-soft/fbx/pgtype"
 )
@@ -31,12 +32,12 @@ func (eqb *ExtendedQueryBuilder) Build(m *pgtype.Map, sd *pgconn.StatementDescri
 		return nil
 	}
 
-	if len(sd.ParamOIDs) != len(args) {
+	if len(sd.Fields) != len(args) {
 		return fmt.Errorf("mismatched param and argument count")
 	}
 
 	for i := range args {
-		err := eqb.appendParam(m, sd.ParamOIDs[i], -1, args[i])
+		err := eqb.appendParam(m, sd.Parameters[i].Type, -1, args[i])
 		if err != nil {
 			err = fmt.Errorf("failed to encode args[%d]: %w", i, err)
 			return err
@@ -44,7 +45,7 @@ func (eqb *ExtendedQueryBuilder) Build(m *pgtype.Map, sd *pgconn.StatementDescri
 	}
 
 	for i := range sd.Fields {
-		eqb.appendResultFormat(m.FormatCodeForOID(sd.Fields[i].DataTypeOID))
+		eqb.appendResultFormat(m.FormatCodeForOID(sd.Fields[i].Type))
 	}
 
 	return nil

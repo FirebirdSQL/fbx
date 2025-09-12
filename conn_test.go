@@ -421,7 +421,8 @@ func TestPrepare(t *testing.T) {
 	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 
-	_, err := conn.Prepare(context.Background(), "test", "select $1::varchar")
+	//select $1::varchar
+	_, err := conn.Prepare(context.Background(), "test", "select cast(? as varchar) from rdb$database")
 	if err != nil {
 		t.Errorf("Unable to prepare statement: %v", err)
 		return

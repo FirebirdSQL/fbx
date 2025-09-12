@@ -1251,7 +1251,7 @@ func (pgConn *PgConn) Exec(ctx context.Context, sql string) *MultiResultReader {
 // binary format. If resultFormats is nil all results will be in text format.
 //
 // ResultReader must be closed before PgConn can be used again.
-func (pgConn *PgConn) ExecParams(ctx context.Context, sql string, paramValues [][]byte, paramOIDs []uint32, paramFormats []int16, resultFormats []int16) *ResultReader {
+func (pgConn *PgConn) ExecParams(ctx context.Context, sql string, paramValues [][]byte, params []FieldDescription, paramFormats []int16, resultFormats []int16) *ResultReader {
 	//result := pgConn.execExtendedPrefix(ctx, paramValues)
 	//if result.closed {
 	//	return result

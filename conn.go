@@ -2,7 +2,9 @@ package pgx
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strconv"
@@ -313,47 +315,46 @@ func (c *Conn) Close(ctx context.Context) error {
 // Prepare is idempotent; i.e. it is safe to call Prepare multiple times with the same name and sql arguments. This
 // allows a code path to Prepare and Query/Exec without concern for if the statement has already been prepared.
 func (c *Conn) Prepare(ctx context.Context, name, sql string) (sd *pgconn.StatementDescription, err error) {
-	//if c.prepareTracer != nil {
-	//	ctx = c.prepareTracer.TracePrepareStart(ctx, c, TracePrepareStartData{Name: name, SQL: sql})
-	//}
-	//
-	//if name != "" {
-	//	var ok bool
-	//	if sd, ok = c.preparedStatements[name]; ok && sd.SQL == sql {
-	//		if c.prepareTracer != nil {
-	//			c.prepareTracer.TracePrepareEnd(ctx, c, TracePrepareEndData{AlreadyPrepared: true})
-	//		}
-	//		return sd, nil
-	//	}
-	//}
-	//
-	//if c.prepareTracer != nil {
-	//	defer func() {
-	//		c.prepareTracer.TracePrepareEnd(ctx, c, TracePrepareEndData{Err: err})
-	//	}()
-	//}
-	//
-	//var psName, psKey string
-	//if name == sql {
-	//	digest := sha256.Sum256([]byte(sql))
-	//	psName = "stmt_" + hex.EncodeToString(digest[0:24])
-	//	psKey = sql
-	//} else {
-	//	psName = name
-	//	psKey = name
-	//}
-	//
-	//sd, err = c.pgConn.Prepare(ctx, psName, sql, nil)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//
-	//if psKey != "" {
-	//	c.preparedStatements[psKey] = sd
-	//}
-	//
-	//return sd, nil
-	panic("implement me")
+	if c.prepareTracer != nil {
+		ctx = c.prepareTracer.TracePrepareStart(ctx, c, TracePrepareStartData{Name: name, SQL: sql})
+	}
+
+	if name != "" {
+		var ok bool
+		if sd, ok = c.preparedStatements[name]; ok && sd.SQL == sql {
+			if c.prepareTracer != nil {
+				c.prepareTracer.TracePrepareEnd(ctx, c, TracePrepareEndData{AlreadyPrepared: true})
+			}
+			return sd, nil
+		}
+	}
+
+	if c.prepareTracer != nil {
+		defer func() {
+			c.prepareTracer.TracePrepareEnd(ctx, c, TracePrepareEndData{Err: err})
+		}()
+	}
+
+	var psName, psKey string
+	if name == sql {
+		digest := sha256.Sum256([]byte(sql))
+		psName = "stmt_" + hex.EncodeToString(digest[0:24])
+		psKey = sql
+	} else {
+		psName = name
+		psKey = name
+	}
+
+	sd, err = c.pgConn.Prepare(ctx, psName, sql, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if psKey != "" {
+		c.preparedStatements[psKey] = sd
+	}
+
+	return sd, nil
 }
 
 // Deallocate releases a prepared statement. Calling Deallocate on a non-existent prepared statement will succeed.
@@ -573,42 +574,36 @@ func (c *Conn) execSimpleProtocol(ctx context.Context, sql string, arguments []a
 }
 
 func (c *Conn) execParams(ctx context.Context, sd *pgconn.StatementDescription, arguments []any) (pgconn.CommandTag, error) {
-	//err := c.eqb.Build(c.typeMap, sd, arguments)
-	//if err != nil {
-	//	return pgconn.CommandTag{}, err
-	//}
-	//
-	//result := c.pgConn.ExecParams(ctx, sd.SQL, c.eqb.ParamValues, sd.ParamOIDs, c.eqb.ParamFormats, c.eqb.ResultFormats).Read()
-	//c.eqb.reset() // Allow c.eqb internal memory to be GC'ed as soon as possible.
-	//return result.CommandTag, result.Err
-	panic("implement me")
+	err := c.eqb.Build(c.typeMap, sd, arguments)
+	if err != nil {
+		return pgconn.CommandTag{}, err
+	}
 
+	result := c.pgConn.ExecParams(ctx, sd.SQL, c.eqb.ParamValues, sd.Parameters, c.eqb.ParamFormats, c.eqb.ResultFormats).Read()
+	c.eqb.reset() // Allow c.eqb internal memory to be GC'ed as soon as possible.
+	return result.CommandTag, result.Err
 }
 
 func (c *Conn) execPrepared(ctx context.Context, sd *pgconn.StatementDescription, arguments []any) (pgconn.CommandTag, error) {
-	//err := c.eqb.Build(c.typeMap, sd, arguments)
-	//if err != nil {
-	//	return pgconn.CommandTag{}, err
-	//}
-	//
-	//result := c.pgConn.ExecPrepared(ctx, sd.Name, c.eqb.ParamValues, c.eqb.ParamFormats, c.eqb.ResultFormats).Read()
-	//c.eqb.reset() // Allow c.eqb internal memory to be GC'ed as soon as possible.
-	//return result.CommandTag, result.Err
-	panic("implement me")
+	err := c.eqb.Build(c.typeMap, sd, arguments)
+	if err != nil {
+		return pgconn.CommandTag{}, err
+	}
 
+	result := c.pgConn.ExecPrepared(ctx, sd.Name, c.eqb.ParamValues, c.eqb.ParamFormats, c.eqb.ResultFormats).Read()
+	c.eqb.reset() // Allow c.eqb internal memory to be GC'ed as soon as possible.
+	return result.CommandTag, result.Err
 }
 
 func (c *Conn) execSQLParams(ctx context.Context, sql string, args []any) (pgconn.CommandTag, error) {
-	//err := c.eqb.Build(c.typeMap, nil, args)
-	//if err != nil {
-	//	return pgconn.CommandTag{}, err
-	//}
-	//
-	//result := c.pgConn.ExecParams(ctx, sql, c.eqb.ParamValues, nil, c.eqb.ParamFormats, c.eqb.ResultFormats).Read()
-	//c.eqb.reset() // Allow c.eqb internal memory to be GC'ed as soon as possible.
-	//return result.CommandTag, result.Err
-	panic("implement me")
+	err := c.eqb.Build(c.typeMap, nil, args)
+	if err != nil {
+		return pgconn.CommandTag{}, err
+	}
 
+	result := c.pgConn.ExecParams(ctx, sql, c.eqb.ParamValues, nil, c.eqb.ParamFormats, c.eqb.ResultFormats).Read()
+	c.eqb.reset() // Allow c.eqb internal memory to be GC'ed as soon as possible.
+	return result.CommandTag, result.Err
 }
 
 func (c *Conn) getRows(ctx context.Context, sql string, args []any) *baseRows {
@@ -738,13 +733,13 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) (Rows, error)
 		ctx = c.queryTracer.TraceQueryStart(ctx, c, TraceQueryStartData{SQL: sql, Args: args})
 	}
 
-	//if err := c.deallocateInvalidatedCachedStatements(ctx); err != nil {
-	//	if c.queryTracer != nil {
-	//		c.queryTracer.TraceQueryEnd(ctx, c, TraceQueryEndData{Err: err})
-	//	}
-	//	return &baseRows{err: err, closed: true}, err
-	//}
-	//
+	if err := c.deallocateInvalidatedCachedStatements(ctx); err != nil {
+		if c.queryTracer != nil {
+			c.queryTracer.TraceQueryEnd(ctx, c, TraceQueryEndData{Err: err})
+		}
+		return &baseRows{err: err, closed: true}, err
+	}
+
 	var resultFormats QueryResultFormats
 	var resultFormatsByOID QueryResultFormatsByOID
 	mode := c.config.DefaultQueryExecMode
@@ -802,8 +797,8 @@ optionLoop:
 			}
 		}
 
-		if len(sd.ParamOIDs) != len(args) {
-			rows.fatal(fmt.Errorf("expected %d arguments, got %d", len(sd.ParamOIDs), len(args)))
+		if len(sd.Parameters) != len(args) {
+			rows.fatal(fmt.Errorf("expected %d arguments, got %d", len(sd.Parameters), len(args)))
 			return rows, rows.err
 		}
 
@@ -818,7 +813,7 @@ optionLoop:
 		if resultFormatsByOID != nil {
 			resultFormats = make([]int16, len(sd.Fields))
 			for i := range resultFormats {
-				resultFormats[i] = resultFormatsByOID[uint32(sd.Fields[i].DataTypeOID)]
+				resultFormats[i] = resultFormatsByOID[uint32(sd.Fields[i].Type)]
 			}
 		}
 
@@ -827,7 +822,7 @@ optionLoop:
 		}
 
 		if !explicitPreparedStatement && mode == QueryExecModeCacheDescribe {
-			rows.resultReader = c.pgConn.ExecParams(ctx, sql, c.eqb.ParamValues, sd.ParamOIDs, c.eqb.ParamFormats, resultFormats)
+			rows.resultReader = c.pgConn.ExecParams(ctx, sql, c.eqb.ParamValues, sd.Parameters, c.eqb.ParamFormats, resultFormats)
 		} else {
 			rows.resultReader = c.pgConn.ExecPrepared(ctx, sd.Name, c.eqb.ParamValues, c.eqb.ParamFormats, resultFormats)
 		}
@@ -1421,45 +1416,44 @@ func (c *Conn) getCompositeFields(ctx context.Context, oid uint32) ([]pgtype.Com
 }
 
 func (c *Conn) deallocateInvalidatedCachedStatements(ctx context.Context) error {
-	//if txStatus := c.pgConn.TxStatus(); txStatus != 'I' && txStatus != 'T' {
-	//	return nil
-	//}
-	//
-	//if c.descriptionCache != nil {
-	//	c.descriptionCache.RemoveInvalidated()
-	//}
-	//
-	//var invalidatedStatements []*pgconn.StatementDescription
-	//if c.statementCache != nil {
-	//	invalidatedStatements = c.statementCache.GetInvalidated()
-	//}
-	//
-	//if len(invalidatedStatements) == 0 {
-	//	return nil
-	//}
-	//
-	//pipeline := c.pgConn.StartPipeline(ctx)
-	//defer pipeline.Close()
-	//
-	//for _, sd := range invalidatedStatements {
-	//	pipeline.SendDeallocate(sd.Name)
-	//}
-	//
-	//err := pipeline.Sync()
-	//if err != nil {
-	//	return fmt.Errorf("failed to deallocate cached statement(s): %w", err)
-	//}
-	//
-	//err = pipeline.Close()
-	//if err != nil {
-	//	return fmt.Errorf("failed to deallocate cached statement(s): %w", err)
-	//}
-	//
-	//c.statementCache.RemoveInvalidated()
-	//for _, sd := range invalidatedStatements {
-	//	delete(c.preparedStatements, sd.Name)
-	//}
-	//
-	//return nil
-	panic("implement me")
+	if txStatus := c.pgConn.TxStatus(); txStatus != 'I' && txStatus != 'T' {
+		return nil
+	}
+
+	if c.descriptionCache != nil {
+		c.descriptionCache.RemoveInvalidated()
+	}
+
+	var invalidatedStatements []*pgconn.StatementDescription
+	if c.statementCache != nil {
+		invalidatedStatements = c.statementCache.GetInvalidated()
+	}
+
+	if len(invalidatedStatements) == 0 {
+		return nil
+	}
+
+	pipeline := c.pgConn.StartPipeline(ctx)
+	defer pipeline.Close()
+
+	for _, sd := range invalidatedStatements {
+		pipeline.SendDeallocate(sd.Name)
+	}
+
+	err := pipeline.Sync()
+	if err != nil {
+		return fmt.Errorf("failed to deallocate cached statement(s): %w", err)
+	}
+
+	err = pipeline.Close()
+	if err != nil {
+		return fmt.Errorf("failed to deallocate cached statement(s): %w", err)
+	}
+
+	c.statementCache.RemoveInvalidated()
+	for _, sd := range invalidatedStatements {
+		delete(c.preparedStatements, sd.Name)
+	}
+
+	return nil
 }
