@@ -878,42 +878,52 @@ func (ct CommandTag) Select() bool {
 }
 
 type FieldDescription struct {
-	Name                 string
-	TableOID             uint32
-	TableAttributeNumber uint16
-	DataTypeOID          uint32
-	DataTypeSize         int16
-	TypeModifier         int32
-	Format               int16
+	Index             int
+	Type              uint32
+	Format            int16 // 0 - binary, 1 - text
+	Scale             int
+	Subtype           int
+	Length            int
+	NullOk            bool
+	Name              string
+	TableAliasName    string
+	RelName           string
+	OwnerName         string
+	OriginalName      string
+	OriginalTableName string
+	Nullable          bool
 }
 
-//func (pgConn *PgConn) convertRowDescription(dst []FieldDescription, rd *pgproto3.RowDescription) []FieldDescription {
-//if cap(dst) >= len(rd.Fields) {
-//	dst = dst[:len(rd.Fields):len(rd.Fields)]
-//} else {
-//	dst = make([]FieldDescription, len(rd.Fields))
-//}
-//
-//for i := range rd.Fields {
-//	dst[i].Name = string(rd.Fields[i].Name)
-//	dst[i].TableOID = rd.Fields[i].TableOID
-//	dst[i].TableAttributeNumber = rd.Fields[i].TableAttributeNumber
-//	dst[i].DataTypeOID = rd.Fields[i].DataTypeOID
-//	dst[i].DataTypeSize = rd.Fields[i].DataTypeSize
-//	dst[i].TypeModifier = rd.Fields[i].TypeModifier
-//	dst[i].Format = rd.Fields[i].Format
-//}
-//
-//return dst
-//panic("implement me")
-//}
+func (pgConn *PgConn) convertRowDescription(src []fbproto.FieldDescriptor) []FieldDescription {
+	res := make([]FieldDescription, len(src))
+
+	for i := range src {
+		res[i].Index = src[i].Index
+		res[i].Type = uint32(src[i].Type)
+		res[i].Format = src[i].Format
+		res[i].Scale = src[i].Scale
+		res[i].Subtype = src[i].Subtype
+		res[i].Length = src[i].Length
+		res[i].NullOk = src[i].NullOk
+		res[i].Name = src[i].Name
+		res[i].TableAliasName = src[i].TableAliasName
+		res[i].RelName = src[i].RelName
+		res[i].OwnerName = src[i].OwnerName
+		res[i].OriginalName = src[i].OriginalName
+		res[i].OriginalTableName = src[i].OriginalTableName
+		res[i].Nullable = src[i].Nullable
+	}
+
+	return res
+}
 
 type StatementDescription struct {
 	Name            string
 	SQL             string
 	StatementInfo   *fbproto.StatementInfo
 	StatementHandle int
-	Fields          []fbproto.FieldDescriptor
+	Fields          []FieldDescription
+	Parameters      []FieldDescription
 }
 
 // Prepare creates a prepared statement. If the name is empty, the anonymous prepared statement will be used. This
@@ -1000,7 +1010,14 @@ func (pgConn *PgConn) Prepare(ctx context.Context, name, sql string, paramOIDs [
 		}
 	}
 
-	st := StatementDescription{Name: name, SQL: sql, Fields: statementInfo.FieldDescriptors, StatementHandle: statementHandle, StatementInfo: statementInfo}
+	st := StatementDescription{
+		Name:            name,
+		SQL:             sql,
+		Fields:          pgConn.convertRowDescription(statementInfo.FieldDescriptors),
+		Parameters:      pgConn.convertRowDescription(statementInfo.ParametersDescriptors),
+		StatementHandle: statementHandle,
+		StatementInfo:   statementInfo,
+	}
 	pgConn.preparedMap[name] = &st
 	return &st, nil
 }
@@ -1645,7 +1662,7 @@ type ResultReader struct {
 	//pipeline          *Pipeline
 	ctx context.Context
 
-	fieldDescriptions []fbproto.FieldDescriptor
+	fieldDescriptions []FieldDescription
 	rowValues         [][]byte
 	commandTag        CommandTag
 	commandConcluded  bool
@@ -1658,7 +1675,7 @@ type ResultReader struct {
 
 // Result is the saved query response that is returned by calling Read on a ResultReader.
 type Result struct {
-	FieldDescriptions []fbproto.FieldDescriptor
+	FieldDescriptions []FieldDescription
 	Rows              [][][]byte
 	CommandTag        CommandTag
 	Err               error
@@ -1670,7 +1687,7 @@ func (rr *ResultReader) Read() *Result {
 
 	for rr.NextRow() {
 		if br.FieldDescriptions == nil {
-			br.FieldDescriptions = make([]fbproto.FieldDescriptor, len(rr.FieldDescriptions()))
+			br.FieldDescriptions = make([]FieldDescription, len(rr.FieldDescriptions()))
 			copy(br.FieldDescriptions, rr.FieldDescriptions())
 		}
 
@@ -1731,7 +1748,7 @@ func (rr *ResultReader) NextRow() bool {
 // FieldDescriptions returns the field descriptions for the current result set. The returned slice is only valid until
 // the ResultReader is closed. It may return nil (for example, if the query did not return a result set or an error was
 // encountered.)
-func (rr *ResultReader) FieldDescriptions() []fbproto.FieldDescriptor {
+func (rr *ResultReader) FieldDescriptions() []FieldDescription {
 	return rr.fieldDescriptions
 }
 
