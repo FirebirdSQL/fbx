@@ -777,14 +777,12 @@ func (pgConn *PgConn) CleanupDone() chan (struct{}) {
 //
 // CleanupDone() can be used to determine if all cleanup has been completed.
 func (pgConn *PgConn) IsClosed() bool {
-	//return pgConn.status < connStatusIdle
-	panic("implement me")
+	return pgConn.status < connStatusIdle
 }
 
 // IsBusy reports if the connection is busy.
 func (pgConn *PgConn) IsBusy() bool {
-	//return pgConn.status == connStatusBusy
-	panic("implement me")
+	return pgConn.status == connStatusBusy
 }
 
 // lock locks the connection.
