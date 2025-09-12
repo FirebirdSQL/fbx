@@ -264,9 +264,10 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		},
 		OnPgError: func(_ *PgConn, pgErr *FbError) bool {
 			// we want to automatically close any fatal errors
-			if strings.EqualFold(pgErr.Severity, "FATAL") {
-				return false
-			}
+			// FIXME: fbx how to check check if server error is fatal?
+			//if strings.EqualFold(pgErr.Severity, "FATAL") {
+			//	return false
+			//}
 			return true
 		},
 		AuthPlugin: settings["auth_plugin"],
