@@ -50,8 +50,8 @@ func (op *OpResponse) Read(x *XDRReader) error {
 		if tag == isc_arg_end {
 			break
 		}
-		switch {
-		case tag == isc_arg_gds:
+		switch tag {
+		case isc_arg_gds:
 			if gdsCode, err = x.ReadInt32(); err == nil {
 				if start {
 					start = false
@@ -71,9 +71,9 @@ func (op *OpResponse) Read(x *XDRReader) error {
 			} else {
 				return err
 			}
-		case tag == isc_arg_number:
+		case isc_arg_number:
 			if num, err := x.ReadInt32(); err == nil {
-				if gdsCode == 335544436 {
+				if gdsCode == 335544436 { //isc_sqlerr
 					op.SqlCode = num
 				}
 				numArg++
@@ -81,21 +81,21 @@ func (op *OpResponse) Read(x *XDRReader) error {
 			} else {
 				return err
 			}
-		case tag == isc_arg_string:
+		case isc_arg_string:
 			if str, err := x.ReadString(op.Encoding); err == nil {
 				numArg++
 				op.Message = strings.Replace(op.Message, "@"+strconv.Itoa(numArg), str, 1)
 			} else {
 				return err
 			}
-		case tag == isc_arg_interpreted:
+		case isc_arg_interpreted:
 			if str, err := x.ReadString(op.Encoding); err == nil {
 				op.Message += str
 
 			} else {
 				return err
 			}
-		case tag == isc_arg_sql_state:
+		case isc_arg_sql_state:
 			if str, err := x.ReadString(op.Encoding); err == nil {
 				op.SqlState = str
 			} else {
