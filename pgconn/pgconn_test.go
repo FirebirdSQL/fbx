@@ -672,7 +672,8 @@ func TestConnDeallocate(t *testing.T) {
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
-	_, err = pgConn.Prepare(ctx, "ps1", "select 1", nil)
+	//select 1
+	_, err = pgConn.Prepare(ctx, "ps1", "select 1 from rdb$database", nil)
 	require.NoError(t, err)
 
 	_, err = pgConn.ExecPrepared(ctx, "ps1", nil, nil, nil).Close()
