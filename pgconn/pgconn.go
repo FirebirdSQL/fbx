@@ -1268,13 +1268,13 @@ func (pgConn *PgConn) ExecPrepared(ctx context.Context, stmtName string, paramVa
 		result.closed = true
 		return result
 	}
+	defer pgConn.unlock()
 
 	if ctx != context.Background() {
 		select {
 		case <-ctx.Done():
 			result.concludeCommand(CommandTag{}, newContextAlreadyDoneError(ctx))
 			result.closed = true
-			pgConn.unlock()
 			return result
 		default:
 		}
@@ -1293,7 +1293,6 @@ func (pgConn *PgConn) ExecPrepared(ctx context.Context, stmtName string, paramVa
 		result.concludeCommand(CommandTag{}, err)
 		pgConn.contextWatcher.Unwatch()
 		result.closed = true
-		pgConn.unlock()
 		return result
 	}
 
@@ -1302,7 +1301,6 @@ func (pgConn *PgConn) ExecPrepared(ctx context.Context, stmtName string, paramVa
 		result.concludeCommand(CommandTag{}, err)
 		pgConn.contextWatcher.Unwatch()
 		result.closed = true
-		pgConn.unlock()
 		return result
 	}
 
@@ -1312,7 +1310,6 @@ func (pgConn *PgConn) ExecPrepared(ctx context.Context, stmtName string, paramVa
 		result.concludeCommand(CommandTag{}, err)
 		pgConn.contextWatcher.Unwatch()
 		result.closed = true
-		pgConn.unlock()
 		return result
 	}
 
