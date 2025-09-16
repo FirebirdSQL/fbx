@@ -1222,6 +1222,23 @@ func (pgConn *PgConn) Exec(ctx context.Context, sql string) *MultiResultReader {
 //
 // ResultReader must be closed before PgConn can be used again.
 func (pgConn *PgConn) ExecParams(ctx context.Context, sql string, paramValues [][]byte, params []FieldDescription, paramFormats []int16, resultFormats []int16) *ResultReader {
+	//FIXME: fbx where free prepared statement?
+	_, err := pgConn.Prepare(ctx, sql, sql, nil)
+	if err != nil {
+		res := ResultReader{
+			pgConn: pgConn,
+			ctx:    ctx,
+			closed: true,
+		}
+		pgConn.asyncClose()
+		res.concludeCommand(CommandTag{}, err)
+		pgConn.contextWatcher.Unwatch()
+		res.closed = true
+		return &res
+	}
+
+	return pgConn.ExecPrepared(ctx, sql, paramValues, nil, nil)
+
 	//result := pgConn.execExtendedPrefix(ctx, paramValues)
 	//if result.closed {
 	//	return result
