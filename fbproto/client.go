@@ -46,6 +46,7 @@ type Client struct {
 	chacha20writer *chacha20.Cipher
 	xdrReader      *XDRReader
 	xdrWriter      *XDRWriter
+	lazyCounter    int
 }
 
 func NewClient(r io.Reader, w io.Writer, encoding *Encoding) *Client {
@@ -114,7 +115,15 @@ func (c *Client) Write(buf []byte) (n int, err error) {
 }
 
 func (c *Client) WriteMessage(msg ClientMessage) error {
-	return msg.Write(c.xdrWriter)
+	err := msg.Write(c.xdrWriter)
+	if err == nil {
+		switch msg.(type) {
+		//FIXME: fbx should be implicit or explicit?
+		case *OpFreeStatement:
+			c.lazyCounter++
+		}
+	}
+	return err
 	//var buf []byte
 	//buf, err := msg.Pack(buf)
 	//if err != nil {
@@ -185,12 +194,20 @@ func (c *Client) ReceiveMessage() (ServerMessage, error) {
 			continue
 		case *OpResponse:
 			if m.Failure {
-				return &ErrorResponse{Object: m.Object, BlobId: m.BlobId, GdsCodes: m.GdsCodes, SqlCode: m.SqlCode, SqlState: m.SqlState, Message: m.Message}, nil
+				if c.lazyCounter == 0 {
+					return &ErrorResponse{Object: m.Object, BlobId: m.BlobId, GdsCodes: m.GdsCodes, SqlCode: m.SqlCode, SqlState: m.SqlState, Message: m.Message}, nil
+				} else {
+					//FIXME: fbx need some callback for lazy response error?
+					fmt.Printf("Ignoring lazy response: %s", m.Message)
+				}
 			}
 		case *OpReject:
 			return msg, fmt.Errorf("server rejected connection")
 		}
-		break
+		if c.lazyCounter == 0 {
+			break
+		}
+		c.lazyCounter--
 	}
 	return msg, nil
 }

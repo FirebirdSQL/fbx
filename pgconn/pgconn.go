@@ -1027,69 +1027,38 @@ func (pgConn *PgConn) Prepare(ctx context.Context, name, sql string, paramOIDs [
 //   - Deallocate can succeed in an aborted transaction.
 //   - Deallocating a non-existent prepared statement is not an error.
 func (pgConn *PgConn) Deallocate(ctx context.Context, name string) error {
-	//if err := pgConn.lock(); err != nil {
-	//	return err
-	//}
-	//defer pgConn.unlock()
-	//
-	//if ctx != context.Background() {
-	//	select {
-	//	case <-ctx.Done():
-	//		return newContextAlreadyDoneError(ctx)
-	//	default:
-	//	}
-	//	pgConn.contextWatcher.Watch(ctx)
-	//	defer pgConn.contextWatcher.Unwatch()
-	//}
-	//
-	//pgConn.frontend.SendClose(&pgproto3.Close{ObjectType: 'S', Name: name})
-	//pgConn.frontend.SendSync(&pgproto3.Sync{})
-	//err := pgConn.flushWithPotentialWriteReadDeadlock()
-	//if err != nil {
-	//	pgConn.asyncClose()
-	//	return err
-	//}
-	//
-	//for {
-	//	msg, err := pgConn.receiveMessage()
-	//	if err != nil {
-	//		pgConn.asyncClose()
-	//		return normalizeTimeoutError(ctx, err)
-	//	}
-	//
-	//	switch msg := msg.(type) {
-	//	case *pgproto3.ErrorResponse:
-	//		return ErrorResponseToPgError(msg)
-	//	case *pgproto3.ReadyForQuery:
-	//		return nil
-	//	}
-	//}
-	panic("implement me")
-}
+	st := pgConn.preparedMap[name]
+	if st == nil {
+		return fmt.Errorf("query '%s' was not prepared", name)
+	}
 
-// ErrorResponseToPgError converts a wire protocol error message to a *PgError.
-func ErrorResponseToPgError(msg *pgproto3.ErrorResponse) *PgError {
-	//return &PgError{
-	//	Severity:            msg.Severity,
-	//	SeverityUnlocalized: msg.SeverityUnlocalized,
-	//	Code:                string(msg.Code),
-	//	Response:             string(msg.Response),
-	//	Detail:              string(msg.Detail),
-	//	Hint:                msg.Hint,
-	//	Position:            msg.Position,
-	//	InternalPosition:    msg.InternalPosition,
-	//	InternalQuery:       string(msg.InternalQuery),
-	//	Where:               string(msg.Where),
-	//	SchemaName:          string(msg.SchemaName),
-	//	TableName:           string(msg.TableName),
-	//	ColumnName:          string(msg.ColumnName),
-	//	DataTypeName:        string(msg.DataTypeName),
-	//	ConstraintName:      msg.ConstraintName,
-	//	File:                string(msg.File),
-	//	Line:                msg.Line,
-	//	Routine:             string(msg.Routine),
-	//}
-	panic("implement me")
+	var err error
+	if err = pgConn.lock(); err != nil {
+		return err
+	}
+	defer pgConn.unlock()
+
+	if ctx != context.Background() {
+		select {
+		case <-ctx.Done():
+			return newContextAlreadyDoneError(ctx)
+		default:
+		}
+		pgConn.contextWatcher.Watch(ctx)
+		defer pgConn.contextWatcher.Unwatch()
+	}
+
+	if err = pgConn.client.WriteMessage(&fbproto.OpFreeStatement{StatementHandle: st.StatementHandle}); err != nil {
+		pgConn.asyncClose()
+		return err
+	}
+
+	if err = pgConn.writer.Flush(); err != nil {
+		pgConn.asyncClose()
+		return err
+	}
+
+	return nil
 }
 
 //func noticeResponseToNotice(msg *pgproto3.NoticeResponse) *Notice {
