@@ -1774,6 +1774,7 @@ func (rr *ResultReader) Close() (CommandTag, error) {
 	//	}
 	//}
 	//
+	rr.pgConn.contextWatcher.Unwatch()
 	return rr.commandTag, rr.err
 }
 
