@@ -2033,10 +2033,9 @@ func (pgConn *PgConn) exitPotentialWriteReadDeadlock() {
 
 func (pgConn *PgConn) flushWithPotentialWriteReadDeadlock() error {
 	pgConn.enterPotentialWriteReadDeadlock()
-	//defer pgConn.exitPotentialWriteReadDeadlock()
-	//err := pgConn.frontend.Flush()
-	//return err
-	panic("implement me")
+	defer pgConn.exitPotentialWriteReadDeadlock()
+	err := pgConn.writer.Flush()
+	return err
 }
 
 // SyncConn prepares the underlying net.Conn for direct use. PgConn may internally buffer reads or use goroutines for
