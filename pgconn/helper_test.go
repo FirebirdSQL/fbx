@@ -24,7 +24,8 @@ func closeConn(t testing.TB, conn *pgconn.PgConn) {
 // Do a simple query to ensure the connection is still usable
 func ensureConnValid(t *testing.T, pgConn *pgconn.PgConn) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	result := pgConn.ExecParams(ctx, "select generate_series(1,$1)", [][]byte{[]byte("3")}, nil, nil, nil).Read()
+	//select generate_series(1,$1)
+	result := pgConn.ExecParams(ctx, "SELECT generate_series.generate_series FROM (WITH RECURSIVE generate_series(generate_series) AS (SELECT 1 FROM RDB$DATABASE UNION ALL SELECT (generate_series + 1) FROM generate_series WHERE generate_series < 3) SELECT generate_series FROM generate_series) generate_series", [][]byte{[]byte("3")}, nil, nil, nil).Read()
 	cancel()
 
 	require.Nil(t, result.Err)
