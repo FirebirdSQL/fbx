@@ -10,8 +10,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/red-soft/fbx/fbproto/auth"
 	"io"
+	"math"
 	"net"
 	"os"
 	"strconv"
@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/red-soft/fbx/fbproto"
+	"github.com/red-soft/fbx/fbproto/auth"
 	"github.com/red-soft/fbx/pgconn/ctxwatch"
 	"github.com/red-soft/fbx/pgconn/internal/bgreader"
 	"github.com/red-soft/fbx/pgproto3"
