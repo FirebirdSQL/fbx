@@ -813,8 +813,7 @@ func (pgConn *PgConn) unlock() {
 // ParameterStatus returns the value of a parameter reported by the server (e.g.
 // server_version). Returns an empty string for unknown parameters.
 func (pgConn *PgConn) ParameterStatus(key string) string {
-	//return pgConn.parameterStatuses[key]
-	panic("implement me")
+	return pgConn.parameterStatuses[key]
 }
 
 // CommandTag is the status text returned by PostgreSQL for a query.
