@@ -738,27 +738,28 @@ func (pgConn *PgConn) Close(ctx context.Context) error {
 // asyncClose marks the connection as closed and asynchronously sends a cancel query message and closes the underlying
 // connection.
 func (pgConn *PgConn) asyncClose() {
-	//if pgConn.status == connStatusClosed {
-	//	return
-	//}
-	//pgConn.status = connStatusClosed
-	//
-	//go func() {
-	//	defer close(pgConn.cleanupDone)
-	//	defer pgConn.conn.Close()
-	//
-	//	deadline := time.Now().Add(time.Second * 15)
-	//
-	//	ctx, cancel := context.WithDeadline(context.Background(), deadline)
-	//	defer cancel()
-	//
-	//	pgConn.CancelRequest(ctx)
-	//
-	//	pgConn.conn.SetDeadline(deadline)
-	//
-	//	pgConn.frontend.WriteMessage(&pgproto3.Terminate{})
-	//	pgConn.flushWithPotentialWriteReadDeadlock()
-	//}()
+	if pgConn.status == connStatusClosed {
+		return
+	}
+	pgConn.status = connStatusClosed
+
+	go func() {
+		defer close(pgConn.cleanupDone)
+		defer pgConn.conn.Close()
+
+		//FIXME: fbx
+		//deadline := time.Now().Add(time.Second * 15)
+
+		//ctx, cancel := context.WithDeadline(context.Background(), deadline)
+		//defer cancel()
+		//
+		//pgConn.CancelRequest(ctx)
+
+		//pgConn.conn.SetDeadline(deadline)
+		//
+		//pgConn.frontend.WriteMessage(&pgproto3.Terminate{})
+		//pgConn.flushWithPotentialWriteReadDeadlock()
+	}()
 }
 
 // CleanupDone returns a channel that will be closed after all underlying resources have been cleaned up. A closed
