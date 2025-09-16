@@ -406,13 +406,13 @@ connectLoop:
 	}
 	dpb.PutInt32(fbproto.Isc_dpb_process_id, int32(os.Getpid()))
 	dpb.PutString(fbproto.Isc_dpb_process_name, "fbx")
+	//FIXME: fbx is timezone need? where get timezone?
 	//dpb.AppendTag(fbproto.Isc_dpb_session_time_zone)
-
-	//dpb.PutString(fbproto.Isc_dpb_auth_plugin_list, authManager.BuildList())
-	//dpb.PutString(fbproto.Isc_dpb_auth_plugin_name, authManager.GetCurrentAuthPlugin().GetName())
-	//dpb.PutInt32(fbproto.Isc_dpb_utf8_filename, 1)
-	//dpb.PutTag(fbproto.Isc_dpb_specific_auth_data)
-	//dpb.PutBuffer(authManager.GetCurrentAuthPlugin().GetClientData())
+	dpb.PutString(fbproto.Isc_dpb_auth_plugin_list, authManager.BuildList())
+	dpb.PutString(fbproto.Isc_dpb_auth_plugin_name, authManager.GetCurrentAuthPlugin().GetName())
+	dpb.PutInt32(fbproto.Isc_dpb_utf8_filename, 1)
+	dpb.PutTag(fbproto.Isc_dpb_specific_auth_data)
+	dpb.PutBuffer(authManager.GetCurrentAuthPlugin().GetClientData())
 
 	opAttach := fbproto.OpAttach{
 		File: config.Database,
