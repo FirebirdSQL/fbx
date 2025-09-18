@@ -630,3 +630,9 @@ const (
 	BLOB_SUB_TYPE_BINARY = isc_blob_untyped
 	BLOB_SUB_TYPE_TEXT   = isc_blob_text
 )
+
+const (
+	isc_info_end           = Isc_info_end
+	isc_info_sql_select    = Isc_info_sql_select
+	isc_info_sql_stmt_type = Isc_info_sql_stmt_type
+)

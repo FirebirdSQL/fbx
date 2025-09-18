@@ -16,9 +16,10 @@ type AuthManager struct {
 }
 
 func NewAuthManager(user string, password string) *AuthManager {
-	plugins := make([]AuthPlugin, 0)
+	plugins := make([]AuthPlugin, 0, 3)
+	plugins = append(plugins, NewSrp256AuthPlugin())
+	plugins = append(plugins, NewSrpAuthPlugin())
 	plugins = append(plugins, &LegacyAuthPlugin{Password: password})
-	//plugins = append(plugins, NewSrpAuthPlugin())
 	return &AuthManager{AuthPlugins: plugins, CurrentPlugin: &plugins[0]}
 }
 
