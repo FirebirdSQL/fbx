@@ -2,10 +2,13 @@ package auth
 
 import (
 	crand "crypto/rand"
+	"crypto/sha1"
 	"fmt"
 	"hash"
 	"io"
 	"math/big"
+
+	"modernc.org/mathutil"
 )
 
 type srpEngine struct {
@@ -13,7 +16,6 @@ type srpEngine struct {
 	prime      *big.Int
 	generator  *big.Int
 	multiplier *big.Int
-	padLength  int
 }
 
 func newSRPEngine(name string) (*srpEngine, error) {
@@ -24,56 +26,29 @@ func newSRPEngine(name string) (*srpEngine, error) {
 
 	prime := new(big.Int).Set(srpPrime)
 	generator := new(big.Int).Set(srpGenerator)
-	padLength := (prime.BitLen() + 7) / 8
-	multiplier := computeMultiplier(variant.hashFunc, prime, generator, padLength)
+	multiplier := new(big.Int).Set(srpMultiplier)
 
 	return &srpEngine{
 		variant:    variant,
 		prime:      prime,
 		generator:  generator,
 		multiplier: multiplier,
-		padLength:  padLength,
 	}, nil
 }
 
-func computeMultiplier(factory func() hash.Hash, prime, generator *big.Int, padLength int) *big.Int {
-	h := factory()
-	h.Write(leftPad(prime.Bytes(), padLength))
-	h.Write(leftPad(generator.Bytes(), padLength))
+func (e *srpEngine) scramble(A, B *big.Int) *big.Int {
+	h := sha1.New()
+	h.Write(srpPad(A))
+	h.Write(srpPad(B))
 	return new(big.Int).SetBytes(h.Sum(nil))
 }
 
-func (e *srpEngine) newHash() hash.Hash {
-	return e.variant.hashFunc()
-}
-
-func (e *srpEngine) hashBytes(parts ...[]byte) []byte {
-	h := e.newHash()
-	for _, part := range parts {
-		_, _ = h.Write(part)
-	}
-	return h.Sum(nil)
-}
-
-func (e *srpEngine) hashToBigInt(parts ...[]byte) *big.Int {
-	return new(big.Int).SetBytes(e.hashBytes(parts...))
-}
-
-func (e *srpEngine) padBigInt(v *big.Int) []byte {
-	return leftPad(v.Bytes(), e.padLength)
-}
-
-func (e *srpEngine) scramble(A, B *big.Int) *big.Int {
-	return e.hashToBigInt(e.padBigInt(A), e.padBigInt(B))
-}
-
 func (e *srpEngine) userHash(user, password string, salt []byte) *big.Int {
-	inner := e.hashBytes([]byte(user + ":" + password))
-	return new(big.Int).SetBytes(e.hashBytes(salt, inner))
+	return srpUserHash(salt, user, password)
 }
 
 func (e *srpEngine) sessionKey(secret *big.Int) []byte {
-	return e.hashBytes(secret.Bytes())
+	return srpBigIntToSha1(secret)
 }
 
 func (e *srpEngine) pow(base, exp *big.Int) *big.Int {
@@ -89,8 +64,9 @@ func (e *srpEngine) generatePrivate(random io.Reader) (*big.Int, error) {
 		random = crand.Reader
 	}
 
+	limit := new(big.Int).Exp(big.NewInt(2), big.NewInt(128), nil)
 	for {
-		candidate, err := crand.Int(random, e.prime)
+		candidate, err := crand.Int(random, limit)
 		if err != nil {
 			return nil, err
 		}
@@ -211,39 +187,28 @@ func (e *srpEngine) Verifier(user, password string, salt []byte) *big.Int {
 }
 
 func (e *srpEngine) ClientProof(user string, salt []byte, A, B *big.Int, K []byte) []byte {
-	hN := e.hashBytes(e.padBigInt(e.prime))
-	hG := e.hashBytes(e.padBigInt(e.generator))
-	hI := e.hashBytes([]byte(user))
-	xor := xorBytes(hN, hG)
+	n1 := srpBytesToBigInt(srpBigIntToSha1(e.prime))
+	n2 := srpBytesToBigInt(srpBigIntToSha1(e.generator))
+	n3 := mathutil.ModPowBigInt(n1, n2, e.prime)
+	n4 := srpStringHash(user)
 
-	digest := e.newHash()
-	digest.Write(xor)
-	digest.Write(hI)
+	var digest hash.Hash = e.variant.hashFunc()
+	toBytes := func(b *big.Int) []byte { return b.Bytes() }
+	digest.Write(toBytes(n3))
+	digest.Write(toBytes(n4))
 	digest.Write(salt)
-	digest.Write(e.padBigInt(A))
-	digest.Write(e.padBigInt(B))
+	digest.Write(A.Bytes())
+	digest.Write(B.Bytes())
 	digest.Write(K)
 	return digest.Sum(nil)
 }
 
 func (e *srpEngine) ServerProof(A *big.Int, M, K []byte) []byte {
-	digest := e.newHash()
-	digest.Write(e.padBigInt(A))
+	digest := e.variant.hashFunc()
+	digest.Write(srpPad(A))
 	digest.Write(M)
 	digest.Write(K)
 	return digest.Sum(nil)
-}
-
-func xorBytes(a, b []byte) []byte {
-	length := len(a)
-	if len(b) < length {
-		length = len(b)
-	}
-	out := make([]byte, length)
-	for i := 0; i < length; i++ {
-		out[i] = a[i] ^ b[i]
-	}
-	return out
 }
 
 func isValidPublicKey(value, prime *big.Int) bool {

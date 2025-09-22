@@ -14,6 +14,7 @@ import (
 	"math"
 	"net"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,7 +25,26 @@ import (
 	"github.com/red-soft/fbx/pgconn/ctxwatch"
 	"github.com/red-soft/fbx/pgconn/internal/bgreader"
 	"github.com/red-soft/fbx/pgproto3"
+	"golang.org/x/exp/slices"
 )
+
+// Debug printing for authentication handshake. Enable by setting
+// PGX_FBX_AUTH_DEBUG to a truthy value (e.g. 1, true).
+var authDebugEnabled = func() bool {
+	v := strings.TrimSpace(os.Getenv("PGX_FBX_AUTH_DEBUG"))
+	switch strings.ToLower(v) {
+	case "", "0", "false", "no", "off":
+		return false
+	default:
+		return true
+	}
+}()
+
+func authPrintf(format string, args ...any) {
+	if authDebugEnabled {
+		fmt.Printf(format, args...)
+	}
+}
 
 const (
 	connStatusUninitialized = iota
@@ -177,6 +197,188 @@ func ConnectConfig(ctx context.Context, config *Config) (*PgConn, error) {
 	}
 
 	return pgConn, nil
+}
+
+func (pgConn *PgConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *auth.AuthManager, config *Config, authSpecificData *[]byte, sessionKey *[]byte) error {
+	plugin, ok := authManager.SetCurrentPlugin(msg.PluginName)
+	if !ok {
+		return fmt.Errorf("server requested unsupported auth plugin %q", msg.PluginName)
+	}
+	authPrintf("[AUTHDBG] cond_accept: plugin=%s data_len=%d\n", msg.PluginName, len(msg.Data))
+	authPrintf("%#v\n", msg)
+
+	resp, spec, key, err := plugin.SetServerData(config.User, config.Password, msg.PluginName, msg.Data)
+	if err != nil {
+		return err
+	}
+	if len(spec) > 0 {
+		copySpec := make([]byte, len(spec))
+		copy(copySpec, spec)
+		*authSpecificData = copySpec
+	} else {
+		*authSpecificData = nil
+	}
+	if len(key) > 0 {
+		*sessionKey = key
+	}
+	return pgConn.sendContAuth(resp, msg.PluginName, authManager.BuildList(), nil)
+}
+
+func (pgConn *PgConn) handleAuthResponse(msg *fbproto.OpResponse, config *Config, sessionKey *[]byte) error {
+	if msg.Failure {
+		return fmt.Errorf("authentication failed: %s", msg.Message)
+	}
+
+	encryptionPlugin, nonce := guessWireCrypt(msg.Data)
+	authPrintf("[AUTHDBG] auth response: enc_plugin=%s nonce_len=%d wire_crypt=%v sessionKey=%v\n",
+		encryptionPlugin, len(nonce), config.WireCrypt, sessionKey != nil && len(*sessionKey) > 0)
+	if encryptionPlugin != "" && config.WireCrypt && len(*sessionKey) > 0 {
+		if err := pgConn.client.WriteMessage(&fbproto.OpCrypt{Plugin: encryptionPlugin, Encoding: pgConn.Encoding}); err != nil {
+			return err
+		}
+		if err := pgConn.client.SetCryptKey(encryptionPlugin, *sessionKey, nonce); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (pgConn *PgConn) sendContAuth(authData []byte, pluginName string, pluginList string, keys []byte) error {
+	dataCopy := make([]byte, len(authData))
+	copy(dataCopy, authData)
+	// Debug: show what we are about to send in op_cont_auth
+	// Print only prefix of proof to avoid clutter
+	prefixLen := 16
+	if len(dataCopy) < prefixLen {
+		prefixLen = len(dataCopy)
+	}
+	authPrintf("[AUTHDBG] send op_cont_auth: plugin=%s list=%s proof_len=%d proof_prefix=%x\n",
+		pluginName, pluginList, len(dataCopy), dataCopy[:prefixLen])
+	msg := &fbproto.OpContAuth{
+		Encoding:   pgConn.Encoding,
+		AuthData:   dataCopy,
+		PluginName: pluginName,
+		PluginList: pluginList,
+		Keys:       keys,
+	}
+	return pgConn.client.WriteMessage(msg)
+}
+
+func guessWireCrypt(buf []byte) (string, []byte) {
+	var availablePlugins []string
+	pluginNonce := make([][]byte, 0, 2)
+
+	for i := 0; i < len(buf); {
+		if i+2 > len(buf) {
+			break
+		}
+		tag := buf[i]
+		i++
+		length := int(buf[i])
+		i++
+		if length < 0 || i+length > len(buf) {
+			break
+		}
+		value := buf[i : i+length]
+		i += length
+
+		switch tag {
+		case 1:
+			availablePlugins = strings.Split(string(value), " ")
+		case 3:
+			pluginNonce = append(pluginNonce, value)
+		}
+	}
+
+	if slices.Contains(availablePlugins, "ChaCha64") {
+		for _, nonce := range pluginNonce {
+			if len(nonce) >= 9 && reflect.DeepEqual(nonce[:9], []byte{'C', 'h', 'a', 'C', 'h', 'a', '6', '4', 0}) {
+				return "ChaCha64", nonce[9:]
+			}
+		}
+	} else if slices.Contains(availablePlugins, "ChaCha") {
+		for _, nonce := range pluginNonce {
+			if len(nonce) >= 19 && reflect.DeepEqual(nonce[:7], []byte{'C', 'h', 'a', 'C', 'h', 'a', 0}) {
+				return "ChaCha", nonce[7 : 7+12]
+			}
+		}
+	} else if slices.Contains(availablePlugins, "Arc4") {
+		return "Arc4", nil
+	}
+
+	return "", nil
+}
+
+func parseSrpPayload(data []byte) ([]byte, string, error) {
+	offset := 0
+	var salt []byte
+
+	if len(data) >= 2 {
+		sectionCount := int(binary.LittleEndian.Uint16(data[offset : offset+2]))
+		if sectionCount > 0 && sectionCount <= 8 {
+			offset += 2
+			extendedSaltFound := false
+			for i := 0; i < sectionCount; i++ {
+				if offset+2 > len(data) {
+					return nil, "", fmt.Errorf("invalid SRP payload")
+				}
+				length := int(binary.LittleEndian.Uint16(data[offset : offset+2]))
+				offset += 2
+				if length < 0 || offset+length > len(data) {
+					return nil, "", fmt.Errorf("invalid SRP payload")
+				}
+				chunk := data[offset : offset+length]
+				offset += length
+				if len(chunk) > 0 && chunk[0] < 32 {
+					chunk = chunk[1:]
+				}
+				if len(chunk) == 0 {
+					continue
+				}
+
+				salt = append([]byte(nil), chunk...)
+				extendedSaltFound = true
+			}
+
+			if extendedSaltFound {
+				serverHex := string(data[offset:])
+				if serverHex == "" {
+					return nil, "", fmt.Errorf("invalid SRP server public")
+				}
+				return append([]byte(nil), salt...), serverHex, nil
+			}
+
+			offset = 0
+		}
+	}
+
+	if len(data) < 2 {
+		return nil, "", fmt.Errorf("invalid SRP payload")
+	}
+
+	saltLen := int(binary.LittleEndian.Uint16(data[offset : offset+2]))
+	offset += 2
+	if saltLen < 0 || offset+saltLen > len(data) {
+		return nil, "", fmt.Errorf("invalid SRP payload")
+	}
+	salt = append([]byte(nil), data[offset:offset+saltLen]...)
+	offset += saltLen
+
+	if offset+2 <= len(data) {
+		offset += 2
+	}
+
+	if offset > len(data) {
+		return nil, "", fmt.Errorf("invalid SRP payload")
+	}
+
+	serverHex := string(data[offset:])
+	if serverHex == "" {
+		return nil, "", fmt.Errorf("invalid SRP server public")
+	}
+
+	return salt, serverHex, nil
 }
 
 // buildConnectOneConfigs resolves hostnames and builds a list of connectOneConfigs to try connecting to. It returns a
@@ -351,6 +553,8 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 	pgConn.client = fbproto.NewClient(pgConn.bgReader, pgConn.writer, pgConn.Encoding)
 
 	authManager := auth.NewAuthManager(config.User, config.Password)
+	var authSpecificData []byte
+	var sessionKey []byte
 
 	opConnect := fbproto.OpConnect{
 		Database:        config.Database,
@@ -383,9 +587,32 @@ connectLoop:
 			return nil, newPerDialConnectError("authentication failed", err)
 		}
 
+		authPrintf("[AUTHDBG] received %T\n", msg)
 		switch msg := msg.(type) {
+		case *fbproto.OpContAuth:
+			fake := &fbproto.OpCondAccept{Encoding: pgConn.Encoding}
+			fake.PluginName = msg.PluginName
+			fake.Data = msg.AuthData
+			if err := pgConn.handleCondAccept(fake, authManager, config, &authSpecificData, &sessionKey); err != nil {
+				pgConn.conn.Close()
+				return nil, newPerDialConnectError("authentication failed", err)
+			}
+			continue connectLoop
 		case *fbproto.OpCondAccept:
-			fmt.Println(msg)
+			if err := pgConn.handleCondAccept(msg, authManager, config, &authSpecificData, &sessionKey); err != nil {
+				pgConn.conn.Close()
+				return nil, newPerDialConnectError("authentication failed", err)
+			}
+			continue connectLoop
+		case *fbproto.OpResponse:
+			if err := pgConn.handleAuthResponse(msg, config, &sessionKey); err != nil {
+				pgConn.conn.Close()
+				return nil, newPerDialConnectError("authentication failed", err)
+			}
+			if enc, _ := guessWireCrypt(msg.Data); enc == "" {
+				break connectLoop
+			}
+			continue connectLoop
 		case *fbproto.OpDataAccept:
 			break connectLoop
 		case *fbproto.ErrorResponse:
@@ -411,8 +638,10 @@ connectLoop:
 	dpb.PutString(fbproto.Isc_dpb_auth_plugin_list, authManager.BuildList())
 	dpb.PutString(fbproto.Isc_dpb_auth_plugin_name, authManager.GetCurrentAuthPlugin().GetName())
 	dpb.PutInt32(fbproto.Isc_dpb_utf8_filename, 1)
-	dpb.PutTag(fbproto.Isc_dpb_specific_auth_data)
-	dpb.PutBuffer(authManager.GetCurrentAuthPlugin().GetClientData())
+	if len(authSpecificData) > 0 {
+		dpb.PutTag(fbproto.Isc_dpb_specific_auth_data)
+		dpb.PutBuffer([]byte(hex.EncodeToString(authSpecificData)))
+	}
 
 	opAttach := fbproto.OpAttach{
 		File: config.Database,

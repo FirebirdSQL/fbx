@@ -53,8 +53,8 @@ func NewClient(r io.Reader, w io.Writer, encoding *Encoding) *Client {
 	c := Client{}
 	c.reader = r
 	c.writer = w
-	c.xdrReader = NewXDRReader(c.reader)
-	c.xdrWriter = NewXDRWriter(c.writer)
+	c.xdrReader = NewXDRReader(&c)
+	c.xdrWriter = NewXDRWriter(&c)
 	c.Encoding = encoding
 	return &c
 }
@@ -75,6 +75,10 @@ func (c *Client) setCryptKey(plugin string, sessionKey []byte, nonce []byte) (er
 	}
 
 	return
+}
+
+func (c *Client) SetCryptKey(plugin string, sessionKey []byte, nonce []byte) error {
+	return c.setCryptKey(plugin, sessionKey, nonce)
 }
 
 func (c *Client) Read(buf []byte) (n int, err error) {
@@ -174,6 +178,8 @@ func (c *Client) ReadMessage() (ServerMessage, error) {
 		msg = &OpReject{}
 	case op_fetch_response:
 		msg = &OpFetchResponse{}
+	case op_cont_auth:
+		msg = &OpContAuth{Encoding: c.Encoding}
 	default:
 		return nil, fmt.Errorf("unknown opcode: %d", opcode)
 	}

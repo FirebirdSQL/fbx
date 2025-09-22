@@ -2,11 +2,11 @@ package auth
 
 import (
 	"encoding/hex"
-	"hash"
 	"math/big"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"modernc.org/mathutil"
 )
 
 const (
@@ -22,7 +22,7 @@ func TestSRPKeyAgreementVariants(t *testing.T) {
 	clientPrivate := mustBigIntFromHex(testClientPrivateHex)
 	serverPrivate := mustBigIntFromHex(testServerPrivateHex)
 
-	for _, variant := range []string{srpNameClassic, srpNameSHA256} {
+	for _, variant := range []string{srpNameClassic, srpNameSHA224, srpNameSHA256, srpNameSHA384, srpNameSHA512} {
 		variant := variant
 		t.Run(variant, func(t *testing.T) {
 			t.Parallel()
@@ -80,36 +80,30 @@ func TestGenerateSaltLength(t *testing.T) {
 	require.Len(t, salt, srpSaltSize)
 }
 
+// manualClientProof повторяет алгоритм ClientProof() из srp_engine.go
 func manualClientProof(engine *srpEngine, user string, salt []byte, A, B *big.Int, K []byte) []byte {
-	hN := hashSum(engine.variant.hashFunc, engine.padBigInt(engine.prime))
-	hG := hashSum(engine.variant.hashFunc, engine.padBigInt(engine.generator))
-	hI := hashSum(engine.variant.hashFunc, []byte(user))
-	xor := xorBytes(hN, hG)
+	n1 := srpBytesToBigInt(srpBigIntToSha1(engine.prime))
+	n2 := srpBytesToBigInt(srpBigIntToSha1(engine.generator))
+	n3 := mathutil.ModPowBigInt(n1, n2, engine.prime)
+	n4 := srpStringHash(user)
 
-	downstream := engine.variant.hashFunc()
-	downstream.Write(xor)
-	downstream.Write(hI)
-	downstream.Write(salt)
-	downstream.Write(engine.padBigInt(A))
-	downstream.Write(engine.padBigInt(B))
-	downstream.Write(K)
-	return downstream.Sum(nil)
+	digest := engine.variant.hashFunc()
+	digest.Write(n3.Bytes())
+	digest.Write(n4.Bytes())
+	digest.Write(salt)
+	digest.Write(A.Bytes())
+	digest.Write(B.Bytes())
+	digest.Write(K)
+	return digest.Sum(nil)
 }
 
+// manualServerProof повторяет алгоритм ServerProof() из srp_engine.go
 func manualServerProof(engine *srpEngine, A *big.Int, M, K []byte) []byte {
-	downstream := engine.variant.hashFunc()
-	downstream.Write(engine.padBigInt(A))
-	downstream.Write(M)
-	downstream.Write(K)
-	return downstream.Sum(nil)
-}
-
-func hashSum(factory func() hash.Hash, parts ...[]byte) []byte {
-	downstream := factory()
-	for _, part := range parts {
-		_, _ = downstream.Write(part)
-	}
-	return downstream.Sum(nil)
+	digest := engine.variant.hashFunc()
+	digest.Write(srpPad(A))
+	digest.Write(M)
+	digest.Write(K)
+	return digest.Sum(nil)
 }
 
 func mustDecodeHex(t *testing.T, s string) []byte {
