@@ -1,0 +1,23 @@
+image: golang:1.25
+
+stages:
+  - test
+
+services:
+  - name: registry.red-soft.ru/red-database/red-database:5.0.7
+    alias: rdb
+
+variables:
+  PGX_TEST_DATABASE: database=employee host=rdb port=3050 user=sysdba password=masterkey
+  PGX_TEST_TCP_CONN_STRING: database=employee host=rdb port=3050 user=sysdba password=masterkey
+
+format:
+  stage: test
+  script:
+    - go fmt $(go list ./... | grep -v /vendor/)
+    - go vet $(go list ./... | grep -v /vendor/)
+
+test:
+  stage: test
+  script:
+    - go test $(go list ./... | grep -v /vendor/)
