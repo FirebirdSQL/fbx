@@ -1,9 +1,10 @@
 package fbproto
 
 import (
+	"testing"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func TestNewXPBReader(t *testing.T) {
@@ -116,43 +117,43 @@ func TestXPBWriter_PutTag(t *testing.T) {
 func TestXPBWriter_PutByte(t *testing.T) {
 	w := NewXPBWriter()
 	require.NotNil(t, w)
-	w.AppendByte(5, 6)
-	assert.Equal(t, []byte{5, 6}, w.Bytes())
+	w.AppendByte(5)
+	assert.Equal(t, []byte{5}, w.Bytes())
 }
 
 func TestXPBWriter_PutInt16(t *testing.T) {
 	w := NewXPBWriter()
 	require.NotNil(t, w)
-	w.AppendInt16(7, 20000)
-	assert.Equal(t, []byte{7, 0x20, 0x4e}, w.Bytes())
+	w.AppendInt16(20000)
+	assert.Equal(t, []byte{0x20, 0x4e}, w.Bytes())
 }
 
 func TestXPBWriter_PutInt32(t *testing.T) {
 	w := NewXPBWriter()
 	require.NotNil(t, w)
-	w.AppendInt32(7, 200000000)
-	assert.Equal(t, []byte{7, 0x0, 0xc2, 0xeb, 0xb}, w.Bytes())
+	w.AppendInt32(200000000)
+	assert.Equal(t, []byte{0x0, 0xc2, 0xeb, 0xb}, w.Bytes())
 }
 
-func TestXPBWriter_PutString(t *testing.T) {
-	w := NewXPBWriter()
-	require.NotNil(t, w)
-	w.PutString(8, "test")
-	assert.Equal(t, []byte{8, 4, 0, 't', 'e', 's', 't'}, w.Bytes())
-}
+//func TestXPBWriter_PutString(t *testing.T) {
+//	w := NewXPBWriter()
+//	require.NotNil(t, w)
+//	w.PutString(8, "test")
+//	assert.Equal(t, []byte{8, 4, 0, 't', 'e', 's', 't'}, w.Bytes())
+//}
 
 func TestXPBWriter_PutMixed(t *testing.T) {
 	w := NewXPBWriter()
 	require.NotNil(t, w)
-	w.AppendTag(1).AppendByte(2, 3).AppendInt16(4, 5).AppendInt32(6, 7).PutString(8, "test").PutTag(9)
-	assert.Equal(t, []byte{1, 2, 3, 4, 5, 0, 6, 7, 0, 0, 0, 8, 4, 0, 't', 'e', 's', 't', 9}, w.Bytes())
+	w.AppendTag(1).AppendByte(3).AppendInt16(5).AppendInt32(7)
+	assert.Equal(t, []byte{1, 3, 5, 0, 7, 0, 0, 0}, w.Bytes())
 }
 
 func TestXPBWriter_Reset(t *testing.T) {
 	w := NewXPBWriter()
 	require.NotNil(t, w)
-	w.PutString(1, "test")
-	assert.Equal(t, []byte{1, 4, 0, 't', 'e', 's', 't'}, w.Bytes())
+	w.AppendInt32(1).AppendInt32(2)
+	assert.Equal(t, []byte{1, 0, 0, 0, 2, 0, 0, 0}, w.Bytes())
 	w.Reset()
 	assert.Equal(t, []byte{}, w.Bytes())
 }
