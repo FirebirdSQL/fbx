@@ -8,14 +8,25 @@ variables:
   PGX_TEST_DATABASE: database=employee host=localhost port=3050 user=sysdba password=masterkey
   PGX_TEST_TCP_CONN_STRING: database=employee host=localhost port=3050 user=sysdba password=masterkey
 
+.go-cache:
+  variables:
+    GOPATH: $CI_PROJECT_DIR/.go
+  before_script:
+    - mkdir -p .go
+  cache:
+    paths:
+      - .go/pkg/mod/
+
 format:
   stage: test
+  extends: .go-cache
   script:
     - go fmt $(go list ./... | grep -v /vendor/)
     - go vet $(go list ./... | grep -v /vendor/)
 
 test:
   stage: test
+  extends: .go-cache
   before_script:
     - wget http://builds.red-soft.biz/release_hub/rdb50/${RDB5_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB5_VERSION}:bin -O installer
     - chmod +x ./installer
