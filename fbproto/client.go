@@ -238,6 +238,15 @@ func (c *Client) ReceiveFetchResponse() (*OpFetchResponse, error) {
 	}
 }
 
-func (c *Client) ReceiveSQLData(row []FieldDescriptor) (*SQLData, error) {
-	return ReadRowData(c.xdrReader, row)
+func (c *Client) ReceiveSQLData(row []FieldDescriptor) (*SQLData, *OpFetchResponse, error) {
+	var sqlData *SQLData
+	var err error
+	if sqlData, err = ReadRowData(c.xdrReader, row); err != nil {
+		return nil, nil, err
+	}
+	if fetchResp, err := c.ReceiveFetchResponse(); err != nil {
+		return nil, nil, err
+	} else {
+		return sqlData, fetchResp, nil
+	}
 }

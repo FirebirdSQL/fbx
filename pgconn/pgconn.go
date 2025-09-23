@@ -1694,11 +1694,11 @@ func (rr *ResultReader) NextRow() bool {
 	var err error
 	for !rr.commandConcluded {
 		if rr.lastFetchResponse != nil && rr.lastFetchResponse.MoreRows() {
-			row, err := rr.pgConn.client.ReceiveSQLData(rr.statementDescription.StatementInfo.FieldDescriptors)
+			row, resp, err := rr.pgConn.client.ReceiveSQLData(rr.statementDescription.StatementInfo.FieldDescriptors)
 			if err != nil {
 				return false
 			}
-			rr.lastFetchResponse = &row.FetchResponse
+			rr.lastFetchResponse = resp
 			rr.rowValues = row.RowData
 			return true
 		} else if rr.lastFetchResponse == nil || !rr.lastFetchResponse.EndOfCursor() {

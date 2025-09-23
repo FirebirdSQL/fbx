@@ -10,7 +10,6 @@ type SQLData struct {
 	Nulls         *utils.BitSet
 	RowData       [][]byte
 	RowDescriptor []FieldDescriptor
-	FetchResponse OpFetchResponse
 }
 
 func ReadRowData(x *XDRReader, rowDescriptor []FieldDescriptor) (*SQLData, error) {
@@ -49,12 +48,7 @@ func ReadRowData(x *XDRReader, rowDescriptor []FieldDescriptor) (*SQLData, error
 		}
 	}
 
-	resp := OpFetchResponse{}
-	if resp.Read(x) != nil {
-		return nil, err
-	}
-
-	return &SQLData{nullsBitset, rowData, rowDescriptor, resp}, nil
+	return &SQLData{Nulls: nullsBitset, RowData: rowData, RowDescriptor: rowDescriptor}, nil
 }
 
 func WriteRowData(x *XDRWriter, rowDescriptor []FieldDescriptor, values [][]byte) error {
