@@ -30,14 +30,15 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/red-soft/fbx/fbproto/auth"
-	"github.com/red-soft/fbx/fbproto/utils"
 	"math/big"
 	"os"
 	"reflect"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/red-soft/fbx/fbproto/auth"
+	"github.com/red-soft/fbx/fbproto/utils"
 
 	"github.com/kardianos/osext"
 	"gitlab.com/nyarla/go-crypt"
@@ -59,7 +60,7 @@ const (
 
 func _INFO_SQL_SELECT_DESCRIBE_VARS() []byte {
 	return []byte{
-		isc_info_sql_select,
+		Isc_info_sql_select,
 		isc_info_sql_describe_vars,
 		isc_info_sql_sqlda_seq,
 		isc_info_sql_type,
@@ -675,7 +676,7 @@ func (p *wireProtocol) _parse_select_items(buf []byte, xsqlda []xSQLVAR) (int, e
 	var ln int
 	index := 0
 	i := 0
-	for item := int(buf[i]); item != isc_info_end; item = int(buf[i]) {
+	for item := int(buf[i]); item != Isc_info_end; item = int(buf[i]) {
 		i++
 		switch item {
 		case isc_info_sql_sqlda_seq:
@@ -753,13 +754,13 @@ func (p *wireProtocol) parse_xsqlda(buf []byte, stmtHandle int32) (int32, []xSQL
 	i := 0
 
 	for i < len(buf) {
-		if buf[i] == byte(isc_info_sql_stmt_type) && buf[i+1] == byte(0x04) && buf[i+2] == byte(0x00) {
+		if buf[i] == byte(Isc_info_sql_stmt_type) && buf[i+1] == byte(0x04) && buf[i+2] == byte(0x00) {
 			i++
 			ln = int(utils.Bytes_to_int16(buf[i : i+2]))
 			i += 2
 			stmt_type = int32(utils.Bytes_to_int32(buf[i : i+ln]))
 			i += ln
-		} else if buf[i] == byte(isc_info_sql_select) && buf[i+1] == byte(isc_info_sql_describe_vars) {
+		} else if buf[i] == byte(Isc_info_sql_select) && buf[i+1] == byte(isc_info_sql_describe_vars) {
 			i += 2
 			ln = int(utils.Bytes_to_int16(buf[i : i+2]))
 			i += 2
@@ -1067,7 +1068,7 @@ func (p *wireProtocol) opPrepareStatement(stmtHandle int32, transHandle int32, q
 	p.debugPrint("opPrepareStatement():%d,%d,%v", transHandle, stmtHandle, query)
 
 	bs := bytes.Join([][]byte{
-		[]byte{isc_info_sql_stmt_type},
+		[]byte{Isc_info_sql_stmt_type},
 		_INFO_SQL_SELECT_DESCRIBE_VARS(),
 	}, nil)
 	p.packInt(op_prepare_statement)
