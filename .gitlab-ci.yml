@@ -3,11 +3,8 @@ image: golang:1.25
 stages:
   - test
 
-services:
-  - name: registry.red-soft.ru/red-database/red-database:5.0.7
-    alias: rdb
-
 variables:
+  RDB5_VERSION: 5.0.7
   PGX_TEST_DATABASE: database=employee host=rdb port=3050 user=sysdba password=masterkey
   PGX_TEST_TCP_CONN_STRING: database=employee host=rdb port=3050 user=sysdba password=masterkey
 
@@ -19,5 +16,11 @@ format:
 
 test:
   stage: test
+  before_script:
+    - wget http://builds.red-soft.biz/release_hub/rdb50/${RDB5_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB5_VERSION}:bin -O installer
+    - chmod +x ./installer
+    - ./installer --mode unattended --sysdba_password masterkey
+    - cp ci/firebird.conf /opt/RedDatabase
+    - /etc/init.d/firebird start
   script:
     - go test $(go list ./... | grep -v /vendor/)
