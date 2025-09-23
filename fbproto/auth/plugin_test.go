@@ -21,7 +21,7 @@ func TestSrpPluginsClientDataMatchesPad(t *testing.T) {
 		require.NotNil(t, p)
 		// Now GetClientData returns hex-encoded A
 		require.Equal(t, []byte(hex.EncodeToString(srpPad(p.ClientPublic))), p.GetClientData())
-		// Имя плагина непустое
+		// Plugin name is not empty
 		require.NotEmpty(t, p.GetName())
 	}
 }

@@ -80,7 +80,7 @@ func TestGenerateSaltLength(t *testing.T) {
 	require.Len(t, salt, srpSaltSize)
 }
 
-// manualClientProof повторяет алгоритм ClientProof() из srp_engine.go
+// manualClientProof replicates the ClientProof() algorithm from srp_engine.go
 func manualClientProof(engine *srpEngine, user string, salt []byte, A, B *big.Int, K []byte) []byte {
 	n1 := srpBytesToBigInt(srpBigIntToSha1(engine.prime))
 	n2 := srpBytesToBigInt(srpBigIntToSha1(engine.generator))
@@ -97,7 +97,7 @@ func manualClientProof(engine *srpEngine, user string, salt []byte, A, B *big.In
 	return digest.Sum(nil)
 }
 
-// manualServerProof повторяет алгоритм ServerProof() из srp_engine.go
+// manualServerProof replicates the ServerProof() algorithm from srp_engine.go
 func manualServerProof(engine *srpEngine, A *big.Int, M, K []byte) []byte {
 	digest := engine.variant.hashFunc()
 	digest.Write(srpPad(A))

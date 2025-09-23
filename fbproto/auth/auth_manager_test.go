@@ -13,18 +13,18 @@ func TestAuthManagerBuildListAndCurrent(t *testing.T) {
 	require.NotNil(t, m)
 	require.Equal(t, "Srp256,Srp224,Srp384,Srp512,Srp,Legacy_Auth", m.BuildList())
 
-	// По умолчанию текущий плагин — первый
+	// By default, the current plugin is the first one
 	cur := m.GetCurrentAuthPlugin()
 	require.NotNil(t, cur)
 	require.Equal(t, "Srp256", cur.GetName())
 
-	// Смена по имени без учёта регистра
+	// Switch by name case-insensitively
 	p, ok := m.SetCurrentPlugin("srp")
 	require.True(t, ok)
 	require.Equal(t, "Srp", p.GetName())
 	require.Equal(t, p, m.GetCurrentAuthPlugin())
 
-	// Смена на Legacy_Auth
+	// Switch to Legacy_Auth
 	p2, ok := m.SetCurrentPlugin("legacy_auth")
 	require.True(t, ok)
 	require.Equal(t, "Legacy_Auth", p2.GetName())
@@ -35,7 +35,7 @@ func TestAuthManagerEmptyAndBounds(t *testing.T) {
 	require.Nil(t, empty.GetCurrentAuthPlugin())
 
 	m := NewAuthManager("user", "secret")
-	// Выход за границы индекса — сброс к 0
+	// Out-of-bounds index — reset to 0
 	m.current = 999
 	first := m.GetCurrentAuthPlugin()
 	require.Equal(t, m.AuthPlugins[0], first)
@@ -55,7 +55,7 @@ func TestLegacyAuthPluginClientData(t *testing.T) {
 	expected := bytes.NewBufferString(crypt.Crypt(pass, "9z")[2:]).Bytes()
 	require.Equal(t, expected, data)
 
-	// Другой пароль — другой вывод
+	// Different password — different output
 	p2 := &LegacyAuthPlugin{Password: "other"}
 	require.NotEqual(t, data, p2.GetClientData())
 }
