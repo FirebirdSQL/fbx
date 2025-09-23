@@ -5,8 +5,8 @@ stages:
 
 variables:
   RDB5_VERSION: 5.0.7
-  PGX_TEST_DATABASE: database=employee host=rdb port=3050 user=sysdba password=masterkey
-  PGX_TEST_TCP_CONN_STRING: database=employee host=rdb port=3050 user=sysdba password=masterkey
+  PGX_TEST_DATABASE: database=employee host=localhost port=3050 user=sysdba password=masterkey
+  PGX_TEST_TCP_CONN_STRING: database=employee host=localhost port=3050 user=sysdba password=masterkey
 
 format:
   stage: test
