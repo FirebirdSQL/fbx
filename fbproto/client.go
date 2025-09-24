@@ -221,7 +221,7 @@ func (c *Client) ReceiveResponse() (*OpResponse, error) {
 	case *OpResponse:
 		return m, nil
 	default:
-		return nil, fmt.Errorf("wrong response message type %v instead expected OpResponse", m)
+		return nil, fmt.Errorf("wrong response message type %T instead expected OpResponse", m)
 	}
 }
 
@@ -234,7 +234,7 @@ func (c *Client) ReceiveFetchResponse() (*OpFetchResponse, error) {
 	case *OpFetchResponse:
 		return m, nil
 	default:
-		return nil, fmt.Errorf("wrong response message type %v instead expected OpFetchResponse", m)
+		return nil, fmt.Errorf("wrong response message type %T instead expected OpFetchResponse", m)
 	}
 }
 
