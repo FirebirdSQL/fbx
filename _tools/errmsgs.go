@@ -49,7 +49,7 @@ rights and limitations under the License.
 
 *****************************************************************************/
 
-package firebirdsql
+package fbproto
 
 var errmsgs = map[int]string{
 `)
