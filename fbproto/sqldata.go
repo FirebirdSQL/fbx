@@ -12,6 +12,8 @@ type SQLData struct {
 	RowDescriptor []FieldDescriptor
 }
 
+// ReadRowData - read fields null-bitset and data in 13+ protocol version
+// https://firebirdsql.org/file/documentation/html/en/firebirddocs/wireprotocol/firebird-wire-protocol.html#wireprotocol-row-data-format
 func ReadRowData(x *XDRReader, rowDescriptor []FieldDescriptor) (*SQLData, error) {
 	var err error
 	count := len(rowDescriptor)
@@ -51,6 +53,8 @@ func ReadRowData(x *XDRReader, rowDescriptor []FieldDescriptor) (*SQLData, error
 	return &SQLData{Nulls: nullsBitset, RowData: rowData, RowDescriptor: rowDescriptor}, nil
 }
 
+// WriteRowData - write fields null-bitset and data in 13+ protocol version
+// https://firebirdsql.org/file/documentation/html/en/firebirddocs/wireprotocol/firebird-wire-protocol.html#wireprotocol-row-data-format
 func WriteRowData(x *XDRWriter, rowDescriptor []FieldDescriptor, values [][]byte) error {
 	var err error
 	nulls := utils.NewBitSet(len(rowDescriptor))

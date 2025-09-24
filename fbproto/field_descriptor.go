@@ -163,6 +163,7 @@ func (p *StatementInfo) GetParametersBlr() []byte {
 func (p *StatementInfo) CalculateBlr(descriptors []FieldDescriptor) []byte {
 	ln := len(descriptors) * 2
 	blr := make([]byte, (ln*4)+8)
+	// FIXME: fbx remove magic numbers and use blr codes
 	blr[0] = 5
 	blr[1] = 2
 	blr[2] = 4
@@ -207,7 +208,7 @@ func (p *StatementInfo) CalculateBlr(descriptors []FieldDescriptor) []byte {
 			blr[n] = 9
 			blr[n+1] = byte(sqlscale)
 			n += 2
-		case SQL_TYPE_DEC_FIXED: // OBSOLATED
+		case SQL_TYPE_DEC_FIXED: // OBSOLETED
 			blr[n] = 26
 			blr[n+1] = byte(sqlscale)
 			n += 2
@@ -268,10 +269,14 @@ func (p *StatementInfo) CalculateBlr(descriptors []FieldDescriptor) []byte {
 	return blr[:n]
 }
 
+// GetIOLength returns physical length of field by its type
+// If length is 0 - field length should be obtained from stream
+// If length < 0 - field data used as is without padding (note +1 to length below to distinguish from 0, it should be subtracted later)
+// If length > 0 - padding bytes must be obtained after field data
 func (f *FieldDescriptor) GetIOLength() int {
 	switch f.Type {
 	case SQL_TYPE_TEXT:
-		return f.Length + 1
+		return f.Length + 1 // +1 to distinguish from 0
 	case SQL_TYPE_VARYING:
 		return 0
 	case SQL_TYPE_SHORT, SQL_TYPE_LONG, SQL_TYPE_FLOAT, SQL_TYPE_TIME, SQL_TYPE_DATE:
@@ -285,12 +290,14 @@ func (f *FieldDescriptor) GetIOLength() int {
 	case SQL_TYPE_NULL:
 		return 0
 	case SQL_TYPE_BOOLEAN:
-		return 1 + 1
+		return 1 + 1 // +1 to distinguish from 0
 	default:
 		panic(fmt.Sprintf("can not get IO length of unknown field descriptor type: %d", f.Type))
 	}
 }
 
+// CalculateIoLength returns physical length of field by its type and data
+// See GetIOLength
 func (f *FieldDescriptor) CalculateIoLength(fieldData []byte) int {
 	t := f.Type
 	if t == SQL_TYPE_TEXT {
