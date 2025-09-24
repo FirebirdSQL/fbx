@@ -13,7 +13,7 @@ type OpExecute struct {
 func (op *OpExecute) Write(x *XDRWriter) error {
 	var err error
 	// p_operation
-	if err = x.WriteInt32(op_execute); err != nil {
+	if err = x.WriteInt32(Op_execute); err != nil {
 		return err
 	}
 

@@ -9,7 +9,7 @@ type OpTransaction struct {
 func (op *OpTransaction) Write(x *XDRWriter) error {
 	var err error
 	// p_operation
-	if err = x.WriteInt32(op_transaction); err != nil {
+	if err = x.WriteInt32(Op_transaction); err != nil {
 		return err
 	}
 

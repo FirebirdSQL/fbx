@@ -9,7 +9,7 @@ type OpRollbackRetaining struct {
 func (op *OpRollbackRetaining) Write(x *XDRWriter) error {
 	var err error
 	// p_operation
-	if err = x.WriteInt32(op_rollback_retaining); err != nil {
+	if err = x.WriteInt32(Op_rollback_retaining); err != nil {
 		return err
 	}
 

@@ -27,7 +27,7 @@ func (op *OpConnect) Write(x *XDRWriter) error {
 	var err error
 
 	// p_operation
-	if err = x.WriteInt32(op_connect); err != nil {
+	if err = x.WriteInt32(Op_connect); err != nil {
 		return err
 	}
 	// p_cnct_operation (unused)
@@ -127,7 +127,7 @@ func (op *OpConnect) Write(x *XDRWriter) error {
 
 		//p_cnct_max_type
 		if op.Compress {
-			if err = x.WriteInt32(protocol.MaxType | pflag_compress); err != nil {
+			if err = x.WriteInt32(protocol.MaxType | Pflag_compress); err != nil {
 				return err
 			}
 		} else {

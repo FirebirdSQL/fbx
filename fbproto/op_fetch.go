@@ -11,7 +11,7 @@ type OpFetch struct {
 func (op *OpFetch) Write(x *XDRWriter) error {
 	var err error
 	// p_operation
-	if err = x.WriteInt32(op_fetch); err != nil {
+	if err = x.WriteInt32(Op_fetch); err != nil {
 		return err
 	}
 

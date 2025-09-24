@@ -8,7 +8,7 @@ type OpAllocateStatement struct {
 func (op *OpAllocateStatement) Write(x *XDRWriter) error {
 	var err error
 	// p_operation
-	if err = x.WriteInt32(op_allocate_statement); err != nil {
+	if err = x.WriteInt32(Op_allocate_statement); err != nil {
 		return err
 	}
 

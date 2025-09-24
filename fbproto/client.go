@@ -162,17 +162,17 @@ func (c *Client) ReadMessage() (ServerMessage, error) {
 	}
 	var msg ServerMessage
 	switch opcode {
-	case op_dummy:
+	case Op_dummy:
 		return &OpDummy{}, nil
-	case op_cond_accept:
+	case Op_cond_accept:
 		msg = &OpCondAccept{Encoding: c.Encoding}
-	case op_accept_data:
+	case Op_accept_data:
 		msg = &OpDataAccept{OpCondAccept{Encoding: c.Encoding}}
-	case op_response:
+	case Op_response:
 		msg = &OpResponse{Encoding: c.Encoding}
-	case op_reject:
+	case Op_reject:
 		msg = &OpReject{}
-	case op_fetch_response:
+	case Op_fetch_response:
 		msg = &OpFetchResponse{}
 	default:
 		return nil, fmt.Errorf("unknown opcode: %d", opcode)

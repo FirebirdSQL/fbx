@@ -46,7 +46,7 @@ func (p *StatementInfo) Parse(buf []byte) error {
 			return nil
 		case Isc_info_sql_stmt_type:
 			p.StatementType = p.readIntValue(reader)
-		case isc_info_sql_bind:
+		case Isc_info_sql_bind:
 			p.currentDescriptor = &p.ParametersDescriptors
 			if err = p.feedDescriptors(reader); err != nil {
 				return err
@@ -56,7 +56,7 @@ func (p *StatementInfo) Parse(buf []byte) error {
 			if err = p.feedDescriptors(reader); err != nil {
 				return err
 			}
-		case isc_info_truncated:
+		case Isc_info_truncated:
 			return StatementInfoTruncationError{0}
 		default:
 			return fmt.Errorf("unknown statement info item: %d", item)
@@ -109,34 +109,34 @@ func (p *StatementInfo) feedDescriptors(reader *bytes.Buffer) error {
 			return err
 		}
 		switch item {
-		case isc_info_sql_sqlda_seq:
+		case Isc_info_sql_sqlda_seq:
 			field.Index = p.readIntValue(reader)
-		case isc_info_sql_type:
+		case Isc_info_sql_type:
 			field.Type = p.readIntValue(reader)
 			field.Nullable = (field.Type & 1) != 0
 			field.Type &= ^1
-		case isc_info_sql_sub_type:
+		case Isc_info_sql_sub_type:
 			field.Subtype = p.readIntValue(reader)
-		case isc_info_sql_scale:
+		case Isc_info_sql_scale:
 			field.Scale = p.readIntValue(reader)
-		case isc_info_sql_length:
+		case Isc_info_sql_length:
 			field.Length = p.readIntValue(reader)
-		case isc_info_sql_field:
+		case Isc_info_sql_field:
 			field.OriginalName = p.readStringValue(reader)
-		case isc_info_sql_alias:
+		case Isc_info_sql_alias:
 			field.Name = p.readStringValue(reader)
-		case isc_info_sql_relation:
+		case Isc_info_sql_relation:
 			field.OriginalTableName = p.readStringValue(reader)
-		case isc_info_sql_relation_alias:
+		case Isc_info_sql_relation_alias:
 			field.TableAliasName = p.readStringValue(reader)
-		case isc_info_sql_owner:
+		case Isc_info_sql_owner:
 			field.OwnerName = p.readStringValue(reader)
-		case isc_info_sql_describe_end:
+		case Isc_info_sql_describe_end:
 			field.Format = FbTypeIntoFormat(field.Type, field.Subtype)
 			*p.currentDescriptor = append(*p.currentDescriptor, field)
-		case isc_info_sql_null_ind:
+		case Isc_info_sql_null_ind:
 			field.NullOk = p.readIntValue(reader) == 1
-		case isc_info_truncated:
+		case Isc_info_truncated:
 			return StatementInfoTruncationError{Index: field.Index}
 		default:
 			return fmt.Errorf("unknown descriptor info item: %d", item)
