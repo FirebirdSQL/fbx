@@ -9,7 +9,7 @@ type OpCommitRetaining struct {
 func (op *OpCommitRetaining) Write(x *XDRWriter) error {
 	var err error
 	// p_operation
-	if err = x.WriteInt32(op_commit_retaining); err != nil {
+	if err = x.WriteInt32(Op_commit_retaining); err != nil {
 		return err
 	}
 

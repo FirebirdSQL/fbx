@@ -9,7 +9,7 @@ type OpCommit struct {
 func (op *OpCommit) Write(x *XDRWriter) error {
 	var err error
 	// p_operation
-	if err = x.WriteInt32(op_commit); err != nil {
+	if err = x.WriteInt32(Op_commit); err != nil {
 		return err
 	}
 

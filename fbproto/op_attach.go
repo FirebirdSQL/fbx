@@ -10,7 +10,7 @@ type OpAttach struct {
 func (op *OpAttach) Write(x *XDRWriter) error {
 	var err error
 	//p_operation
-	if err = x.WriteInt32(op_attach); err != nil {
+	if err = x.WriteInt32(Op_attach); err != nil {
 		return err
 	}
 

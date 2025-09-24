@@ -9,7 +9,7 @@ type OpRollback struct {
 func (op *OpRollback) Write(x *XDRWriter) error {
 	var err error
 	// p_operation
-	if err = x.WriteInt32(op_rollback); err != nil {
+	if err = x.WriteInt32(Op_rollback); err != nil {
 		return err
 	}
 

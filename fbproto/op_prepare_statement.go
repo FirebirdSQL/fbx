@@ -15,7 +15,7 @@ type OpPrepareStatement struct {
 func (op *OpPrepareStatement) Write(x *XDRWriter) error {
 	var err error
 	// p_operation
-	if err = x.WriteInt32(op_prepare_statement); err != nil {
+	if err = x.WriteInt32(Op_prepare_statement); err != nil {
 		return err
 	}
 
