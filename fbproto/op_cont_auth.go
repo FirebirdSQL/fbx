@@ -13,7 +13,9 @@ type OpContAuth struct {
 }
 
 func (op *OpContAuth) Write(x *XDRWriter) error {
-	if err := x.WriteInt32(op_cont_auth); err != nil {
+	var err error
+	// p_operation
+	if err = x.WriteInt32(Op_cont_auth); err != nil {
 		return err
 	}
 	if err := x.WriteString(hex.EncodeToString(op.AuthData), op.Encoding); err != nil {

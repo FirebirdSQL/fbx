@@ -178,7 +178,7 @@ type TPBWriterV3 struct {
 }
 
 func NewTPBWriterV3() *TPBWriterV3 {
-	return &TPBWriterV3{w: NewXPBWriterFromTag(isc_tpb_version3)}
+	return &TPBWriterV3{w: NewXPBWriterFromTag(Isc_tpb_version3)}
 }
 
 func (pb *TPBWriterV3) PutTag(tag byte) {

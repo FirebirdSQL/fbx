@@ -13,7 +13,7 @@ type OpInfoSQL struct {
 func (op *OpInfoSQL) Write(x *XDRWriter) error {
 	var err error
 	// p_operation
-	if err = x.WriteInt32(op_info_sql); err != nil {
+	if err = x.WriteInt32(Op_info_sql); err != nil {
 		return err
 	}
 
@@ -49,33 +49,33 @@ func GetSelectDescribeInfoItemsStart() []byte {
 }
 
 func GetSelectDescribeInfoItemsContinue(index int) []byte {
-	return append(append([]byte{isc_info_sql_sqlda_start, 2}, utils.Int16_to_bytes(int16(index))...), GetSelectDescribeInfoItems()...)
+	return append(append([]byte{Isc_info_sql_sqlda_start, 2}, utils.Int16_to_bytes(int16(index))...), GetSelectDescribeInfoItems()...)
 }
 
 func GetSelectDescribeInfoItems() []byte {
 	return []byte{
 		Isc_info_sql_stmt_type,
 		Isc_info_sql_select,
-		isc_info_sql_describe_vars,
-		isc_info_sql_sqlda_seq,
-		isc_info_sql_type,
-		isc_info_sql_sub_type,
-		isc_info_sql_scale,
-		isc_info_sql_length,
-		isc_info_sql_null_ind,
-		isc_info_sql_field,
-		isc_info_sql_relation,
-		isc_info_sql_owner,
-		isc_info_sql_alias,
-		isc_info_sql_describe_end,
+		Isc_info_sql_describe_vars,
+		Isc_info_sql_sqlda_seq,
+		Isc_info_sql_type,
+		Isc_info_sql_sub_type,
+		Isc_info_sql_scale,
+		Isc_info_sql_length,
+		Isc_info_sql_null_ind,
+		Isc_info_sql_field,
+		Isc_info_sql_relation,
+		Isc_info_sql_owner,
+		Isc_info_sql_alias,
+		Isc_info_sql_describe_end,
 
-		isc_info_sql_bind,
-		isc_info_sql_describe_vars,
-		isc_info_sql_sqlda_seq,
-		isc_info_sql_type,
-		isc_info_sql_sub_type,
-		isc_info_sql_scale,
-		isc_info_sql_length,
-		isc_info_sql_describe_end,
+		Isc_info_sql_bind,
+		Isc_info_sql_describe_vars,
+		Isc_info_sql_sqlda_seq,
+		Isc_info_sql_type,
+		Isc_info_sql_sub_type,
+		Isc_info_sql_scale,
+		Isc_info_sql_length,
+		Isc_info_sql_describe_end,
 	}
 }

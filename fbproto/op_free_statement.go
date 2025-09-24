@@ -9,7 +9,7 @@ type OpFreeStatement struct {
 func (op *OpFreeStatement) Write(x *XDRWriter) error {
 	var err error
 	// p_operation
-	if err = x.WriteInt32(op_free_statement); err != nil {
+	if err = x.WriteInt32(Op_free_statement); err != nil {
 		return err
 	}
 

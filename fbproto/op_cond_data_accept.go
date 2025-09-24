@@ -42,8 +42,8 @@ func (op *OpCondAccept) Read(r *XDRReader) error {
 	if acceptType, err = r.ReadInt32(); err != nil {
 		return err
 	}
-	op.Type = acceptType & ptype_MASK
-	op.Compress = (acceptType & pflag_compress) != 0
+	op.Type = acceptType & Ptype_MASK
+	op.Compress = (acceptType & Pflag_compress) != 0
 
 	//p_acpt_data
 	if op.Data, err = r.ReadBuffer(); err != nil {
