@@ -8,7 +8,7 @@ type OpCrypt struct {
 }
 
 func (op *OpCrypt) Write(x *XDRWriter) error {
-	if err := x.WriteInt32(op_crypt); err != nil {
+	if err := x.WriteInt32(Op_crypt); err != nil {
 		return err
 	}
 	if err := x.WriteString(op.Plugin, op.Encoding); err != nil {

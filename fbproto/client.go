@@ -178,7 +178,7 @@ func (c *Client) ReadMessage() (ServerMessage, error) {
 		msg = &OpReject{}
 	case Op_fetch_response:
 		msg = &OpFetchResponse{}
-	case op_cont_auth:
+	case Op_cont_auth:
 		msg = &OpContAuth{Encoding: c.Encoding}
 	default:
 		return nil, fmt.Errorf("unknown opcode: %d", opcode)
