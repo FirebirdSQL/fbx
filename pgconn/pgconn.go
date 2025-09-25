@@ -199,29 +199,13 @@ func ConnectConfig(ctx context.Context, config *Config) (*PgConn, error) {
 	return pgConn, nil
 }
 
-func (pgConn *PgConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *auth.AuthManager, config *Config, authSpecificData *[]byte, sessionKey *[]byte) error {
-	plugin, ok := authManager.SetCurrentPlugin(msg.PluginName)
-	if !ok {
-		return fmt.Errorf("server requested unsupported auth plugin %q", msg.PluginName)
-	}
+func (pgConn *PgConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *auth.AuthManager) error {
 	authPrintf("[AUTHDBG] cond_accept: plugin=%s data_len=%d\n", msg.PluginName, len(msg.Data))
 	authPrintf("%#v\n", msg)
 
-	step, err := plugin.HandleServerData(config.User, config.Password, msg.PluginName, msg.Data)
+	step, err := authManager.HandleServerChallenge(msg.PluginName, msg.Data)
 	if err != nil {
 		return err
-	}
-	if step != nil && len(step.AuthSpecific) > 0 {
-		copySpec := make([]byte, len(step.AuthSpecific))
-		copy(copySpec, step.AuthSpecific)
-		*authSpecificData = copySpec
-	} else {
-		*authSpecificData = nil
-	}
-	if step != nil && len(step.SessionKey) > 0 {
-		key := make([]byte, len(step.SessionKey))
-		copy(key, step.SessionKey)
-		*sessionKey = key
 	}
 	var reply []byte
 	if step != nil {
@@ -230,25 +214,24 @@ func (pgConn *PgConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *a
 	return pgConn.sendContAuth(reply, msg.PluginName, authManager.BuildList(), nil)
 }
 
-func (pgConn *PgConn) handleAuthResponse(msg *fbproto.OpResponse, config *Config, sessionKey *[]byte, authManager *auth.AuthManager) error {
+func (pgConn *PgConn) handleAuthResponse(msg *fbproto.OpResponse, config *Config, authManager *auth.AuthManager) error {
 	if msg.Failure {
 		return fmt.Errorf("authentication failed: %s", msg.Message)
 	}
 
-	if plugin := authManager.GetCurrentPlugin(); plugin != nil {
-		if err := plugin.HandleAuthResponse(msg.Data); err != nil {
-			return err
-		}
+	if err := authManager.HandleAuthResponse(msg.Data); err != nil {
+		return err
 	}
 
 	encryptionPlugin, nonce := guessWireCrypt(msg.Data)
+	sessionKey := authManager.SessionKey()
 	authPrintf("[AUTHDBG] auth response: enc_plugin=%s nonce_len=%d wire_crypt=%v sessionKey=%v\n",
-		encryptionPlugin, len(nonce), config.WireCrypt, sessionKey != nil && len(*sessionKey) > 0)
-	if encryptionPlugin != "" && config.WireCrypt && len(*sessionKey) > 0 {
+		encryptionPlugin, len(nonce), config.WireCrypt, len(sessionKey) > 0)
+	if encryptionPlugin != "" && config.WireCrypt && len(sessionKey) > 0 {
 		if err := pgConn.client.WriteMessage(&fbproto.OpCrypt{Plugin: encryptionPlugin, Encoding: pgConn.Encoding}); err != nil {
 			return err
 		}
-		if err := pgConn.client.SetCryptKey(encryptionPlugin, *sessionKey, nonce); err != nil {
+		if err := pgConn.client.SetCryptKey(encryptionPlugin, sessionKey, nonce); err != nil {
 			return err
 		}
 	}
@@ -494,21 +477,24 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 	pgConn.client = fbproto.NewClient(pgConn.bgReader, pgConn.writer, pgConn.Encoding)
 
 	authManager := auth.NewAuthManager(config.User, config.Password)
-	var authSpecificData []byte
-	var sessionKey []byte
+	initialHandshake := authManager.BeginHandshake()
+	if initialHandshake == nil {
+		pgConn.conn.Close()
+		return nil, newPerDialConnectError("authentication setup failed", fmt.Errorf("no authentication plugins available"))
+	}
 
-	currentPlugin := authManager.GetCurrentPlugin()
 	opConnect := fbproto.OpConnect{
-		Database:        config.Database,
-		User:            config.User,
-		SystemUser:      config.SystemUser,
-		Hostname:        config.Host,
-		Password:        config.Password,
-		AuthPlugin:      currentPlugin,
-		AuthPluginsList: authManager.BuildList(),
-		Options:         nil,
-		WireCrypt:       config.WireCrypt,
-		Encoding:        pgConn.Encoding,
+		Database:         config.Database,
+		User:             config.User,
+		SystemUser:       config.SystemUser,
+		Hostname:         config.Host,
+		Password:         config.Password,
+		AuthPluginName:   initialHandshake.PluginName,
+		AuthPluginsList:  initialHandshake.PluginList,
+		AuthSpecificData: initialHandshake.SpecificData,
+		Options:          nil,
+		WireCrypt:        config.WireCrypt,
+		Encoding:         pgConn.Encoding,
 	}
 
 	if err = pgConn.client.WriteMessage(&opConnect); err != nil {
@@ -535,19 +521,19 @@ connectLoop:
 			fake := &fbproto.OpCondAccept{Encoding: pgConn.Encoding}
 			fake.PluginName = msg.PluginName
 			fake.Data = msg.AuthData
-			if err := pgConn.handleCondAccept(fake, authManager, config, &authSpecificData, &sessionKey); err != nil {
+			if err := pgConn.handleCondAccept(fake, authManager); err != nil {
 				pgConn.conn.Close()
 				return nil, newPerDialConnectError("authentication failed", err)
 			}
 			continue connectLoop
 		case *fbproto.OpCondAccept:
-			if err := pgConn.handleCondAccept(msg, authManager, config, &authSpecificData, &sessionKey); err != nil {
+			if err := pgConn.handleCondAccept(msg, authManager); err != nil {
 				pgConn.conn.Close()
 				return nil, newPerDialConnectError("authentication failed", err)
 			}
 			continue connectLoop
 		case *fbproto.OpResponse:
-			if err := pgConn.handleAuthResponse(msg, config, &sessionKey, authManager); err != nil {
+			if err := pgConn.handleAuthResponse(msg, config, authManager); err != nil {
 				pgConn.conn.Close()
 				return nil, newPerDialConnectError("authentication failed", err)
 			}
@@ -582,9 +568,9 @@ connectLoop:
 		dpb.PutString(fbproto.Isc_dpb_auth_plugin_name, plugin.Name())
 	}
 	dpb.PutInt32(fbproto.Isc_dpb_utf8_filename, 1)
-	if len(authSpecificData) > 0 {
+	if authSpecific := authManager.AuthSpecificData(); len(authSpecific) > 0 {
 		dpb.PutTag(fbproto.Isc_dpb_specific_auth_data)
-		dpb.PutBuffer([]byte(hex.EncodeToString(authSpecificData)))
+		dpb.PutBuffer([]byte(hex.EncodeToString(authSpecific)))
 	}
 
 	opAttach := fbproto.OpAttach{

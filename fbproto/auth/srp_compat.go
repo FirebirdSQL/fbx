@@ -303,12 +303,3 @@ func extractSrpServerProof(buf []byte) []byte {
 	}
 	return nil
 }
-
-func cloneBytes(src []byte) []byte {
-	if src == nil {
-		return nil
-	}
-	dst := make([]byte, len(src))
-	copy(dst, src)
-	return dst
-}

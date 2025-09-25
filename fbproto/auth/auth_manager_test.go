@@ -17,6 +17,19 @@ func TestAuthManagerBuildListAndCurrent(t *testing.T) {
 	require.NotNil(t, cur)
 	require.Equal(t, "Srp256", cur.Name())
 
+	initial := m.BeginHandshake()
+	require.NotNil(t, initial)
+	require.Equal(t, cur.Name(), initial.PluginName)
+	require.Equal(t, []string{"Srp256", "Srp224", "Srp384", "Srp512", "Srp", "Legacy_Auth"}, initial.PluginList)
+	require.NotEmpty(t, initial.SpecificData)
+	assembled := make([]byte, 0)
+	for idx, chunk := range initial.SpecificData {
+		require.LessOrEqual(t, len(chunk.Data), 254)
+		require.Equal(t, byte(idx), chunk.Part)
+		assembled = append(assembled, chunk.Data...)
+	}
+	require.Equal(t, cur.InitialClientData(), assembled)
+
 	plg, ok := m.SetCurrentPlugin("srp")
 	require.True(t, ok)
 	require.Equal(t, "Srp", plg.Name())
@@ -42,6 +55,31 @@ func TestSetCurrentPluginNotFound(t *testing.T) {
 	p, ok := m.SetCurrentPlugin("unknown_plugin")
 	require.False(t, ok)
 	require.Nil(t, p)
+}
+
+func TestAuthManagerHandleServerChallenge(t *testing.T) {
+	m := NewAuthManager("user", "secret")
+	step, err := m.HandleServerChallenge("legacy_auth", nil)
+	require.NoError(t, err)
+	require.NotNil(t, step)
+	require.Equal(t, step.AuthSpecific, m.AuthSpecificData())
+	require.Empty(t, m.SessionKey())
+	require.Equal(t, "Legacy_Auth", m.GetCurrentPlugin().Name())
+	require.NoError(t, m.HandleAuthResponse(nil))
+
+	step, err = m.HandleServerChallenge("srp", nil)
+	require.NoError(t, err)
+	require.NotNil(t, step)
+	require.NotEmpty(t, step.Reply)
+	require.Empty(t, step.AuthSpecific)
+	require.Empty(t, m.AuthSpecificData())
+	require.Empty(t, m.SessionKey())
+}
+
+func TestHandleServerChallengeUnsupportedPlugin(t *testing.T) {
+	m := NewAuthManager("user", "secret")
+	_, err := m.HandleServerChallenge("unknown", nil)
+	require.Error(t, err)
 }
 
 func TestLegacyAuthPluginInitialClientData(t *testing.T) {
