@@ -4,8 +4,9 @@ package fbproto
 
 import (
 	"bytes"
-	"github.com/red-soft/fbx/fbproto/auth"
 	"strings"
+
+	"github.com/red-soft/fbx/fbproto/auth"
 )
 
 type OpConnect struct {
@@ -58,7 +59,7 @@ func (op *OpConnect) Write(x *XDRWriter) error {
 	sysUserBytes := bytes.NewBufferString(op.SystemUser).Bytes()
 	hostnameBytes := bytes.NewBufferString(op.Hostname).Bytes()
 	pluginListNameBytes := bytes.NewBufferString(op.AuthPluginsList).Bytes()
-	pluginNameBytes := bytes.NewBufferString(op.AuthPlugin.GetName()).Bytes()
+	pluginNameBytes := bytes.NewBufferString(op.AuthPlugin.Name()).Bytes()
 	userBytes := bytes.NewBufferString(strings.ToUpper(op.User)).Bytes()
 	var wireCryptByte byte
 	if op.WireCrypt {
@@ -83,7 +84,7 @@ func (op *OpConnect) Write(x *XDRWriter) error {
 		{CNCT_plugin_list, byte(len(pluginListNameBytes))}, pluginListNameBytes}, nil)
 
 	//FIXME: fbx make more universal
-	authClientData := op.AuthPlugin.GetClientData()
+	authClientData := op.AuthPlugin.InitialClientData()
 	var specificData []byte
 	if authClientData != nil && len(authClientData) > 254 {
 		specificData = bytes.Join([][]byte{

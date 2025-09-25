@@ -13,32 +13,28 @@ func TestAuthManagerBuildListAndCurrent(t *testing.T) {
 	require.NotNil(t, m)
 	require.Equal(t, "Srp256,Srp224,Srp384,Srp512,Srp,Legacy_Auth", m.BuildList())
 
-	// By default, the current plugin is the first one
-	cur := m.GetCurrentAuthPlugin()
+	cur := m.GetCurrentPlugin()
 	require.NotNil(t, cur)
-	require.Equal(t, "Srp256", cur.GetName())
+	require.Equal(t, "Srp256", cur.Name())
 
-	// Switch by name case-insensitively
-	p, ok := m.SetCurrentPlugin("srp")
+	plg, ok := m.SetCurrentPlugin("srp")
 	require.True(t, ok)
-	require.Equal(t, "Srp", p.GetName())
-	require.Equal(t, p, m.GetCurrentAuthPlugin())
+	require.Equal(t, "Srp", plg.Name())
+	require.Equal(t, plg, m.GetCurrentPlugin())
 
-	// Switch to Legacy_Auth
-	p2, ok := m.SetCurrentPlugin("legacy_auth")
+	legacy, ok := m.SetCurrentPlugin("legacy_auth")
 	require.True(t, ok)
-	require.Equal(t, "Legacy_Auth", p2.GetName())
+	require.Equal(t, "Legacy_Auth", legacy.Name())
 }
 
 func TestAuthManagerEmptyAndBounds(t *testing.T) {
 	var empty AuthManager
-	require.Nil(t, empty.GetCurrentAuthPlugin())
+	require.Nil(t, empty.GetCurrentPlugin())
 
 	m := NewAuthManager("user", "secret")
-	// Out-of-bounds index — reset to 0
 	m.current = 999
-	first := m.GetCurrentAuthPlugin()
-	require.Equal(t, m.AuthPlugins[0], first)
+	first := m.GetCurrentPlugin()
+	require.Equal(t, m.plugins[0], first)
 }
 
 func TestSetCurrentPluginNotFound(t *testing.T) {
@@ -48,14 +44,13 @@ func TestSetCurrentPluginNotFound(t *testing.T) {
 	require.Nil(t, p)
 }
 
-func TestLegacyAuthPluginClientData(t *testing.T) {
+func TestLegacyAuthPluginInitialClientData(t *testing.T) {
 	pass := "masterkey"
-	p := &LegacyAuthPlugin{Password: pass}
-	data := p.GetClientData()
+	p := NewLegacyAuthPlugin(pass)
+	data := p.InitialClientData()
 	expected := bytes.NewBufferString(crypt.Crypt(pass, "9z")[2:]).Bytes()
 	require.Equal(t, expected, data)
 
-	// Different password — different output
-	p2 := &LegacyAuthPlugin{Password: "other"}
-	require.NotEqual(t, data, p2.GetClientData())
+	p2 := NewLegacyAuthPlugin("other")
+	require.NotEqual(t, data, p2.InitialClientData())
 }

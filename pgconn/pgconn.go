@@ -207,26 +207,38 @@ func (pgConn *PgConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *a
 	authPrintf("[AUTHDBG] cond_accept: plugin=%s data_len=%d\n", msg.PluginName, len(msg.Data))
 	authPrintf("%#v\n", msg)
 
-	resp, spec, key, err := plugin.SetServerData(config.User, config.Password, msg.PluginName, msg.Data)
+	step, err := plugin.HandleServerData(config.User, config.Password, msg.PluginName, msg.Data)
 	if err != nil {
 		return err
 	}
-	if len(spec) > 0 {
-		copySpec := make([]byte, len(spec))
-		copy(copySpec, spec)
+	if step != nil && len(step.AuthSpecific) > 0 {
+		copySpec := make([]byte, len(step.AuthSpecific))
+		copy(copySpec, step.AuthSpecific)
 		*authSpecificData = copySpec
 	} else {
 		*authSpecificData = nil
 	}
-	if len(key) > 0 {
+	if step != nil && len(step.SessionKey) > 0 {
+		key := make([]byte, len(step.SessionKey))
+		copy(key, step.SessionKey)
 		*sessionKey = key
 	}
-	return pgConn.sendContAuth(resp, msg.PluginName, authManager.BuildList(), nil)
+	var reply []byte
+	if step != nil {
+		reply = step.Reply
+	}
+	return pgConn.sendContAuth(reply, msg.PluginName, authManager.BuildList(), nil)
 }
 
-func (pgConn *PgConn) handleAuthResponse(msg *fbproto.OpResponse, config *Config, sessionKey *[]byte) error {
+func (pgConn *PgConn) handleAuthResponse(msg *fbproto.OpResponse, config *Config, sessionKey *[]byte, authManager *auth.AuthManager) error {
 	if msg.Failure {
 		return fmt.Errorf("authentication failed: %s", msg.Message)
+	}
+
+	if plugin := authManager.GetCurrentPlugin(); plugin != nil {
+		if err := plugin.HandleAuthResponse(msg.Data); err != nil {
+			return err
+		}
 	}
 
 	encryptionPlugin, nonce := guessWireCrypt(msg.Data)
@@ -308,77 +320,6 @@ func guessWireCrypt(buf []byte) (string, []byte) {
 	}
 
 	return "", nil
-}
-
-func parseSrpPayload(data []byte) ([]byte, string, error) {
-	offset := 0
-	var salt []byte
-
-	if len(data) >= 2 {
-		sectionCount := int(binary.LittleEndian.Uint16(data[offset : offset+2]))
-		if sectionCount > 0 && sectionCount <= 8 {
-			offset += 2
-			extendedSaltFound := false
-			for i := 0; i < sectionCount; i++ {
-				if offset+2 > len(data) {
-					return nil, "", fmt.Errorf("invalid SRP payload")
-				}
-				length := int(binary.LittleEndian.Uint16(data[offset : offset+2]))
-				offset += 2
-				if length < 0 || offset+length > len(data) {
-					return nil, "", fmt.Errorf("invalid SRP payload")
-				}
-				chunk := data[offset : offset+length]
-				offset += length
-				if len(chunk) > 0 && chunk[0] < 32 {
-					chunk = chunk[1:]
-				}
-				if len(chunk) == 0 {
-					continue
-				}
-
-				salt = append([]byte(nil), chunk...)
-				extendedSaltFound = true
-			}
-
-			if extendedSaltFound {
-				serverHex := string(data[offset:])
-				if serverHex == "" {
-					return nil, "", fmt.Errorf("invalid SRP server public")
-				}
-				return append([]byte(nil), salt...), serverHex, nil
-			}
-
-			offset = 0
-		}
-	}
-
-	if len(data) < 2 {
-		return nil, "", fmt.Errorf("invalid SRP payload")
-	}
-
-	saltLen := int(binary.LittleEndian.Uint16(data[offset : offset+2]))
-	offset += 2
-	if saltLen < 0 || offset+saltLen > len(data) {
-		return nil, "", fmt.Errorf("invalid SRP payload")
-	}
-	salt = append([]byte(nil), data[offset:offset+saltLen]...)
-	offset += saltLen
-
-	if offset+2 <= len(data) {
-		offset += 2
-	}
-
-	if offset > len(data) {
-		return nil, "", fmt.Errorf("invalid SRP payload")
-	}
-
-	serverHex := string(data[offset:])
-	if serverHex == "" {
-		return nil, "", fmt.Errorf("invalid SRP server public")
-	}
-
-	return salt, serverHex, nil
 }
 
 // buildConnectOneConfigs resolves hostnames and builds a list of connectOneConfigs to try connecting to. It returns a
@@ -556,13 +497,14 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 	var authSpecificData []byte
 	var sessionKey []byte
 
+	currentPlugin := authManager.GetCurrentPlugin()
 	opConnect := fbproto.OpConnect{
 		Database:        config.Database,
 		User:            config.User,
 		SystemUser:      config.SystemUser,
 		Hostname:        config.Host,
 		Password:        config.Password,
-		AuthPlugin:      authManager.GetCurrentAuthPlugin(),
+		AuthPlugin:      currentPlugin,
 		AuthPluginsList: authManager.BuildList(),
 		Options:         nil,
 		WireCrypt:       config.WireCrypt,
@@ -605,7 +547,7 @@ connectLoop:
 			}
 			continue connectLoop
 		case *fbproto.OpResponse:
-			if err := pgConn.handleAuthResponse(msg, config, &sessionKey); err != nil {
+			if err := pgConn.handleAuthResponse(msg, config, &sessionKey, authManager); err != nil {
 				pgConn.conn.Close()
 				return nil, newPerDialConnectError("authentication failed", err)
 			}
@@ -636,7 +578,9 @@ connectLoop:
 	//FIXME: fbx is timezone need? where get timezone?
 	//dpb.AppendTag(fbproto.Isc_dpb_session_time_zone)
 	dpb.PutString(fbproto.Isc_dpb_auth_plugin_list, authManager.BuildList())
-	dpb.PutString(fbproto.Isc_dpb_auth_plugin_name, authManager.GetCurrentAuthPlugin().GetName())
+	if plugin := authManager.GetCurrentPlugin(); plugin != nil {
+		dpb.PutString(fbproto.Isc_dpb_auth_plugin_name, plugin.Name())
+	}
 	dpb.PutInt32(fbproto.Isc_dpb_utf8_filename, 1)
 	if len(authSpecificData) > 0 {
 		dpb.PutTag(fbproto.Isc_dpb_specific_auth_data)

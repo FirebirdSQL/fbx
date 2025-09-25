@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSrpPluginsClientDataMatchesPad(t *testing.T) {
+func TestSrpAuthPluginsClientDataMatchesPad(t *testing.T) {
 	constructors := []func() *SrpAuthPlugin{
 		NewSrpAuthPlugin,
 		NewSrp256AuthPlugin,
@@ -19,10 +19,8 @@ func TestSrpPluginsClientDataMatchesPad(t *testing.T) {
 	for _, ctor := range constructors {
 		p := ctor()
 		require.NotNil(t, p)
-		// Now GetClientData returns hex-encoded A
-		require.Equal(t, []byte(hex.EncodeToString(srpPad(p.ClientPublic))), p.GetClientData())
-		// Plugin name is not empty
-		require.NotEmpty(t, p.GetName())
+		require.Equal(t, []byte(hex.EncodeToString(srpPad(p.ClientPublic))), p.InitialClientData())
+		require.NotEmpty(t, p.Name())
 	}
 }
 

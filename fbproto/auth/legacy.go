@@ -2,28 +2,38 @@ package auth
 
 import (
 	"bytes"
-	"gitlab.com/nyarla/go-crypt"
+
+	crypt "gitlab.com/nyarla/go-crypt"
 )
 
 type LegacyAuthPlugin struct {
 	Password string
 }
 
-func (p *LegacyAuthPlugin) GetName() string {
+func NewLegacyAuthPlugin(password string) *LegacyAuthPlugin {
+	return &LegacyAuthPlugin{Password: password}
+}
+
+func (p *LegacyAuthPlugin) Name() string {
 	return "Legacy_Auth"
 }
 
-func (p *LegacyAuthPlugin) GetClientData() []byte {
-	return bytes.NewBufferString(crypt.Crypt(p.Password, "9z")[2:]).Bytes()
+func (p *LegacyAuthPlugin) Advertise() []string {
+	return []string{p.Name()}
 }
 
-func (p *LegacyAuthPlugin) SetServerData(user string, password string, pluginName string, data []byte) (response []byte, authSpecific []byte, sessionKey []byte, err error) {
-	// Legacy auth uses scrambled password as client response; no session key.
-	resp := p.GetClientData()
-	if len(resp) > 0 {
-		copyResp := make([]byte, len(resp))
-		copy(copyResp, resp)
-		return copyResp, copyResp, nil, nil
+func (p *LegacyAuthPlugin) InitialClientData() []byte {
+	return cloneBytes(bytes.NewBufferString(crypt.Crypt(p.Password, "9z")[2:]).Bytes())
+}
+
+func (p *LegacyAuthPlugin) HandleServerData(user string, password string, pluginName string, data []byte) (*AuthPluginStep, error) {
+	resp := p.InitialClientData()
+	if len(resp) == 0 {
+		return &AuthPluginStep{}, nil
 	}
-	return nil, nil, nil, nil
+	return &AuthPluginStep{Reply: cloneBytes(resp), AuthSpecific: cloneBytes(resp)}, nil
+}
+
+func (p *LegacyAuthPlugin) HandleAuthResponse(data []byte) error {
+	return nil
 }

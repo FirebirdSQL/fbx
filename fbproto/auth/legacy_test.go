@@ -8,29 +8,26 @@ import (
 	crypt "gitlab.com/nyarla/go-crypt"
 )
 
-func TestLegacyAuthGetName(t *testing.T) {
-	p := &LegacyAuthPlugin{}
-	require.Equal(t, "Legacy_Auth", p.GetName())
+func TestLegacyAuthPluginName(t *testing.T) {
+	p := NewLegacyAuthPlugin("")
+	require.Equal(t, "Legacy_Auth", p.Name())
 }
 
-func TestLegacyAuthClientData(t *testing.T) {
+func TestLegacyAuthPluginClientData(t *testing.T) {
 	pass := "masterkey"
-	p := &LegacyAuthPlugin{Password: pass}
-	data := p.GetClientData()
+	p := NewLegacyAuthPlugin(pass)
+	data := p.InitialClientData()
 	expected := bytes.NewBufferString(crypt.Crypt(pass, "9z")[2:]).Bytes()
 	require.Equal(t, expected, data)
 }
 
-func TestLegacyAuthSetServerDataNoop(t *testing.T) {
+func TestLegacyAuthPluginHandleServerData(t *testing.T) {
 	pass := "p@ssw0rd"
-	p := &LegacyAuthPlugin{Password: pass}
-	before := p.GetClientData()
-
-	// must not panic and must not change behaviour/state
-	_, _, _, err := p.SetServerData("user", pass, "Legacy_Auth", []byte{1, 2, 3})
+	p := NewLegacyAuthPlugin(pass)
+	step, err := p.HandleServerData("user", pass, "Legacy_Auth", []byte{1, 2, 3})
 	require.NoError(t, err)
-
-	after := p.GetClientData()
-	require.Equal(t, pass, p.Password)
-	require.Equal(t, before, after)
+	expected := bytes.NewBufferString(crypt.Crypt(pass, "9z")[2:]).Bytes()
+	require.Equal(t, expected, step.Reply)
+	require.Equal(t, expected, step.AuthSpecific)
+	require.Nil(t, step.SessionKey)
 }

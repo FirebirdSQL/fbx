@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"crypto/subtle"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -82,50 +83,52 @@ func getClientProofForVariant(name, user, password string, salt []byte, A, B, a 
 }
 
 type SrpAuthPlugin struct {
-	Name         string
+	variant      string
 	engine       *srpEngine
 	ClientPublic *big.Int
 	ClientSecret *big.Int
+	lastProof    []byte
+	lastSession  []byte
 }
 
 func NewSrpAuthPlugin() *SrpAuthPlugin {
-	plugin, err := newSrpAuthPlugin(srpNameClassic)
+	plg, err := newSrpAuthPlugin(srpNameClassic)
 	if err != nil {
 		panic(err)
 	}
-	return plugin
+	return plg
 }
 
 func NewSrp256AuthPlugin() *SrpAuthPlugin {
-	plugin, err := newSrpAuthPlugin(srpNameSHA256)
+	plg, err := newSrpAuthPlugin(srpNameSHA256)
 	if err != nil {
 		panic(err)
 	}
-	return plugin
+	return plg
 }
 
 func NewSrp224AuthPlugin() *SrpAuthPlugin {
-	plugin, err := newSrpAuthPlugin(srpNameSHA224)
+	plg, err := newSrpAuthPlugin(srpNameSHA224)
 	if err != nil {
 		panic(err)
 	}
-	return plugin
+	return plg
 }
 
 func NewSrp384AuthPlugin() *SrpAuthPlugin {
-	plugin, err := newSrpAuthPlugin(srpNameSHA384)
+	plg, err := newSrpAuthPlugin(srpNameSHA384)
 	if err != nil {
 		panic(err)
 	}
-	return plugin
+	return plg
 }
 
 func NewSrp512AuthPlugin() *SrpAuthPlugin {
-	plugin, err := newSrpAuthPlugin(srpNameSHA512)
+	plg, err := newSrpAuthPlugin(srpNameSHA512)
 	if err != nil {
 		panic(err)
 	}
-	return plugin
+	return plg
 }
 
 func newSrpAuthPlugin(name string) (*SrpAuthPlugin, error) {
@@ -140,51 +143,74 @@ func newSrpAuthPlugin(name string) (*SrpAuthPlugin, error) {
 	}
 
 	return &SrpAuthPlugin{
-		Name:         name,
+		variant:      name,
 		engine:       engine,
 		ClientPublic: public,
 		ClientSecret: private,
 	}, nil
 }
 
-func (p *SrpAuthPlugin) GetName() string {
-	return p.Name
+func (p *SrpAuthPlugin) Name() string {
+	return p.variant
 }
 
-func (p *SrpAuthPlugin) GetClientData() []byte {
-	// For SRP, the initial specific auth data is the client's public value (A)
-	// encoded as hex string bytes as required by wire protocol.
+func (p *SrpAuthPlugin) Advertise() []string {
+	return []string{p.variant}
+}
+
+func (p *SrpAuthPlugin) InitialClientData() []byte {
 	return []byte(hex.EncodeToString(srpPad(p.ClientPublic)))
 }
 
-// SetServerData handles SRP server challenges. It accepts either empty data
-// (server requests client public again) or a payload containing salt and
-// server public key. It returns response to send back, authSpecific DPB data
-// (hex-encoded proof), and the negotiated session key.
-func (p *SrpAuthPlugin) SetServerData(user string, password string, pluginName string, data []byte) (response []byte, authSpecific []byte, sessionKey []byte, err error) {
+func (p *SrpAuthPlugin) HandleServerData(user string, password string, pluginName string, data []byte) (*AuthPluginStep, error) {
 	if len(data) == 0 {
-		// Server is asking for client public value again
-		return BigIntToBytes(p.ClientPublic), nil, nil, nil
+		p.lastProof = nil
+		p.lastSession = nil
+		reply := BigIntToBytes(p.ClientPublic)
+		return &AuthPluginStep{Reply: cloneBytes(reply)}, nil
 	}
 
 	salt, serverHex, err := parseSrpServerData(data)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 
 	serverPublic := utils.BigIntFromHexString(serverHex)
-	// Compute client proof and session key
-	M, K := GetClientProof(strings.ToUpper(user), password, salt, p.ClientPublic, serverPublic, p.ClientSecret, pluginName)
-	// Response to send to server is raw proof M
-	// Store raw proof in authSpecific; it will be hex-encoded once when
-	// building DPB specific_auth_data.
-	proofCopy := make([]byte, len(M))
-	copy(proofCopy, M)
-	return proofCopy, proofCopy, K, nil
+	M, K := GetClientProof(strings.ToUpper(user), password, salt, p.ClientPublic, serverPublic, p.ClientSecret, p.variant)
+	p.lastProof = cloneBytes(M)
+	p.lastSession = cloneBytes(K)
+	return &AuthPluginStep{
+		Reply:        cloneBytes(M),
+		AuthSpecific: cloneBytes(M),
+		SessionKey:   cloneBytes(K),
+	}, nil
 }
 
-// parseSrpServerData mirrors the logic of pgconn.parseSrpPayload but is kept
-// here to avoid package dependency in the plugin layer.
+func (p *SrpAuthPlugin) HandleAuthResponse(data []byte) error {
+	proof := extractSrpServerProof(data)
+	if len(proof) == 0 {
+		return nil
+	}
+	return p.verifyServerProof(proof)
+}
+
+func (p *SrpAuthPlugin) verifyServerProof(serverProof []byte) error {
+	if len(serverProof) == 0 {
+		return fmt.Errorf("auth: empty SRP server proof")
+	}
+	if len(p.lastProof) == 0 || len(p.lastSession) == 0 {
+		return fmt.Errorf("auth: server proof received before client proof")
+	}
+	expected := p.engine.ServerProof(p.ClientPublic, p.lastProof, p.lastSession)
+	if len(expected) != len(serverProof) {
+		return fmt.Errorf("auth: invalid SRP server proof")
+	}
+	if subtle.ConstantTimeCompare(expected, serverProof) != 1 {
+		return fmt.Errorf("auth: invalid SRP server proof")
+	}
+	return nil
+}
+
 func parseSrpServerData(data []byte) ([]byte, string, error) {
 	offset := 0
 	var salt []byte
@@ -254,4 +280,35 @@ func parseSrpServerData(data []byte) ([]byte, string, error) {
 	}
 
 	return salt, serverHex, nil
+}
+
+func extractSrpServerProof(buf []byte) []byte {
+	const serverProofTag = byte(2)
+	for i := 0; i < len(buf); {
+		if i+2 > len(buf) {
+			break
+		}
+		tag := buf[i]
+		i++
+		length := int(buf[i])
+		i++
+		if length < 0 || i+length > len(buf) {
+			break
+		}
+		value := buf[i : i+length]
+		i += length
+		if tag == serverProofTag {
+			return cloneBytes(value)
+		}
+	}
+	return nil
+}
+
+func cloneBytes(src []byte) []byte {
+	if src == nil {
+		return nil
+	}
+	dst := make([]byte, len(src))
+	copy(dst, src)
+	return dst
 }
