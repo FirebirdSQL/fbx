@@ -12,7 +12,7 @@ import (
 type FieldDescriptor struct {
 	Index             int
 	Type              int
-	Format            int16 // 0 - binary, 1 - text. PG flavor flag for compatibility. Probable should be removed after reworking type conversion module
+	Format            int16 // 0 - text, 1 - binary. PG flavor flag for compatibility. Probable should be removed after reworking type conversion module
 	Scale             int
 	Subtype           int
 	Length            int
@@ -147,9 +147,9 @@ func (p *StatementInfo) feedDescriptors(reader *bytes.Buffer) error {
 func FbTypeIntoFormat(fbtype int, subtype int) int16 {
 	switch fbtype {
 	case SQL_TYPE_VARYING, SQL_TYPE_TEXT:
-		return 1
+		return 0
 	}
-	return 0
+	return 1
 }
 
 func (p *StatementInfo) GetRowBlr() []byte {
