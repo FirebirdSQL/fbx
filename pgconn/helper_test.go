@@ -30,7 +30,8 @@ func ensureConnValid(t *testing.T, pgConn *pgconn.PgConn) {
 
 	require.Nil(t, result.Err)
 	assert.Equal(t, 3, len(result.Rows))
-	assert.Equal(t, "1", string(result.Rows[0][0]))
-	assert.Equal(t, "2", string(result.Rows[1][0]))
-	assert.Equal(t, "3", string(result.Rows[2][0]))
+	// original expected 3 strings "1", "2", "3"
+	assert.Equal(t, []byte{0x0, 0x0, 0x0, 0x1}, result.Rows[0][0])
+	assert.Equal(t, []byte{0x0, 0x0, 0x0, 0x2}, result.Rows[1][0])
+	assert.Equal(t, []byte{0x0, 0x0, 0x0, 0x3}, result.Rows[2][0])
 }
