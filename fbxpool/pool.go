@@ -96,6 +96,7 @@ type Pool struct {
 	maxConnLifetimeJitter time.Duration
 	maxConnIdleTime       time.Duration
 	healthCheckPeriod     time.Duration
+	pingTimeout           time.Duration
 
 	healthCheckChan chan struct{}
 
@@ -163,6 +164,10 @@ type Config struct {
 
 	// MaxConnIdleTime is the duration after which an idle connection will be automatically closed by the health check.
 	MaxConnIdleTime time.Duration
+
+	// PingTimeout is the maximum amount of time to wait for a connection to pong before considering it as unhealthy and
+	// destroying it. If zero, the default is no timeout.
+	PingTimeout time.Duration
 
 	// MaxConns is the maximum size of the pool. The default is the greater of 4 or runtime.NumCPU().
 	MaxConns int32
@@ -236,6 +241,7 @@ func NewWithConfig(ctx context.Context, config *Config) (*Pool, error) {
 		maxConnLifetime:       config.MaxConnLifetime,
 		maxConnLifetimeJitter: config.MaxConnLifetimeJitter,
 		maxConnIdleTime:       config.MaxConnIdleTime,
+		pingTimeout:           config.PingTimeout,
 		healthCheckPeriod:     config.HealthCheckPeriod,
 		healthCheckChan:       make(chan struct{}, 1),
 		closeChan:             make(chan struct{}),
@@ -599,7 +605,14 @@ func (p *Pool) Acquire(ctx context.Context) (c *Conn, err error) {
 
 		shouldPingParams := ShouldPingParams{Conn: cr.conn, IdleDuration: res.IdleDuration()}
 		if p.shouldPing(ctx, shouldPingParams) {
-			err := cr.conn.Ping(ctx)
+			pingCtx := ctx
+			if p.pingTimeout > 0 {
+				var cancel context.CancelFunc
+				pingCtx, cancel = context.WithTimeout(ctx, p.pingTimeout)
+				defer cancel()
+			}
+
+			err := cr.conn.Ping(pingCtx)
 			if err != nil {
 				res.Destroy()
 				continue
