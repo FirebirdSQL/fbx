@@ -199,7 +199,7 @@ func ConnectConfig(ctx context.Context, config *Config) (*PgConn, error) {
 	return pgConn, nil
 }
 
-func (pgConn *PgConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *auth.AuthManager) error {
+func (pgConn *PgConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *auth.AuthManager, respond bool) error {
 	authPrintf("[AUTHDBG] cond_accept: plugin=%s data_len=%d\n", msg.PluginName, len(msg.Data))
 	authPrintf("%#v\n", msg)
 
@@ -207,11 +207,10 @@ func (pgConn *PgConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *a
 	if err != nil {
 		return err
 	}
-	var reply []byte
-	if step != nil {
-		reply = step.Reply
+	if respond && step != nil {
+		return pgConn.sendContAuth(step.Reply, msg.PluginName, authManager.BuildList(), nil)
 	}
-	return pgConn.sendContAuth(reply, msg.PluginName, authManager.BuildList(), nil)
+	return nil
 }
 
 func (pgConn *PgConn) handleAuthResponse(msg *fbproto.OpResponse, config *Config, authManager *auth.AuthManager) error {
@@ -521,13 +520,13 @@ connectLoop:
 			fake := &fbproto.OpCondAccept{Encoding: pgConn.Encoding}
 			fake.PluginName = msg.PluginName
 			fake.Data = msg.AuthData
-			if err := pgConn.handleCondAccept(fake, authManager); err != nil {
+			if err := pgConn.handleCondAccept(fake, authManager, true); err != nil {
 				pgConn.conn.Close()
 				return nil, newPerDialConnectError("authentication failed", err)
 			}
 			continue connectLoop
 		case *fbproto.OpCondAccept:
-			if err := pgConn.handleCondAccept(msg, authManager); err != nil {
+			if err := pgConn.handleCondAccept(msg, authManager, true); err != nil {
 				pgConn.conn.Close()
 				return nil, newPerDialConnectError("authentication failed", err)
 			}
@@ -542,7 +541,14 @@ connectLoop:
 			}
 			continue connectLoop
 		case *fbproto.OpDataAccept:
-			break connectLoop
+			if err := pgConn.handleCondAccept(&msg.OpCondAccept, authManager, !msg.AuthComplete); err != nil {
+				pgConn.conn.Close()
+				return nil, newPerDialConnectError("authentication failed", err)
+			}
+			if msg.AuthComplete {
+				break connectLoop
+			}
+			continue connectLoop
 		case *fbproto.ErrorResponse:
 			pgConn.conn.Close()
 			return nil, newPerDialConnectError("authentication failed", ErrorResponseToFbError(msg))

@@ -59,5 +59,3 @@ func srpUserHash(salt []byte, user, password string) *big.Int {
 	h2.Write(h1.Sum(nil))
 	return srpBytesToBigInt(h2.Sum(nil))
 }
-
-// srpXorBytes was unused and removed.
