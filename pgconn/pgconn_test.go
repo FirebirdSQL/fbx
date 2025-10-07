@@ -2527,7 +2527,8 @@ func TestConnCloseWhileCancellableQueryInProgress(t *testing.T) {
 
 	pgConn.Exec(ctx, "select n from generate_series(1,10) n")
 
-	closeCtx, _ := context.WithCancel(ctx)
+	closeCtx, closeCancel := context.WithCancel(ctx)
+	defer closeCancel()
 	pgConn.Close(closeCtx)
 	select {
 	case <-pgConn.CleanupDone():

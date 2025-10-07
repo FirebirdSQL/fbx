@@ -117,6 +117,7 @@ func TestContextWatcherStress(t *testing.T) {
 
 	for i := 0; i < cycleCount; i++ {
 		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 		cw.Watch(ctx)
 		if i%2 == 0 {
 			cancel()

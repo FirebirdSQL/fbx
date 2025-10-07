@@ -16,18 +16,25 @@ func TestMultirangeCodecTranscode(t *testing.T) {
 	skipCockroachDB(t, "Server does not support range types (see https://github.com/cockroachdb/cockroach/issues/27791)")
 
 	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "int4multirange", []pgxtest.ValueRoundTripTest{
-		{
-			pgtype.Multirange[pgtype.Range[pgtype.Int4]](nil),
-			new(pgtype.Multirange[pgtype.Range[pgtype.Int4]]),
-			func(a any) bool { return reflect.DeepEqual(pgtype.Multirange[pgtype.Range[pgtype.Int4]](nil), a) },
-		},
-		{
-			pgtype.Multirange[pgtype.Range[pgtype.Int4]]{},
-			new(pgtype.Multirange[pgtype.Range[pgtype.Int4]]),
-			func(a any) bool { return reflect.DeepEqual(pgtype.Multirange[pgtype.Range[pgtype.Int4]]{}, a) },
-		},
-		{
-			pgtype.Multirange[pgtype.Range[pgtype.Int4]]{
+		{Param: pgtype.Multirange[pgtype.Range[pgtype.Int4]](nil), Result: new(pgtype.Multirange[pgtype.Range[pgtype.Int4]]), Test: func(a any) bool { return reflect.DeepEqual(pgtype.Multirange[pgtype.Range[pgtype.Int4]](nil), a) }},
+		{Param: pgtype.Multirange[pgtype.Range[pgtype.Int4]]{}, Result: new(pgtype.Multirange[pgtype.Range[pgtype.Int4]]), Test: func(a any) bool { return reflect.DeepEqual(pgtype.Multirange[pgtype.Range[pgtype.Int4]]{}, a) }},
+		{Param: pgtype.Multirange[pgtype.Range[pgtype.Int4]]{
+			{
+				Lower:     pgtype.Int4{Int32: 1, Valid: true},
+				Upper:     pgtype.Int4{Int32: 5, Valid: true},
+				LowerType: pgtype.Inclusive,
+				UpperType: pgtype.Exclusive,
+				Valid:     true,
+			},
+			{
+				Lower:     pgtype.Int4{Int32: 7, Valid: true},
+				Upper:     pgtype.Int4{Int32: 9, Valid: true},
+				LowerType: pgtype.Inclusive,
+				UpperType: pgtype.Exclusive,
+				Valid:     true,
+			},
+		}, Result: new(pgtype.Multirange[pgtype.Range[pgtype.Int4]]), Test: func(a any) bool {
+			return reflect.DeepEqual(pgtype.Multirange[pgtype.Range[pgtype.Int4]]{
 				{
 					Lower:     pgtype.Int4{Int32: 1, Valid: true},
 					Upper:     pgtype.Int4{Int32: 5, Valid: true},
@@ -42,26 +49,8 @@ func TestMultirangeCodecTranscode(t *testing.T) {
 					UpperType: pgtype.Exclusive,
 					Valid:     true,
 				},
-			},
-			new(pgtype.Multirange[pgtype.Range[pgtype.Int4]]),
-			func(a any) bool {
-				return reflect.DeepEqual(pgtype.Multirange[pgtype.Range[pgtype.Int4]]{
-					{
-						Lower:     pgtype.Int4{Int32: 1, Valid: true},
-						Upper:     pgtype.Int4{Int32: 5, Valid: true},
-						LowerType: pgtype.Inclusive,
-						UpperType: pgtype.Exclusive,
-						Valid:     true,
-					},
-					{
-						Lower:     pgtype.Int4{Int32: 7, Valid: true},
-						Upper:     pgtype.Int4{Int32: 9, Valid: true},
-						LowerType: pgtype.Inclusive,
-						UpperType: pgtype.Exclusive,
-						Valid:     true,
-					},
-				}, a)
-			},
+			}, a)
+		},
 		},
 	})
 }

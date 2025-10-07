@@ -62,8 +62,6 @@ func (p *StatementInfo) Parse(buf []byte) error {
 			return fmt.Errorf("unknown statement info item: %d", item)
 		}
 	}
-
-	return nil
 }
 
 func (p *StatementInfo) readIntValue(reader *bytes.Buffer) int {
