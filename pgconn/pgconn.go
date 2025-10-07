@@ -1415,7 +1415,7 @@ func (pgConn *PgConn) ExecParams(ctx context.Context, sql string, paramValues []
 	//pgConn.execExtendedSuffix(result)
 	//
 	//return result
-	panic("implement me")
+	//panic("implement me")
 }
 
 // ExecPrepared enqueues the execution of a prepared statement via the PostgreSQL extended query protocol.
