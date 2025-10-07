@@ -19,19 +19,11 @@ func (someFmtStringer) String() string {
 func TestTextCodec(t *testing.T) {
 	for _, pgTypeName := range []string{"text", "varchar"} {
 		pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, pgTypeName, []pgxtest.ValueRoundTripTest{
-			{
-				pgtype.Text{String: "", Valid: true},
-				new(pgtype.Text),
-				isExpectedEq(pgtype.Text{String: "", Valid: true}),
-			},
-			{
-				pgtype.Text{String: "foo", Valid: true},
-				new(pgtype.Text),
-				isExpectedEq(pgtype.Text{String: "foo", Valid: true}),
-			},
-			{nil, new(pgtype.Text), isExpectedEq(pgtype.Text{})},
-			{"foo", new(string), isExpectedEq("foo")},
-			{someFmtStringer{}, new(string), isExpectedEq("some fmt.Stringer")},
+			{Param: pgtype.Text{String: "", Valid: true}, Result: new(pgtype.Text), Test: isExpectedEq(pgtype.Text{String: "", Valid: true})},
+			{Param: pgtype.Text{String: "foo", Valid: true}, Result: new(pgtype.Text), Test: isExpectedEq(pgtype.Text{String: "foo", Valid: true})},
+			{Param: nil, Result: new(pgtype.Text), Test: isExpectedEq(pgtype.Text{})},
+			{Param: "foo", Result: new(string), Test: isExpectedEq("foo")},
+			{Param: someFmtStringer{}, Result: new(string), Test: isExpectedEq("some fmt.Stringer")},
 		})
 	}
 }
@@ -48,18 +40,10 @@ func TestTextCodec(t *testing.T) {
 // So this is simply a smoke test of the name type.
 func TestTextCodecName(t *testing.T) {
 	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "name", []pgxtest.ValueRoundTripTest{
-		{
-			pgtype.Text{String: "", Valid: true},
-			new(pgtype.Text),
-			isExpectedEq(pgtype.Text{String: "", Valid: true}),
-		},
-		{
-			pgtype.Text{String: "foo", Valid: true},
-			new(pgtype.Text),
-			isExpectedEq(pgtype.Text{String: "foo", Valid: true}),
-		},
-		{nil, new(pgtype.Text), isExpectedEq(pgtype.Text{})},
-		{"foo", new(string), isExpectedEq("foo")},
+		{Param: pgtype.Text{String: "", Valid: true}, Result: new(pgtype.Text), Test: isExpectedEq(pgtype.Text{String: "", Valid: true})},
+		{Param: pgtype.Text{String: "foo", Valid: true}, Result: new(pgtype.Text), Test: isExpectedEq(pgtype.Text{String: "foo", Valid: true})},
+		{Param: nil, Result: new(pgtype.Text), Test: isExpectedEq(pgtype.Text{})},
+		{Param: "foo", Result: new(string), Test: isExpectedEq("foo")},
 	})
 }
 
@@ -68,15 +52,11 @@ func TestTextCodecBPChar(t *testing.T) {
 	skipCockroachDB(t, "Server does not properly handle bpchar with multi-byte character")
 
 	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "char(3)", []pgxtest.ValueRoundTripTest{
-		{
-			pgtype.Text{String: "a  ", Valid: true},
-			new(pgtype.Text),
-			isExpectedEq(pgtype.Text{String: "a  ", Valid: true}),
-		},
-		{nil, new(pgtype.Text), isExpectedEq(pgtype.Text{})},
-		{"   ", new(string), isExpectedEq("   ")},
-		{"", new(string), isExpectedEq("   ")},
-		{" 嗨 ", new(string), isExpectedEq(" 嗨 ")},
+		{Param: pgtype.Text{String: "a  ", Valid: true}, Result: new(pgtype.Text), Test: isExpectedEq(pgtype.Text{String: "a  ", Valid: true})},
+		{Param: nil, Result: new(pgtype.Text), Test: isExpectedEq(pgtype.Text{})},
+		{Param: "   ", Result: new(string), Test: isExpectedEq("   ")},
+		{Param: "", Result: new(string), Test: isExpectedEq("   ")},
+		{Param: " 嗨 ", Result: new(string), Test: isExpectedEq(" 嗨 ")},
 	})
 }
 
@@ -100,13 +80,9 @@ func TestTextCodecACLItem(t *testing.T) {
 	}
 
 	pgxtest.RunValueRoundTripTests(context.Background(), t, ctr, nil, "aclitem", []pgxtest.ValueRoundTripTest{
-		{
-			pgtype.Text{String: "postgres=arwdDxt/postgres", Valid: true},
-			new(pgtype.Text),
-			isExpectedEq(pgtype.Text{String: "postgres=arwdDxt/postgres", Valid: true}),
-		},
-		{pgtype.Text{}, new(pgtype.Text), isExpectedEq(pgtype.Text{})},
-		{nil, new(pgtype.Text), isExpectedEq(pgtype.Text{})},
+		{Param: pgtype.Text{String: "postgres=arwdDxt/postgres", Valid: true}, Result: new(pgtype.Text), Test: isExpectedEq(pgtype.Text{String: "postgres=arwdDxt/postgres", Valid: true})},
+		{Param: pgtype.Text{}, Result: new(pgtype.Text), Test: isExpectedEq(pgtype.Text{})},
+		{Param: nil, Result: new(pgtype.Text), Test: isExpectedEq(pgtype.Text{})},
 	})
 }
 
@@ -128,11 +104,7 @@ func TestTextCodecACLItemRoleWithSpecialCharacters(t *testing.T) {
 	}
 
 	pgxtest.RunValueRoundTripTests(context.Background(), t, ctr, nil, "aclitem", []pgxtest.ValueRoundTripTest{
-		{
-			pgtype.Text{String: `postgres=arwdDxt/" tricky, ' } "" \ test user "`, Valid: true},
-			new(pgtype.Text),
-			isExpectedEq(pgtype.Text{String: `postgres=arwdDxt/" tricky, ' } "" \ test user "`, Valid: true}),
-		},
+		{Param: pgtype.Text{String: `postgres=arwdDxt/" tricky, ' } "" \ test user "`, Valid: true}, Result: new(pgtype.Text), Test: isExpectedEq(pgtype.Text{String: `postgres=arwdDxt/" tricky, ' } "" \ test user "`, Valid: true})},
 	})
 }
 

@@ -12,129 +12,33 @@ import (
 
 func TestIntervalCodec(t *testing.T) {
 	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "interval", []pgxtest.ValueRoundTripTest{
-		{
-			pgtype.Interval{Microseconds: 1, Valid: true},
-			new(pgtype.Interval),
-			isExpectedEq(pgtype.Interval{Microseconds: 1, Valid: true}),
-		},
-		{
-			pgtype.Interval{Microseconds: 1000000, Valid: true},
-			new(pgtype.Interval),
-			isExpectedEq(pgtype.Interval{Microseconds: 1000000, Valid: true}),
-		},
-		{
-			pgtype.Interval{Microseconds: 1000001, Valid: true},
-			new(pgtype.Interval),
-			isExpectedEq(pgtype.Interval{Microseconds: 1000001, Valid: true}),
-		},
-		{
-			pgtype.Interval{Microseconds: 123202800000000, Valid: true},
-			new(pgtype.Interval),
-			isExpectedEq(pgtype.Interval{Microseconds: 123202800000000, Valid: true}),
-		},
-		{
-			pgtype.Interval{Days: 1, Valid: true},
-			new(pgtype.Interval),
-			isExpectedEq(pgtype.Interval{Days: 1, Valid: true}),
-		},
-		{
-			pgtype.Interval{Months: 1, Valid: true},
-			new(pgtype.Interval),
-			isExpectedEq(pgtype.Interval{Months: 1, Valid: true}),
-		},
-		{
-			pgtype.Interval{Months: 12, Valid: true},
-			new(pgtype.Interval),
-			isExpectedEq(pgtype.Interval{Months: 12, Valid: true}),
-		},
-		{
-			pgtype.Interval{Months: 13, Days: 15, Microseconds: 1000001, Valid: true},
-			new(pgtype.Interval),
-			isExpectedEq(pgtype.Interval{Months: 13, Days: 15, Microseconds: 1000001, Valid: true}),
-		},
-		{
-			pgtype.Interval{Microseconds: -1, Valid: true},
-			new(pgtype.Interval),
-			isExpectedEq(pgtype.Interval{Microseconds: -1, Valid: true}),
-		},
-		{
-			pgtype.Interval{Microseconds: -1000000, Valid: true},
-			new(pgtype.Interval),
-			isExpectedEq(pgtype.Interval{Microseconds: -1000000, Valid: true}),
-		},
-		{
-			pgtype.Interval{Microseconds: -1000001, Valid: true},
-			new(pgtype.Interval),
-			isExpectedEq(pgtype.Interval{Microseconds: -1000001, Valid: true}),
-		},
-		{
-			pgtype.Interval{Microseconds: -123202800000000, Valid: true},
-			new(pgtype.Interval),
-			isExpectedEq(pgtype.Interval{Microseconds: -123202800000000, Valid: true}),
-		},
-		{
-			pgtype.Interval{Days: -1, Valid: true},
-			new(pgtype.Interval),
-			isExpectedEq(pgtype.Interval{Days: -1, Valid: true}),
-		},
-		{
-			pgtype.Interval{Months: -1, Valid: true},
-			new(pgtype.Interval),
-			isExpectedEq(pgtype.Interval{Months: -1, Valid: true}),
-		},
-		{
-			pgtype.Interval{Months: -12, Valid: true},
-			new(pgtype.Interval),
-			isExpectedEq(pgtype.Interval{Months: -12, Valid: true}),
-		},
-		{
-			pgtype.Interval{Months: -13, Days: -15, Microseconds: -1000001, Valid: true},
-			new(pgtype.Interval),
-			isExpectedEq(pgtype.Interval{Months: -13, Days: -15, Microseconds: -1000001, Valid: true}),
-		},
-		{
-			"1 second",
-			new(pgtype.Interval),
-			isExpectedEq(pgtype.Interval{Microseconds: 1000000, Valid: true}),
-		},
-		{
-			"1.000001 second",
-			new(pgtype.Interval),
-			isExpectedEq(pgtype.Interval{Microseconds: 1000001, Valid: true}),
-		},
-		{
-			"34223 hours",
-			new(pgtype.Interval),
-			isExpectedEq(pgtype.Interval{Microseconds: 123202800000000, Valid: true}),
-		},
-		{
-			"1 day",
-			new(pgtype.Interval),
-			isExpectedEq(pgtype.Interval{Days: 1, Valid: true}),
-		},
-		{
-			"1 month",
-			new(pgtype.Interval),
-			isExpectedEq(pgtype.Interval{Months: 1, Valid: true}),
-		},
-		{
-			"1 year",
-			new(pgtype.Interval),
-			isExpectedEq(pgtype.Interval{Months: 12, Valid: true}),
-		},
-		{
-			"-13 mon",
-			new(pgtype.Interval),
-			isExpectedEq(pgtype.Interval{Months: -13, Valid: true}),
-		},
-		{time.Hour, new(time.Duration), isExpectedEq(time.Hour)},
-		{
-			pgtype.Interval{Months: 1, Days: 1, Valid: true},
-			new(time.Duration),
-			isExpectedEq(time.Duration(2678400000000000)),
-		},
-		{pgtype.Interval{}, new(pgtype.Interval), isExpectedEq(pgtype.Interval{})},
-		{nil, new(pgtype.Interval), isExpectedEq(pgtype.Interval{})},
+		{Param: pgtype.Interval{Microseconds: 1, Valid: true}, Result: new(pgtype.Interval), Test: isExpectedEq(pgtype.Interval{Microseconds: 1, Valid: true})},
+		{Param: pgtype.Interval{Microseconds: 1000000, Valid: true}, Result: new(pgtype.Interval), Test: isExpectedEq(pgtype.Interval{Microseconds: 1000000, Valid: true})},
+		{Param: pgtype.Interval{Microseconds: 1000001, Valid: true}, Result: new(pgtype.Interval), Test: isExpectedEq(pgtype.Interval{Microseconds: 1000001, Valid: true})},
+		{Param: pgtype.Interval{Microseconds: 123202800000000, Valid: true}, Result: new(pgtype.Interval), Test: isExpectedEq(pgtype.Interval{Microseconds: 123202800000000, Valid: true})},
+		{Param: pgtype.Interval{Days: 1, Valid: true}, Result: new(pgtype.Interval), Test: isExpectedEq(pgtype.Interval{Days: 1, Valid: true})},
+		{Param: pgtype.Interval{Months: 1, Valid: true}, Result: new(pgtype.Interval), Test: isExpectedEq(pgtype.Interval{Months: 1, Valid: true})},
+		{Param: pgtype.Interval{Months: 12, Valid: true}, Result: new(pgtype.Interval), Test: isExpectedEq(pgtype.Interval{Months: 12, Valid: true})},
+		{Param: pgtype.Interval{Months: 13, Days: 15, Microseconds: 1000001, Valid: true}, Result: new(pgtype.Interval), Test: isExpectedEq(pgtype.Interval{Months: 13, Days: 15, Microseconds: 1000001, Valid: true})},
+		{Param: pgtype.Interval{Microseconds: -1, Valid: true}, Result: new(pgtype.Interval), Test: isExpectedEq(pgtype.Interval{Microseconds: -1, Valid: true})},
+		{Param: pgtype.Interval{Microseconds: -1000000, Valid: true}, Result: new(pgtype.Interval), Test: isExpectedEq(pgtype.Interval{Microseconds: -1000000, Valid: true})},
+		{Param: pgtype.Interval{Microseconds: -1000001, Valid: true}, Result: new(pgtype.Interval), Test: isExpectedEq(pgtype.Interval{Microseconds: -1000001, Valid: true})},
+		{Param: pgtype.Interval{Microseconds: -123202800000000, Valid: true}, Result: new(pgtype.Interval), Test: isExpectedEq(pgtype.Interval{Microseconds: -123202800000000, Valid: true})},
+		{Param: pgtype.Interval{Days: -1, Valid: true}, Result: new(pgtype.Interval), Test: isExpectedEq(pgtype.Interval{Days: -1, Valid: true})},
+		{Param: pgtype.Interval{Months: -1, Valid: true}, Result: new(pgtype.Interval), Test: isExpectedEq(pgtype.Interval{Months: -1, Valid: true})},
+		{Param: pgtype.Interval{Months: -12, Valid: true}, Result: new(pgtype.Interval), Test: isExpectedEq(pgtype.Interval{Months: -12, Valid: true})},
+		{Param: pgtype.Interval{Months: -13, Days: -15, Microseconds: -1000001, Valid: true}, Result: new(pgtype.Interval), Test: isExpectedEq(pgtype.Interval{Months: -13, Days: -15, Microseconds: -1000001, Valid: true})},
+		{Param: "1 second", Result: new(pgtype.Interval), Test: isExpectedEq(pgtype.Interval{Microseconds: 1000000, Valid: true})},
+		{Param: "1.000001 second", Result: new(pgtype.Interval), Test: isExpectedEq(pgtype.Interval{Microseconds: 1000001, Valid: true})},
+		{Param: "34223 hours", Result: new(pgtype.Interval), Test: isExpectedEq(pgtype.Interval{Microseconds: 123202800000000, Valid: true})},
+		{Param: "1 day", Result: new(pgtype.Interval), Test: isExpectedEq(pgtype.Interval{Days: 1, Valid: true})},
+		{Param: "1 month", Result: new(pgtype.Interval), Test: isExpectedEq(pgtype.Interval{Months: 1, Valid: true})},
+		{Param: "1 year", Result: new(pgtype.Interval), Test: isExpectedEq(pgtype.Interval{Months: 12, Valid: true})},
+		{Param: "-13 mon", Result: new(pgtype.Interval), Test: isExpectedEq(pgtype.Interval{Months: -13, Valid: true})},
+		{Param: time.Hour, Result: new(time.Duration), Test: isExpectedEq(time.Hour)},
+		{Param: pgtype.Interval{Months: 1, Days: 1, Valid: true}, Result: new(time.Duration), Test: isExpectedEq(time.Duration(2678400000000000))},
+		{Param: pgtype.Interval{}, Result: new(pgtype.Interval), Test: isExpectedEq(pgtype.Interval{})},
+		{Param: nil, Result: new(pgtype.Interval), Test: isExpectedEq(pgtype.Interval{})},
 	})
 }
 
