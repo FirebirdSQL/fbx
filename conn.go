@@ -466,9 +466,9 @@ func (c *Conn) Exec(ctx context.Context, sql string, arguments ...any) (pgconn.C
 		ctx = c.queryTracer.TraceQueryStart(ctx, c, TraceQueryStartData{SQL: sql, Args: arguments})
 	}
 
-	//if err := c.deallocateInvalidatedCachedStatements(ctx); err != nil {
-	//	return pgconn.CommandTag{}, err
-	//}
+	if err := c.deallocateInvalidatedCachedStatements(ctx); err != nil {
+		return pgconn.CommandTag{}, err
+	}
 
 	commandTag, err := c.exec(ctx, sql, arguments...)
 
@@ -565,12 +565,8 @@ func (c *Conn) execSimpleProtocol(ctx context.Context, sql string, arguments []a
 		}
 	}
 
-	mrr := c.pgConn.Exec(ctx, sql)
-	for mrr.NextResult() {
-		commandTag, _ = mrr.ResultReader().Close()
-	}
-	err = mrr.Close()
-	return commandTag, err
+	rr := c.pgConn.Exec(ctx, sql)
+	return rr.Close()
 }
 
 func (c *Conn) execParams(ctx context.Context, sd *pgconn.StatementDescription, arguments []any) (pgconn.CommandTag, error) {
@@ -841,16 +837,7 @@ optionLoop:
 			return rows, err
 		}
 
-		mrr := c.pgConn.Exec(ctx, sql)
-		if mrr.NextResult() {
-			rows.resultReader = mrr.ResultReader()
-			rows.multiResultReader = mrr
-		} else {
-			err = mrr.Close()
-			rows.fatal(err)
-			return rows, err
-		}
-
+		rows.resultReader = c.pgConn.Exec(ctx, sql)
 		return rows, nil
 	} else {
 		err = fmt.Errorf("unknown QueryExecMode: %v", mode)

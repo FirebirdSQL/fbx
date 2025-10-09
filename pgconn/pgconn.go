@@ -1344,43 +1344,8 @@ func (pgConn *PgConn) WaitForNotification(ctx context.Context) error {
 // statements.
 //
 // Prefer ExecParams unless executing arbitrary SQL that may contain multiple queries.
-func (pgConn *PgConn) Exec(ctx context.Context, sql string) *MultiResultReader {
-	if err := pgConn.lock(); err != nil {
-		return &MultiResultReader{
-			closed: true,
-			err:    err,
-		}
-	}
-
-	pgConn.multiResultReader = MultiResultReader{
-		pgConn: pgConn,
-		ctx:    ctx,
-	}
-	multiResult := &pgConn.multiResultReader
-	if ctx != context.Background() {
-		select {
-		case <-ctx.Done():
-			multiResult.closed = true
-			multiResult.err = newContextAlreadyDoneError(ctx)
-			pgConn.unlock()
-			return multiResult
-		default:
-		}
-		pgConn.contextWatcher.Watch(ctx)
-	}
-
-	//pgConn.frontend.SendQuery(&pgproto3.Query{String: sql})
-	err := pgConn.flushWithPotentialWriteReadDeadlock()
-	if err != nil {
-		pgConn.asyncClose()
-		pgConn.contextWatcher.Unwatch()
-		multiResult.closed = true
-		multiResult.err = err
-		pgConn.unlock()
-		return multiResult
-	}
-
-	return multiResult
+func (pgConn *PgConn) Exec(ctx context.Context, sql string) *ResultReader {
+	return pgConn.ExecParams(ctx, sql, nil, nil, nil, nil)
 }
 
 // ExecParams executes a command via the PostgreSQL extended query protocol.
