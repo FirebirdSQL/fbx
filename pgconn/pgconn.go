@@ -14,7 +14,6 @@ import (
 	"math"
 	"net"
 	"os"
-	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,7 +24,7 @@ import (
 	"github.com/red-soft/fbx/pgconn/ctxwatch"
 	"github.com/red-soft/fbx/pgconn/internal/bgreader"
 	"github.com/red-soft/fbx/pgproto3"
-	"golang.org/x/exp/slices"
+	"github.com/red-soft/fbx/wirecrypt"
 )
 
 // Debug printing for authentication handshake. Enable by setting
@@ -101,6 +100,7 @@ type PgConn struct {
 	parameterStatuses map[string]string // parameters that have been reported by the server
 	txStatus          byte
 	client            *fbproto.Client
+	wireCrypt         *wirecrypt.Manager
 	bgReader          *bgreader.BGReader
 	writer            *bufio.Writer
 	slowWriteTimer    *time.Timer
@@ -203,6 +203,12 @@ func (pgConn *PgConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *a
 	authPrintf("[AUTHDBG] cond_accept: plugin=%s data_len=%d\n", msg.PluginName, len(msg.Data))
 	authPrintf("%#v\n", msg)
 
+	if pgConn.wireCrypt != nil {
+		if err := pgConn.wireCrypt.AddServerKeys(msg.ServerKeys); err != nil {
+			return err
+		}
+	}
+
 	step, err := authManager.HandleServerChallenge(msg.PluginName, msg.Data)
 	if err != nil {
 		return err
@@ -213,29 +219,65 @@ func (pgConn *PgConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *a
 	return nil
 }
 
-func (pgConn *PgConn) handleAuthResponse(msg *fbproto.OpResponse, config *Config, authManager *auth.AuthManager) error {
+func (pgConn *PgConn) handleAuthResponse(msg *fbproto.OpResponse, config *Config, authManager *auth.AuthManager) (bool, error) {
 	if msg.Failure {
-		return fmt.Errorf("authentication failed: %s", msg.Message)
+		return false, fmt.Errorf("authentication failed: %s", msg.Message)
 	}
 
 	if err := authManager.HandleAuthResponse(msg.Data); err != nil {
-		return err
+		return false, err
 	}
 
-	encryptionPlugin, nonce := guessWireCrypt(msg.Data)
+	if pgConn.wireCrypt != nil {
+		if err := pgConn.wireCrypt.AddServerKeys(msg.Data); err != nil {
+			return false, err
+		}
+	}
+
 	sessionKey := authManager.SessionKey()
-	authPrintf("[AUTHDBG] auth response: enc_plugin=%s nonce_len=%d wire_crypt=%v sessionKey=%v\n",
-		encryptionPlugin, len(nonce), config.WireCrypt, len(sessionKey) > 0)
-	if encryptionPlugin != "" && config.WireCrypt && len(sessionKey) > 0 {
-		if err := pgConn.client.WriteMessage(&fbproto.OpCrypt{Plugin: encryptionPlugin, Encoding: pgConn.Encoding}); err != nil {
-			return err
-		}
-		if err := pgConn.client.SetCryptKey(encryptionPlugin, sessionKey, nonce); err != nil {
-			return err
-		}
+	authPrintf("[AUTHDBG] auth response: wire_crypt=%v sessionKey=%v\n",
+		config.WireCrypt, len(sessionKey) > 0)
+	if !config.WireCrypt || len(sessionKey) == 0 {
+		return false, nil
 	}
 
-	return nil
+	initInfo, err := pgConn.enableWireCrypt(sessionKey)
+	if err != nil {
+		if errors.Is(err, wirecrypt.ErrNoCommonPlugin) {
+			authPrintf("[AUTHDBG] wire encryption negotiation failed: %v\n", err)
+			return false, nil
+		}
+		return false, err
+	}
+	if initInfo != nil {
+		authPrintf("[AUTHDBG] wire encryption enabled with %s (nonce_len=%d)\n",
+			initInfo.Identifier.Plugin, len(initInfo.Nonce))
+		return true, nil
+	}
+
+	return false, nil
+}
+
+func (pgConn *PgConn) enableWireCrypt(sessionKey []byte) (*wirecrypt.InitResult, error) {
+	if pgConn.wireCrypt == nil || len(sessionKey) == 0 {
+		return nil, nil
+	}
+
+	initInfo, err := pgConn.wireCrypt.TryInitialize(sessionKey)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := pgConn.client.WriteMessage(&fbproto.OpCrypt{Plugin: initInfo.Identifier.Plugin, Encoding: pgConn.Encoding}); err != nil {
+		return nil, err
+	}
+	if err := pgConn.client.SetCryptKey(initInfo.Identifier.Plugin, sessionKey, initInfo.Nonce); err != nil {
+		return nil, err
+	}
+
+	pgConn.wireCrypt.ClearServerKeys()
+
+	return initInfo, nil
 }
 
 func (pgConn *PgConn) sendContAuth(authData []byte, pluginName string, pluginList string, keys []byte) error {
@@ -257,51 +299,6 @@ func (pgConn *PgConn) sendContAuth(authData []byte, pluginName string, pluginLis
 		Keys:       keys,
 	}
 	return pgConn.client.WriteMessage(msg)
-}
-
-func guessWireCrypt(buf []byte) (string, []byte) {
-	var availablePlugins []string
-	pluginNonce := make([][]byte, 0, 2)
-
-	for i := 0; i < len(buf); {
-		if i+2 > len(buf) {
-			break
-		}
-		tag := buf[i]
-		i++
-		length := int(buf[i])
-		i++
-		if length < 0 || i+length > len(buf) {
-			break
-		}
-		value := buf[i : i+length]
-		i += length
-
-		switch tag {
-		case 1:
-			availablePlugins = strings.Split(string(value), " ")
-		case 3:
-			pluginNonce = append(pluginNonce, value)
-		}
-	}
-
-	if slices.Contains(availablePlugins, "ChaCha64") {
-		for _, nonce := range pluginNonce {
-			if len(nonce) >= 9 && reflect.DeepEqual(nonce[:9], []byte{'C', 'h', 'a', 'C', 'h', 'a', '6', '4', 0}) {
-				return "ChaCha64", nonce[9:]
-			}
-		}
-	} else if slices.Contains(availablePlugins, "ChaCha") {
-		for _, nonce := range pluginNonce {
-			if len(nonce) >= 19 && reflect.DeepEqual(nonce[:7], []byte{'C', 'h', 'a', 'C', 'h', 'a', 0}) {
-				return "ChaCha", nonce[7 : 7+12]
-			}
-		}
-	} else if slices.Contains(availablePlugins, "Arc4") {
-		return "Arc4", nil
-	}
-
-	return "", nil
 }
 
 // buildConnectOneConfigs resolves hostnames and builds a list of connectOneConfigs to try connecting to. It returns a
@@ -474,6 +471,7 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 	pgConn.bgReaderStarted = make(chan struct{})
 	pgConn.writer = bufio.NewWriter(pgConn.conn)
 	pgConn.client = fbproto.NewClient(pgConn.bgReader, pgConn.writer, pgConn.Encoding)
+	pgConn.wireCrypt = wirecrypt.NewDefaultManager()
 
 	authManager := auth.NewAuthManager(config.User, config.Password)
 	initialHandshake := authManager.BeginHandshake()
@@ -500,6 +498,10 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 		pgConn.conn.Close()
 		return nil, newPerDialConnectError("failed to send opConnect", err)
 	}
+
+	// Track if we've just enabled wire encryption and need to consume
+	// the server's acknowledgment response for op_crypt.
+	pendingCryptAck := false
 
 connectLoop:
 	for {
@@ -532,14 +534,22 @@ connectLoop:
 			}
 			continue connectLoop
 		case *fbproto.OpResponse:
-			if err := pgConn.handleAuthResponse(msg, config, authManager); err != nil {
+			if pendingCryptAck {
+				// This is the ack for op_crypt; consume it and finish handshake
+				pendingCryptAck = false
+				break connectLoop
+			}
+			continueLoop, err := pgConn.handleAuthResponse(msg, config, authManager)
+			if err != nil {
 				pgConn.conn.Close()
 				return nil, newPerDialConnectError("authentication failed", err)
 			}
-			if enc, _ := guessWireCrypt(msg.Data); enc == "" {
-				break connectLoop
+			if continueLoop {
+				// We enabled encryption; expect a crypt ack next
+				pendingCryptAck = true
+				continue connectLoop
 			}
-			continue connectLoop
+			break connectLoop
 		case *fbproto.OpDataAccept:
 			if err := pgConn.handleCondAccept(&msg.OpCondAccept, authManager, !msg.AuthComplete); err != nil {
 				pgConn.conn.Close()
@@ -556,6 +566,10 @@ connectLoop:
 			pgConn.conn.Close()
 			return nil, newPerDialConnectError("authentication failed", fmt.Errorf("unexpected message type %T", msg))
 		}
+	}
+
+	if pgConn.wireCrypt != nil {
+		pgConn.wireCrypt.ClearServerKeys()
 	}
 
 	dpb := fbproto.NewDPBWriterV2()
