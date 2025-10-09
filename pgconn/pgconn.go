@@ -28,9 +28,9 @@ import (
 )
 
 // Debug printing for authentication handshake. Enable by setting
-// PGX_FBX_AUTH_DEBUG to a truthy value (e.g. 1, true).
+// FBX_AUTH_DEBUG to a truthy value (e.g. 1, true).
 var authDebugEnabled = func() bool {
-	v := strings.TrimSpace(os.Getenv("PGX_FBX_AUTH_DEBUG"))
+	v := strings.TrimSpace(os.Getenv("FBX_AUTH_DEBUG"))
 	switch strings.ToLower(v) {
 	case "", "0", "false", "no", "off":
 		return false
