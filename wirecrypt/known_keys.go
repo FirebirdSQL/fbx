@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"strings"
+
+	"github.com/red-soft/fbx/fbproto"
 )
 
 const (
@@ -38,20 +40,47 @@ func ParseKnownServerKeys(buf []byte) ([]KnownServerKey, error) {
 		current *KnownServerKey
 	)
 
-	for i := 0; i < len(buf); {
-		if i+2 > len(buf) {
+	r := fbproto.NewXPBReader(buf)
+	for !r.End() {
+		// Read clumplet header: 1 byte tag, 1 byte length
+		have, tag := r.Next()
+		if !have {
 			return nil, errors.New("wirecrypt: malformed clumplet header")
 		}
-		tag := buf[i]
-		i++
-		length := int(buf[i])
-		i++
-		if length < 0 || i+length > len(buf) {
+		have, lb := r.Next()
+		if !have {
+			return nil, errors.New("wirecrypt: malformed clumplet header")
+		}
+		length := int(lb)
+		if length < 0 {
 			return nil, errors.New("wirecrypt: malformed clumplet length")
 		}
-
-		value := buf[i : i+length]
-		i += length
+		// Read value bytes
+		if length == 0 {
+			switch tag {
+			case tagKeyType:
+				// Start a new entry with empty type (unlikely, but keep behavior deterministic)
+				if current != nil {
+					keys = append(keys, *current)
+				}
+				current = &KnownServerKey{Type: "", SpecificData: make(map[string][]byte)}
+			case tagKeyPlugins:
+				if current != nil {
+					current.Plugins = nil
+				}
+			case tagKnownPlugins:
+				// ignore
+			case tagPluginSpecific:
+				// ignore empty specific
+			default:
+				// ignore unknown tag
+			}
+			continue
+		}
+		value, ok := r.GetBytes(length)
+		if !ok {
+			return nil, errors.New("wirecrypt: malformed clumplet length")
+		}
 
 		switch tag {
 		case tagKeyType:
