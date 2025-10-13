@@ -100,12 +100,12 @@ func (m *AuthManager) HandleServerChallenge(pluginName string, data []byte) (*Au
 		return nil, err
 	}
 	if step != nil && len(step.AuthSpecific) > 0 {
-		m.lastAuthSpecific = cloneBytes(step.AuthSpecific)
+		m.lastAuthSpecific = step.AuthSpecific
 	} else {
 		m.lastAuthSpecific = nil
 	}
 	if step != nil && len(step.SessionKey) > 0 {
-		m.lastSessionKey = cloneBytes(step.SessionKey)
+		m.lastSessionKey = step.SessionKey
 	} else {
 		m.lastSessionKey = nil
 	}
@@ -141,9 +141,6 @@ type UnsupportedPluginError struct {
 }
 
 func (e *UnsupportedPluginError) Error() string {
-	if e == nil {
-		return "auth: unsupported plugin"
-	}
 	if e.Name == "" {
 		return "auth: unsupported plugin"
 	}

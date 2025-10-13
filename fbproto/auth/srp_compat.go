@@ -167,7 +167,7 @@ func (p *SrpAuthPlugin) HandleServerData(user string, password string, pluginNam
 		p.lastProof = nil
 		p.lastSession = nil
 		reply := BigIntToBytes(p.ClientPublic)
-		return &AuthPluginStep{Reply: cloneBytes(reply)}, nil
+		return &AuthPluginStep{Reply: reply}, nil
 	}
 
 	salt, serverHex, err := parseSrpServerData(data)
@@ -176,13 +176,11 @@ func (p *SrpAuthPlugin) HandleServerData(user string, password string, pluginNam
 	}
 
 	serverPublic := utils.BigIntFromHexString(serverHex)
-	M, K := GetClientProof(strings.ToUpper(user), password, salt, p.ClientPublic, serverPublic, p.ClientSecret, p.variant)
-	p.lastProof = cloneBytes(M)
-	p.lastSession = cloneBytes(K)
+	p.lastProof, p.lastSession = GetClientProof(strings.ToUpper(user), password, salt, p.ClientPublic, serverPublic, p.ClientSecret, p.variant)
 	return &AuthPluginStep{
-		Reply:        cloneBytes(M),
-		AuthSpecific: cloneBytes(M),
-		SessionKey:   cloneBytes(K),
+		Reply:        cloneBytes(p.lastProof),
+		AuthSpecific: cloneBytes(p.lastProof),
+		SessionKey:   cloneBytes(p.lastSession),
 	}, nil
 }
 

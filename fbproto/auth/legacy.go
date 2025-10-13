@@ -23,7 +23,7 @@ func (p *LegacyAuthPlugin) Advertise() []string {
 }
 
 func (p *LegacyAuthPlugin) InitialClientData() []byte {
-	return cloneBytes(bytes.NewBufferString(crypt.Crypt(p.Password, "9z")[2:]).Bytes())
+	return bytes.NewBufferString(crypt.Crypt(p.Password, "9z")[2:]).Bytes()
 }
 
 func (p *LegacyAuthPlugin) HandleServerData(user string, password string, pluginName string, data []byte) (*AuthPluginStep, error) {
@@ -31,7 +31,7 @@ func (p *LegacyAuthPlugin) HandleServerData(user string, password string, plugin
 	if len(resp) == 0 {
 		return &AuthPluginStep{}, nil
 	}
-	return &AuthPluginStep{Reply: cloneBytes(resp), AuthSpecific: cloneBytes(resp)}, nil
+	return &AuthPluginStep{Reply: resp, AuthSpecific: cloneBytes(resp)}, nil
 }
 
 func (p *LegacyAuthPlugin) HandleAuthResponse(data []byte) error {
