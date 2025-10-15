@@ -24,7 +24,26 @@ import (
 	"github.com/red-soft/fbx/pgconn/ctxwatch"
 	"github.com/red-soft/fbx/pgconn/internal/bgreader"
 	"github.com/red-soft/fbx/pgproto3"
+	"github.com/red-soft/fbx/wirecrypt"
 )
+
+// Debug printing for authentication handshake. Enable by setting
+// FBX_AUTH_DEBUG to a truthy value (e.g. 1, true).
+var authDebugEnabled = func() bool {
+	v := strings.TrimSpace(os.Getenv("FBX_AUTH_DEBUG"))
+	switch strings.ToLower(v) {
+	case "", "0", "false", "no", "off":
+		return false
+	default:
+		return true
+	}
+}()
+
+func authPrintf(format string, args ...any) {
+	if authDebugEnabled {
+		fmt.Printf(format, args...)
+	}
+}
 
 const (
 	connStatusUninitialized = iota
@@ -81,6 +100,7 @@ type PgConn struct {
 	parameterStatuses map[string]string // parameters that have been reported by the server
 	txStatus          byte
 	client            *fbproto.Client
+	wireCrypt         *wirecrypt.Manager
 	bgReader          *bgreader.BGReader
 	writer            *bufio.Writer
 	slowWriteTimer    *time.Timer
@@ -177,6 +197,108 @@ func ConnectConfig(ctx context.Context, config *Config) (*PgConn, error) {
 	}
 
 	return pgConn, nil
+}
+
+func (pgConn *PgConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *auth.AuthManager, respond bool) error {
+	authPrintf("[AUTHDBG] cond_accept: plugin=%s data_len=%d\n", msg.PluginName, len(msg.Data))
+	authPrintf("%#v\n", msg)
+
+	if pgConn.wireCrypt != nil {
+		if err := pgConn.wireCrypt.AddServerKeys(msg.ServerKeys); err != nil {
+			return err
+		}
+	}
+
+	step, err := authManager.HandleServerChallenge(msg.PluginName, msg.Data)
+	if err != nil {
+		return err
+	}
+	if respond && step != nil {
+		return pgConn.sendContAuth(step.Reply, msg.PluginName, authManager.BuildList(), nil)
+	}
+	return nil
+}
+
+func (pgConn *PgConn) handleAuthResponse(msg *fbproto.OpResponse, config *Config, authManager *auth.AuthManager) (bool, error) {
+	if msg.Failure {
+		return false, fmt.Errorf("authentication failed: %s", msg.Message)
+	}
+
+	if err := authManager.HandleAuthResponse(msg.Data); err != nil {
+		return false, err
+	}
+
+	if pgConn.wireCrypt != nil {
+		if err := pgConn.wireCrypt.AddServerKeys(msg.Data); err != nil {
+			return false, err
+		}
+	}
+
+	sessionKey := authManager.SessionKey()
+	authPrintf("[AUTHDBG] auth response: wire_crypt=%v sessionKey=%v\n",
+		config.WireCrypt, len(sessionKey) > 0)
+	if !config.WireCrypt || len(sessionKey) == 0 {
+		return false, nil
+	}
+
+	initInfo, err := pgConn.enableWireCrypt(sessionKey)
+	if err != nil {
+		if errors.Is(err, wirecrypt.ErrNoCommonPlugin) {
+			authPrintf("[AUTHDBG] wire encryption negotiation failed: %v\n", err)
+			return false, nil
+		}
+		return false, err
+	}
+	if initInfo != nil {
+		authPrintf("[AUTHDBG] wire encryption enabled with %s (nonce_len=%d)\n",
+			initInfo.Identifier.Plugin, len(initInfo.Nonce))
+		return true, nil
+	}
+
+	return false, nil
+}
+
+func (pgConn *PgConn) enableWireCrypt(sessionKey []byte) (*wirecrypt.InitResult, error) {
+	if pgConn.wireCrypt == nil || len(sessionKey) == 0 {
+		return nil, nil
+	}
+
+	initInfo, err := pgConn.wireCrypt.TryInitialize(sessionKey)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := pgConn.client.WriteMessage(&fbproto.OpCrypt{Plugin: initInfo.Identifier.Plugin, Encoding: pgConn.Encoding}); err != nil {
+		return nil, err
+	}
+	if err := pgConn.client.SetCryptKey(initInfo.Identifier.Plugin, sessionKey, initInfo.Nonce); err != nil {
+		return nil, err
+	}
+
+	pgConn.wireCrypt.ClearServerKeys()
+
+	return initInfo, nil
+}
+
+func (pgConn *PgConn) sendContAuth(authData []byte, pluginName string, pluginList string, keys []byte) error {
+	dataCopy := make([]byte, len(authData))
+	copy(dataCopy, authData)
+	// Debug: show what we are about to send in op_cont_auth
+	// Print only prefix of proof to avoid clutter
+	prefixLen := 16
+	if len(dataCopy) < prefixLen {
+		prefixLen = len(dataCopy)
+	}
+	authPrintf("[AUTHDBG] send op_cont_auth: plugin=%s list=%s proof_len=%d proof_prefix=%x\n",
+		pluginName, pluginList, len(dataCopy), dataCopy[:prefixLen])
+	msg := &fbproto.OpContAuth{
+		Encoding:   pgConn.Encoding,
+		AuthData:   dataCopy,
+		PluginName: pluginName,
+		PluginList: pluginList,
+		Keys:       keys,
+	}
+	return pgConn.client.WriteMessage(msg)
 }
 
 // buildConnectOneConfigs resolves hostnames and builds a list of connectOneConfigs to try connecting to. It returns a
@@ -349,26 +471,37 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 	pgConn.bgReaderStarted = make(chan struct{})
 	pgConn.writer = bufio.NewWriter(pgConn.conn)
 	pgConn.client = fbproto.NewClient(pgConn.bgReader, pgConn.writer, pgConn.Encoding)
+	pgConn.wireCrypt = wirecrypt.NewDefaultManager()
 
 	authManager := auth.NewAuthManager(config.User, config.Password)
+	initialHandshake := authManager.BeginHandshake()
+	if initialHandshake == nil {
+		pgConn.conn.Close()
+		return nil, newPerDialConnectError("authentication setup failed", fmt.Errorf("no authentication plugins available"))
+	}
 
 	opConnect := fbproto.OpConnect{
-		Database:        config.Database,
-		User:            config.User,
-		SystemUser:      config.SystemUser,
-		Hostname:        config.Host,
-		Password:        config.Password,
-		AuthPlugin:      authManager.GetCurrentAuthPlugin(),
-		AuthPluginsList: authManager.BuildList(),
-		Options:         nil,
-		WireCrypt:       config.WireCrypt,
-		Encoding:        pgConn.Encoding,
+		Database:         config.Database,
+		User:             config.User,
+		SystemUser:       config.SystemUser,
+		Hostname:         config.Host,
+		Password:         config.Password,
+		AuthPluginName:   initialHandshake.PluginName,
+		AuthPluginsList:  initialHandshake.PluginList,
+		AuthSpecificData: initialHandshake.SpecificData,
+		Options:          nil,
+		WireCrypt:        config.WireCrypt,
+		Encoding:         pgConn.Encoding,
 	}
 
 	if err = pgConn.client.WriteMessage(&opConnect); err != nil {
 		pgConn.conn.Close()
 		return nil, newPerDialConnectError("failed to send opConnect", err)
 	}
+
+	// Track if we've just enabled wire encryption and need to consume
+	// the server's acknowledgment response for op_crypt.
+	pendingCryptAck := false
 
 connectLoop:
 	for {
@@ -383,11 +516,49 @@ connectLoop:
 			return nil, newPerDialConnectError("authentication failed", err)
 		}
 
+		authPrintf("[AUTHDBG] received %T\n", msg)
 		switch msg := msg.(type) {
+		case *fbproto.OpContAuth:
+			fake := &fbproto.OpCondAccept{Encoding: pgConn.Encoding}
+			fake.PluginName = msg.PluginName
+			fake.Data = msg.AuthData
+			if err := pgConn.handleCondAccept(fake, authManager, true); err != nil {
+				pgConn.conn.Close()
+				return nil, newPerDialConnectError("authentication failed", err)
+			}
+			continue connectLoop
 		case *fbproto.OpCondAccept:
-			fmt.Println(msg)
-		case *fbproto.OpDataAccept:
+			if err := pgConn.handleCondAccept(msg, authManager, true); err != nil {
+				pgConn.conn.Close()
+				return nil, newPerDialConnectError("authentication failed", err)
+			}
+			continue connectLoop
+		case *fbproto.OpResponse:
+			if pendingCryptAck {
+				// This is the ack for op_crypt; consume it and finish handshake
+				pendingCryptAck = false
+				break connectLoop
+			}
+			continueLoop, err := pgConn.handleAuthResponse(msg, config, authManager)
+			if err != nil {
+				pgConn.conn.Close()
+				return nil, newPerDialConnectError("authentication failed", err)
+			}
+			if continueLoop {
+				// We enabled encryption; expect a crypt ack next
+				pendingCryptAck = true
+				continue connectLoop
+			}
 			break connectLoop
+		case *fbproto.OpDataAccept:
+			if err := pgConn.handleCondAccept(&msg.OpCondAccept, authManager, !msg.AuthComplete); err != nil {
+				pgConn.conn.Close()
+				return nil, newPerDialConnectError("authentication failed", err)
+			}
+			if msg.AuthComplete {
+				break connectLoop
+			}
+			continue connectLoop
 		case *fbproto.ErrorResponse:
 			pgConn.conn.Close()
 			return nil, newPerDialConnectError("authentication failed", ErrorResponseToFbError(msg))
@@ -395,6 +566,10 @@ connectLoop:
 			pgConn.conn.Close()
 			return nil, newPerDialConnectError("authentication failed", fmt.Errorf("unexpected message type %T", msg))
 		}
+	}
+
+	if pgConn.wireCrypt != nil {
+		pgConn.wireCrypt.ClearServerKeys()
 	}
 
 	dpb := fbproto.NewDPBWriterV2()
@@ -409,10 +584,14 @@ connectLoop:
 	//FIXME: fbx is timezone need? where get timezone?
 	//dpb.AppendTag(fbproto.Isc_dpb_session_time_zone)
 	dpb.PutString(fbproto.Isc_dpb_auth_plugin_list, authManager.BuildList())
-	dpb.PutString(fbproto.Isc_dpb_auth_plugin_name, authManager.GetCurrentAuthPlugin().GetName())
+	if plugin := authManager.GetCurrentPlugin(); plugin != nil {
+		dpb.PutString(fbproto.Isc_dpb_auth_plugin_name, plugin.Name())
+	}
 	dpb.PutInt32(fbproto.Isc_dpb_utf8_filename, 1)
-	dpb.PutTag(fbproto.Isc_dpb_specific_auth_data)
-	dpb.PutBuffer(authManager.GetCurrentAuthPlugin().GetClientData())
+	if authSpecific := authManager.AuthSpecificData(); len(authSpecific) > 0 {
+		dpb.PutTag(fbproto.Isc_dpb_specific_auth_data)
+		dpb.PutBuffer([]byte(hex.EncodeToString(authSpecific)))
+	}
 
 	opAttach := fbproto.OpAttach{
 		File: config.Database,

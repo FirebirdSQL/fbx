@@ -52,7 +52,7 @@ import (
 )
 
 const (
-	PLUGIN_LIST       = "Srp256,Srp,Legacy_Auth"
+	PLUGIN_LIST       = "Srp256,Srp224,Srp384,Srp512,Srp,Legacy_Auth"
 	BUFFER_LEN        = 1024
 	MAX_CHAR_LENGTH   = 32767
 	BLOB_SEGMENT_SIZE = 32000
@@ -580,7 +580,7 @@ func (p *wireProtocol) _parse_connect_response(user string, password string, opt
 		var authData []byte
 		var sessionKey []byte
 		if isAuthenticated == 0 {
-			if p.pluginName == "Srp" || p.pluginName == "Srp256" {
+			if strings.HasPrefix(p.pluginName, "Srp") && p.pluginName != "Legacy_Auth" {
 
 				// TODO: normalize user
 

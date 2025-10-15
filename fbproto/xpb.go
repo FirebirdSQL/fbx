@@ -39,6 +39,20 @@ func (pb *XPBReader) Get() byte {
 	return b
 }
 
+// GetBytes returns the next n bytes and advances the position.
+// It returns ok=false if there are not enough bytes remaining.
+func (pb *XPBReader) GetBytes(n int) ([]byte, bool) {
+	if n < 0 {
+		return nil, false
+	}
+	if pb.pos+n > len(pb.buf) {
+		return nil, false
+	}
+	b := pb.buf[pb.pos : pb.pos+n]
+	pb.pos += n
+	return b, true
+}
+
 func (pb *XPBReader) GetString() string {
 	l := int(pb.GetInt16())
 	s := utils.Bytes_to_str(pb.buf[pb.pos : pb.pos+l])

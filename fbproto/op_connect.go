@@ -4,23 +4,25 @@ package fbproto
 
 import (
 	"bytes"
-	"github.com/red-soft/fbx/fbproto/auth"
 	"strings"
+
+	"github.com/red-soft/fbx/fbproto/auth"
 )
 
 type OpConnect struct {
-	Database        string
-	User            string
-	SystemUser      string
-	Hostname        string
-	Password        string
-	AuthPlugin      auth.AuthPlugin
-	AuthPluginsList string
-	Options         map[string]string
-	WireCrypt       bool
-	Charset         string
-	Encoding        *Encoding
-	Compress        bool
+	Database         string
+	User             string
+	SystemUser       string
+	Hostname         string
+	Password         string
+	AuthPluginName   string
+	AuthPluginsList  []string
+	AuthSpecificData []auth.SpecificDataChunk
+	Options          map[string]string
+	WireCrypt        bool
+	Charset          string
+	Encoding         *Encoding
+	Compress         bool
 }
 
 func (op *OpConnect) Write(x *XDRWriter) error {
@@ -57,8 +59,9 @@ func (op *OpConnect) Write(x *XDRWriter) error {
 
 	sysUserBytes := bytes.NewBufferString(op.SystemUser).Bytes()
 	hostnameBytes := bytes.NewBufferString(op.Hostname).Bytes()
-	pluginListNameBytes := bytes.NewBufferString(op.AuthPluginsList).Bytes()
-	pluginNameBytes := bytes.NewBufferString(op.AuthPlugin.GetName()).Bytes()
+	pluginList := strings.Join(op.AuthPluginsList, ",")
+	pluginListNameBytes := bytes.NewBufferString(pluginList).Bytes()
+	pluginNameBytes := bytes.NewBufferString(op.AuthPluginName).Bytes()
 	userBytes := bytes.NewBufferString(strings.ToUpper(op.User)).Bytes()
 	var wireCryptByte byte
 	if op.WireCrypt {
@@ -82,21 +85,15 @@ func (op *OpConnect) Write(x *XDRWriter) error {
 		{CNCT_plugin_name, byte(len(pluginNameBytes))}, pluginNameBytes,
 		{CNCT_plugin_list, byte(len(pluginListNameBytes))}, pluginListNameBytes}, nil)
 
-	//FIXME: fbx make more universal
-	authClientData := op.AuthPlugin.GetClientData()
-	var specificData []byte
-	if authClientData != nil && len(authClientData) > 254 {
-		specificData = bytes.Join([][]byte{
-			{CNCT_specific_data, byte(255), 0}, authClientData[:254],
-			{CNCT_specific_data, byte(len(authClientData)-254) + 1, 1}, authClientData[254:],
-		}, nil)
-	} else {
-		specificData = bytes.Join([][]byte{
-			{CNCT_specific_data, byte(len(authClientData)) + 1, 0}, authClientData,
-		}, nil)
-	}
-	if specificData != nil {
-		uid = append(uid, specificData...)
+	if len(op.AuthSpecificData) > 0 {
+		for _, chunk := range op.AuthSpecificData {
+			if len(chunk.Data) == 0 {
+				continue
+			}
+			header := []byte{CNCT_specific_data, byte(len(chunk.Data)) + 1, chunk.Part}
+			uid = append(uid, header...)
+			uid = append(uid, chunk.Data...)
+		}
 	}
 
 	uid = append(uid, bytes.Join([][]byte{
