@@ -10,15 +10,18 @@ import (
 // https://firebirdsql.org/file/documentation/html/en/firebirddocs/wireprotocol/firebird-wire-protocol.html#wireprotocol-responses-generic
 
 type OpResponse struct {
-	Encoding *Encoding
-	Object   int
-	BlobId   int64
-	Data     []byte
-	GdsCodes list.List
-	SqlCode  int
-	SqlState string
-	Message  string
-	Failure  bool
+	Encoding     *Encoding
+	BlobId       int64
+	Object       int
+	SqlCode      int
+	Data         []byte
+	GdsCodes     list.List
+	WarningCodes list.List
+	SqlState     string
+	Message      string
+	WarnMessage  string
+	Failure      bool
+	Warnings     bool
 }
 
 func (op *OpResponse) Read(x *XDRReader) error {
@@ -39,9 +42,14 @@ func (op *OpResponse) Read(x *XDRReader) error {
 	}
 
 	// p_resp_status_vector
-	var numArg int
-	var gdsCode int
-	start := true
+	var (
+		currentMsgPtr  *string = &op.Message
+		numArg         int     = 0
+		gdsCode        int     = 0
+		firstSeen              = true
+		currentIsError         = false
+	)
+
 	for {
 		var tag int
 		if tag, err = x.ReadInt32(); err != nil {
@@ -50,48 +58,74 @@ func (op *OpResponse) Read(x *XDRReader) error {
 		if tag == Isc_arg_end {
 			break
 		}
+
 		switch tag {
 		case Isc_arg_gds:
-			if gdsCode, err = x.ReadInt32(); err == nil {
-				if start {
-					start = false
-					if gdsCode > 0 {
-						op.Failure = true
-					}
-				}
-				if gdsCode != 0 {
-					op.GdsCodes.PushBack(gdsCode)
-					if msg, ok := errmsgs[gdsCode]; ok {
-						op.Message += msg
-					} else {
-						op.Message += fmt.Sprintf("unknown gds_code: %d", gdsCode)
-					}
-					numArg = 0
-				}
-			} else {
+			if gdsCode, err = x.ReadInt32(); err != nil {
 				return err
+			}
+			if firstSeen {
+				firstSeen = false
+				if gdsCode > 0 {
+					op.Failure = true
+				}
+			}
+			if gdsCode != 0 {
+				currentMsgPtr = &op.Message
+				currentIsError = true
+				numArg = 0
+
+				op.GdsCodes.PushBack(gdsCode)
+				if msg, ok := errmsgs[gdsCode]; ok {
+					*currentMsgPtr += msg
+				} else {
+					*currentMsgPtr += fmt.Sprintf("unknown gds_code: %d", gdsCode)
+				}
+			}
+		case Isc_arg_warning:
+			wCode, err := x.ReadInt32()
+			if err != nil {
+				return err
+			}
+			if firstSeen {
+				firstSeen = false
+				if wCode > 0 {
+					op.Warnings = true
+				}
+			}
+			if wCode != 0 {
+				op.Warnings = true
+				currentMsgPtr = &op.WarnMessage
+				currentIsError = false
+				numArg = 0
+
+				op.WarningCodes.PushBack(wCode)
+				if msg, ok := errmsgs[wCode]; ok {
+					*currentMsgPtr += msg
+				} else {
+					*currentMsgPtr += fmt.Sprintf("unknown warning code %d", wCode)
+				}
 			}
 		case Isc_arg_number:
 			if num, err := x.ReadInt32(); err == nil {
-				if gdsCode == 335544436 { //isc_sqlerr
+				if currentIsError && gdsCode == 335544436 { //isc_sqlerr
 					op.SqlCode = num
 				}
 				numArg++
-				op.Message = strings.Replace(op.Message, "@"+strconv.Itoa(numArg), strconv.Itoa(num), 1)
+				*currentMsgPtr = strings.Replace(*currentMsgPtr, "@"+strconv.Itoa(numArg), strconv.Itoa(num), 1)
 			} else {
 				return err
 			}
 		case Isc_arg_string:
 			if str, err := x.ReadString(op.Encoding); err == nil {
 				numArg++
-				op.Message = strings.Replace(op.Message, "@"+strconv.Itoa(numArg), str, 1)
+				*currentMsgPtr = strings.Replace(*currentMsgPtr, "@"+strconv.Itoa(numArg), str, 1)
 			} else {
 				return err
 			}
 		case Isc_arg_interpreted:
 			if str, err := x.ReadString(op.Encoding); err == nil {
-				op.Message += str
-
+				*currentMsgPtr += str
 			} else {
 				return err
 			}
