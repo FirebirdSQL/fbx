@@ -636,7 +636,6 @@ func (p *wireProtocol) _parse_connect_response(user string, password string, opt
 		}
 
 		var enc_plugin string
-		var nonce []byte
 
 		if opcode == Op_cond_accept {
 			p.opContAuth(authData, options["auth_plugin_name"], PLUGIN_LIST, "")
@@ -645,14 +644,13 @@ func (p *wireProtocol) _parse_connect_response(user string, password string, opt
 			if err != nil {
 				return
 			}
-			enc_plugin, nonce = p._guess_wire_crypt(buf)
+			enc_plugin, _ = p._guess_wire_crypt(buf)
 		}
 
 		wire_crypt, _ := strconv.ParseBool(options["wire_crypt"])
 		if enc_plugin != "" && wire_crypt && sessionKey != nil {
 			// WriteMessage Op_crypt
 			p.opCrypt(enc_plugin)
-			p.client.setCryptKey(enc_plugin, sessionKey, nonce)
 			_, _, _, err = p.opResponse()
 			if err != nil {
 				return

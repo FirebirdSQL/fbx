@@ -271,9 +271,11 @@ func (pgConn *PgConn) enableWireCrypt(sessionKey []byte) (*wirecrypt.InitResult,
 	if err := pgConn.client.WriteMessage(&fbproto.OpCrypt{Plugin: initInfo.Identifier.Plugin, Encoding: pgConn.Encoding}); err != nil {
 		return nil, err
 	}
-	if err := pgConn.client.SetCryptKey(initInfo.Identifier.Plugin, sessionKey, initInfo.Nonce); err != nil {
+	codec, err := wirecrypt.NewSymmetricCodec(initInfo.Identifier.Plugin, sessionKey, initInfo.Nonce)
+	if err != nil {
 		return nil, err
 	}
+	pgConn.client.SetCodec(initInfo.Identifier.Plugin, codec)
 
 	pgConn.wireCrypt.ClearServerKeys()
 
