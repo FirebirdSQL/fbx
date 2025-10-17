@@ -24,29 +24,26 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 package fbproto
 
 import (
-	"crypto/rc4"
-	"crypto/sha256"
-	"errors"
 	"fmt"
 	"io"
-
-	"github.com/nakagami/chacha20"
-	"golang.org/x/exp/slices"
-	//"unsafe"
 )
 
 type Client struct {
-	Encoding       *Encoding
-	reader         io.Reader
-	writer         io.Writer
-	plugin         string
-	rc4reader      *rc4.Cipher
-	rc4writer      *rc4.Cipher
-	chacha20reader *chacha20.Cipher
-	chacha20writer *chacha20.Cipher
-	xdrReader      *XDRReader
-	xdrWriter      *XDRWriter
-	lazyCounter    int
+	Encoding    *Encoding
+	reader      io.Reader
+	writer      io.Writer
+	plugin      string
+	codec       StreamCodec
+	xdrReader   *XDRReader
+	xdrWriter   *XDRWriter
+	lazyCounter int
+}
+
+// StreamCodec is a minimal interface for symmetric wire encryption.
+// Implementations are provided by higher-level code to avoid package cycles.
+type StreamCodec interface {
+	Encrypt(dst, src []byte)
+	Decrypt(dst, src []byte)
 }
 
 func NewClient(r io.Reader, w io.Writer, encoding *Encoding) *Client {
@@ -59,36 +56,18 @@ func NewClient(r io.Reader, w io.Writer, encoding *Encoding) *Client {
 	return &c
 }
 
-func (c *Client) setCryptKey(plugin string, sessionKey []byte, nonce []byte) (err error) {
+// SetCodec sets the active wire encryption codec.
+func (c *Client) SetCodec(plugin string, codec StreamCodec) {
 	c.plugin = plugin
-	if slices.Contains([]string{"ChaCha64", "ChaCha"}, plugin) {
-		digest := sha256.New()
-		digest.Write(sessionKey)
-		key := digest.Sum(nil)
-		c.chacha20reader, err = chacha20.NewCipher(key, nonce, 0)
-		c.chacha20writer, err = chacha20.NewCipher(key, nonce, 0)
-	} else if plugin == "Arc4" {
-		c.rc4reader, err = rc4.NewCipher(sessionKey)
-		c.rc4writer, err = rc4.NewCipher(sessionKey)
-	} else {
-		err = errors.New(fmt.Sprintf("Unknown wire encrypto plugin name:%s", plugin))
-	}
-
-	return
-}
-
-func (c *Client) SetCryptKey(plugin string, sessionKey []byte, nonce []byte) error {
-	return c.setCryptKey(plugin, sessionKey, nonce)
+	c.codec = codec
 }
 
 func (c *Client) Read(buf []byte) (n int, err error) {
-	if c.plugin != "" {
+	if c.codec != nil {
 		src := make([]byte, len(buf))
 		n, err = c.reader.Read(src)
-		if slices.Contains([]string{"ChaCha64", "ChaCha"}, c.plugin) {
-			c.chacha20reader.XORKeyStream(buf, src[0:n])
-		} else if c.plugin == "Arc4" {
-			c.rc4reader.XORKeyStream(buf, src[0:n])
+		if n > 0 {
+			c.codec.Decrypt(buf, src[:n])
 		}
 		return
 	}
@@ -96,13 +75,9 @@ func (c *Client) Read(buf []byte) (n int, err error) {
 }
 
 func (c *Client) Write(buf []byte) (n int, err error) {
-	if c.plugin != "" {
+	if c.codec != nil {
 		dst := make([]byte, len(buf))
-		if slices.Contains([]string{"ChaCha64", "ChaCha"}, c.plugin) {
-			c.chacha20writer.XORKeyStream(dst, buf)
-		} else if c.plugin == "Arc4" {
-			c.rc4writer.XORKeyStream(dst, buf)
-		}
+		c.codec.Encrypt(dst, buf)
 		written := 0
 		for written < len(buf) {
 			n, err = c.writer.Write(dst[written:])
