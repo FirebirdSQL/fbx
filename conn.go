@@ -823,7 +823,11 @@ optionLoop:
 			return rows, err
 		}
 
-		rows.resultReader = c.pgConn.ExecTx(ctx, tx.tx, sql)
+		if tx != nil {
+			rows.resultReader = c.pgConn.ExecTx(ctx, tx.tx, sql)
+		} else {
+			rows.resultReader = c.pgConn.Exec(ctx, sql)
+		}
 		return rows, nil
 	} else {
 		err = fmt.Errorf("unknown QueryExecMode: %v", mode)
