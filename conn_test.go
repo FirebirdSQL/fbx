@@ -160,14 +160,6 @@ func TestParseConfigExtractsStatementCacheOptions(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, pgx.QueryExecModeCacheStatement, config.DefaultQueryExecMode)
 
-	config, err = pgx.ParseConfig("default_query_exec_mode=cache_describe")
-	require.NoError(t, err)
-	require.Equal(t, pgx.QueryExecModeCacheDescribe, config.DefaultQueryExecMode)
-
-	config, err = pgx.ParseConfig("default_query_exec_mode=describe_exec")
-	require.NoError(t, err)
-	require.Equal(t, pgx.QueryExecModeDescribeExec, config.DefaultQueryExecMode)
-
 	config, err = pgx.ParseConfig("default_query_exec_mode=exec")
 	require.NoError(t, err)
 	require.Equal(t, pgx.QueryExecModeExec, config.DefaultQueryExecMode)
@@ -186,8 +178,6 @@ func TestParseConfigExtractsDefaultQueryExecMode(t *testing.T) {
 	}{
 		{"", pgx.QueryExecModeCacheStatement},
 		{"default_query_exec_mode=cache_statement", pgx.QueryExecModeCacheStatement},
-		{"default_query_exec_mode=cache_describe", pgx.QueryExecModeCacheDescribe},
-		{"default_query_exec_mode=describe_exec", pgx.QueryExecModeDescribeExec},
 		{"default_query_exec_mode=exec", pgx.QueryExecModeExec},
 		{"default_query_exec_mode=simple_protocol", pgx.QueryExecModeSimpleProtocol},
 	} {

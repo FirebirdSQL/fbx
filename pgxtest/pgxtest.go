@@ -14,8 +14,6 @@ import (
 
 var AllQueryExecModes = []pgx.QueryExecMode{
 	pgx.QueryExecModeCacheStatement,
-	pgx.QueryExecModeCacheDescribe,
-	pgx.QueryExecModeDescribeExec,
 	pgx.QueryExecModeExec,
 	pgx.QueryExecModeSimpleProtocol,
 }
@@ -23,8 +21,6 @@ var AllQueryExecModes = []pgx.QueryExecMode{
 // KnownOIDQueryExecModes is a slice of all query exec modes where the param and result OIDs are known before sending the query.
 var KnownOIDQueryExecModes = []pgx.QueryExecMode{
 	pgx.QueryExecModeCacheStatement,
-	pgx.QueryExecModeCacheDescribe,
-	pgx.QueryExecModeDescribeExec,
 }
 
 // ConnTestRunner controls how a *pgx.Conn is created and closed by tests. All fields are required. Use DefaultConnTestRunner to get a

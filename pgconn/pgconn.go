@@ -1997,13 +1997,10 @@ func (pgConn *PgConn) ExecBatch(ctx context.Context, batch *Batch) *MultiResultR
 // The current implementation requires that standard_conforming_strings=on and client_encoding="UTF8". If these
 // conditions are not met an error will be returned. It is possible these restrictions will be lifted in the future.
 func (pgConn *PgConn) EscapeString(s string) (string, error) {
-	if pgConn.ParameterStatus("standard_conforming_strings") != "on" {
-		return "", errors.New("EscapeString must be run with standard_conforming_strings=on")
-	}
-
-	if pgConn.ParameterStatus("client_encoding") != "UTF8" {
-		return "", errors.New("EscapeString must be run with client_encoding=UTF8")
-	}
+	//FIXME: need to check anything for RDB?
+	//if pgConn.ParameterStatus("client_encoding") != "UTF8" {
+	//	return "", errors.New("EscapeString must be run with client_encoding=UTF8")
+	//}
 
 	return strings.Replace(s, "'", "''", -1), nil
 }
@@ -2035,9 +2032,8 @@ func (pgConn *PgConn) CheckConn() error {
 // chances a query will be sent that fails without the client knowing whether the server received it or not.
 func (pgConn *PgConn) Ping(ctx context.Context) error {
 	//FIXME: fbx how to "ping RDB?"
-	//_, err := pgConn.Exec(ctx, "-- ping").Close()
-	panic("implement me")
-	//return err
+	_, err := pgConn.Exec(ctx, "-- ping").Close()
+	return err
 }
 
 // makeCommandTag makes a CommandTag. It does not retain a reference to buf or buf's underlying memory.
@@ -2107,8 +2103,7 @@ func (pgConn *PgConn) SyncConn(ctx context.Context) error {
 
 // CustomData returns a map that can be used to associate custom data with the connection.
 func (pgConn *PgConn) CustomData() map[string]any {
-	//return pgConn.customData
-	panic("implement me")
+	return pgConn.customData
 }
 
 // HijackedConn is the result of hijacking a connection.

@@ -195,10 +195,6 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		switch s {
 		case "cache_statement":
 			defaultQueryExecMode = QueryExecModeCacheStatement
-		case "cache_describe":
-			defaultQueryExecMode = QueryExecModeCacheDescribe
-		case "describe_exec":
-			defaultQueryExecMode = QueryExecModeDescribeExec
 		case "exec":
 			defaultQueryExecMode = QueryExecModeExec
 		case "simple_protocol":
@@ -547,12 +543,6 @@ optionLoop:
 		}
 
 		return c.execPrepared(ctx, tx, st, arguments)
-	case QueryExecModeDescribeExec:
-		st, err := c.internalPrepare(ctx, tx, "", sql)
-		if err != nil {
-			return pgconn.CommandTag{}, err
-		}
-		return c.execPrepared(ctx, tx, st, arguments)
 	case QueryExecModeExec:
 		return c.execSQLParams(ctx, tx, sql, arguments)
 	case QueryExecModeSimpleProtocol:
@@ -652,19 +642,6 @@ const (
 	// number of columns returned by a "SELECT *" changes or the type of a column is changed.
 	QueryExecModeCacheStatement
 
-	// Cache statement descriptions (i.e. argument and result types) and assume they do not change. This uses the extended
-	// protocol. Queries are executed in a single round trip after the description is cached. If the database schema is
-	// modified or the search_path is changed after a statement is cached then the first execution of a previously cached
-	// query may fail. e.g. If the number of columns returned by a "SELECT *" changes or the type of a column is changed.
-	QueryExecModeCacheDescribe
-
-	// Get the statement description on every execution. This uses the extended protocol. Queries require two round trips
-	// to execute. It does not use named prepared statements. But it does use the unnamed prepared statement to get the
-	// statement description on the first round trip and then uses it to execute the query on the second round trip. This
-	// may cause problems with connection poolers that switch the underlying connection between round trips. It is safe
-	// even when the database schema is modified concurrently.
-	QueryExecModeDescribeExec
-
 	// Assume the PostgreSQL query parameter types based on the Go type of the arguments. This uses the extended protocol
 	// with text formatted parameters and results. Queries are executed in a single round trip. Type mappings can be
 	// registered with pgtype.Map.RegisterDefaultPgType. Queries will be rejected that have arguments that are
@@ -704,10 +681,6 @@ func (m QueryExecMode) String() string {
 	switch m {
 	case QueryExecModeCacheStatement:
 		return "cache statement"
-	case QueryExecModeCacheDescribe:
-		return "cache describe"
-	case QueryExecModeDescribeExec:
-		return "describe exec"
 	case QueryExecModeExec:
 		return "exec"
 	case QueryExecModeSimpleProtocol:
@@ -1239,13 +1212,14 @@ func (c *Conn) sendBatchExtendedWithDescription(ctx context.Context, b *Batch, d
 }
 
 func (c *Conn) sanitizeForSimpleQuery(sql string, args ...any) (string, error) {
-	if c.pgConn.ParameterStatus("standard_conforming_strings") != "on" {
-		return "", errors.New("simple protocol queries must be run with standard_conforming_strings=on")
-	}
-
-	if c.pgConn.ParameterStatus("client_encoding") != "UTF8" {
-		return "", errors.New("simple protocol queries must be run with client_encoding=UTF8")
-	}
+	//FIXME: fbx need to check anything for RDB?
+	//if c.pgConn.ParameterStatus("standard_conforming_strings") != "on" {
+	//	return "", errors.New("simple protocol queries must be run with standard_conforming_strings=on")
+	//}
+	//
+	//if c.pgConn.ParameterStatus("client_encoding") != "UTF8" {
+	//	return "", errors.New("simple protocol queries must be run with client_encoding=UTF8")
+	//}
 
 	var err error
 	valueArgs := make([]any, len(args))
