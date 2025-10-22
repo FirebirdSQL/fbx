@@ -18,10 +18,10 @@ func StatementName(sql string) string {
 // Cache caches statement descriptions.
 type Cache interface {
 	// Get returns the statement description for sql. Returns nil if not found.
-	Get(sql string) *pgconn.StatementDescription
+	Get(sql string) *pgconn.Statement
 
 	// Put stores sd in the cache. Put panics if sd.SQL is "". Put does nothing if sd.SQL already exists in the cache.
-	Put(sd *pgconn.StatementDescription)
+	Put(sd *pgconn.Statement)
 
 	// Invalidate invalidates statement description identified by sql. Does nothing if not found.
 	Invalidate(sql string)
@@ -30,7 +30,7 @@ type Cache interface {
 	InvalidateAll()
 
 	// GetInvalidated returns a slice of all statement descriptions invalidated since the last call to RemoveInvalidated.
-	GetInvalidated() []*pgconn.StatementDescription
+	GetInvalidated() []*pgconn.Statement
 
 	// RemoveInvalidated removes all invalidated statement descriptions. No other calls to Cache must be made between a
 	// call to GetInvalidated and RemoveInvalidated or RemoveInvalidated may remove statement descriptions that were

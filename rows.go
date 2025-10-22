@@ -178,10 +178,6 @@ func (rows *baseRows) Close() {
 		if sc := rows.conn.statementCache; sc != nil {
 			sc.Invalidate(rows.sql)
 		}
-
-		if sc := rows.conn.descriptionCache; sc != nil {
-			sc.Invalidate(rows.sql)
-		}
 	}
 
 	if rows.batchTracer != nil {

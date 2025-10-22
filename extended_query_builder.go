@@ -32,7 +32,7 @@ func (eqb *ExtendedQueryBuilder) Build(m *pgtype.Map, sd *pgconn.StatementDescri
 		return nil
 	}
 
-	if len(sd.Fields) != len(args) {
+	if len(sd.Parameters) != len(args) {
 		return fmt.Errorf("mismatched param and argument count")
 	}
 

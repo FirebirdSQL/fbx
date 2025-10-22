@@ -127,9 +127,9 @@ type PgConn struct {
 	contextWatcher    *ctxwatch.ContextWatcher
 	fieldDescriptions [16]FieldDescription
 
-	cleanupDone chan struct{}
-	Encoding    *fbproto.Encoding
-	Transaction *FBTransaction
+	cleanupDone         chan struct{}
+	Encoding            *fbproto.Encoding
+	internalTransaction *FBTransaction
 
 	preparedMap map[string]*StatementDescription
 }
@@ -847,14 +847,12 @@ func (pgConn *PgConn) receiveFetchResponse() (*fbproto.OpFetchResponse, error) {
 // Conn returns the underlying net.Conn. This rarely necessary. If the connection will be directly used for reading or
 // writing then SyncConn should usually be called before Conn.
 func (pgConn *PgConn) Conn() net.Conn {
-	//return pgConn.conn
-	panic("implement me")
+	return pgConn.conn
 }
 
 // PID returns the backend PID.
 func (pgConn *PgConn) PID() uint32 {
-	//return pgConn.pid
-	panic("implement me")
+	return pgConn.pid
 }
 
 // TxStatus returns the current TxStatus as reported by the server in the ReadyForQuery message.
@@ -1097,21 +1095,21 @@ func (pgConn *PgConn) convertRowDescription(src []fbproto.FieldDescriptor) []Fie
 	return res
 }
 
-type StatementDescription struct {
-	Name            string
-	SQL             string
-	StatementInfo   *fbproto.StatementInfo
-	StatementHandle int
-	Fields          []FieldDescription
-	Parameters      []FieldDescription
+// Prepare creates a prepared statement inside current internal transaction
+func (pgConn *PgConn) Prepare(ctx context.Context, sql string) (*Statement, error) {
+	tx, err := pgConn.ensureInternalTransaction(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	st, err := pgConn.PrepareTx(ctx, tx, sql)
+	if err != nil {
+		return nil, err
+	}
+	return st, nil
 }
 
-// Prepare creates a prepared statement. If the name is empty, the anonymous prepared statement will be used. This
-// allows Prepare to also to describe statements without creating a server-side prepared statement.
-//
-// Prepare does not send a PREPARE statement to the server. It uses the PostgreSQL Parse and Describe protocol messages
-// directly.
-func (pgConn *PgConn) Prepare(ctx context.Context, name, sql string, paramOIDs []uint32) (*StatementDescription, error) {
+// PrepareTx creates a prepared statement
+func (pgConn *PgConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql string) (*Statement, error) {
 	var err error
 	if err := pgConn.lock(); err != nil {
 		return nil, err
@@ -1128,20 +1126,13 @@ func (pgConn *PgConn) Prepare(ctx context.Context, name, sql string, paramOIDs [
 		defer pgConn.contextWatcher.Unwatch()
 	}
 
-	if pgConn.Transaction == nil {
-		if pgConn.Transaction, err = pgConn.StartTransaction(nil); err != nil {
-			pgConn.asyncClose()
-			return nil, err
-		}
-	}
-
 	if err = pgConn.client.WriteMessage(&fbproto.OpAllocateStatement{}); err != nil {
 		pgConn.asyncClose()
 		return nil, err
 	}
 	if err = pgConn.client.WriteMessage(&fbproto.OpPrepareStatement{
 		Encoding:          pgConn.Encoding,
-		TransactionHandle: pgConn.Transaction.Handle,
+		TransactionHandle: tx.Handle,
 		StatementHandle:   0xFFFF,
 		Dialect:           3,
 		Query:             sql,
@@ -1190,57 +1181,14 @@ func (pgConn *PgConn) Prepare(ctx context.Context, name, sql string, paramOIDs [
 		}
 	}
 
-	st := StatementDescription{
-		Name:            name,
+	desc := &StatementDescription{
 		SQL:             sql,
 		Fields:          pgConn.convertRowDescription(statementInfo.FieldDescriptors),
 		Parameters:      pgConn.convertRowDescription(statementInfo.ParametersDescriptors),
 		StatementHandle: statementHandle,
 		StatementInfo:   statementInfo,
 	}
-	pgConn.preparedMap[name] = &st
-	return &st, nil
-}
-
-// Deallocate deallocates a prepared statement.
-//
-// Deallocate does not send a DEALLOCATE statement to the server. It uses the PostgreSQL Close protocol message
-// directly. This has slightly different behavior than executing DEALLOCATE statement.
-//   - Deallocate can succeed in an aborted transaction.
-//   - Deallocating a non-existent prepared statement is not an error.
-func (pgConn *PgConn) Deallocate(ctx context.Context, name string) error {
-	st := pgConn.preparedMap[name]
-	if st == nil {
-		return fmt.Errorf("query '%s' was not prepared", name)
-	}
-
-	var err error
-	if err = pgConn.lock(); err != nil {
-		return err
-	}
-	defer pgConn.unlock()
-
-	if ctx != context.Background() {
-		select {
-		case <-ctx.Done():
-			return newContextAlreadyDoneError(ctx)
-		default:
-		}
-		pgConn.contextWatcher.Watch(ctx)
-		defer pgConn.contextWatcher.Unwatch()
-	}
-
-	if err = pgConn.client.WriteMessage(&fbproto.OpFreeStatement{StatementHandle: st.StatementHandle}); err != nil {
-		pgConn.asyncClose()
-		return err
-	}
-
-	if err = pgConn.writer.Flush(); err != nil {
-		pgConn.asyncClose()
-		return err
-	}
-
-	return nil
+	return &Statement{conn: pgConn, transaction: tx, Description: desc}, nil
 }
 
 //func noticeResponseToNotice(msg *pgproto3.NoticeResponse) *Notice {
@@ -1345,7 +1293,11 @@ func (pgConn *PgConn) WaitForNotification(ctx context.Context) error {
 //
 // Prefer ExecParams unless executing arbitrary SQL that may contain multiple queries.
 func (pgConn *PgConn) Exec(ctx context.Context, sql string) *ResultReader {
-	return pgConn.ExecParams(ctx, sql, nil, nil, nil, nil)
+	return pgConn.ExecParams(ctx, sql, nil)
+}
+
+func (pgConn *PgConn) ExecTx(ctx context.Context, tx *FBTransaction, sql string) *ResultReader {
+	return pgConn.ExecParamsTx(ctx, tx, sql, nil)
 }
 
 // ExecParams executes a command via the PostgreSQL extended query protocol.
@@ -1367,9 +1319,8 @@ func (pgConn *PgConn) Exec(ctx context.Context, sql string) *ResultReader {
 // binary format. If resultFormats is nil all results will be in text format.
 //
 // ResultReader must be closed before PgConn can be used again.
-func (pgConn *PgConn) ExecParams(ctx context.Context, sql string, paramValues [][]byte, params []FieldDescription, paramFormats []int16, resultFormats []int16) *ResultReader {
-	//FIXME: fbx where free prepared statement?
-	_, err := pgConn.Prepare(ctx, sql, sql, nil)
+func (pgConn *PgConn) ExecParams(ctx context.Context, sql string, paramValues [][]byte) *ResultReader {
+	tx, err := pgConn.ensureInternalTransaction(ctx, nil)
 	if err != nil {
 		res := ResultReader{
 			pgConn: pgConn,
@@ -1378,105 +1329,47 @@ func (pgConn *PgConn) ExecParams(ctx context.Context, sql string, paramValues []
 		}
 		pgConn.asyncClose()
 		res.concludeCommand(CommandTag{}, err)
-		pgConn.contextWatcher.Unwatch()
-		res.closed = true
+		return &res
+	}
+	return pgConn.ExecParamsTx(ctx, tx, sql, paramValues)
+}
+
+func (pgConn *PgConn) ExecParamsTx(ctx context.Context, tx *FBTransaction, sql string, paramValues [][]byte) *ResultReader {
+	st, err := pgConn.PrepareTx(ctx, tx, sql)
+	if err != nil {
+		// early check lock state and do not close connection
+		closeConn := true
+		if SafeToRetry(err) {
+			closeConn = false
+		}
+		if closeConn {
+			_ = tx.Rollback(ctx)
+		}
+		res := ResultReader{
+			pgConn: pgConn,
+			ctx:    ctx,
+			closed: true,
+		}
+		if closeConn {
+			pgConn.asyncClose()
+		}
+		res.concludeCommand(CommandTag{}, err)
 		return &res
 	}
 
-	return pgConn.ExecPrepared(ctx, sql, paramValues, nil, nil)
-
-	//result := pgConn.execExtendedPrefix(ctx, paramValues)
-	//if result.closed {
-	//	return result
-	//}
-	//
-	//pgConn.frontend.SendParse(&pgproto3.Parse{Query: sql, ParameterOIDs: paramOIDs})
-	//pgConn.frontend.SendBind(&pgproto3.Bind{ParameterFormatCodes: paramFormats, Parameters: paramValues, ResultFormatCodes: resultFormats})
-	//
-	//pgConn.execExtendedSuffix(result)
-	//
-	//return result
-	//panic("implement me")
-}
-
-// ExecPrepared enqueues the execution of a prepared statement via the PostgreSQL extended query protocol.
-//
-// paramValues are the parameter values. It must be encoded in the format given by paramFormats.
-//
-// paramFormats is a slice of format codes determining for each paramValue column whether it is encoded in text or
-// binary format. If paramFormats is nil all params are text format. ExecPrepared will panic if
-// len(paramFormats) is not 0, 1, or len(paramValues).
-//
-// resultFormats is a slice of format codes determining for each result column whether it is encoded in text or
-// binary format. If resultFormats is nil all results will be in text format.
-//
-// ResultReader must be closed before PgConn can be used again.
-func (pgConn *PgConn) ExecPrepared(ctx context.Context, stmtName string, paramValues [][]byte, paramFormats []int16, resultFormats []int16) *ResultReader {
-	pgConn.resultReader = ResultReader{
-		pgConn: pgConn,
-		ctx:    ctx,
-	}
-	result := &pgConn.resultReader
-
-	st := pgConn.preparedMap[stmtName]
-	if st == nil {
-		result.concludeCommand(CommandTag{}, fmt.Errorf("query '%s' was not prepared", stmtName))
-		return result
-	}
-	pgConn.resultReader.statementDescription = st
-	pgConn.resultReader.fieldDescriptions = st.Fields
-
-	if err := pgConn.lock(); err != nil {
-		result.concludeCommand(CommandTag{}, err)
-		result.closed = true
-		return result
-	}
-	defer pgConn.unlock()
-
-	if ctx != context.Background() {
-		select {
-		case <-ctx.Done():
-			result.concludeCommand(CommandTag{}, newContextAlreadyDoneError(ctx))
-			result.closed = true
-			return result
-		default:
+	rr := st.Exec(ctx, paramValues)
+	if rr.err != nil {
+		_ = tx.Rollback(ctx)
+		res := ResultReader{
+			pgConn: pgConn,
+			ctx:    ctx,
+			closed: true,
 		}
-		pgConn.contextWatcher.Watch(ctx)
-	}
-
-	var err error
-	if err = pgConn.client.WriteMessage(&fbproto.OpExecute{
-		TransactionHandle:     pgConn.Transaction.Handle,
-		StatementHandle:       st.StatementHandle,
-		ParametersDescriptors: st.StatementInfo.ParametersDescriptors,
-		SQLDataBlr:            st.StatementInfo.GetParametersBlr(),
-		SQLData:               paramValues,
-	}); err != nil {
 		pgConn.asyncClose()
-		result.concludeCommand(CommandTag{}, err)
-		pgConn.contextWatcher.Unwatch()
-		result.closed = true
-		return result
+		res.concludeCommand(CommandTag{}, rr.err)
+		return rr
 	}
-
-	if err = pgConn.writer.Flush(); err != nil {
-		pgConn.asyncClose()
-		result.concludeCommand(CommandTag{}, err)
-		pgConn.contextWatcher.Unwatch()
-		result.closed = true
-		return result
-	}
-
-	_, err = pgConn.receiveResponse()
-	if err != nil {
-		pgConn.asyncClose()
-		result.concludeCommand(CommandTag{}, err)
-		pgConn.contextWatcher.Unwatch()
-		result.closed = true
-		return result
-	}
-
-	return result
+	return rr
 }
 
 //func (pgConn *PgConn) execExtendedPrefix(ctx context.Context, paramValues [][]byte) *ResultReader {
@@ -1684,6 +1577,22 @@ func (pgConn *PgConn) CopyFrom(ctx context.Context, r io.Reader, sql string) (Co
 	panic("implement me")
 }
 
+// Commit commits internal transaction
+func (pgConn *PgConn) Commit(ctx context.Context) error {
+	if pgConn.internalTransaction == nil || pgConn.internalTransaction.Closed {
+		return ErrTransactionClosed
+	}
+	return pgConn.internalTransaction.Commit(ctx)
+}
+
+// Rollback rollbacks internal transaction
+func (pgConn *PgConn) Rollback(ctx context.Context) error {
+	if pgConn.internalTransaction == nil || pgConn.internalTransaction.Closed {
+		return ErrTransactionClosed
+	}
+	return pgConn.internalTransaction.Rollback(ctx)
+}
+
 // MultiResultReader is a reader for a command that could return multiple results such as Exec or ExecBatch.
 type MultiResultReader struct {
 	pgConn *PgConn
@@ -1889,38 +1798,10 @@ func (rr *ResultReader) Values() [][]byte {
 // Close consumes any remaining result data and returns the command tag or
 // error.
 func (rr *ResultReader) Close() (CommandTag, error) {
-	if rr.closed {
-		return rr.commandTag, rr.err
+	if !rr.closed {
+		rr.pgConn.unlock()
+		rr.pgConn.contextWatcher.Unwatch()
 	}
-	rr.closed = true
-
-	//for !rr.commandConcluded {
-	//	_, err := rr.receiveMessage()
-	//	if err != nil {
-	//		return CommandTag{}, rr.err
-	//	}
-	//}
-	//
-	//if rr.multiResultReader == nil && rr.pipeline == nil {
-	//	for {
-	//		msg, err := rr.receiveMessage()
-	//		if err != nil {
-	//			return CommandTag{}, rr.err
-	//		}
-	//
-	//		switch msg := msg.(type) {
-	//		// Detect a deferred constraint violation where the ErrorResponse is sent after CommandComplete.
-	//		case *pgproto3.ErrorResponse:
-	//			rr.err = ErrorResponseToPgError(msg)
-	//		case *pgproto3.ReadyForQuery:
-	//			rr.pgConn.contextWatcher.Unwatch()
-	//			rr.pgConn.unlock()
-	//			return rr.commandTag, rr.err
-	//		}
-	//	}
-	//}
-	//
-	rr.pgConn.contextWatcher.Unwatch()
 	return rr.commandTag, rr.err
 }
 
@@ -2142,7 +2023,10 @@ func (pgConn *PgConn) CheckConn() error {
 // succeed even though it will never actually reach the server. Pinging immediately before sending a query reduces the
 // chances a query will be sent that fails without the client knowing whether the server received it or not.
 func (pgConn *PgConn) Ping(ctx context.Context) error {
-	return pgConn.Exec(ctx, "-- ping").Close()
+	//FIXME: fbx how to "ping RDB?"
+	//_, err := pgConn.Exec(ctx, "-- ping").Close()
+	panic("implement me")
+	//return err
 }
 
 // makeCommandTag makes a CommandTag. It does not retain a reference to buf or buf's underlying memory.
@@ -2437,8 +2321,42 @@ func (s *pipelineState) ExpectedReadyForQuery() int {
 	return s.expectedReadyForQueryCount
 }
 
-func (pgConn *PgConn) StartTransaction(tpb []byte) (*FBTransaction, error) {
+// ensureInternalTransaction starts internal transaction if not started yet and bind it to connection
+func (pgConn *PgConn) ensureInternalTransaction(ctx context.Context, tpb []byte) (*FBTransaction, error) {
+	if pgConn.internalTransaction == nil || pgConn.internalTransaction.Closed {
+		tx, err := pgConn.StartTransactionTPB(ctx, tpb)
+		if err != nil {
+			return nil, err
+		}
+		pgConn.internalTransaction = tx
+	}
+	return pgConn.internalTransaction, nil
+}
+
+// StartTransaction starts new transaction not bound to connection
+func (pgConn *PgConn) StartTransaction(ctx context.Context) (*FBTransaction, error) {
+	return pgConn.StartTransactionTPB(ctx, nil)
+}
+
+// StartTransaction starts new transaction not bound to connection with TPB block
+func (pgConn *PgConn) StartTransactionTPB(ctx context.Context, tpb []byte) (*FBTransaction, error) {
 	var err error
+
+	if err = pgConn.lock(); err != nil {
+		return nil, err
+	}
+	defer pgConn.unlock()
+
+	if ctx != context.Background() {
+		select {
+		case <-ctx.Done():
+			return nil, newContextAlreadyDoneError(ctx)
+		default:
+		}
+		pgConn.contextWatcher.Watch(ctx)
+		defer pgConn.contextWatcher.Unwatch()
+	}
+
 	opTransaction := fbproto.OpTransaction{
 		TPB: tpb,
 	}
@@ -2451,50 +2369,10 @@ func (pgConn *PgConn) StartTransaction(tpb []byte) (*FBTransaction, error) {
 	}
 
 	if resp, err := pgConn.receiveResponse(); err == nil {
-		return &FBTransaction{resp.Object}, nil
+		return &FBTransaction{Connection: pgConn, Handle: resp.Object, Closed: false}, nil
 	} else {
 		return nil, err
 	}
-}
-
-func (pgConn *PgConn) CommitTransaction(transaction *FBTransaction) error {
-	var err error
-	opTransaction := fbproto.OpCommit{
-		TransactionHandle: transaction.Handle,
-	}
-	if err = pgConn.client.WriteMessage(&opTransaction); err != nil {
-		return err
-	}
-
-	if err = pgConn.writer.Flush(); err != nil {
-		return err
-	}
-
-	if _, err = pgConn.receiveResponse(); err == nil {
-		return err
-	}
-
-	return nil
-}
-
-func (pgConn *PgConn) RollbackTransaction(transaction *FBTransaction) error {
-	var err error
-	opTransaction := fbproto.OpRollback{
-		TransactionHandle: transaction.Handle,
-	}
-	if err = pgConn.client.WriteMessage(&opTransaction); err != nil {
-		return err
-	}
-
-	if err = pgConn.writer.Flush(); err != nil {
-		return err
-	}
-
-	if _, err = pgConn.receiveResponse(); err == nil {
-		return err
-	}
-
-	return nil
 }
 
 // StartPipeline switches the connection to pipeline mode and returns a *Pipeline. In pipeline mode requests can be sent

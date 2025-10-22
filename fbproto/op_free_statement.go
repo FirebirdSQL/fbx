@@ -4,6 +4,7 @@ package fbproto
 
 type OpFreeStatement struct {
 	StatementHandle int
+	Option          int // DSQL_close, DSQL_drop or DSQL_unprepare
 }
 
 func (op *OpFreeStatement) Write(x *XDRWriter) error {
@@ -19,7 +20,7 @@ func (op *OpFreeStatement) Write(x *XDRWriter) error {
 	}
 
 	//p_sqlfree_option
-	if err = x.WriteInt32(DSQL_drop); err != nil {
+	if err = x.WriteInt32(op.Option); err != nil {
 		return err
 	}
 	return nil

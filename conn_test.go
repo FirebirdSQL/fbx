@@ -56,7 +56,7 @@ func TestConnect(t *testing.T) {
 	assertConfigsEqual(t, config, conn.Config(), "Conn.Config() returns original config")
 
 	var currentDB string
-	err = conn.QueryRow(context.Background(), "select current_database()").Scan(&currentDB)
+	err = conn.QueryRow(context.Background(), "select mon$attachment_name from mon$attachments where mon$attachment_id = current_connection").Scan(&currentDB)
 	if err != nil {
 		t.Fatalf("QueryRow Scan unexpectedly failed: %v", err)
 	}
@@ -65,11 +65,11 @@ func TestConnect(t *testing.T) {
 	}
 
 	var user string
-	err = conn.QueryRow(context.Background(), "select current_user").Scan(&user)
+	err = conn.QueryRow(context.Background(), "select trim(mon$user) from mon$attachments where mon$attachment_id = current_connection").Scan(&user)
 	if err != nil {
 		t.Fatalf("QueryRow Scan unexpectedly failed: %v", err)
 	}
-	if user != config.Config.User {
+	if user != strings.ToUpper(config.Config.User) {
 		t.Errorf("Did not connect as specified user (%v)", config.Config.User)
 	}
 
@@ -92,7 +92,7 @@ func TestConnectWithPreferSimpleProtocol(t *testing.T) {
 	// into a pgtype.Text as the integer will have been encoded in text.
 
 	var s pgtype.Text
-	err := conn.QueryRow(context.Background(), "select $1::int4", 42).Scan(&s)
+	err := conn.QueryRow(context.Background(), "select cast(? as int) from rdb$database", 42).Scan(&s)
 	require.NoError(t, err)
 	require.Equal(t, pgtype.Text{String: "42", Valid: true}, s)
 
@@ -220,7 +220,7 @@ func TestExec(t *testing.T) {
 	defer cancel()
 
 	pgxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
-		if results := mustExec(t, conn, "create temporary table foo(id integer primary key);"); results.String() != "CREATE TABLE" {
+		if results := mustExec(t, conn, "recreate table foo(id integer primary key);"); results.String() != "CREATE TABLE" {
 			t.Error("Unexpected results from Exec")
 		}
 
@@ -283,7 +283,7 @@ func TestExecFailure(t *testing.T) {
 			t.Fatal("Expected SQL syntax error")
 		}
 
-		rows, _ := conn.Query(context.Background(), "select 1")
+		rows, _ := conn.Query(context.Background(), "select 1 from rdb$database")
 		rows.Close()
 		if rows.Err() != nil {
 			t.Fatalf("Exec failure appears to have broken connection: %v", rows.Err())
@@ -446,7 +446,7 @@ func TestPrepare(t *testing.T) {
 	// Create another prepared statement to ensure Deallocate left the connection
 	// in a working state and that we can reuse the prepared statement name.
 
-	_, err = conn.Prepare(context.Background(), "test", "select $1::integer")
+	_, err = conn.Prepare(context.Background(), "test", "select ? from rdb$database")
 	if err != nil {
 		t.Errorf("Unable to prepare statement: %v", err)
 		return
@@ -664,6 +664,7 @@ func TestListenNotify(t *testing.T) {
 }
 
 func TestListenNotifyWhileBusyIsSafe(t *testing.T) {
+	t.Skip("PG only")
 	t.Parallel()
 
 	func() {

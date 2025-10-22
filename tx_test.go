@@ -19,8 +19,9 @@ func TestTransactionSuccessfulCommit(t *testing.T) {
 	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 
+	//create temporary table foo(
 	createSql := `
-    create temporary table foo(
+    recreate table foo(
       id integer,
       unique (id)
     );
@@ -62,7 +63,7 @@ func TestTxCommitWhenTxBroken(t *testing.T) {
 	defer closeConn(t, conn)
 
 	createSql := `
-    create temporary table foo(
+    recreate table foo(
       id integer,
       unique (id)
     );
@@ -110,7 +111,7 @@ func TestTxCommitWhenDeferredConstraintFailure(t *testing.T) {
 	pgxtest.SkipCockroachDB(t, conn, "Server does not support deferred constraint (https://github.com/cockroachdb/cockroach/issues/31632)")
 
 	createSql := `
-    create temporary table foo(
+    recreate table foo(
       id integer,
       unique (id) initially deferred
     );
@@ -164,8 +165,7 @@ func TestTxCommitSerializationFailure(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	c1.Exec(ctx, `drop table if exists tx_serializable_sums`)
-	_, err := c1.Exec(ctx, `create table tx_serializable_sums(num integer);`)
+	_, err := c1.Exec(ctx, `recreate table tx_serializable_sums(num integer)`)
 	if err != nil {
 		t.Fatalf("Unable to create temporary table: %v", err)
 	}
@@ -183,12 +183,12 @@ func TestTxCommitSerializationFailure(t *testing.T) {
 	}
 	defer tx2.Rollback(ctx)
 
-	_, err = tx1.Exec(ctx, `insert into tx_serializable_sums(num) select sum(num)::int from tx_serializable_sums`)
+	_, err = tx1.Exec(ctx, `insert into tx_serializable_sums(num) select cast(sum(num) as int) from tx_serializable_sums`)
 	if err != nil {
 		t.Fatalf("Exec failed: %v", err)
 	}
 
-	_, err = tx2.Exec(ctx, `insert into tx_serializable_sums(num) select sum(num)::int from tx_serializable_sums`)
+	_, err = tx2.Exec(ctx, `insert into tx_serializable_sums(num) select cast(sum(num) as int) from tx_serializable_sums`)
 	if err != nil {
 		t.Fatalf("Exec failed: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestTxCommitSerializationFailure(t *testing.T) {
 	}
 
 	err = tx2.Commit(ctx)
-	if pgErr, ok := err.(*pgconn.PgError); !ok || pgErr.Code != "40001" {
+	if fbErr, ok := err.(*pgconn.FbError); !ok || fbErr.SqlState != "40001" {
 		t.Fatalf("Expected serialization error 40001, got %#v", err)
 	}
 
@@ -214,7 +214,7 @@ func TestTransactionSuccessfulRollback(t *testing.T) {
 	defer closeConn(t, conn)
 
 	createSql := `
-    create temporary table foo(
+    recreate table foo(
       id integer,
       unique (id)
     );
@@ -303,7 +303,7 @@ func TestBeginFunc(t *testing.T) {
 	defer closeConn(t, conn)
 
 	createSql := `
-    create temporary table foo(
+    recreate table foo(
       id integer,
       unique (id)
     );
@@ -332,7 +332,7 @@ func TestBeginFuncRollbackOnError(t *testing.T) {
 	defer closeConn(t, conn)
 
 	createSql := `
-    create temporary table foo(
+    recreate table foo(
       id integer,
       unique (id)
     );
@@ -366,30 +366,14 @@ func TestBeginReadOnly(t *testing.T) {
 	}
 	defer tx.Rollback(context.Background())
 
-	_, err = conn.Exec(context.Background(), "create table foo(id serial primary key)")
-	if pgErr, ok := err.(*pgconn.PgError); !ok || pgErr.Code != "25006" {
+	_, err = tx.Exec(context.Background(), "recreate table foo(id int primary key)")
+	if err != nil {
+		t.Fatalf("conn.Exec failed: %v", err)
+	}
+	err = tx.Commit(context.Background())
+	if fbErr, ok := err.(*pgconn.FbError); !ok || fbErr.SqlCode != 25006 {
 		t.Errorf("Expected error SQLSTATE 25006, but got %#v", err)
 	}
-}
-
-func TestBeginTxBeginQuery(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	pgxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
-		tx, err := conn.BeginTx(ctx, pgx.TxOptions{BeginQuery: "begin read only"})
-		require.NoError(t, err)
-		defer tx.Rollback(ctx)
-
-		var readOnly bool
-		conn.QueryRow(ctx, "select current_setting('transaction_read_only')::bool").Scan(&readOnly)
-		require.True(t, readOnly)
-
-		err = tx.Rollback(ctx)
-		require.NoError(t, err)
-	})
 }
 
 func TestTxNestedTransactionCommit(t *testing.T) {
@@ -611,6 +595,7 @@ func TestTxBeginFuncNestedTransactionRollback(t *testing.T) {
 }
 
 func TestTxSendBatchClosed(t *testing.T) {
+	t.Skip("PG only")
 	t.Parallel()
 
 	db := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))

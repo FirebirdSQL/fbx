@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"strconv"
-	"strings"
 
+	"github.com/red-soft/fbx/fbproto"
 	"github.com/red-soft/fbx/pgconn"
 )
 
@@ -43,43 +43,6 @@ type TxOptions struct {
 	IsoLevel       TxIsoLevel
 	AccessMode     TxAccessMode
 	DeferrableMode TxDeferrableMode
-
-	// BeginQuery is the SQL query that will be executed to begin the transaction. This allows using non-standard syntax
-	// such as BEGIN PRIORITY HIGH with CockroachDB. If set this will override the other settings.
-	BeginQuery string
-	// CommitQuery is the SQL query that will be executed to commit the transaction.
-	CommitQuery string
-}
-
-var emptyTxOptions TxOptions
-
-func (txOptions TxOptions) beginSQL() string {
-	if txOptions == emptyTxOptions {
-		return "begin"
-	}
-
-	if txOptions.BeginQuery != "" {
-		return txOptions.BeginQuery
-	}
-
-	var buf strings.Builder
-	buf.Grow(64) // 64 - maximum length of string with available options
-	buf.WriteString("begin")
-
-	if txOptions.IsoLevel != "" {
-		buf.WriteString(" isolation level ")
-		buf.WriteString(string(txOptions.IsoLevel))
-	}
-	if txOptions.AccessMode != "" {
-		buf.WriteByte(' ')
-		buf.WriteString(string(txOptions.AccessMode))
-	}
-	if txOptions.DeferrableMode != "" {
-		buf.WriteByte(' ')
-		buf.WriteString(string(txOptions.DeferrableMode))
-	}
-
-	return buf.String()
 }
 
 var ErrTxClosed = errors.New("tx is closed")
@@ -98,7 +61,33 @@ func (c *Conn) Begin(ctx context.Context) (Tx, error) {
 // BeginTx starts a transaction with txOptions determining the transaction mode. Unlike database/sql, the context only
 // affects the begin command. i.e. there is no auto-rollback on context cancellation.
 func (c *Conn) BeginTx(ctx context.Context, txOptions TxOptions) (Tx, error) {
-	_, err := c.Exec(ctx, txOptions.beginSQL())
+	tpb := fbproto.NewTPBWriterV3()
+	switch txOptions.AccessMode {
+	case ReadOnly:
+		tpb.PutTag(fbproto.Isc_tpb_read)
+	default:
+		fallthrough
+	case ReadWrite:
+		tpb.PutTag(fbproto.Isc_tpb_write)
+	}
+	tpb.PutTag(fbproto.Isc_tpb_wait)
+	switch txOptions.IsoLevel {
+	case Serializable:
+		tpb.PutTag(fbproto.Isc_tpb_consistency)
+	case RepeatableRead:
+		tpb.PutTag(fbproto.Isc_tpb_concurrency)
+	default:
+		fallthrough
+	case ReadCommitted:
+		tpb.PutTag(fbproto.Isc_tpb_read_committed)
+		if txOptions.AccessMode == ReadWrite {
+			tpb.PutTag(fbproto.Isc_tpb_no_rec_version)
+		} else {
+			tpb.PutTag(fbproto.Isc_tpb_rec_version)
+		}
+	}
+
+	fbTx, err := c.pgConn.StartTransactionTPB(ctx, tpb.Bytes())
 	if err != nil {
 		// begin should never fail unless there is an underlying connection issue or
 		// a context timeout. In either case, the connection is possibly broken.
@@ -107,8 +96,8 @@ func (c *Conn) BeginTx(ctx context.Context, txOptions TxOptions) (Tx, error) {
 	}
 
 	return &dbTx{
-		conn:        c,
-		commitQuery: txOptions.CommitQuery,
+		conn: c,
+		tx:   fbTx,
 	}, nil
 }
 
@@ -158,7 +147,7 @@ type dbTx struct {
 	conn         *Conn
 	savepointNum int64
 	closed       bool
-	commitQuery  string
+	tx           *pgconn.FBTransaction
 }
 
 // Begin starts a pseudo nested transaction implemented with a savepoint.
@@ -182,21 +171,10 @@ func (tx *dbTx) Commit(ctx context.Context) error {
 		return ErrTxClosed
 	}
 
-	commandSQL := "commit"
-	if tx.commitQuery != "" {
-		commandSQL = tx.commitQuery
-	}
-
-	commandTag, err := tx.conn.Exec(ctx, commandSQL)
+	err := tx.tx.Commit(ctx)
 	tx.closed = true
 	if err != nil {
-		if tx.conn.PgConn().TxStatus() != 'I' {
-			_ = tx.conn.Close(ctx) // already have error to return
-		}
 		return err
-	}
-	if commandTag.String() == "ROLLBACK" {
-		return ErrTxCommitRollback
 	}
 
 	return nil
@@ -211,7 +189,7 @@ func (tx *dbTx) Rollback(ctx context.Context) error {
 		return ErrTxClosed
 	}
 
-	_, err := tx.conn.Exec(ctx, "rollback")
+	err := tx.tx.Rollback(ctx)
 	tx.closed = true
 	if err != nil {
 		// A rollback failure leaves the connection in an undefined state
@@ -228,7 +206,7 @@ func (tx *dbTx) Exec(ctx context.Context, sql string, arguments ...any) (command
 		return pgconn.CommandTag{}, ErrTxClosed
 	}
 
-	return tx.conn.Exec(ctx, sql, arguments...)
+	return tx.conn.execTx(ctx, tx, sql, arguments...)
 }
 
 // Prepare delegates to the underlying *Conn
@@ -237,7 +215,7 @@ func (tx *dbTx) Prepare(ctx context.Context, name, sql string) (*pgconn.Statemen
 		return nil, ErrTxClosed
 	}
 
-	return tx.conn.Prepare(ctx, name, sql)
+	return tx.conn.prepareTx(ctx, tx, name, sql)
 }
 
 // Query delegates to the underlying *Conn
@@ -248,7 +226,7 @@ func (tx *dbTx) Query(ctx context.Context, sql string, args ...any) (Rows, error
 		return &baseRows{closed: true, err: err}, err
 	}
 
-	return tx.conn.Query(ctx, sql, args...)
+	return tx.conn.queryTx(ctx, tx, sql, args...)
 }
 
 // QueryRow delegates to the underlying *Conn
