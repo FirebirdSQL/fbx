@@ -54,6 +54,7 @@ func (eqb *ExtendedQueryBuilder) Build(m *pgtype.Map, sd *pgconn.StatementDescri
 // appendParam appends a parameter to the query. format may be -1 to automatically choose the format. If arg is nil it
 // must be an untyped nil.
 func (eqb *ExtendedQueryBuilder) appendParam(m *pgtype.Map, oid uint32, format int16, arg any) error {
+	format = 1
 	if format == -1 {
 		preferredFormat := eqb.chooseParameterFormatCode(m, oid, arg)
 		preferredErr := eqb.appendParam(m, oid, preferredFormat, arg)
