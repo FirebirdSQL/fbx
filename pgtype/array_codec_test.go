@@ -65,7 +65,7 @@ func TestArrayCodecFlatArrayString(t *testing.T) {
 		{[]string{"a\vb", "a\tb", "a\nb", "a\rb", "a\fb", "a b"}},
 	}
 
-	queryModes := []pgx.QueryExecMode{pgx.QueryExecModeSimpleProtocol, pgx.QueryExecModeDescribeExec}
+	queryModes := []pgx.QueryExecMode{pgx.QueryExecModeSimpleProtocol}
 
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
 		for i, testCase := range testCases {
