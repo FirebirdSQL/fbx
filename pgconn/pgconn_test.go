@@ -1188,108 +1188,108 @@ func (m mockConnection) Write(b []byte) (n int, err error) {
 	return m.Conn.Write(b)
 }
 
-func TestConnExecBatchWriteError(t *testing.T) {
-	t.Skip("need implementation")
-	t.Parallel()
+//func TestConnExecBatchWriteError(t *testing.T) {
+//	t.Skip("need implementation")
+//	t.Parallel()
+//
+//	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+//	defer cancel()
+//
+//	config, err := pgconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+//	require.NoError(t, err)
+//
+//	var mockConn mockConnection
+//	writeLatency := 0 * time.Second
+//	config.DialFunc = func(ctx context.Context, network, address string) (net.Conn, error) {
+//		conn, err := net.Dial(network, address)
+//		mockConn = mockConnection{conn, &writeLatency}
+//		return mockConn, err
+//	}
+//
+//	pgConn, err := pgconn.ConnectConfig(ctx, config)
+//	require.NoError(t, err)
+//	defer closeConn(t, pgConn)
+//
+//	batch := &pgconn.Batch{}
+//	pgConn.Conn()
+//
+//	ctx2, cancel2 := context.WithTimeout(context.Background(), 1*time.Second)
+//	defer cancel2()
+//
+//	batch.ExecParams("select $1::text", [][]byte{[]byte("ExecParams 1")}, nil, nil, nil)
+//	writeLatency = 2 * time.Second
+//	mrr := pgConn.ExecBatch(ctx2, batch)
+//	err = mrr.Close()
+//	require.Error(t, err)
+//	assert.ErrorIs(t, err, context.DeadlineExceeded)
+//	require.True(t, pgConn.IsClosed())
+//}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
+//func TestConnExecBatchDeferredError(t *testing.T) {
+//	t.Skip("need batch implementation")
+//	t.Parallel()
+//
+//	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+//	defer cancel()
+//
+//	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+//	require.NoError(t, err)
+//	defer closeConn(t, pgConn)
+//
+//	if pgConn.ParameterStatus("crdb_version") != "" {
+//		t.Skip("Server does not support deferred constraint (https://github.com/cockroachdb/cockroach/issues/31632)")
+//	}
+//
+//	setupSQL := `create temporary table t (
+//		id text primary key,
+//		n int not null,
+//		unique (n) deferrable initially deferred
+//	);
+//
+//	insert into t (id, n) values ('a', 1), ('b', 2), ('c', 3);`
+//
+//	res := pgConn.Exec(ctx, setupSQL).Read()
+//	require.NoError(t, res.Err)
+//
+//	batch := &pgconn.Batch{}
+//
+//	batch.ExecParams(`update t set n=n+1 where id='b' returning *`, nil, nil, nil, nil)
+//	_, err = pgConn.ExecBatch(ctx, batch).ReadAll()
+//	require.NotNil(t, err)
+//	var pgErr *pgconn.PgError
+//	require.True(t, errors.As(err, &pgErr))
+//	require.Equal(t, "23505", pgErr.Code)
+//
+//	ensureConnValid(t, pgConn)
+//}
 
-	config, err := pgconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
-	require.NoError(t, err)
-
-	var mockConn mockConnection
-	writeLatency := 0 * time.Second
-	config.DialFunc = func(ctx context.Context, network, address string) (net.Conn, error) {
-		conn, err := net.Dial(network, address)
-		mockConn = mockConnection{conn, &writeLatency}
-		return mockConn, err
-	}
-
-	pgConn, err := pgconn.ConnectConfig(ctx, config)
-	require.NoError(t, err)
-	defer closeConn(t, pgConn)
-
-	batch := &pgconn.Batch{}
-	pgConn.Conn()
-
-	ctx2, cancel2 := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel2()
-
-	batch.ExecParams("select $1::text", [][]byte{[]byte("ExecParams 1")}, nil, nil, nil)
-	writeLatency = 2 * time.Second
-	mrr := pgConn.ExecBatch(ctx2, batch)
-	err = mrr.Close()
-	require.Error(t, err)
-	assert.ErrorIs(t, err, context.DeadlineExceeded)
-	require.True(t, pgConn.IsClosed())
-}
-
-func TestConnExecBatchDeferredError(t *testing.T) {
-	t.Skip("need batch implementation")
-	t.Parallel()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
-	require.NoError(t, err)
-	defer closeConn(t, pgConn)
-
-	if pgConn.ParameterStatus("crdb_version") != "" {
-		t.Skip("Server does not support deferred constraint (https://github.com/cockroachdb/cockroach/issues/31632)")
-	}
-
-	setupSQL := `create temporary table t (
-		id text primary key,
-		n int not null,
-		unique (n) deferrable initially deferred
-	);
-
-	insert into t (id, n) values ('a', 1), ('b', 2), ('c', 3);`
-
-	res := pgConn.Exec(ctx, setupSQL).Read()
-	require.NoError(t, res.Err)
-
-	batch := &pgconn.Batch{}
-
-	batch.ExecParams(`update t set n=n+1 where id='b' returning *`, nil, nil, nil, nil)
-	_, err = pgConn.ExecBatch(ctx, batch).ReadAll()
-	require.NotNil(t, err)
-	var pgErr *pgconn.PgError
-	require.True(t, errors.As(err, &pgErr))
-	require.Equal(t, "23505", pgErr.Code)
-
-	ensureConnValid(t, pgConn)
-}
-
-func TestConnExecBatchPrecanceled(t *testing.T) {
-	//t.Parallel()
-	//
-	//ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	//defer cancel()
-	//
-	//pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
-	//require.NoError(t, err)
-	//defer closeConn(t, pgConn)
-	//
-	//_, err = pgConn.PrepareTx(ctx, "ps1", "select $1::text", nil)
-	//require.NoError(t, err)
-	//
-	//batch := &pgconn.Batch{}
-	//
-	//batch.ExecParams("select $1::text", [][]byte{[]byte("ExecParams 1")}, nil, nil, nil)
-	//batch.ExecPrepared("ps1", [][]byte{[]byte("ExecPrepared 1")}, nil, nil)
-	//batch.ExecParams("select $1::text", [][]byte{[]byte("ExecParams 2")}, nil, nil, nil)
-	//
-	//cancel()
-	//_, err = pgConn.ExecBatch(ctx, batch).ReadAll()
-	//require.Error(t, err)
-	//assert.True(t, errors.Is(err, context.Canceled))
-	//assert.True(t, pgconn.SafeToRetry(err))
-	//
-	//ensureConnValid(t, pgConn)
-}
+//func TestConnExecBatchPrecanceled(t *testing.T) {
+//t.Parallel()
+//
+//ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+//defer cancel()
+//
+//pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+//require.NoError(t, err)
+//defer closeConn(t, pgConn)
+//
+//_, err = pgConn.PrepareTx(ctx, "ps1", "select $1::text", nil)
+//require.NoError(t, err)
+//
+//batch := &pgconn.Batch{}
+//
+//batch.ExecParams("select $1::text", [][]byte{[]byte("ExecParams 1")}, nil, nil, nil)
+//batch.ExecPrepared("ps1", [][]byte{[]byte("ExecPrepared 1")}, nil, nil)
+//batch.ExecParams("select $1::text", [][]byte{[]byte("ExecParams 2")}, nil, nil, nil)
+//
+//cancel()
+//_, err = pgConn.ExecBatch(ctx, batch).ReadAll()
+//require.Error(t, err)
+//assert.True(t, errors.Is(err, context.Canceled))
+//assert.True(t, pgconn.SafeToRetry(err))
+//
+//ensureConnValid(t, pgConn)
+//}
 
 // Without concurrent reading and writing large batches can deadlock.
 //
