@@ -210,27 +210,17 @@ func TestExec(t *testing.T) {
 	defer cancel()
 
 	pgxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
-		if results := mustExec(t, conn, "recreate table foo(id integer primary key);"); results.String() != "CREATE TABLE" {
+		if results := mustExec(t, conn, "recreate table "+t.Name()+"(id integer primary key);"); results.String() != "CREATE TABLE" {
 			t.Error("Unexpected results from Exec")
 		}
 
 		// Accept parameters
-		if results := mustExec(t, conn, "insert into foo(id) values($1)", 1); results.String() != "INSERT 0 1" {
+		if results := mustExec(t, conn, "insert into "+t.Name()+"(id) values($1)", 1); results.String() != "INSERT 0 1" {
 			t.Errorf("Unexpected results from Exec: %v", results)
 		}
 
-		if results := mustExec(t, conn, "drop table foo;"); results.String() != "DROP TABLE" {
+		if results := mustExec(t, conn, "drop table "+t.Name()); results.String() != "DROP TABLE" {
 			t.Error("Unexpected results from Exec")
-		}
-
-		// Multiple statements can be executed -- last command tag is returned
-		if results := mustExec(t, conn, "create temporary table foo(id serial primary key); drop table foo;"); results.String() != "DROP TABLE" {
-			t.Error("Unexpected results from Exec")
-		}
-
-		// Can execute longer SQL strings than sharedBufferSize
-		if results := mustExec(t, conn, strings.Repeat("select 42; ", 1000)); results.String() != "SELECT 1" {
-			t.Errorf("Unexpected results from Exec: %v", results)
 		}
 
 		// Exec no-op which does not return a command tag

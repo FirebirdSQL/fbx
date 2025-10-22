@@ -21,7 +21,7 @@ func TestTransactionSuccessfulCommit(t *testing.T) {
 
 	//create temporary table foo(
 	createSql := `
-    recreate table foo(
+    recreate table ` + t.Name() + `(
       id integer,
       unique (id)
     );
@@ -36,7 +36,7 @@ func TestTransactionSuccessfulCommit(t *testing.T) {
 		t.Fatalf("conn.Begin failed: %v", err)
 	}
 
-	_, err = tx.Exec(context.Background(), "insert into foo(id) values (1)")
+	_, err = tx.Exec(context.Background(), "insert into "+t.Name()+" (id) values (1)")
 	if err != nil {
 		t.Fatalf("tx.Exec failed: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestTransactionSuccessfulCommit(t *testing.T) {
 	}
 
 	var n int64
-	err = conn.QueryRow(context.Background(), "select count(*) from foo").Scan(&n)
+	err = conn.QueryRow(context.Background(), "select count(*) from "+t.Name()).Scan(&n)
 	if err != nil {
 		t.Fatalf("QueryRow Scan failed: %v", err)
 	}
@@ -61,9 +61,8 @@ func TestTxCommitWhenTxBroken(t *testing.T) {
 
 	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	defer closeConn(t, conn)
-
 	createSql := `
-    recreate table foo(
+    recreate table ` + t.Name() + `(
       id integer,
       unique (id)
     );
@@ -78,7 +77,7 @@ func TestTxCommitWhenTxBroken(t *testing.T) {
 		t.Fatalf("conn.Begin failed: %v", err)
 	}
 
-	if _, err := tx.Exec(context.Background(), "insert into foo(id) values (1)"); err != nil {
+	if _, err := tx.Exec(context.Background(), "insert into "+t.Name()+"(id) values (1)"); err != nil {
 		t.Fatalf("tx.Exec failed: %v", err)
 	}
 
@@ -93,7 +92,7 @@ func TestTxCommitWhenTxBroken(t *testing.T) {
 	}
 
 	var n int64
-	err = conn.QueryRow(context.Background(), "select count(*) from foo").Scan(&n)
+	err = conn.QueryRow(context.Background(), "select count(*) from "+t.Name()).Scan(&n)
 	if err != nil {
 		t.Fatalf("QueryRow Scan failed: %v", err)
 	}
@@ -111,7 +110,7 @@ func TestTxCommitWhenDeferredConstraintFailure(t *testing.T) {
 	pgxtest.SkipCockroachDB(t, conn, "Server does not support deferred constraint (https://github.com/cockroachdb/cockroach/issues/31632)")
 
 	createSql := `
-    recreate table foo(
+    recreate table  ` + t.Name() + ` (
       id integer,
       unique (id) initially deferred
     );
@@ -126,11 +125,11 @@ func TestTxCommitWhenDeferredConstraintFailure(t *testing.T) {
 		t.Fatalf("conn.Begin failed: %v", err)
 	}
 
-	if _, err := tx.Exec(context.Background(), "insert into foo(id) values (1)"); err != nil {
+	if _, err := tx.Exec(context.Background(), "insert into  "+t.Name()+" (id) values (1)"); err != nil {
 		t.Fatalf("tx.Exec failed: %v", err)
 	}
 
-	if _, err := tx.Exec(context.Background(), "insert into foo(id) values (1)"); err != nil {
+	if _, err := tx.Exec(context.Background(), "insert into "+t.Name()+" (id) values (1)"); err != nil {
 		t.Fatalf("tx.Exec failed: %v", err)
 	}
 
@@ -140,7 +139,7 @@ func TestTxCommitWhenDeferredConstraintFailure(t *testing.T) {
 	}
 
 	var n int64
-	err = conn.QueryRow(context.Background(), "select count(*) from foo").Scan(&n)
+	err = conn.QueryRow(context.Background(), "select count(*) from "+t.Name()).Scan(&n)
 	if err != nil {
 		t.Fatalf("QueryRow Scan failed: %v", err)
 	}
@@ -165,11 +164,11 @@ func TestTxCommitSerializationFailure(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	_, err := c1.Exec(ctx, `recreate table tx_serializable_sums(num integer)`)
+	_, err := c1.Exec(ctx, `recreate table `+t.Name()+`(num integer)`)
 	if err != nil {
 		t.Fatalf("Unable to create temporary table: %v", err)
 	}
-	defer c1.Exec(ctx, `drop table tx_serializable_sums`)
+	defer c1.Exec(ctx, `drop table `+t.Name())
 
 	tx1, err := c1.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
@@ -183,12 +182,12 @@ func TestTxCommitSerializationFailure(t *testing.T) {
 	}
 	defer tx2.Rollback(ctx)
 
-	_, err = tx1.Exec(ctx, `insert into tx_serializable_sums(num) select cast(sum(num) as int) from tx_serializable_sums`)
+	_, err = tx1.Exec(ctx, `insert into tx_serializable_sums(num) select cast(sum(num) as int) from `+t.Name())
 	if err != nil {
 		t.Fatalf("Exec failed: %v", err)
 	}
 
-	_, err = tx2.Exec(ctx, `insert into tx_serializable_sums(num) select cast(sum(num) as int) from tx_serializable_sums`)
+	_, err = tx2.Exec(ctx, `insert into tx_serializable_sums(num) select cast(sum(num) as int) from `+t.Name())
 	if err != nil {
 		t.Fatalf("Exec failed: %v", err)
 	}
@@ -214,7 +213,7 @@ func TestTransactionSuccessfulRollback(t *testing.T) {
 	defer closeConn(t, conn)
 
 	createSql := `
-    recreate table foo(
+    recreate ` + t.Name() + ` foo(
       id integer,
       unique (id)
     );
@@ -229,7 +228,7 @@ func TestTransactionSuccessfulRollback(t *testing.T) {
 		t.Fatalf("conn.Begin failed: %v", err)
 	}
 
-	_, err = tx.Exec(context.Background(), "insert into foo(id) values (1)")
+	_, err = tx.Exec(context.Background(), "insert into "+t.Name()+"(id) values (1)")
 	if err != nil {
 		t.Fatalf("tx.Exec failed: %v", err)
 	}
@@ -240,7 +239,7 @@ func TestTransactionSuccessfulRollback(t *testing.T) {
 	}
 
 	var n int64
-	err = conn.QueryRow(context.Background(), "select count(*) from foo").Scan(&n)
+	err = conn.QueryRow(context.Background(), "select count(*) from "+t.Name()).Scan(&n)
 	if err != nil {
 		t.Fatalf("QueryRow Scan failed: %v", err)
 	}
@@ -303,7 +302,7 @@ func TestBeginFunc(t *testing.T) {
 	defer closeConn(t, conn)
 
 	createSql := `
-    recreate table foo(
+    recreate table ` + t.Name() + `(
       id integer,
       unique (id)
     );
@@ -313,14 +312,14 @@ func TestBeginFunc(t *testing.T) {
 	require.NoError(t, err)
 
 	err = pgx.BeginFunc(context.Background(), conn, func(tx pgx.Tx) error {
-		_, err := tx.Exec(context.Background(), "insert into foo(id) values (1)")
+		_, err := tx.Exec(context.Background(), "insert into "+t.Name()+"(id) values (1)")
 		require.NoError(t, err)
 		return nil
 	})
 	require.NoError(t, err)
 
 	var n int64
-	err = conn.QueryRow(context.Background(), "select count(*) from foo").Scan(&n)
+	err = conn.QueryRow(context.Background(), "select count(*) from "+t.Name()).Scan(&n)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, n)
 }
@@ -332,7 +331,7 @@ func TestBeginFuncRollbackOnError(t *testing.T) {
 	defer closeConn(t, conn)
 
 	createSql := `
-    recreate table foo(
+    recreate table ` + t.Name() + `(
       id integer,
       unique (id)
     );
@@ -342,14 +341,14 @@ func TestBeginFuncRollbackOnError(t *testing.T) {
 	require.NoError(t, err)
 
 	err = pgx.BeginFunc(context.Background(), conn, func(tx pgx.Tx) error {
-		_, err := tx.Exec(context.Background(), "insert into foo(id) values (1)")
+		_, err := tx.Exec(context.Background(), "insert into "+t.Name()+"(id) values (1)")
 		require.NoError(t, err)
 		return errors.New("some error")
 	})
 	require.EqualError(t, err, "some error")
 
 	var n int64
-	err = conn.QueryRow(context.Background(), "select count(*) from foo").Scan(&n)
+	err = conn.QueryRow(context.Background(), "select count(*) from "+t.Name()).Scan(&n)
 	require.NoError(t, err)
 	require.EqualValues(t, 0, n)
 }
@@ -366,7 +365,7 @@ func TestBeginReadOnly(t *testing.T) {
 	}
 	defer tx.Rollback(context.Background())
 
-	_, err = tx.Exec(context.Background(), "recreate table foo(id int primary key)")
+	_, err = tx.Exec(context.Background(), "recreate table "+t.Name()+"(id int primary key)")
 	if err != nil {
 		t.Fatalf("conn.Exec failed: %v", err)
 	}
@@ -383,7 +382,7 @@ func TestTxNestedTransactionCommit(t *testing.T) {
 	defer closeConn(t, conn)
 
 	createSql := `
-    create temporary table foo(
+    recreate table ` + t.Name() + `(
       id integer,
       unique (id)
     );
@@ -455,7 +454,7 @@ func TestTxNestedTransactionRollback(t *testing.T) {
 	defer closeConn(t, conn)
 
 	createSql := `
-    create temporary table foo(
+    recreate table ` + t.Name() + `(
       id integer,
       unique (id)
     );
@@ -517,7 +516,7 @@ func TestTxBeginFuncNestedTransactionCommit(t *testing.T) {
 	defer closeConn(t, db)
 
 	createSql := `
-    create temporary table foo(
+    recreate table ` + t.Name() + `(
       id integer,
       unique (id)
     );
@@ -561,7 +560,7 @@ func TestTxBeginFuncNestedTransactionRollback(t *testing.T) {
 	defer closeConn(t, db)
 
 	createSql := `
-    create temporary table foo(
+    recreate table ` + t.Name() + `(
       id integer,
       unique (id)
     );

@@ -262,11 +262,11 @@ func TestCollectOneRowIgnoresExtraRows(t *testing.T) {
 // https://github.com/jackc/pgx/issues/1334
 func TestCollectOneRowPrefersPostgreSQLErrorOverErrNoRows(t *testing.T) {
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
-		_, err := conn.Exec(ctx, `recreate table t (name varchar not null unique)`)
+		_, err := conn.Exec(ctx, `recreate table "+t.Name()+" (name varchar not null unique)`)
 		require.NoError(t, err)
 
 		var name string
-		rows, _ := conn.Query(ctx, `insert into t (name) values ('foo') returning name`)
+		rows, _ := conn.Query(ctx, `insert into "+t.Name()+" (name) values ('foo') returning name`)
 		name, err = pgx.CollectOneRow(rows, func(row pgx.CollectableRow) (string, error) {
 			var n string
 			err := row.Scan(&n)
@@ -275,7 +275,7 @@ func TestCollectOneRowPrefersPostgreSQLErrorOverErrNoRows(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "foo", name)
 
-		rows, _ = conn.Query(ctx, `insert into t (name) values ('foo') returning name`)
+		rows, _ = conn.Query(ctx, `insert into "+t.Name()+" (name) values ('foo') returning name`)
 		name, err = pgx.CollectOneRow(rows, func(row pgx.CollectableRow) (string, error) {
 			var n string
 			err := row.Scan(&n)
