@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/red-soft/fbx/fbproto"
 	"github.com/red-soft/fbx/pgconn/ctxwatch"
-	"github.com/red-soft/fbx/pgproto3"
 )
 
 type AfterConnectFunc func(ctx context.Context, pgconn *PgConn) error
@@ -248,7 +248,10 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 	}
 
 	settings := mergeSettings(defaultSettings, envSettings, connStringSettings)
-
+	encoding, err := fbproto.NewEncoding("UTF8")
+	if err != nil {
+		return nil, err
+	}
 	config := &Config{
 		createdByParseConfig: true,
 		Database:             settings["database"],
@@ -256,8 +259,8 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		Password:             settings["password"],
 		Role:                 settings["role"],
 		RuntimeParams:        make(map[string]string),
-		BuildFrontend: func(r io.Reader, w io.Writer) *pgproto3.Client {
-			return pgproto3.NewClient(r, w)
+		BuildFrontend: func(r io.Reader, w io.Writer) *fbproto.Client {
+			return fbproto.NewClient(r, w, encoding)
 		},
 		BuildContextWatcherHandler: func(pgConn *PgConn) ctxwatch.Handler {
 			return &DeadlineContextWatcherHandler{Conn: pgConn.conn}

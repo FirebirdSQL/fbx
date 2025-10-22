@@ -23,7 +23,6 @@ import (
 	"github.com/red-soft/fbx/fbproto/auth"
 	"github.com/red-soft/fbx/pgconn/ctxwatch"
 	"github.com/red-soft/fbx/pgconn/internal/bgreader"
-	"github.com/red-soft/fbx/pgproto3"
 	"github.com/red-soft/fbx/wirecrypt"
 )
 
@@ -72,7 +71,7 @@ type DialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
 type LookupFunc func(ctx context.Context, host string) (addrs []string, err error)
 
 // BuildFrontendFunc is a function that can be used to create Client implementation for connection.
-type BuildFrontendFunc func(r io.Reader, w io.Writer) *pgproto3.Client
+type BuildFrontendFunc func(r io.Reader, w io.Writer) *fbproto.Client
 
 // PgErrorHandler is a function that handles errors returned from Postgres. This function must return true to keep
 // the connection open. Returning false will cause the connection to be closed immediately. You should return
@@ -849,10 +848,9 @@ func (pgConn *PgConn) SecretKey() uint32 {
 	panic("implement me")
 }
 
-// Frontend returns the underlying *pgproto3.Client. This rarely necessary.
-func (pgConn *PgConn) Frontend() *pgproto3.Client {
-	//return pgConn.frontend
-	panic("implement me")
+// Client returns the underlying *fbproto.Client
+func (pgConn *PgConn) Client() *fbproto.Client {
+	return pgConn.client
 }
 
 // Close closes a connection. It is safe to call Close on an already closed connection. Close attempts a clean close by
