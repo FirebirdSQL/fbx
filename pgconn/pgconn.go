@@ -120,8 +120,6 @@ type PgConn struct {
 	peekedMsg fbproto.ServerMessage
 
 	// Reusable / preallocated resources
-	resultReader      ResultReader
-	multiResultReader MultiResultReader
 	pipeline          Pipeline
 	contextWatcher    *ctxwatch.ContextWatcher
 	fieldDescriptions [16]FieldDescription
@@ -1598,7 +1596,7 @@ func (mrr *MultiResultReader) ReadAll() ([]*Result, error) {
 	return results, err
 }
 
-func (mrr *MultiResultReader) receiveMessage() (pgproto3.Response, error) {
+func (mrr *MultiResultReader) receiveMessage() (fbproto.ServerMessage, error) {
 	//msg, err := mrr.pgConn.receiveMessage()
 	//if err != nil {
 	//	mrr.pgConn.contextWatcher.Unwatch()
@@ -1676,8 +1674,7 @@ func (mrr *MultiResultReader) Close() error {
 
 // ResultReader is a reader for the result of a single query.
 type ResultReader struct {
-	pgConn            *PgConn
-	multiResultReader *MultiResultReader
+	pgConn *PgConn
 	//pipeline          *Pipeline
 	ctx context.Context
 

@@ -135,8 +135,7 @@ type baseRows struct {
 	scanPlans []pgtype.ScanPlan
 	scanTypes []reflect.Type
 
-	conn              *Conn
-	multiResultReader *pgconn.MultiResultReader
+	conn *Conn
 
 	queryTracer QueryTracer
 	batchTracer BatchTracer
@@ -162,13 +161,6 @@ func (rows *baseRows) Close() {
 	if rows.resultReader != nil {
 		var closeErr error
 		rows.commandTag, closeErr = rows.resultReader.Close()
-		if rows.err == nil {
-			rows.err = closeErr
-		}
-	}
-
-	if rows.multiResultReader != nil {
-		closeErr := rows.multiResultReader.Close()
 		if rows.err == nil {
 			rows.err = closeErr
 		}
