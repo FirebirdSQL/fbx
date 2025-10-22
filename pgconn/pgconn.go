@@ -1322,12 +1322,20 @@ func (pgConn *PgConn) ExecTx(ctx context.Context, tx *FBTransaction, sql string)
 func (pgConn *PgConn) ExecParams(ctx context.Context, sql string, paramValues [][]byte) *ResultReader {
 	tx, err := pgConn.ensureInternalTransaction(ctx, nil)
 	if err != nil {
+		// early check lock state and do not close connection
+		closeConn := true
+		var fbErr *FbError
+		if SafeToRetry(err) || errors.As(err, &fbErr) {
+			closeConn = false
+		}
 		res := ResultReader{
 			pgConn: pgConn,
 			ctx:    ctx,
 			closed: true,
 		}
-		pgConn.asyncClose()
+		if closeConn {
+			pgConn.asyncClose()
+		}
 		res.concludeCommand(CommandTag{}, err)
 		return &res
 	}
@@ -1339,7 +1347,8 @@ func (pgConn *PgConn) ExecParamsTx(ctx context.Context, tx *FBTransaction, sql s
 	if err != nil {
 		// early check lock state and do not close connection
 		closeConn := true
-		if SafeToRetry(err) {
+		var fbErr *FbError
+		if SafeToRetry(err) || errors.As(err, &fbErr) {
 			closeConn = false
 		}
 		if closeConn {
@@ -1751,6 +1760,7 @@ func (rr *ResultReader) NextRow() bool {
 		if rr.lastFetchResponse != nil && rr.lastFetchResponse.MoreRows() {
 			row, resp, err := rr.pgConn.client.ReceiveSQLData(rr.statementDescription.StatementInfo.FieldDescriptors)
 			if err != nil {
+				rr.err = err
 				return false
 			}
 			rr.lastFetchResponse = resp
@@ -1771,6 +1781,7 @@ func (rr *ResultReader) NextRow() bool {
 
 			fr, err := rr.pgConn.receiveFetchResponse()
 			if err != nil {
+				rr.err = err
 				return false
 			}
 			rr.lastFetchResponse = fr
