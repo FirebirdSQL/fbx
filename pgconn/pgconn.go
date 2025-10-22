@@ -609,13 +609,18 @@ connectLoop:
 		return nil, newPerDialConnectError("failed to flush opAttach", err)
 	}
 
-	resp, err := pgConn.receiveResponse()
+	msg, err := pgConn.receiveMessage()
 	if err != nil {
 		pgConn.conn.Close()
 		return nil, newPerDialConnectError("attachment failed", err)
 	}
-
-	pgConn.dbHandle = resp.Object
+	switch m := msg.(type) {
+	case *fbproto.OpResponse:
+		pgConn.dbHandle = m.Object
+	case *fbproto.ErrorResponse:
+		pgConn.conn.Close()
+		return nil, ErrorResponseToFbError(m)
+	}
 
 	return pgConn, nil
 }
@@ -638,6 +643,10 @@ func (pgConn *PgConn) getStatementInfo(statementHandle int) (*fbproto.StatementI
 		}
 
 		msg, err := pgConn.receiveMessage()
+		if err != nil {
+			pgConn.asyncClose()
+			return nil, err
+		}
 		var respData []byte
 		switch m := msg.(type) {
 		case *fbproto.OpResponse:
@@ -808,40 +817,6 @@ func (pgConn *PgConn) receiveMessage() (fbproto.ServerMessage, error) {
 	}
 
 	return msg, nil
-}
-
-// receiveResponse receives message and expect it is OpResponse type
-func (pgConn *PgConn) receiveResponse() (*fbproto.OpResponse, error) {
-	msg, err := pgConn.receiveMessage()
-
-	if err != nil {
-		return nil, err
-	}
-	switch m := msg.(type) {
-	case *fbproto.OpResponse:
-		return m, nil
-	case *fbproto.ErrorResponse:
-		return nil, ErrorResponseToFbError(m)
-	default:
-		return nil, fmt.Errorf("wrong response message type %v instead expected OpResponse", m)
-	}
-}
-
-// receiveFetchResponse receives message and expect it is OpFetchResponse type
-func (pgConn *PgConn) receiveFetchResponse() (*fbproto.OpFetchResponse, error) {
-	msg, err := pgConn.receiveMessage()
-
-	if err != nil {
-		return nil, err
-	}
-	switch m := msg.(type) {
-	case *fbproto.OpFetchResponse:
-		return m, nil
-	case *fbproto.ErrorResponse:
-		return nil, ErrorResponseToFbError(m)
-	default:
-		return nil, fmt.Errorf("wrong response message type %v instead expected OpFetchResponse", m)
-	}
 }
 
 // Conn returns the underlying net.Conn. This rarely necessary. If the connection will be directly used for reading or
@@ -1758,12 +1733,21 @@ func (rr *ResultReader) NextRow() bool {
 	var err error
 	for !rr.commandConcluded {
 		if rr.lastFetchResponse != nil && rr.lastFetchResponse.MoreRows() {
-			row, resp, err := rr.pgConn.client.ReceiveSQLData(rr.statementDescription.StatementInfo.FieldDescriptors)
+			row, msg, err := rr.pgConn.client.ReceiveSQLData(rr.statementDescription.StatementInfo.FieldDescriptors)
 			if err != nil {
-				rr.err = err
+				rr.pgConn.asyncClose()
+				rr.concludeCommand(CommandTag{}, err)
 				return false
 			}
-			rr.lastFetchResponse = resp
+			switch m := msg.(type) {
+			case *fbproto.OpFetchResponse:
+				rr.lastFetchResponse = m
+			case *fbproto.ErrorResponse:
+				rr.concludeCommand(CommandTag{}, ErrorResponseToFbError(m))
+				return false
+			default:
+				panic(fmt.Sprintf("wrong response message type %T instead expected OpFetchResponse or ErrorResponse", m))
+			}
 			rr.rowValues = row.RowData
 			return true
 		} else if rr.lastFetchResponse == nil || !rr.lastFetchResponse.EndOfCursor() {
@@ -1779,12 +1763,21 @@ func (rr *ResultReader) NextRow() bool {
 				return false
 			}
 
-			fr, err := rr.pgConn.receiveFetchResponse()
+			msg, err := rr.pgConn.receiveMessage()
 			if err != nil {
+				rr.pgConn.asyncClose()
 				rr.err = err
 				return false
 			}
-			rr.lastFetchResponse = fr
+			switch m := msg.(type) {
+			case *fbproto.OpFetchResponse:
+				rr.lastFetchResponse = m
+			case *fbproto.ErrorResponse:
+				rr.concludeCommand(CommandTag{}, ErrorResponseToFbError(m))
+				return false
+			default:
+				panic(fmt.Sprintf("wrong response message type %T instead expected OpFetchResponse or ErrorResponse", m))
+			}
 		} else {
 			return false
 		}
@@ -1836,25 +1829,18 @@ func (rr *ResultReader) readUntilRowDescription() {
 	//}
 }
 
-func (rr *ResultReader) receiveMessage() (msg pgproto3.Response, err error) {
-	//if rr.multiResultReader == nil {
-	//	msg, err = rr.pgConn.receiveMessage()
-	//} else {
-	//	msg, err = rr.multiResultReader.receiveMessage()
-	//}
-	//
-	//if err != nil {
-	//	err = normalizeTimeoutError(rr.ctx, err)
-	//	rr.concludeCommand(CommandTag{}, err)
-	//	rr.pgConn.contextWatcher.Unwatch()
-	//	rr.closed = true
-	//	if rr.multiResultReader == nil {
-	//		rr.pgConn.asyncClose()
-	//	}
-	//
-	//	return nil, rr.err
-	//}
-	//
+func (rr *ResultReader) receiveMessage() (msg fbproto.ServerMessage, err error) {
+	msg, err = rr.pgConn.receiveMessage()
+
+	if err != nil {
+		err = normalizeTimeoutError(rr.ctx, err)
+		rr.concludeCommand(CommandTag{}, err)
+		rr.pgConn.contextWatcher.Unwatch()
+		rr.closed = true
+		rr.pgConn.asyncClose()
+		return nil, rr.err
+	}
+
 	//switch msg := msg.(type) {
 	//case *pgproto3.RowDescription:
 	//	rr.fieldDescriptions = rr.pgConn.convertRowDescription(rr.pgConn.fieldDescriptions[:], msg)
@@ -2374,10 +2360,19 @@ func (pgConn *PgConn) StartTransactionTPB(ctx context.Context, tpb []byte) (*FBT
 		return nil, err
 	}
 
-	if resp, err := pgConn.receiveResponse(); err == nil {
-		return &FBTransaction{Connection: pgConn, Handle: resp.Object, Closed: false}, nil
-	} else {
+	msg, err := pgConn.receiveMessage()
+	if err != nil {
+		pgConn.asyncClose()
 		return nil, err
+	}
+
+	switch m := msg.(type) {
+	case *fbproto.OpResponse:
+		return &FBTransaction{Connection: pgConn, Handle: m.Object, Closed: false}, nil
+	case *fbproto.ErrorResponse:
+		return nil, ErrorResponseToFbError(m)
+	default:
+		return nil, fmt.Errorf("received unexpected message: %v", m)
 	}
 }
 

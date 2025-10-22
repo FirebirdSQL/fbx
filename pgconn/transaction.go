@@ -48,8 +48,14 @@ func (tx *FBTransaction) Commit(ctx context.Context) error {
 		return err
 	}
 
-	if _, err = tx.Connection.receiveResponse(); err == nil {
+	msg, err := tx.Connection.receiveMessage()
+	if err != nil {
+		tx.Connection.asyncClose()
 		return err
+	}
+	switch m := msg.(type) {
+	case *fbproto.ErrorResponse:
+		return ErrorResponseToFbError(m)
 	}
 
 	return nil
@@ -88,8 +94,14 @@ func (tx *FBTransaction) Rollback(ctx context.Context) error {
 		return err
 	}
 
-	if _, err = tx.Connection.receiveResponse(); err == nil {
+	msg, err := tx.Connection.receiveMessage()
+	if err != nil {
+		tx.Connection.asyncClose()
 		return err
+	}
+	switch m := msg.(type) {
+	case *fbproto.ErrorResponse:
+		return ErrorResponseToFbError(m)
 	}
 
 	return nil

@@ -153,10 +153,18 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 		return rr
 	}
 
-	_, err = st.conn.receiveResponse()
+	msg, err := st.conn.receiveMessage()
 	if err != nil {
 		st.conn.asyncClose()
 		rr.concludeCommand(CommandTag{}, err)
+		st.conn.contextWatcher.Unwatch()
+		rr.closed = true
+		return rr
+	}
+
+	switch r := msg.(type) {
+	case *fbproto.ErrorResponse:
+		rr.concludeCommand(CommandTag{}, ErrorResponseToFbError(r))
 		st.conn.contextWatcher.Unwatch()
 		rr.closed = true
 		return rr

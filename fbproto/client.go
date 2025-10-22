@@ -193,41 +193,16 @@ func (c *Client) ReceiveMessage() (ServerMessage, error) {
 	return msg, nil
 }
 
-func (c *Client) ReceiveResponse() (*OpResponse, error) {
-	msg, err := c.ReceiveMessage()
-	if err != nil {
-		return nil, err
-	}
-	switch m := msg.(type) {
-	case *OpResponse:
-		return m, nil
-	default:
-		return nil, fmt.Errorf("wrong response message type %T instead expected OpResponse", m)
-	}
-}
-
-func (c *Client) ReceiveFetchResponse() (*OpFetchResponse, error) {
-	msg, err := c.ReceiveMessage()
-	if err != nil {
-		return nil, err
-	}
-	switch m := msg.(type) {
-	case *OpFetchResponse:
-		return m, nil
-	default:
-		return nil, fmt.Errorf("wrong response message type %T instead expected OpFetchResponse", m)
-	}
-}
-
-func (c *Client) ReceiveSQLData(row []FieldDescriptor) (*SQLData, *OpFetchResponse, error) {
+func (c *Client) ReceiveSQLData(row []FieldDescriptor) (*SQLData, ServerMessage, error) {
 	var sqlData *SQLData
 	var err error
 	if sqlData, err = ReadRowData(c.xdrReader, row); err != nil {
 		return nil, nil, err
 	}
-	if fetchResp, err := c.ReceiveFetchResponse(); err != nil {
+
+	msg, err := c.ReceiveMessage()
+	if err != nil {
 		return nil, nil, err
-	} else {
-		return sqlData, fetchResp, nil
 	}
+	return sqlData, msg, nil
 }
