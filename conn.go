@@ -834,9 +834,9 @@ optionLoop:
 		rows.fatal(err)
 		return rows, rows.err
 	}
-	//
-	//	c.eqb.reset() // Allow c.eqb internal memory to be GC'ed as soon as possible.
-	//
+
+	c.eqb.reset() // Allow c.eqb internal memory to be GC'ed as soon as possible.
+
 	return rows, rows.err
 }
 
