@@ -310,6 +310,36 @@ func TestParseConfig(t *testing.T) {
 				RuntimeParams: map[string]string{},
 			},
 		},
+		{
+			name:       "database url with unix path to database",
+			connString: "firebird://user:secret@localhost:3050//db/mydb.fdb",
+			config: &pgconn.Config{
+				User:           "user",
+				Password:       "secret",
+				Host:           "localhost",
+				Port:           3050,
+				Database:       "/db/mydb.fdb",
+				ConnectTimeout: 5 * time.Second,
+				RuntimeParams: map[string]string{
+					"application_name": "pgxtest",
+				},
+			},
+		},
+		{
+			name:       "database url with windows path to database",
+			connString: "firebird://user:secret@localhost:3050/c:\\db\\mydb.fdb",
+			config: &pgconn.Config{
+				User:           "user",
+				Password:       "secret",
+				Host:           "localhost",
+				Port:           3050,
+				Database:       "c:\\db\\mydb.fdb",
+				ConnectTimeout: 5 * time.Second,
+				RuntimeParams: map[string]string{
+					"application_name": "pgxtest",
+				},
+			},
+		},
 	}
 
 	for i, tt := range tests {

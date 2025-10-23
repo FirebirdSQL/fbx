@@ -426,8 +426,12 @@ func parseURLSettings(connString string) (map[string]string, error) {
 		settings["port"] = strings.Join(ports, ",")
 	}
 
+	var database string
+	if len(parsedURL.Path) > 0 {
+		database = parsedURL.Path[1:]
+	}
 	if parsedURL.Path != "" {
-		settings["database"] = parsedURL.Path
+		settings["database"] = database
 	}
 
 	nameMap := map[string]string{
