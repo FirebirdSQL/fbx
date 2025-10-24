@@ -2,6 +2,7 @@ package pgconn
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/red-soft/fbx/fbproto"
 )
@@ -64,6 +65,14 @@ func (sd *StatementDescription) GetQueryType() int {
 		return StatementSavepoint
 	}
 	panic("unknown statement type")
+}
+
+func (sd *StatementDescription) HaveCursorResult() bool {
+	return sd.GetQueryType() == StatementSelect || sd.GetQueryType() == StatementSelectForUpdate
+}
+
+func (sd *StatementDescription) HaveSingletonResult() bool {
+	return sd.GetQueryType() == StatementProcedure && len(sd.Fields) > 0
 }
 
 type Statement struct {
@@ -131,11 +140,20 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 		}
 	}
 
+	execKind := fbproto.Op_execute
+	var rowBlr []byte
+	if st.Description.HaveSingletonResult() {
+		execKind = fbproto.Op_execute2
+		rowBlr = st.Description.StatementInfo.GetRowBlr()
+	}
+
 	if err = st.conn.client.WriteMessage(&fbproto.OpExecute{
+		Kind:                  execKind,
 		TransactionHandle:     tx.Handle,
 		StatementHandle:       st.Description.StatementHandle,
 		ParametersDescriptors: st.Description.StatementInfo.ParametersDescriptors,
 		SQLDataBlr:            st.Description.StatementInfo.GetParametersBlr(),
+		SQLDataOutBlr:         rowBlr,
 		SQLData:               paramValues,
 	}); err != nil {
 		st.conn.asyncClose()
@@ -162,15 +180,50 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 		return rr
 	}
 
-	switch r := msg.(type) {
-	case *fbproto.ErrorResponse:
-		rr.concludeCommand(CommandTag{}, ErrorResponseToFbError(r))
-		st.conn.contextWatcher.Unwatch()
-		rr.closed = true
-		return rr
+	if st.Description.HaveSingletonResult() {
+		switch r := msg.(type) {
+		case *fbproto.OpSqlResponse:
+			row, dataResp, err := st.conn.client.ReceiveSQLData(st.Description.StatementInfo.FieldDescriptors)
+			if err != nil {
+				st.conn.asyncClose()
+				rr.concludeCommand(CommandTag{}, err)
+				st.conn.contextWatcher.Unwatch()
+				rr.closed = true
+				return rr
+			}
+			switch d := dataResp.(type) {
+			case *fbproto.OpResponse:
+				rr.singleton = row
+			case *fbproto.ErrorResponse:
+				rr.concludeCommand(CommandTag{}, ErrorResponseToFbError(d))
+				st.conn.contextWatcher.Unwatch()
+				rr.closed = true
+				return rr
+			}
+		case *fbproto.ErrorResponse:
+			rr.concludeCommand(CommandTag{}, ErrorResponseToFbError(r))
+			st.conn.contextWatcher.Unwatch()
+			rr.closed = true
+			return rr
+		default:
+			panic(fmt.Sprintf("unexpected response type %T", msg))
+		}
+	} else {
+		switch r := msg.(type) {
+		case *fbproto.OpResponse:
+		case *fbproto.ErrorResponse:
+			rr.concludeCommand(CommandTag{}, ErrorResponseToFbError(r))
+			st.conn.contextWatcher.Unwatch()
+			rr.closed = true
+			return rr
+		default:
+			panic(fmt.Sprintf("unexpected response type %T", msg))
+		}
 	}
 
-	st.cursorOpened = st.Description.GetQueryType() == StatementSelect
+	st.cursorOpened = st.Description.HaveCursorResult()
+	rr.cursorOpened = st.Description.HaveCursorResult()
+	rr.singletonResult = st.Description.HaveSingletonResult()
 	return rr
 }
 

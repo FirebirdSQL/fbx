@@ -3491,3 +3491,42 @@ func TestCancelRequestContextWatcherHandler(t *testing.T) {
 		})
 	}
 }
+
+func TestReadSingletonResult(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Second)
+	defer cancel()
+
+	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	require.NoError(t, err)
+	defer closeConn(t, pgConn)
+
+	_, err = pgConn.Exec(ctx, `
+recreate procedure `+t.Name()+`(a int, b int) returns (c int)
+as
+begin
+    c = a + b;
+    suspend;
+end
+`).Close()
+	require.NoError(t, err)
+	require.NoError(t, pgConn.Commit(ctx))
+
+	res := pgConn.Exec(ctx, `execute procedure `+t.Name()+` 1, 2`).Read()
+	require.NoError(t, res.Err)
+	assert.Equal(t, 3, int(res.Rows[0][0][3]))
+
+	_, err = pgConn.Exec(ctx, `
+recreate procedure `+t.Name()+`(a int, b int)
+as
+begin
+end
+`).Close()
+	require.NoError(t, err)
+	require.NoError(t, pgConn.Commit(ctx))
+
+	res = pgConn.Exec(ctx, `execute procedure `+t.Name()+` 1, 2`).Read()
+	require.NoError(t, res.Err)
+	assert.Equal(t, 0, len(res.Rows))
+}

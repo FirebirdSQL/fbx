@@ -1675,8 +1675,7 @@ func (mrr *MultiResultReader) Close() error {
 // ResultReader is a reader for the result of a single query.
 type ResultReader struct {
 	pgConn *PgConn
-	//pipeline          *Pipeline
-	ctx context.Context
+	ctx    context.Context
 
 	fieldDescriptions []FieldDescription
 	rowValues         [][]byte
@@ -1687,6 +1686,9 @@ type ResultReader struct {
 
 	statementDescription *StatementDescription
 	lastFetchResponse    *fbproto.OpFetchResponse
+	singleton            *fbproto.SQLData
+	singletonResult      bool
+	cursorOpened         bool
 }
 
 // Result is the saved query response that is returned by calling Read on a ResultReader.
@@ -1727,6 +1729,19 @@ func (rr *ResultReader) Read() *Result {
 func (rr *ResultReader) NextRow() bool {
 	var err error
 	for !rr.commandConcluded {
+		if rr.singletonResult {
+			if rr.singleton == nil {
+				return false
+			}
+			rr.rowValues = rr.singleton.RowData
+			rr.singleton = nil
+			return true
+		}
+
+		if !rr.cursorOpened {
+			return false
+		}
+
 		if rr.lastFetchResponse != nil && rr.lastFetchResponse.MoreRows() {
 			row, msg, err := rr.pgConn.client.ReceiveSQLData(rr.statementDescription.StatementInfo.FieldDescriptors)
 			if err != nil {

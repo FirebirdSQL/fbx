@@ -153,6 +153,8 @@ func (c *Client) ReadMessage() (ServerMessage, error) {
 		msg = &OpReject{}
 	case Op_fetch_response:
 		msg = &OpFetchResponse{}
+	case Op_sql_response:
+		msg = &OpSqlResponse{}
 	case Op_cont_auth:
 		msg = &OpContAuth{Encoding: c.Encoding}
 	default:
