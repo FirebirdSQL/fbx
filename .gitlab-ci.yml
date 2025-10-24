@@ -37,4 +37,10 @@ test:
     - cp ci/firebird.conf /opt/RedDatabase
     - /etc/init.d/firebird start
   script:
-    - go test $(go list ./... | grep -v /vendor/)
+    - go test $(go list ./... | grep -v /vendor/) -coverprofile cover.out
+  after_script:
+    - go tool cover -html cover.out -o cover.html
+  artifacts:
+    when: always
+    paths:
+      - cover.html
