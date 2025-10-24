@@ -3,7 +3,6 @@ package pgx_test
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -1045,58 +1044,57 @@ func TestConnSendBatchErrorDoesNotLeaveOrphanedPreparedStatement(t *testing.T) {
 }
 
 func ExampleConn_SendBatch() {
-	return
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	conn, err := pgx.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
-	if err != nil {
-		fmt.Printf("Unable to establish connection: %v", err)
-		return
-	}
-
-	batch := &pgx.Batch{}
-	batch.Queue("select 1 + 1").QueryRow(func(row pgx.Row) error {
-		var n int32
-		err := row.Scan(&n)
-		if err != nil {
-			return err
-		}
-
-		fmt.Println(n)
-
-		return err
-	})
-
-	batch.Queue("select 1 + 2").QueryRow(func(row pgx.Row) error {
-		var n int32
-		err := row.Scan(&n)
-		if err != nil {
-			return err
-		}
-
-		fmt.Println(n)
-
-		return err
-	})
-
-	batch.Queue("select 2 + 3").QueryRow(func(row pgx.Row) error {
-		var n int32
-		err := row.Scan(&n)
-		if err != nil {
-			return err
-		}
-
-		fmt.Println(n)
-
-		return err
-	})
-
-	err = conn.SendBatch(ctx, batch).Close()
-	if err != nil {
-		fmt.Printf("SendBatch error: %v", err)
-		return
-	}
+	//ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	//defer cancel()
+	//
+	//conn, err := pgx.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	//if err != nil {
+	//	fmt.Printf("Unable to establish connection: %v", err)
+	//	return
+	//}
+	//
+	//batch := &pgx.Batch{}
+	//batch.Queue("select 1 + 1").QueryRow(func(row pgx.Row) error {
+	//	var n int32
+	//	err := row.Scan(&n)
+	//	if err != nil {
+	//		return err
+	//	}
+	//
+	//	fmt.Println(n)
+	//
+	//	return err
+	//})
+	//
+	//batch.Queue("select 1 + 2").QueryRow(func(row pgx.Row) error {
+	//	var n int32
+	//	err := row.Scan(&n)
+	//	if err != nil {
+	//		return err
+	//	}
+	//
+	//	fmt.Println(n)
+	//
+	//	return err
+	//})
+	//
+	//batch.Queue("select 2 + 3").QueryRow(func(row pgx.Row) error {
+	//	var n int32
+	//	err := row.Scan(&n)
+	//	if err != nil {
+	//		return err
+	//	}
+	//
+	//	fmt.Println(n)
+	//
+	//	return err
+	//})
+	//
+	//err = conn.SendBatch(ctx, batch).Close()
+	//if err != nil {
+	//	fmt.Printf("SendBatch error: %v", err)
+	//	return
+	//}
 
 	// Output:
 	// 2
