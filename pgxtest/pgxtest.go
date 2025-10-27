@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	pgx "github.com/red-soft/fbx"
+	"github.com/stretchr/testify/require"
 )
 
 var AllQueryExecModes = []pgx.QueryExecMode{
@@ -121,13 +122,13 @@ func RunValueRoundTripTests(
 	ctr.RunTest(ctx, t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
 		t.Helper()
 
-		sql := fmt.Sprintf("select $1::%s", pgTypeName)
+		sql := fmt.Sprintf("select cast(? as %s) from rdb$database", pgTypeName)
 
 		for i, tt := range tests {
 			for _, mode := range modes {
 				err := conn.QueryRow(ctx, sql, mode, tt.Param).Scan(tt.Result)
 				if err != nil {
-					t.Errorf("%d. %v: %v", i, mode, err)
+					require.NoError(t, err, "%d. %v: %v", i, mode, err)
 				}
 
 				result := reflect.ValueOf(tt.Result)
