@@ -145,6 +145,8 @@ type baseRows struct {
 	sql       string
 	args      []any
 	rowCount  int
+
+	boundStatement *pgconn.Statement
 }
 
 func (rows *baseRows) FieldDescriptions() []pgconn.FieldDescription {
@@ -154,6 +156,10 @@ func (rows *baseRows) FieldDescriptions() []pgconn.FieldDescription {
 func (rows *baseRows) Close() {
 	if rows.closed {
 		return
+	}
+
+	if rows.boundStatement != nil {
+		defer rows.boundStatement.Close(rows.ctx)
 	}
 
 	rows.closed = true
@@ -185,7 +191,7 @@ func (rows *baseRows) Close() {
 	rows.values = nil
 	rows.scanPlans = nil
 	rows.scanTypes = nil
-	rows.ctx = nil
+	//rows.ctx = nil
 	rows.sql = ""
 	rows.args = nil
 }

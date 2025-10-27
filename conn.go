@@ -544,7 +544,12 @@ optionLoop:
 
 		return c.execPrepared(ctx, tx, st, arguments)
 	case QueryExecModeExec:
-		return c.execSQLParams(ctx, tx, sql, arguments)
+		st, err := c.internalPrepare(ctx, tx, stmtcache.StatementName(sql), sql)
+		if err != nil {
+			return pgconn.QueryStatus{}, err
+		}
+		defer st.Close(ctx)
+		return c.execPrepared(ctx, tx, st, arguments)
 	case QueryExecModeSimpleProtocol:
 		return c.execSimpleProtocol(ctx, tx, sql, arguments)
 	default:
@@ -585,17 +590,17 @@ func (c *Conn) execParams(ctx context.Context, tx *dbTx, sd *pgconn.StatementDes
 	return result.QueryStatus, result.Err
 }
 
-func (c *Conn) execPrepared(ctx context.Context, tx *dbTx, sd *pgconn.Statement, arguments []any) (pgconn.QueryStatus, error) {
-	err := c.eqb.Build(c.typeMap, sd.Description, arguments)
+func (c *Conn) execPrepared(ctx context.Context, tx *dbTx, st *pgconn.Statement, arguments []any) (pgconn.QueryStatus, error) {
+	err := c.eqb.Build(c.typeMap, st.Description, arguments)
 	if err != nil {
 		return pgconn.QueryStatus{}, err
 	}
 
 	var result *pgconn.Result
 	if tx != nil {
-		result = sd.ExecTx(ctx, tx.tx, c.eqb.ParamValues).Read()
+		result = st.ExecTx(ctx, tx.tx, c.eqb.ParamValues).Read()
 	} else {
-		result = sd.Exec(ctx, c.eqb.ParamValues).Read()
+		result = st.Exec(ctx, c.eqb.ParamValues).Read()
 	}
 	c.eqb.reset() // Allow c.eqb internal memory to be GC'ed as soon as possible.
 	return result.QueryStatus, result.Err
@@ -809,13 +814,24 @@ optionLoop:
 			rows.resultReader = st.Exec(ctx, c.eqb.ParamValues)
 		}
 	} else if mode == QueryExecModeExec {
-		err := c.eqb.Build(c.typeMap, nil, args)
+		st, err = c.internalPrepare(ctx, tx, sql, sql)
 		if err != nil {
+			rows.fatal(err)
+			return rows, err
+		}
+
+		err = c.eqb.Build(c.typeMap, st.Description, args)
+		if err != nil {
+			st.Close(ctx)
 			rows.fatal(err)
 			return rows, rows.err
 		}
 
-		rows.resultReader = c.pgConn.ExecParams(ctx, sql, c.eqb.ParamValues)
+		if tx != nil {
+			rows.resultReader = st.ExecTx(ctx, tx.tx, c.eqb.ParamValues)
+		} else {
+			rows.resultReader = st.Exec(ctx, c.eqb.ParamValues)
+		}
 	} else if mode == QueryExecModeSimpleProtocol {
 		sql, err = c.sanitizeForSimpleQuery(sql, args...)
 		if err != nil {
