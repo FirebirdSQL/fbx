@@ -625,10 +625,10 @@ func (p *Pool) Stat() *Stat {
 // SQL can be either a prepared statement name or an SQL string.
 // Arguments should be referenced positionally from the SQL string as $1, $2, etc.
 // The acquired connection is returned to the pool when the Exec function returns.
-func (p *Pool) Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
+func (p *Pool) Exec(ctx context.Context, sql string, arguments ...any) (pgconn.QueryStatus, error) {
 	c, err := p.Acquire(ctx)
 	if err != nil {
-		return pgconn.CommandTag{}, err
+		return pgconn.QueryStatus{}, err
 	}
 	defer c.Release()
 

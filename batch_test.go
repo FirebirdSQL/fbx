@@ -172,17 +172,17 @@ func TestConnSendBatchQueuedQuery(t *testing.T) {
 
 		batch := &pgx.Batch{}
 
-		batch.Queue("insert into ledger(description, amount) values($1, $2)", "q1", 1).Exec(func(ct pgconn.CommandTag) error {
+		batch.Queue("insert into ledger(description, amount) values($1, $2)", "q1", 1).Exec(func(ct pgconn.QueryStatus) error {
 			assert.EqualValues(t, 1, ct.RowsAffected())
 			return nil
 		})
 
-		batch.Queue("insert into ledger(description, amount) values($1, $2)", "q2", 2).Exec(func(ct pgconn.CommandTag) error {
+		batch.Queue("insert into ledger(description, amount) values($1, $2)", "q2", 2).Exec(func(ct pgconn.QueryStatus) error {
 			assert.EqualValues(t, 1, ct.RowsAffected())
 			return nil
 		})
 
-		batch.Queue("insert into ledger(description, amount) values($1, $2)", "q3", 3).Exec(func(ct pgconn.CommandTag) error {
+		batch.Queue("insert into ledger(description, amount) values($1, $2)", "q3", 3).Exec(func(ct pgconn.QueryStatus) error {
 			assert.EqualValues(t, 1, ct.RowsAffected())
 			return nil
 		})

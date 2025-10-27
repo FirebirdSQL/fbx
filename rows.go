@@ -34,8 +34,8 @@ type Rows interface {
 	// executing the query.
 	Err() error
 
-	// CommandTag returns the command tag from this query. It is only available after Rows is closed.
-	CommandTag() pgconn.CommandTag
+	// QueryStatus returns status of query. It is only available after Rows is closed.
+	QueryStatus() pgconn.QueryStatus
 
 	// FieldDescriptions returns the field descriptions of the columns. It may return nil. In particular this can occur
 	// when there was an error executing the query.
@@ -128,7 +128,7 @@ type baseRows struct {
 
 	values [][]byte
 
-	commandTag pgconn.CommandTag
+	commandTag pgconn.QueryStatus
 	err        error
 	closed     bool
 
@@ -190,7 +190,7 @@ func (rows *baseRows) Close() {
 	rows.args = nil
 }
 
-func (rows *baseRows) CommandTag() pgconn.CommandTag {
+func (rows *baseRows) QueryStatus() pgconn.QueryStatus {
 	return rows.commandTag
 }
 
@@ -390,26 +390,26 @@ func RowsFromResultReader(typeMap *pgtype.Map, resultReader *pgconn.ResultReader
 // ForEachRow iterates through rows. For each row it scans into the elements of scans and calls fn. If any row
 // fails to scan or fn returns an error the query will be aborted and the error will be returned. Rows will be closed
 // when ForEachRow returns.
-func ForEachRow(rows Rows, scans []any, fn func() error) (pgconn.CommandTag, error) {
+func ForEachRow(rows Rows, scans []any, fn func() error) (pgconn.QueryStatus, error) {
 	defer rows.Close()
 
 	for rows.Next() {
 		err := rows.Scan(scans...)
 		if err != nil {
-			return pgconn.CommandTag{}, err
+			return pgconn.QueryStatus{}, err
 		}
 
 		err = fn()
 		if err != nil {
-			return pgconn.CommandTag{}, err
+			return pgconn.QueryStatus{}, err
 		}
 	}
 
 	if err := rows.Err(); err != nil {
-		return pgconn.CommandTag{}, err
+		return pgconn.QueryStatus{}, err
 	}
 
-	return rows.CommandTag(), nil
+	return rows.QueryStatus(), nil
 }
 
 // CollectableRow is the subset of Rows methods that a RowToFunc is allowed to call.

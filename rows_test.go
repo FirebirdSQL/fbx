@@ -104,7 +104,7 @@ func TestForEachRowScanError(t *testing.T) {
 			return nil
 		})
 		require.EqualError(t, err, "can't scan into dest[0]: cannot scan text (OID 25) in text format into *int")
-		require.Equal(t, pgconn.CommandTag{}, ct)
+		require.Equal(t, pgconn.QueryStatus{}, ct)
 	})
 }
 
@@ -125,7 +125,7 @@ func TestForEachRowAbort(t *testing.T) {
 			return errors.New("abort")
 		})
 		require.EqualError(t, err, "abort")
-		require.Equal(t, pgconn.CommandTag{}, ct)
+		require.Equal(t, pgconn.QueryStatus{}, ct)
 	})
 }
 

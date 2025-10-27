@@ -42,7 +42,7 @@ func (qq *QueuedQuery) QueryRow(fn func(row Row) error) {
 }
 
 // Exec sets fn to be called when the response to qq is received.
-func (qq *QueuedQuery) Exec(fn func(ct pgconn.CommandTag) error) {
+func (qq *QueuedQuery) Exec(fn func(ct pgconn.QueryStatus) error) {
 	qq.Fn = func(br BatchResults) error {
 		ct, err := br.Exec()
 		if err != nil {
@@ -83,7 +83,7 @@ func (b *Batch) Len() int {
 type BatchResults interface {
 	// Exec reads the results from the next query in the batch as if the query has been sent with Conn.Exec. Prefer
 	// calling Exec on the QueuedQuery.
-	Exec() (pgconn.CommandTag, error)
+	Exec() (pgconn.QueryStatus, error)
 
 	// Query reads the results from the next query in the batch as if the query has been sent with Conn.Query. Prefer
 	// calling Query on the QueuedQuery.
@@ -118,12 +118,12 @@ type batchResults struct {
 }
 
 // Exec reads the results from the next query in the batch as if the query has been sent with Exec.
-func (br *batchResults) Exec() (pgconn.CommandTag, error) {
+func (br *batchResults) Exec() (pgconn.QueryStatus, error) {
 	//if br.err != nil {
-	//	return pgconn.CommandTag{}, br.err
+	//	return pgconn.QueryStatus{}, br.err
 	//}
 	//if br.closed {
-	//	return pgconn.CommandTag{}, fmt.Errorf("batch already closed")
+	//	return pgconn.QueryStatus{}, fmt.Errorf("batch already closed")
 	//}
 	//
 	//query, arguments, _ := br.nextQueryAndArgs()
@@ -140,7 +140,7 @@ func (br *batchResults) Exec() (pgconn.CommandTag, error) {
 	//			Err:  err,
 	//		})
 	//	}
-	//	return pgconn.CommandTag{}, err
+	//	return pgconn.QueryStatus{}, err
 	//}
 	//
 	//commandTag, err := br.mrr.ResultReader().Close()
@@ -153,7 +153,7 @@ func (br *batchResults) Exec() (pgconn.CommandTag, error) {
 	//	br.conn.batchTracer.TraceBatchQuery(br.ctx, br.conn, TraceBatchQueryData{
 	//		SQL:        query,
 	//		Args:       arguments,
-	//		CommandTag: commandTag,
+	//		QueryStatus: commandTag,
 	//		Err:        br.err,
 	//	})
 	//}
@@ -282,40 +282,40 @@ type pipelineBatchResults struct {
 }
 
 // Exec reads the results from the next query in the batch as if the query has been sent with Exec.
-func (br *pipelineBatchResults) Exec() (pgconn.CommandTag, error) {
+func (br *pipelineBatchResults) Exec() (pgconn.QueryStatus, error) {
 	//if br.err != nil {
-	//	return pgconn.CommandTag{}, br.err
+	//	return pgconn.QueryStatus{}, br.err
 	//}
 	//if br.closed {
-	//	return pgconn.CommandTag{}, fmt.Errorf("batch already closed")
+	//	return pgconn.QueryStatus{}, fmt.Errorf("batch already closed")
 	//}
 	//if br.lastRows != nil && br.lastRows.err != nil {
-	//	return pgconn.CommandTag{}, br.err
+	//	return pgconn.QueryStatus{}, br.err
 	//}
 	//
 	//query, arguments, err := br.nextQueryAndArgs()
 	//if err != nil {
-	//	return pgconn.CommandTag{}, err
+	//	return pgconn.QueryStatus{}, err
 	//}
 	//
 	//results, err := br.pipeline.GetResults()
 	//if err != nil {
 	//	br.err = err
-	//	return pgconn.CommandTag{}, br.err
+	//	return pgconn.QueryStatus{}, br.err
 	//}
-	//var commandTag pgconn.CommandTag
+	//var commandTag pgconn.QueryStatus
 	//switch results := results.(type) {
 	//case *pgconn.ResultReader:
 	//	commandTag, br.err = results.Close()
 	//default:
-	//	return pgconn.CommandTag{}, fmt.Errorf("unexpected pipeline result: %T", results)
+	//	return pgconn.QueryStatus{}, fmt.Errorf("unexpected pipeline result: %T", results)
 	//}
 	//
 	//if br.conn.batchTracer != nil {
 	//	br.conn.batchTracer.TraceBatchQuery(br.ctx, br.conn, TraceBatchQueryData{
 	//		SQL:        query,
 	//		Args:       arguments,
-	//		CommandTag: commandTag,
+	//		QueryStatus: commandTag,
 	//		Err:        br.err,
 	//	})
 	//}

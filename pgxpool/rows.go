@@ -11,7 +11,7 @@ type errRows struct {
 
 func (errRows) Close()                                       {}
 func (e errRows) Err() error                                 { return e.err }
-func (errRows) CommandTag() pgconn.CommandTag                { return pgconn.CommandTag{} }
+func (errRows) QueryStatus() pgconn.QueryStatus              { return pgconn.QueryStatus{} }
 func (errRows) FieldDescriptions() []pgconn.FieldDescription { return nil }
 func (errRows) Next() bool                                   { return false }
 func (e errRows) Scan(dest ...any) error                     { return e.err }
@@ -46,8 +46,8 @@ func (rows *poolRows) Err() error {
 	return rows.r.Err()
 }
 
-func (rows *poolRows) CommandTag() pgconn.CommandTag {
-	return rows.r.CommandTag()
+func (rows *poolRows) QueryStatus() pgconn.QueryStatus {
+	return rows.r.QueryStatus()
 }
 
 func (rows *poolRows) FieldDescriptions() []pgconn.FieldDescription {

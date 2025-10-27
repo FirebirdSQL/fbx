@@ -21,7 +21,7 @@ type TraceQueryStartData struct {
 }
 
 type TraceQueryEndData struct {
-	CommandTag pgconn.CommandTag
+	CommandTag pgconn.QueryStatus
 	Err        error
 }
 
@@ -42,7 +42,7 @@ type TraceBatchStartData struct {
 type TraceBatchQueryData struct {
 	SQL        string
 	Args       []any
-	CommandTag pgconn.CommandTag
+	CommandTag pgconn.QueryStatus
 	Err        error
 }
 
@@ -65,7 +65,7 @@ type TraceCopyFromStartData struct {
 }
 
 type TraceCopyFromEndData struct {
-	CommandTag pgconn.CommandTag
+	CommandTag pgconn.QueryStatus
 	Err        error
 }
 

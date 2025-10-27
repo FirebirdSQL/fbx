@@ -20,7 +20,7 @@ func waitForReleaseToComplete() {
 }
 
 type execer interface {
-	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.QueryStatus, error)
 }
 
 func testExec(t *testing.T, ctx context.Context, db execer) {

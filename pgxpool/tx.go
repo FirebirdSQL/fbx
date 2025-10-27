@@ -66,7 +66,7 @@ func (tx *Tx) Prepare(ctx context.Context, name, sql string) (*pgconn.StatementD
 	return tx.t.Prepare(ctx, name, sql)
 }
 
-func (tx *Tx) Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
+func (tx *Tx) Exec(ctx context.Context, sql string, arguments ...any) (pgconn.QueryStatus, error) {
 	return tx.t.Exec(ctx, sql, arguments...)
 }
 

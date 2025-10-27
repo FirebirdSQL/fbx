@@ -9,8 +9,8 @@ type errBatchResults struct {
 	err error
 }
 
-func (br errBatchResults) Exec() (pgconn.CommandTag, error) {
-	return pgconn.CommandTag{}, br.err
+func (br errBatchResults) Exec() (pgconn.QueryStatus, error) {
+	return pgconn.QueryStatus{}, br.err
 }
 
 func (br errBatchResults) Query() (pgx.Rows, error) {
@@ -30,7 +30,7 @@ type poolBatchResults struct {
 	c  *Conn
 }
 
-func (br *poolBatchResults) Exec() (pgconn.CommandTag, error) {
+func (br *poolBatchResults) Exec() (pgconn.QueryStatus, error) {
 	return br.br.Exec()
 }
 

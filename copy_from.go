@@ -202,7 +202,7 @@ func (ct *copyFrom) run(ctx context.Context) (int64, error) {
 	//
 	//if ct.conn.copyFromTracer != nil {
 	//	ct.conn.copyFromTracer.TraceCopyFromEnd(ctx, ct.conn, TraceCopyFromEndData{
-	//		CommandTag: commandTag,
+	//		QueryStatus: commandTag,
 	//		Err:        err,
 	//	})
 	//}

@@ -131,7 +131,7 @@ type Tx interface {
 
 	Prepare(ctx context.Context, name, sql string) (*pgconn.StatementDescription, error)
 
-	Exec(ctx context.Context, sql string, arguments ...any) (commandTag pgconn.CommandTag, err error)
+	Exec(ctx context.Context, sql string, arguments ...any) (commandTag pgconn.QueryStatus, err error)
 	Query(ctx context.Context, sql string, args ...any) (Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) Row
 
@@ -201,9 +201,9 @@ func (tx *dbTx) Rollback(ctx context.Context) error {
 }
 
 // Exec delegates to the underlying *Conn
-func (tx *dbTx) Exec(ctx context.Context, sql string, arguments ...any) (commandTag pgconn.CommandTag, err error) {
+func (tx *dbTx) Exec(ctx context.Context, sql string, arguments ...any) (commandTag pgconn.QueryStatus, err error) {
 	if tx.closed {
-		return pgconn.CommandTag{}, ErrTxClosed
+		return pgconn.QueryStatus{}, ErrTxClosed
 	}
 
 	return tx.conn.execTx(ctx, tx, sql, arguments...)
@@ -303,9 +303,9 @@ func (sp *dbSimulatedNestedTx) Rollback(ctx context.Context) error {
 }
 
 // Exec delegates to the underlying Tx
-func (sp *dbSimulatedNestedTx) Exec(ctx context.Context, sql string, arguments ...any) (commandTag pgconn.CommandTag, err error) {
+func (sp *dbSimulatedNestedTx) Exec(ctx context.Context, sql string, arguments ...any) (commandTag pgconn.QueryStatus, err error) {
 	if sp.closed {
-		return pgconn.CommandTag{}, ErrTxClosed
+		return pgconn.QueryStatus{}, ErrTxClosed
 	}
 
 	return sp.tx.Exec(ctx, sql, arguments...)

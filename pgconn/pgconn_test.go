@@ -862,7 +862,7 @@ func TestConnExecParamsCanceled(t *testing.T) {
 	}
 	assert.Equal(t, 0, rowCount)
 	commandTag, err := result.Close()
-	assert.Equal(t, pgconn.CommandTag{}, commandTag)
+	assert.Equal(t, pgconn.QueryStatus{}, commandTag)
 	assert.True(t, pgconn.Timeout(err))
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
 
@@ -904,7 +904,7 @@ func TestConnExecParamsEmptySQL(t *testing.T) {
 	defer closeConn(t, pgConn)
 
 	result := pgConn.ExecParams(ctx, "", nil).Read()
-	assert.Equal(t, pgconn.CommandTag{}, result.CommandTag)
+	assert.Equal(t, pgconn.QueryStatus{}, result.CommandTag)
 	assert.Len(t, result.Rows, 0)
 	assert.NoError(t, result.Err)
 
@@ -1088,7 +1088,7 @@ func TestConnExecPreparedCanceled(t *testing.T) {
 	}
 	assert.Equal(t, 0, rowCount)
 	commandTag, err := result.Close()
-	assert.Equal(t, pgconn.CommandTag{}, commandTag)
+	assert.Equal(t, pgconn.QueryStatus{}, commandTag)
 	assert.True(t, pgconn.Timeout(err))
 	assert.True(t, pgConn.IsClosed())
 	select {
@@ -1136,7 +1136,7 @@ func TestConnExecPreparedEmptySQL(t *testing.T) {
 	require.NoError(t, err)
 
 	result := ps.Exec(ctx, nil).Read()
-	assert.Equal(t, pgconn.CommandTag{}, result.CommandTag)
+	assert.Equal(t, pgconn.QueryStatus{}, result.CommandTag)
 	assert.Len(t, result.Rows, 0)
 	assert.NoError(t, result.Err)
 
@@ -1167,15 +1167,15 @@ func TestConnExecBatch(t *testing.T) {
 	//
 	//require.Len(t, results[0].Rows, 1)
 	//require.Equal(t, "ExecParams 1", string(results[0].Rows[0][0]))
-	//assert.Equal(t, "SELECT 1", results[0].CommandTag.String())
+	//assert.Equal(t, "SELECT 1", results[0].QueryStatus.String())
 	//
 	//require.Len(t, results[1].Rows, 1)
 	//require.Equal(t, "ExecPrepared 1", string(results[1].Rows[0][0]))
-	//assert.Equal(t, "SELECT 1", results[1].CommandTag.String())
+	//assert.Equal(t, "SELECT 1", results[1].QueryStatus.String())
 	//
 	//require.Len(t, results[2].Rows, 1)
 	//require.Equal(t, "ExecParams 2", string(results[2].Rows[0][0]))
-	//assert.Equal(t, "SELECT 1", results[2].CommandTag.String())
+	//assert.Equal(t, "SELECT 1", results[2].QueryStatus.String())
 }
 
 type mockConnection struct {
@@ -1325,7 +1325,7 @@ func (m mockConnection) Write(b []byte) (n int, err error) {
 //	for i := range args {
 //		require.Len(t, results[i].Rows, 1)
 //		require.Equal(t, args[i], string(results[i].Rows[0][0]))
-//		assert.Equal(t, "SELECT 1", results[i].CommandTag.String())
+//		assert.Equal(t, "SELECT 1", results[i].QueryStatus.String())
 //	}
 //}
 
@@ -1807,7 +1807,7 @@ func TestConnCloseWhileCancellableQueryInProgress(t *testing.T) {
 //	steps = append(steps, pgmock.SendMessage(&pgproto3.RowDescription{Fields: []pgproto3.FieldDescription{
 //		{Name: []byte("mock")},
 //	}}))
-//	steps = append(steps, pgmock.SendMessage(&pgproto3.CommandComplete{CommandTag: []byte("SELECT 0")}))
+//	steps = append(steps, pgmock.SendMessage(&pgproto3.CommandComplete{QueryStatus: []byte("SELECT 0")}))
 //	steps = append(steps, pgmock.SendMessage(&pgproto3.ErrorResponse{Severity: "FATAL", Code: "57P01"}))
 //
 //	script := &pgmock.Script{Steps: steps}

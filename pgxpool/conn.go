@@ -83,7 +83,7 @@ func (c *Conn) Hijack() *pgx.Conn {
 	return conn
 }
 
-func (c *Conn) Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
+func (c *Conn) Exec(ctx context.Context, sql string, arguments ...any) (pgconn.QueryStatus, error) {
 	return c.Conn().Exec(ctx, sql, arguments...)
 }
 

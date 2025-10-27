@@ -967,63 +967,67 @@ func (pgConn *PgConn) ParameterStatus(key string) string {
 	return pgConn.parameterStatuses[key]
 }
 
-// CommandTag is the status text returned by PostgreSQL for a query.
-type CommandTag struct {
-	s string
+// QueryStatus simple query info
+type QueryStatus struct {
+	statementType int
 }
 
-// NewCommandTag makes a CommandTag from s.
-func NewCommandTag(s string) CommandTag {
-	return CommandTag{s: s}
+// RowsAffected returns the number of rows affected
+func (ct QueryStatus) RowsAffected() int64 {
+	return 0
 }
 
-// RowsAffected returns the number of rows affected. If the CommandTag was not
-// for a row affecting command (e.g. "CREATE TABLE") then it returns 0.
-func (ct CommandTag) RowsAffected() int64 {
-	// Find last non-digit
-	idx := -1
-	for i := len(ct.s) - 1; i >= 0; i-- {
-		if ct.s[i] >= '0' && ct.s[i] <= '9' {
-			idx = i
-		} else {
-			break
-		}
+func (ct QueryStatus) String() string {
+	switch ct.statementType {
+	case StatementSelect:
+		return "SELECT"
+	case StatementInsert:
+		return "INSERT"
+	case StatementUpdate:
+		return "UPDATE"
+	case StatementDelete:
+		return "DELETE"
+	case StatementDDL:
+		return "DDL"
+	case StatementGetSegment:
+		return "GET SEGMENT"
+	case StatementPutSegment:
+		return "PUT SEGMENT"
+	case StatementProcedure:
+		return "PROCEDURE"
+	case StatementStartTransaction:
+		return "START TRANSACTION"
+	case StatementCommit:
+		return "COMMIT"
+	case StatementRollback:
+		return "ROLLBACK"
+	case StatementSelectForUpdate:
+		return "SELECT FOR UPDATE"
+	case StatementSetGenerator:
+		return "SET GENERATOR"
+	case StatementSavepoint:
+		return "SAVEPOINT"
 	}
-
-	if idx == -1 {
-		return 0
-	}
-
-	var n int64
-	for _, b := range ct.s[idx:] {
-		n = n*10 + int64(b-'0')
-	}
-
-	return n
+	return ""
 }
 
-func (ct CommandTag) String() string {
-	return ct.s
+func (ct QueryStatus) Insert() bool {
+	return ct.statementType == StatementInsert
 }
 
-// Insert is true if the command tag starts with "INSERT".
-func (ct CommandTag) Insert() bool {
-	return strings.HasPrefix(ct.s, "INSERT")
+func (ct QueryStatus) Update() bool {
+	return ct.statementType == StatementUpdate
 }
 
-// Update is true if the command tag starts with "UPDATE".
-func (ct CommandTag) Update() bool {
-	return strings.HasPrefix(ct.s, "UPDATE")
+func (ct QueryStatus) Delete() bool {
+	return ct.statementType == StatementDelete
 }
 
-// Delete is true if the command tag starts with "DELETE".
-func (ct CommandTag) Delete() bool {
-	return strings.HasPrefix(ct.s, "DELETE")
+func (ct QueryStatus) Select() bool {
+	return ct.statementType == StatementSelect
 }
-
-// Select is true if the command tag starts with "SELECT".
-func (ct CommandTag) Select() bool {
-	return strings.HasPrefix(ct.s, "SELECT")
+func (ct QueryStatus) DDL() bool {
+	return ct.statementType == StatementDDL
 }
 
 type FieldDescription struct {
@@ -1307,7 +1311,7 @@ func (pgConn *PgConn) ExecParams(ctx context.Context, sql string, paramValues []
 		if closeConn {
 			pgConn.asyncClose()
 		}
-		res.concludeCommand(CommandTag{}, err)
+		res.concludeCommand(QueryStatus{}, err)
 		return &res
 	}
 	return pgConn.ExecParamsTx(ctx, tx, sql, paramValues)
@@ -1333,7 +1337,7 @@ func (pgConn *PgConn) ExecParamsTx(ctx context.Context, tx *FBTransaction, sql s
 		if closeConn {
 			pgConn.asyncClose()
 		}
-		res.concludeCommand(CommandTag{}, err)
+		res.concludeCommand(QueryStatus{}, err)
 		return &res
 	}
 
@@ -1346,7 +1350,7 @@ func (pgConn *PgConn) ExecParamsTx(ctx context.Context, tx *FBTransaction, sql s
 			closed: true,
 		}
 		pgConn.asyncClose()
-		res.concludeCommand(CommandTag{}, rr.err)
+		res.concludeCommand(QueryStatus{}, rr.err)
 		return rr
 	}
 	return rr
@@ -1355,7 +1359,7 @@ func (pgConn *PgConn) ExecParamsTx(ctx context.Context, tx *FBTransaction, sql s
 //func (pgConn *PgConn) execExtendedPrefix(ctx context.Context, paramValues [][]byte) *ResultReader {
 //
 //	//if len(paramValues) > math.MaxUint16 {
-//	//	result.concludeCommand(CommandTag{}, fmt.Errorf("extended protocol limited to %v parameters", math.MaxUint16))
+//	//	result.concludeCommand(QueryStatus{}, fmt.Errorf("extended protocol limited to %v parameters", math.MaxUint16))
 //	//	result.closed = true
 //	//	pgConn.unlock()
 //	//	return result
@@ -1370,16 +1374,16 @@ func (pgConn *PgConn) ExecParamsTx(ctx context.Context, tx *FBTransaction, sql s
 //}
 
 // CopyTo executes the copy command sql and copies the results to w.
-func (pgConn *PgConn) CopyTo(ctx context.Context, w io.Writer, sql string) (CommandTag, error) {
+func (pgConn *PgConn) CopyTo(ctx context.Context, w io.Writer, sql string) (QueryStatus, error) {
 	//if err := pgConn.lock(); err != nil {
-	//	return CommandTag{}, err
+	//	return QueryStatus{}, err
 	//}
 	//
 	//if ctx != context.Background() {
 	//	select {
 	//	case <-ctx.Done():
 	//		pgConn.unlock()
-	//		return CommandTag{}, newContextAlreadyDoneError(ctx)
+	//		return QueryStatus{}, newContextAlreadyDoneError(ctx)
 	//	default:
 	//	}
 	//	pgConn.contextWatcher.Watch(ctx)
@@ -1393,17 +1397,17 @@ func (pgConn *PgConn) CopyTo(ctx context.Context, w io.Writer, sql string) (Comm
 	//if err != nil {
 	//	pgConn.asyncClose()
 	//	pgConn.unlock()
-	//	return CommandTag{}, err
+	//	return QueryStatus{}, err
 	//}
 	//
 	//// Read results
-	//var commandTag CommandTag
+	//var commandTag QueryStatus
 	//var pgErr error
 	//for {
 	//	msg, err := pgConn.receiveMessage()
 	//	if err != nil {
 	//		pgConn.asyncClose()
-	//		return CommandTag{}, normalizeTimeoutError(ctx, err)
+	//		return QueryStatus{}, normalizeTimeoutError(ctx, err)
 	//	}
 	//
 	//	switch msg := msg.(type) {
@@ -1412,13 +1416,13 @@ func (pgConn *PgConn) CopyTo(ctx context.Context, w io.Writer, sql string) (Comm
 	//		_, err := w.Write(msg.Data)
 	//		if err != nil {
 	//			pgConn.asyncClose()
-	//			return CommandTag{}, err
+	//			return QueryStatus{}, err
 	//		}
 	//	case *pgproto3.ReadyForQuery:
 	//		pgConn.unlock()
 	//		return commandTag, pgErr
 	//	case *pgproto3.CommandComplete:
-	//		commandTag = pgConn.makeCommandTag(msg.CommandTag)
+	//		commandTag = pgConn.makeCommandTag(msg.QueryStatus)
 	//	case *pgproto3.ErrorResponse:
 	//		pgErr = ErrorResponseToPgError(msg)
 	//	}
@@ -1430,16 +1434,16 @@ func (pgConn *PgConn) CopyTo(ctx context.Context, w io.Writer, sql string) (Comm
 //
 // Note: context cancellation will only interrupt operations on the underlying PostgreSQL network connection. Reads on r
 // could still block.
-func (pgConn *PgConn) CopyFrom(ctx context.Context, r io.Reader, sql string) (CommandTag, error) {
+func (pgConn *PgConn) CopyFrom(ctx context.Context, r io.Reader, sql string) (QueryStatus, error) {
 	//if err := pgConn.lock(); err != nil {
-	//	return CommandTag{}, err
+	//	return QueryStatus{}, err
 	//}
 	//defer pgConn.unlock()
 	//
 	//if ctx != context.Background() {
 	//	select {
 	//	case <-ctx.Done():
-	//		return CommandTag{}, newContextAlreadyDoneError(ctx)
+	//		return QueryStatus{}, newContextAlreadyDoneError(ctx)
 	//	default:
 	//	}
 	//	pgConn.contextWatcher.Watch(ctx)
@@ -1451,7 +1455,7 @@ func (pgConn *PgConn) CopyFrom(ctx context.Context, r io.Reader, sql string) (Co
 	//err := pgConn.flushWithPotentialWriteReadDeadlock()
 	//if err != nil {
 	//	pgConn.asyncClose()
-	//	return CommandTag{}, err
+	//	return QueryStatus{}, err
 	//}
 	//
 	//// WriteMessage copy data
@@ -1509,7 +1513,7 @@ func (pgConn *PgConn) CopyFrom(ctx context.Context, r io.Reader, sql string) (Co
 	//			pgConn.status = connStatusClosed
 	//			pgConn.conn.Close()
 	//			close(pgConn.cleanupDone)
-	//			return CommandTag{}, normalizeTimeoutError(ctx, err)
+	//			return QueryStatus{}, normalizeTimeoutError(ctx, err)
 	//		}
 	//		msg, _ := pgConn.receiveMessage()
 	//
@@ -1533,23 +1537,23 @@ func (pgConn *PgConn) CopyFrom(ctx context.Context, r io.Reader, sql string) (Co
 	//err = pgConn.flushWithPotentialWriteReadDeadlock()
 	//if err != nil {
 	//	pgConn.asyncClose()
-	//	return CommandTag{}, err
+	//	return QueryStatus{}, err
 	//}
 	//
 	//// Read results
-	//var commandTag CommandTag
+	//var commandTag QueryStatus
 	//for {
 	//	msg, err := pgConn.receiveMessage()
 	//	if err != nil {
 	//		pgConn.asyncClose()
-	//		return CommandTag{}, normalizeTimeoutError(ctx, err)
+	//		return QueryStatus{}, normalizeTimeoutError(ctx, err)
 	//	}
 	//
 	//	switch msg := msg.(type) {
 	//	case *pgproto3.ReadyForQuery:
 	//		return commandTag, pgErr
 	//	case *pgproto3.CommandComplete:
-	//		commandTag = pgConn.makeCommandTag(msg.CommandTag)
+	//		commandTag = pgConn.makeCommandTag(msg.QueryStatus)
 	//	case *pgproto3.ErrorResponse:
 	//		pgErr = ErrorResponseToPgError(msg)
 	//	}
@@ -1640,7 +1644,7 @@ func (mrr *MultiResultReader) NextResult() bool {
 	//		return true
 	//	case *pgproto3.CommandComplete:
 	//		mrr.pgConn.resultReader = ResultReader{
-	//			commandTag:       mrr.pgConn.makeCommandTag(msg.CommandTag),
+	//			commandTag:       mrr.pgConn.makeCommandTag(msg.QueryStatus),
 	//			commandConcluded: true,
 	//			closed:           true,
 	//		}
@@ -1679,7 +1683,7 @@ type ResultReader struct {
 
 	fieldDescriptions []FieldDescription
 	rowValues         [][]byte
-	commandTag        CommandTag
+	queryStatus       QueryStatus
 	commandConcluded  bool
 	closed            bool
 	err               error
@@ -1695,7 +1699,7 @@ type ResultReader struct {
 type Result struct {
 	FieldDescriptions []FieldDescription
 	Rows              [][][]byte
-	CommandTag        CommandTag
+	CommandTag        QueryStatus
 	Err               error
 }
 
@@ -1746,14 +1750,14 @@ func (rr *ResultReader) NextRow() bool {
 			row, msg, err := rr.pgConn.client.ReceiveSQLData(rr.statementDescription.StatementInfo.FieldDescriptors)
 			if err != nil {
 				rr.pgConn.asyncClose()
-				rr.concludeCommand(CommandTag{}, err)
+				rr.concludeCommand(QueryStatus{}, err)
 				return false
 			}
 			switch m := msg.(type) {
 			case *fbproto.OpFetchResponse:
 				rr.lastFetchResponse = m
 			case *fbproto.ErrorResponse:
-				rr.concludeCommand(CommandTag{}, ErrorResponseToFbError(m))
+				rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(m))
 				return false
 			default:
 				panic(fmt.Sprintf("wrong response message type %T instead expected OpFetchResponse or ErrorResponse", m))
@@ -1783,7 +1787,7 @@ func (rr *ResultReader) NextRow() bool {
 			case *fbproto.OpFetchResponse:
 				rr.lastFetchResponse = m
 			case *fbproto.ErrorResponse:
-				rr.concludeCommand(CommandTag{}, ErrorResponseToFbError(m))
+				rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(m))
 				return false
 			default:
 				panic(fmt.Sprintf("wrong response message type %T instead expected OpFetchResponse or ErrorResponse", m))
@@ -1811,12 +1815,12 @@ func (rr *ResultReader) Values() [][]byte {
 
 // Close consumes any remaining result data and returns the command tag or
 // error.
-func (rr *ResultReader) Close() (CommandTag, error) {
+func (rr *ResultReader) Close() (QueryStatus, error) {
 	if !rr.closed {
 		rr.pgConn.unlock()
 		rr.pgConn.contextWatcher.Unwatch()
 	}
-	return rr.commandTag, rr.err
+	return rr.queryStatus, rr.err
 }
 
 // readUntilRowDescription ensures the ResultReader's fieldDescriptions are loaded. It does not return an error as any
@@ -1844,7 +1848,7 @@ func (rr *ResultReader) receiveMessage() (msg fbproto.ServerMessage, err error) 
 
 	if err != nil {
 		err = normalizeTimeoutError(rr.ctx, err)
-		rr.concludeCommand(CommandTag{}, err)
+		rr.concludeCommand(QueryStatus{}, err)
 		rr.pgConn.contextWatcher.Unwatch()
 		rr.closed = true
 		rr.pgConn.asyncClose()
@@ -1855,22 +1859,22 @@ func (rr *ResultReader) receiveMessage() (msg fbproto.ServerMessage, err error) 
 	//case *pgproto3.RowDescription:
 	//	rr.fieldDescriptions = rr.pgConn.convertRowDescription(rr.pgConn.fieldDescriptions[:], msg)
 	//case *pgproto3.CommandComplete:
-	//	rr.concludeCommand(rr.pgConn.makeCommandTag(msg.CommandTag), nil)
+	//	rr.concludeCommand(rr.pgConn.makeCommandTag(msg.QueryStatus), nil)
 	//case *pgproto3.EmptyQueryResponse:
-	//	rr.concludeCommand(CommandTag{}, nil)
+	//	rr.concludeCommand(QueryStatus{}, nil)
 	//case *pgproto3.ErrorResponse:
 	//	pgErr := ErrorResponseToPgError(msg)
 	//	if rr.pipeline != nil {
 	//		rr.pipeline.state.HandleError(pgErr)
 	//	}
-	//	rr.concludeCommand(CommandTag{}, pgErr)
+	//	rr.concludeCommand(QueryStatus{}, pgErr)
 	//}
 	//
 	//return msg, nil
 	panic("implement me")
 }
 
-func (rr *ResultReader) concludeCommand(commandTag CommandTag, err error) {
+func (rr *ResultReader) concludeCommand(queryStatus QueryStatus, err error) {
 	// Keep the first error that is recorded. Store the error before checking if the command is already concluded to
 	// allow for receiving an error after CommandComplete but before ReadyForQuery.
 	if err != nil && rr.err == nil {
@@ -1881,7 +1885,7 @@ func (rr *ResultReader) concludeCommand(commandTag CommandTag, err error) {
 		return
 	}
 
-	rr.commandTag = commandTag
+	rr.queryStatus = queryStatus
 	rr.rowValues = nil
 	rr.commandConcluded = true
 }
@@ -2032,9 +2036,9 @@ func (pgConn *PgConn) Ping(ctx context.Context) error {
 	return err
 }
 
-// makeCommandTag makes a CommandTag. It does not retain a reference to buf or buf's underlying memory.
-func (pgConn *PgConn) makeCommandTag(buf []byte) CommandTag {
-	return CommandTag{s: string(buf)}
+// makeQueryStatus makes a QueryStatus. It does not retain a reference to buf or buf's underlying memory.
+func (pgConn *PgConn) makeQueryStatus(statementType int) QueryStatus {
+	return QueryStatus{statementType: statementType}
 }
 
 // enterPotentialWriteReadDeadlock must be called before a write that could deadlock if the server is simultaneously
@@ -2576,7 +2580,7 @@ func (p *Pipeline) getResults() (results any, err error) {
 	//		return &p.conn.resultReader, nil
 	//	case *pgproto3.CommandComplete:
 	//		p.conn.resultReader = ResultReader{
-	//			commandTag:       p.conn.makeCommandTag(msg.CommandTag),
+	//			commandTag:       p.conn.makeCommandTag(msg.QueryStatus),
 	//			commandConcluded: true,
 	//			closed:           true,
 	//		}

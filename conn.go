@@ -466,19 +466,19 @@ func (c *Conn) Config() *ConnConfig {
 
 // Exec executes sql inside internal transaction. sql can be either a prepared statement name or an SQL string. arguments should be referenced
 // positionally from the sql string as $1, $2, etc.
-func (c *Conn) Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
+func (c *Conn) Exec(ctx context.Context, sql string, arguments ...any) (pgconn.QueryStatus, error) {
 	return c.execTx(ctx, nil, sql, arguments...)
 }
 
 // ExecTx executes sql inside created transaction. sql can be either a prepared statement name or an SQL string. arguments should be referenced
 // positionally from the sql string as $1, $2, etc.
-func (c *Conn) execTx(ctx context.Context, tx *dbTx, sql string, arguments ...any) (pgconn.CommandTag, error) {
+func (c *Conn) execTx(ctx context.Context, tx *dbTx, sql string, arguments ...any) (pgconn.QueryStatus, error) {
 	if c.queryTracer != nil {
 		ctx = c.queryTracer.TraceQueryStart(ctx, c, TraceQueryStartData{SQL: sql, Args: arguments})
 	}
 
 	if err := c.deallocateInvalidatedCachedStatements(ctx); err != nil {
-		return pgconn.CommandTag{}, err
+		return pgconn.QueryStatus{}, err
 	}
 
 	commandTag, err := c.exec(ctx, tx, sql, arguments...)
@@ -494,7 +494,7 @@ func (c *Conn) execTx(ctx context.Context, tx *dbTx, sql string, arguments ...an
 	return commandTag, err
 }
 
-func (c *Conn) exec(ctx context.Context, tx *dbTx, sql string, arguments ...any) (commandTag pgconn.CommandTag, err error) {
+func (c *Conn) exec(ctx context.Context, tx *dbTx, sql string, arguments ...any) (commandTag pgconn.QueryStatus, err error) {
 	mode := c.config.DefaultQueryExecMode
 	var queryRewriter QueryRewriter
 
@@ -515,7 +515,7 @@ optionLoop:
 	if queryRewriter != nil {
 		sql, arguments, err = queryRewriter.RewriteQuery(ctx, c, sql, arguments)
 		if err != nil {
-			return pgconn.CommandTag{}, fmt.Errorf("rewrite query failed: %w", err)
+			return pgconn.QueryStatus{}, fmt.Errorf("rewrite query failed: %w", err)
 		}
 	}
 
@@ -531,13 +531,13 @@ optionLoop:
 	switch mode {
 	case QueryExecModeCacheStatement:
 		if c.statementCache == nil {
-			return pgconn.CommandTag{}, errDisabledStatementCache
+			return pgconn.QueryStatus{}, errDisabledStatementCache
 		}
 		st := c.statementCache.Get(sql)
 		if st == nil {
 			st, err = c.internalPrepare(ctx, tx, stmtcache.StatementName(sql), sql)
 			if err != nil {
-				return pgconn.CommandTag{}, err
+				return pgconn.QueryStatus{}, err
 			}
 			c.statementCache.Put(st)
 		}
@@ -548,15 +548,15 @@ optionLoop:
 	case QueryExecModeSimpleProtocol:
 		return c.execSimpleProtocol(ctx, tx, sql, arguments)
 	default:
-		return pgconn.CommandTag{}, fmt.Errorf("unknown QueryExecMode: %v", mode)
+		return pgconn.QueryStatus{}, fmt.Errorf("unknown QueryExecMode: %v", mode)
 	}
 }
 
-func (c *Conn) execSimpleProtocol(ctx context.Context, tx *dbTx, sql string, arguments []any) (commandTag pgconn.CommandTag, err error) {
+func (c *Conn) execSimpleProtocol(ctx context.Context, tx *dbTx, sql string, arguments []any) (commandTag pgconn.QueryStatus, err error) {
 	if len(arguments) > 0 {
 		sql, err = c.sanitizeForSimpleQuery(sql, arguments...)
 		if err != nil {
-			return pgconn.CommandTag{}, err
+			return pgconn.QueryStatus{}, err
 		}
 	}
 
@@ -569,10 +569,10 @@ func (c *Conn) execSimpleProtocol(ctx context.Context, tx *dbTx, sql string, arg
 	return rr.Close()
 }
 
-func (c *Conn) execParams(ctx context.Context, tx *dbTx, sd *pgconn.StatementDescription, arguments []any) (pgconn.CommandTag, error) {
+func (c *Conn) execParams(ctx context.Context, tx *dbTx, sd *pgconn.StatementDescription, arguments []any) (pgconn.QueryStatus, error) {
 	err := c.eqb.Build(c.typeMap, sd, arguments)
 	if err != nil {
-		return pgconn.CommandTag{}, err
+		return pgconn.QueryStatus{}, err
 	}
 
 	var result *pgconn.Result
@@ -585,10 +585,10 @@ func (c *Conn) execParams(ctx context.Context, tx *dbTx, sd *pgconn.StatementDes
 	return result.CommandTag, result.Err
 }
 
-func (c *Conn) execPrepared(ctx context.Context, tx *dbTx, sd *pgconn.Statement, arguments []any) (pgconn.CommandTag, error) {
+func (c *Conn) execPrepared(ctx context.Context, tx *dbTx, sd *pgconn.Statement, arguments []any) (pgconn.QueryStatus, error) {
 	err := c.eqb.Build(c.typeMap, sd.Description, arguments)
 	if err != nil {
-		return pgconn.CommandTag{}, err
+		return pgconn.QueryStatus{}, err
 	}
 
 	var result *pgconn.Result
@@ -601,10 +601,10 @@ func (c *Conn) execPrepared(ctx context.Context, tx *dbTx, sd *pgconn.Statement,
 	return result.CommandTag, result.Err
 }
 
-func (c *Conn) execSQLParams(ctx context.Context, tx *dbTx, sql string, args []any) (pgconn.CommandTag, error) {
+func (c *Conn) execSQLParams(ctx context.Context, tx *dbTx, sql string, args []any) (pgconn.QueryStatus, error) {
 	err := c.eqb.Build(c.typeMap, nil, args)
 	if err != nil {
-		return pgconn.CommandTag{}, err
+		return pgconn.QueryStatus{}, err
 	}
 
 	var result *pgconn.Result

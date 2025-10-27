@@ -107,7 +107,7 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 	rr.fieldDescriptions = st.Description.Fields
 
 	if err := st.conn.lock(); err != nil {
-		rr.concludeCommand(CommandTag{}, err)
+		rr.concludeCommand(QueryStatus{}, err)
 		rr.closed = true
 		return rr
 	}
@@ -115,7 +115,7 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 	if ctx != context.Background() {
 		select {
 		case <-ctx.Done():
-			rr.concludeCommand(CommandTag{}, newContextAlreadyDoneError(ctx))
+			rr.concludeCommand(QueryStatus{}, newContextAlreadyDoneError(ctx))
 			rr.closed = true
 			st.conn.unlock()
 			return rr
@@ -133,7 +133,7 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 			Option:          fbproto.DSQL_close,
 		}); err != nil {
 			st.conn.asyncClose()
-			rr.concludeCommand(CommandTag{}, err)
+			rr.concludeCommand(QueryStatus{}, err)
 			st.conn.contextWatcher.Unwatch()
 			rr.closed = true
 			return rr
@@ -157,7 +157,7 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 		SQLData:               paramValues,
 	}); err != nil {
 		st.conn.asyncClose()
-		rr.concludeCommand(CommandTag{}, err)
+		rr.concludeCommand(QueryStatus{}, err)
 		st.conn.contextWatcher.Unwatch()
 		rr.closed = true
 		return rr
@@ -165,7 +165,7 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 
 	if err = st.conn.writer.Flush(); err != nil {
 		st.conn.asyncClose()
-		rr.concludeCommand(CommandTag{}, err)
+		rr.concludeCommand(QueryStatus{}, err)
 		st.conn.contextWatcher.Unwatch()
 		rr.closed = true
 		return rr
@@ -174,7 +174,7 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 	msg, err := st.conn.receiveMessage()
 	if err != nil {
 		st.conn.asyncClose()
-		rr.concludeCommand(CommandTag{}, err)
+		rr.concludeCommand(QueryStatus{}, err)
 		st.conn.contextWatcher.Unwatch()
 		rr.closed = true
 		return rr
@@ -186,7 +186,7 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 			row, dataResp, err := st.conn.client.ReceiveSQLData(st.Description.StatementInfo.FieldDescriptors)
 			if err != nil {
 				st.conn.asyncClose()
-				rr.concludeCommand(CommandTag{}, err)
+				rr.concludeCommand(QueryStatus{}, err)
 				st.conn.contextWatcher.Unwatch()
 				rr.closed = true
 				return rr
@@ -195,13 +195,13 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 			case *fbproto.OpResponse:
 				rr.singleton = row
 			case *fbproto.ErrorResponse:
-				rr.concludeCommand(CommandTag{}, ErrorResponseToFbError(d))
+				rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(d))
 				st.conn.contextWatcher.Unwatch()
 				rr.closed = true
 				return rr
 			}
 		case *fbproto.ErrorResponse:
-			rr.concludeCommand(CommandTag{}, ErrorResponseToFbError(r))
+			rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(r))
 			st.conn.contextWatcher.Unwatch()
 			rr.closed = true
 			return rr
@@ -212,7 +212,7 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 		switch r := msg.(type) {
 		case *fbproto.OpResponse:
 		case *fbproto.ErrorResponse:
-			rr.concludeCommand(CommandTag{}, ErrorResponseToFbError(r))
+			rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(r))
 			st.conn.contextWatcher.Unwatch()
 			rr.closed = true
 			return rr
@@ -224,6 +224,7 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 	st.cursorOpened = st.Description.HaveCursorResult()
 	rr.cursorOpened = st.Description.HaveCursorResult()
 	rr.singletonResult = st.Description.HaveSingletonResult()
+	rr.queryStatus = st.conn.makeQueryStatus(st.Description.GetQueryType())
 	return rr
 }
 
