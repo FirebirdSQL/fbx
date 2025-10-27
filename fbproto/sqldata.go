@@ -87,9 +87,9 @@ func WriteRowData(x *XDRWriter, rowDescriptor []FieldDescriptor, values [][]byte
 					return err
 				}
 			} else if l < 0 {
-				readlFieldLen := -l
-				if len(valueBuf) != readlFieldLen {
-					panic(fmt.Sprintf("invalid length of value buffer, expected %d, but got %d", readlFieldLen, len(valueBuf)))
+				realFieldLen := -l
+				if len(valueBuf) != realFieldLen {
+					panic(fmt.Sprintf("invalid length of value buffer, expected %d, but got %d", realFieldLen, len(valueBuf)))
 				}
 				if err = x.WriteBytes(valueBuf); err != nil {
 					return err
