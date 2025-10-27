@@ -166,8 +166,9 @@ func (p *SrpAuthPlugin) HandleServerData(user string, password string, pluginNam
 	if len(data) == 0 {
 		p.lastProof = nil
 		p.lastSession = nil
-		reply := BigIntToBytes(p.ClientPublic)
-		return &AuthPluginStep{Reply: reply}, nil
+		// SRP expects ASCII-hex payloads on the wire for A/public and M/proof
+		replyHex := []byte(hex.EncodeToString(srpPad(p.ClientPublic)))
+		return &AuthPluginStep{Reply: replyHex}, nil
 	}
 
 	salt, serverHex, err := parseSrpServerData(data)
@@ -177,8 +178,10 @@ func (p *SrpAuthPlugin) HandleServerData(user string, password string, pluginNam
 
 	serverPublic := utils.BigIntFromHexString(serverHex)
 	p.lastProof, p.lastSession = GetClientProof(strings.ToUpper(user), password, salt, p.ClientPublic, serverPublic, p.ClientSecret, p.variant)
+	// Send ASCII-hex of the proof as p_data as per Jaybird compatibility
+	replyHex := []byte(hex.EncodeToString(p.lastProof))
 	return &AuthPluginStep{
-		Reply:        cloneBytes(p.lastProof),
+		Reply:        replyHex,
 		AuthSpecific: cloneBytes(p.lastProof),
 		SessionKey:   cloneBytes(p.lastSession),
 	}, nil

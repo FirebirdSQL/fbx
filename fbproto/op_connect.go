@@ -80,10 +80,17 @@ func (op *OpConnect) Write(x *XDRWriter) error {
 	//	panic(fmt.Sprintf("Unknown plugin name:%s", op.AuthPlugin))
 	//}
 
-	uid := bytes.Join([][]byte{
-		{CNCT_login, byte(len(userBytes))}, userBytes,
-		{CNCT_plugin_name, byte(len(pluginNameBytes))}, pluginNameBytes,
-		{CNCT_plugin_list, byte(len(pluginListNameBytes))}, pluginListNameBytes}, nil)
+	uid := make([]byte, 0, 256)
+	// Only include CNCT_login if username is non-empty; presence of an empty
+	// login can influence GSS negotiation on some servers/clients.
+	if len(userBytes) > 0 {
+		uid = append(uid, []byte{CNCT_login, byte(len(userBytes))}...)
+		uid = append(uid, userBytes...)
+	}
+	uid = append(uid, []byte{CNCT_plugin_name, byte(len(pluginNameBytes))}...)
+	uid = append(uid, pluginNameBytes...)
+	uid = append(uid, []byte{CNCT_plugin_list, byte(len(pluginListNameBytes))}...)
+	uid = append(uid, pluginListNameBytes...)
 
 	if len(op.AuthSpecificData) > 0 {
 		for _, chunk := range op.AuthSpecificData {

@@ -28,18 +28,8 @@ import (
 
 // Debug printing for authentication handshake. Enable by setting
 // FBX_AUTH_DEBUG to a truthy value (e.g. 1, true).
-var authDebugEnabled = func() bool {
-	v := strings.TrimSpace(os.Getenv("FBX_AUTH_DEBUG"))
-	switch strings.ToLower(v) {
-	case "", "0", "false", "no", "off":
-		return false
-	default:
-		return true
-	}
-}()
-
 func authPrintf(format string, args ...any) {
-	if authDebugEnabled {
+	if authDebugEnabled, _ := strconv.ParseBool(strings.TrimSpace(os.Getenv("FBX_AUTH_DEBUG"))); authDebugEnabled {
 		fmt.Printf(format, args...)
 	}
 }
@@ -129,6 +119,11 @@ type PgConn struct {
 	internalTransaction *FBTransaction
 
 	preparedMap map[string]*StatementDescription
+
+	// Tracks whether we've already sent the first op_cont_auth (where p_list
+	// must include the client's plugin list). Subsequent op_cont_auth must use
+	// an empty p_list.
+	authContFirstSent bool
 }
 
 // Connect establishes a connection to a PostgreSQL server using the environment and connString (in URL or keyword/value
@@ -211,7 +206,12 @@ func (pgConn *PgConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *a
 		return err
 	}
 	if respond && step != nil {
-		return pgConn.sendContAuth(step.Reply, msg.PluginName, authManager.BuildList(), nil)
+		pluginList := ""
+		if !pgConn.authContFirstSent {
+			pluginList = authManager.BuildList()
+			pgConn.authContFirstSent = true
+		}
+		return pgConn.sendContAuth(step.Reply, msg.PluginName, pluginList, nil)
 	}
 	return nil
 }
@@ -574,7 +574,9 @@ connectLoop:
 	dpb := fbproto.NewDPBWriterV2()
 	dpb.PutInt32(fbproto.Isc_dpb_sql_dialect, 3)
 	dpb.PutString(fbproto.Isc_dpb_lc_ctype, config.Encoding)
-	dpb.PutString(fbproto.Isc_dpb_user_name, config.User)
+	if config.User != "" {
+		dpb.PutString(fbproto.Isc_dpb_user_name, config.User)
+	}
 	if config.Role != "" {
 		dpb.PutString(fbproto.Isc_dpb_sql_role_name, config.Role)
 	}
@@ -588,8 +590,12 @@ connectLoop:
 	}
 	dpb.PutInt32(fbproto.Isc_dpb_utf8_filename, 1)
 	if authSpecific := authManager.AuthSpecificData(); len(authSpecific) > 0 {
+		// For SRP, clientData historically was ASCII-hex, and servers accept
+		// that in specific_auth_data. For GSS, sends raw token bytes.
+		// The server handles both when provided as a Buffer, so send raw bytes
+		// to avoid double-hexing.
 		dpb.PutTag(fbproto.Isc_dpb_specific_auth_data)
-		dpb.PutBuffer([]byte(hex.EncodeToString(authSpecific)))
+		dpb.PutBuffer(authSpecific)
 	}
 
 	opAttach := fbproto.OpAttach{
