@@ -1,7 +1,6 @@
 package pgconn
 
 import (
-	"os"
 	"os/user"
 	"strings"
 )
@@ -15,7 +14,6 @@ func defaultSettings() map[string]string {
 	settings["wire_crypt"] = "true"
 
 	user, err := user.Current()
-	appData := os.Getenv("APPDATA")
 	if err == nil {
 		username := user.Username
 		if strings.Contains(username, "\\") {
@@ -23,7 +21,6 @@ func defaultSettings() map[string]string {
 		}
 
 		settings["system_user"] = username
-		settings["user"] = username
 	}
 
 	return settings

@@ -43,6 +43,7 @@ func NewAuthManager(user string, password string) *AuthManager {
 	plugins = append(plugins, NewSrp384AuthPlugin())
 	plugins = append(plugins, NewSrp512AuthPlugin())
 	plugins = append(plugins, NewSrpAuthPlugin())
+	plugins = append(plugins, NewGssAuthPlugin())
 	plugins = append(plugins, NewLegacyAuthPlugin(password))
 	return &AuthManager{
 		user:     user,

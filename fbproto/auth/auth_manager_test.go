@@ -11,7 +11,7 @@ import (
 func TestAuthManagerBuildListAndCurrent(t *testing.T) {
 	m := NewAuthManager("user", "secret")
 	require.NotNil(t, m)
-	require.Equal(t, "Srp256,Srp224,Srp384,Srp512,Srp,Legacy_Auth", m.BuildList())
+	require.Equal(t, "Srp256,Srp224,Srp384,Srp512,Srp,Gss,Legacy_Auth", m.BuildList())
 
 	cur := m.GetCurrentPlugin()
 	require.NotNil(t, cur)
@@ -20,7 +20,7 @@ func TestAuthManagerBuildListAndCurrent(t *testing.T) {
 	initial := m.BeginHandshake()
 	require.NotNil(t, initial)
 	require.Equal(t, cur.Name(), initial.PluginName)
-	require.Equal(t, []string{"Srp256", "Srp224", "Srp384", "Srp512", "Srp", "Legacy_Auth"}, initial.PluginList)
+	require.Equal(t, []string{"Srp256", "Srp224", "Srp384", "Srp512", "Srp", "Gss", "Legacy_Auth"}, initial.PluginList)
 	require.NotEmpty(t, initial.SpecificData)
 	assembled := make([]byte, 0)
 	for idx, chunk := range initial.SpecificData {

@@ -15,7 +15,6 @@ func defaultSettings() map[string]string {
 	user, err := user.Current()
 	if err == nil {
 		settings["system_user"] = user.Username
-		settings["user"] = user.Username
 	}
 	return settings
 }

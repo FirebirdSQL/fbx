@@ -2,8 +2,6 @@ package fbproto
 
 // https://firebirdsql.org/file/documentation/html/en/firebirddocs/wireprotocol/firebird-wire-protocol.html#wireprotocol-op-cont-auth
 
-import "encoding/hex"
-
 type OpContAuth struct {
 	// Encoding used for XDR strings in this packet
 	Encoding *Encoding
@@ -23,8 +21,8 @@ func (op *OpContAuth) Write(x *XDRWriter) error {
 	if err = x.WriteInt32(Op_cont_auth); err != nil {
 		return err
 	}
-	// p_data (spec: Buffer). This implementation sends hex(AuthData) as XDR string.
-	if err := x.WriteString(hex.EncodeToString(op.AuthData), op.Encoding); err != nil {
+	// p_data (Buffer): send raw bytes
+	if err := x.WriteBuffer(op.AuthData); err != nil {
 		return err
 	}
 	// p_name
@@ -35,8 +33,8 @@ func (op *OpContAuth) Write(x *XDRWriter) error {
 	if err := x.WriteString(op.PluginList, op.Encoding); err != nil {
 		return err
 	}
-	// p_keys
-	return x.WriteString(string(op.Keys), op.Encoding)
+	// p_keys (Buffer)
+	return x.WriteBuffer(op.Keys)
 }
 
 // Read parses server -> client op_cont_auth response.
@@ -50,19 +48,12 @@ func (op *OpContAuth) Read(r *XDRReader) error {
 		enc, _ := NewEncoding("UTF8")
 		op.Encoding = enc
 	}
-	// p_data
-	dataHex, err := r.ReadString(op.Encoding)
+	// p_data (Buffer)
+	buf, err := r.ReadBuffer()
 	if err != nil {
 		return err
 	}
-	if dataHex != "" {
-		if bs, err := hex.DecodeString(dataHex); err == nil {
-			op.AuthData = bs
-		} else {
-			// if not hex, keep raw bytes
-			op.AuthData = []byte(dataHex)
-		}
-	}
+	op.AuthData = buf
 	// p_name
 	if op.PluginName, err = r.ReadString(op.Encoding); err != nil {
 		return err
@@ -71,9 +62,9 @@ func (op *OpContAuth) Read(r *XDRReader) error {
 	if op.PluginList, err = r.ReadString(op.Encoding); err != nil {
 		return err
 	}
-	// p_keys
-	if keys, err := r.ReadString(op.Encoding); err == nil {
-		op.Keys = []byte(keys)
+	// p_keys (Buffer)
+	if keys, err := r.ReadBuffer(); err == nil {
+		op.Keys = keys
 	} else {
 		return err
 	}
