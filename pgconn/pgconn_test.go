@@ -904,7 +904,7 @@ func TestConnExecParamsEmptySQL(t *testing.T) {
 	defer closeConn(t, pgConn)
 
 	result := pgConn.ExecParams(ctx, "", nil).Read()
-	assert.Equal(t, pgconn.QueryStatus{}, result.CommandTag)
+	assert.Equal(t, pgconn.QueryStatus{}, result.QueryStatus)
 	assert.Len(t, result.Rows, 0)
 	assert.NoError(t, result.Err)
 
@@ -1136,7 +1136,7 @@ func TestConnExecPreparedEmptySQL(t *testing.T) {
 	require.NoError(t, err)
 
 	result := ps.Exec(ctx, nil).Read()
-	assert.Equal(t, pgconn.QueryStatus{}, result.CommandTag)
+	assert.Equal(t, pgconn.QueryStatus{}, result.QueryStatus)
 	assert.Len(t, result.Rows, 0)
 	assert.NoError(t, result.Err)
 
@@ -2885,8 +2885,8 @@ func Example() {
 	for _, row := range result.Rows {
 		fmt.Println(string(row[0]))
 	}
+	fmt.Println(result.QueryStatus.String())
 
-	fmt.Println(result.CommandTag)
 	// Output:
 	// 1
 	// 2

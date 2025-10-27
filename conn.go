@@ -582,7 +582,7 @@ func (c *Conn) execParams(ctx context.Context, tx *dbTx, sd *pgconn.StatementDes
 		result = c.pgConn.ExecParams(ctx, sd.SQL, c.eqb.ParamValues).Read()
 	}
 	c.eqb.reset() // Allow c.eqb internal memory to be GC'ed as soon as possible.
-	return result.CommandTag, result.Err
+	return result.QueryStatus, result.Err
 }
 
 func (c *Conn) execPrepared(ctx context.Context, tx *dbTx, sd *pgconn.Statement, arguments []any) (pgconn.QueryStatus, error) {
@@ -598,7 +598,7 @@ func (c *Conn) execPrepared(ctx context.Context, tx *dbTx, sd *pgconn.Statement,
 		result = sd.Exec(ctx, c.eqb.ParamValues).Read()
 	}
 	c.eqb.reset() // Allow c.eqb internal memory to be GC'ed as soon as possible.
-	return result.CommandTag, result.Err
+	return result.QueryStatus, result.Err
 }
 
 func (c *Conn) execSQLParams(ctx context.Context, tx *dbTx, sql string, args []any) (pgconn.QueryStatus, error) {
@@ -614,7 +614,7 @@ func (c *Conn) execSQLParams(ctx context.Context, tx *dbTx, sql string, args []a
 		result = c.pgConn.ExecParams(ctx, sql, c.eqb.ParamValues).Read()
 	}
 	c.eqb.reset() // Allow c.eqb internal memory to be GC'ed as soon as possible.
-	return result.CommandTag, result.Err
+	return result.QueryStatus, result.Err
 }
 
 func (c *Conn) getRows(ctx context.Context, sql string, args []any) *baseRows {

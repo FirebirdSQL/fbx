@@ -1705,7 +1705,7 @@ type ResultReader struct {
 type Result struct {
 	FieldDescriptions []FieldDescription
 	Rows              [][][]byte
-	CommandTag        QueryStatus
+	QueryStatus       QueryStatus
 	Err               error
 }
 
@@ -1730,7 +1730,7 @@ func (rr *ResultReader) Read() *Result {
 		br.Rows = append(br.Rows, row)
 	}
 
-	br.CommandTag, br.Err = rr.Close()
+	br.QueryStatus, br.Err = rr.Close()
 
 	return br
 }
