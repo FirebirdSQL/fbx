@@ -2877,13 +2877,13 @@ func Example() {
 	}
 	defer pgConn.Close(ctx)
 
-	result := pgConn.ExecParams(ctx, "select generate_series(1,3)", nil).Read()
+	result := pgConn.ExecParams(ctx, fmt.Sprintf(generateSeriesTemplate, 1, 3), nil).Read()
 	if result.Err != nil {
 		log.Fatalln(result.Err)
 	}
 
 	for _, row := range result.Rows {
-		fmt.Println(string(row[0]))
+		fmt.Println(row[0][3])
 	}
 	fmt.Println(result.QueryStatus.String())
 
@@ -2891,7 +2891,7 @@ func Example() {
 	// 1
 	// 2
 	// 3
-	// SELECT 3
+	// SELECT
 }
 
 func GetSSLPassword(ctx context.Context) string {

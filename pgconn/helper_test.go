@@ -10,6 +10,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var generateSeriesTemplate = `WITH RECURSIVE generate_series(generate_series)
+AS (SELECT %d FROM RDB$DATABASE UNION ALL SELECT (generate_series + 1)
+FROM generate_series WHERE generate_series < %d)
+SELECT generate_series FROM generate_series`
+
 func closeConn(t testing.TB, conn *pgconn.PgConn) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
