@@ -775,6 +775,7 @@ optionLoop:
 			return rows, rows.err
 		}
 
+		rows.boundStatement = st
 		if tx != nil {
 			rows.resultReader = st.ExecTx(ctx, tx.tx, c.eqb.ParamValues)
 		} else {
