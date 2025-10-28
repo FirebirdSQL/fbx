@@ -670,7 +670,7 @@ func TestListenNotifyWhileBusyIsSafe(t *testing.T) {
 			var sum int32
 			var rowCount int32
 
-			rows, err := conn.Query(context.Background(), "select generate_series(1,$1)", 100)
+			rows, err := conn.Query(context.Background(), generateSeriesQuery("1", "?", ""), 100)
 			if err != nil {
 				t.Errorf("conn.Query failed: %v", err)
 				return

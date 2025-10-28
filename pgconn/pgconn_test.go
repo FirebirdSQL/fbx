@@ -1778,7 +1778,7 @@ func TestConnCloseWhileCancellableQueryInProgress(t *testing.T) {
 	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 
-	pgConn.Exec(ctx, "select n from generate_series(1,10) n")
+	pgConn.Exec(ctx, generateSeriesQuery(1, 10, "n"))
 
 	closeCtx, closeCancel := context.WithCancel(ctx)
 	defer closeCancel()

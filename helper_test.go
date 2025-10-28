@@ -2,6 +2,7 @@ package pgx_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 
@@ -121,4 +122,16 @@ func assertConfigsEqual(t *testing.T, expected, actual *pgx.ConnConfig, testName
 			assert.Equalf(t, expected.Fallbacks[i].Port, actual.Fallbacks[i].Port, "%s - Fallback %d - Port", testName, i)
 		}
 	}
+}
+
+var generateSeriesTemplate = `WITH RECURSIVE generate_series(%[3]s)
+AS (SELECT %[1]s FROM RDB$DATABASE UNION ALL SELECT (%[3]s + 1)
+FROM generate_series WHERE %[3]s < %[2]s)
+SELECT %[3]s FROM generate_series`
+
+func generateSeriesQuery(begin, end, fieldName string) string {
+	if len(fieldName) == 0 {
+		fieldName = "generate_series"
+	}
+	return fmt.Sprintf(generateSeriesTemplate, begin, end, fieldName)
 }

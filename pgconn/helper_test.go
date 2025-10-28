@@ -2,6 +2,7 @@ package pgconn_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -10,10 +11,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var generateSeriesTemplate = `WITH RECURSIVE generate_series(generate_series)
-AS (SELECT %d FROM RDB$DATABASE UNION ALL SELECT (generate_series + 1)
-FROM generate_series WHERE generate_series < %d)
-SELECT generate_series FROM generate_series`
+var generateSeriesTemplate = `WITH RECURSIVE generate_series(%[3]s)
+AS (SELECT %[1]d FROM RDB$DATABASE UNION ALL SELECT (%[3]s + 1)
+FROM generate_series WHERE %[3]s < %[2]d)
+SELECT %[3]s FROM generate_series`
+
+func generateSeriesQuery(begin, end int, fieldName string) string {
+	if len(fieldName) == 0 {
+		fieldName = "generate_series"
+	}
+	return fmt.Sprintf(generateSeriesTemplate, begin, end, fieldName)
+}
 
 func closeConn(t testing.TB, conn *pgconn.PgConn) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
