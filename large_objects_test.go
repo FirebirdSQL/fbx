@@ -34,35 +34,6 @@ func TestLargeObjects(t *testing.T) {
 	testLargeObjects(t, ctx, tx)
 }
 
-func TestLargeObjectsSimpleProtocol(t *testing.T) {
-	// We use a very short limit to test chunking logic.
-	pgx.SetMaxLargeObjectMessageLength(t, 2)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	config, err := pgx.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	config.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
-
-	conn, err := pgx.ConnectConfig(ctx, config)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	pgxtest.SkipCockroachDB(t, conn, "Server does support large objects")
-
-	tx, err := conn.Begin(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	testLargeObjects(t, ctx, tx)
-}
-
 func testLargeObjects(t *testing.T, ctx context.Context, tx pgx.Tx) {
 	lo := tx.LargeObjects()
 

@@ -83,7 +83,7 @@ func TestConnectWithPreferSimpleProtocol(t *testing.T) {
 	t.Parallel()
 
 	connConfig := mustParseConfig(t, os.Getenv("PGX_TEST_DATABASE"))
-	connConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+	connConfig.DefaultQueryExecMode = pgx.QueryExecModeExec
 
 	conn := mustConnect(t, connConfig)
 	defer closeConn(t, conn)
@@ -163,10 +163,6 @@ func TestParseConfigExtractsStatementCacheOptions(t *testing.T) {
 	config, err = pgx.ParseConfig("default_query_exec_mode=exec")
 	require.NoError(t, err)
 	require.Equal(t, pgx.QueryExecModeExec, config.DefaultQueryExecMode)
-
-	config, err = pgx.ParseConfig("default_query_exec_mode=simple_protocol")
-	require.NoError(t, err)
-	require.Equal(t, pgx.QueryExecModeSimpleProtocol, config.DefaultQueryExecMode)
 }
 
 func TestParseConfigExtractsDefaultQueryExecMode(t *testing.T) {
@@ -179,7 +175,6 @@ func TestParseConfigExtractsDefaultQueryExecMode(t *testing.T) {
 		{"", pgx.QueryExecModeCacheStatement},
 		{"default_query_exec_mode=cache_statement", pgx.QueryExecModeCacheStatement},
 		{"default_query_exec_mode=exec", pgx.QueryExecModeExec},
-		{"default_query_exec_mode=simple_protocol", pgx.QueryExecModeSimpleProtocol},
 	} {
 		config, err := pgx.ParseConfig(tt.connString)
 		require.NoError(t, err)
@@ -362,37 +357,6 @@ func TestExecFailureCloseBefore(t *testing.T) {
 	_, err := conn.Exec(context.Background(), "select 1")
 	require.Error(t, err)
 	assert.True(t, pgconn.SafeToRetry(err))
-}
-
-func TestExecPerQuerySimpleProtocol(t *testing.T) {
-	t.Parallel()
-
-	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
-	defer closeConn(t, conn)
-
-	ctx, cancelFunc := context.WithCancel(context.Background())
-	defer cancelFunc()
-
-	commandTag, err := conn.Exec(ctx, "create temporary table foo(name varchar primary key);")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if commandTag.String() != "CREATE TABLE" {
-		t.Fatalf("Unexpected results from Exec: %v", commandTag)
-	}
-
-	commandTag, err = conn.Exec(ctx,
-		"insert into foo(name) values($1);",
-		pgx.QueryExecModeSimpleProtocol,
-		"bar'; drop table foo;--",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if commandTag.String() != "INSERT 0 1" {
-		t.Fatalf("Unexpected results from Exec: %v", commandTag)
-	}
-
 }
 
 func TestPrepare(t *testing.T) {

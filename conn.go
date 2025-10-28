@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/red-soft/fbx/internal/sanitize"
 	"github.com/red-soft/fbx/internal/stmtcache"
 	"github.com/red-soft/fbx/pgconn"
 	"github.com/red-soft/fbx/pgtype"
@@ -197,8 +196,6 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 			defaultQueryExecMode = QueryExecModeCacheStatement
 		case "exec":
 			defaultQueryExecMode = QueryExecModeExec
-		case "simple_protocol":
-			defaultQueryExecMode = QueryExecModeSimpleProtocol
 		case "noautocommit":
 			autocommit = false
 		default:
@@ -519,11 +516,6 @@ optionLoop:
 		}
 	}
 
-	// Always use simple protocol when there are no arguments.
-	if len(arguments) == 0 {
-		mode = QueryExecModeSimpleProtocol
-	}
-
 	if sd, ok := c.preparedStatements[sql]; ok {
 		return c.execPrepared(ctx, tx, sd, arguments)
 	}
@@ -550,28 +542,9 @@ optionLoop:
 		}
 		defer st.Close(ctx)
 		return c.execPrepared(ctx, tx, st, arguments)
-	case QueryExecModeSimpleProtocol:
-		return c.execSimpleProtocol(ctx, tx, sql, arguments)
 	default:
 		return pgconn.QueryStatus{}, fmt.Errorf("unknown QueryExecMode: %v", mode)
 	}
-}
-
-func (c *Conn) execSimpleProtocol(ctx context.Context, tx *dbTx, sql string, arguments []any) (commandTag pgconn.QueryStatus, err error) {
-	if len(arguments) > 0 {
-		sql, err = c.sanitizeForSimpleQuery(sql, arguments...)
-		if err != nil {
-			return pgconn.QueryStatus{}, err
-		}
-	}
-
-	var rr *pgconn.ResultReader
-	if tx != nil {
-		rr = c.pgConn.ExecTx(ctx, tx.tx, sql)
-	} else {
-		rr = c.pgConn.Exec(ctx, sql)
-	}
-	return rr.Close()
 }
 
 func (c *Conn) execParams(ctx context.Context, tx *dbTx, sd *pgconn.StatementDescription, arguments []any) (pgconn.QueryStatus, error) {
@@ -662,24 +635,6 @@ const (
 	// pgtype.Map.RegisterDefaultPgType and implementing the appropriate type interfaces. In the cas of RomanNumeral, it
 	// should implement pgtype.Int64Valuer.
 	QueryExecModeExec
-
-	// Use the simple protocol. Assume the PostgreSQL query parameter types based on the Go type of the arguments. This is
-	// especially significant for []byte values. []byte values are encoded as PostgreSQL bytea. string must be used
-	// instead for text type values including json and jsonb. Type mappings can be registered with
-	// pgtype.Map.RegisterDefaultPgType. Queries will be rejected that have arguments that are unregistered or ambiguous.
-	// e.g. A map[string]string may have the PostgreSQL type json or hstore. Modes that know the PostgreSQL type can use a
-	// map[string]string directly as an argument. This mode cannot. Queries are executed in a single round trip.
-	//
-	// QueryExecModeSimpleProtocol should have the user application visible behavior as QueryExecModeExec. This includes
-	// the warning regarding differences in text format and binary format encoding with user defined types. There may be
-	// other minor exceptions such as behavior when multiple result returning queries are erroneously sent in a single
-	// string.
-	//
-	// QueryExecModeSimpleProtocol uses client side parameter interpolation. All values are quoted and escaped. Prefer
-	// QueryExecModeExec over QueryExecModeSimpleProtocol whenever possible. In general QueryExecModeSimpleProtocol should
-	// only be used if connecting to a proxy server, connection pool server, or non-PostgreSQL server that does not
-	// support the extended protocol.
-	QueryExecModeSimpleProtocol
 )
 
 func (m QueryExecMode) String() string {
@@ -688,8 +643,6 @@ func (m QueryExecMode) String() string {
 		return "cache statement"
 	case QueryExecModeExec:
 		return "exec"
-	case QueryExecModeSimpleProtocol:
-		return "simple protocol"
 	default:
 		return "invalid"
 	}
@@ -776,11 +729,6 @@ optionLoop:
 		}
 	}
 
-	// Bypass any statement caching.
-	if sql == "" {
-		mode = QueryExecModeSimpleProtocol
-	}
-
 	c.eqb.reset()
 	rows := c.getRows(ctx, sql, args)
 
@@ -832,19 +780,6 @@ optionLoop:
 		} else {
 			rows.resultReader = st.Exec(ctx, c.eqb.ParamValues)
 		}
-	} else if mode == QueryExecModeSimpleProtocol {
-		sql, err = c.sanitizeForSimpleQuery(sql, args...)
-		if err != nil {
-			rows.fatal(err)
-			return rows, err
-		}
-
-		if tx != nil {
-			rows.resultReader = c.pgConn.ExecTx(ctx, tx.tx, sql)
-		} else {
-			rows.resultReader = c.pgConn.Exec(ctx, sql)
-		}
-		return rows, nil
 	} else {
 		err = fmt.Errorf("unknown QueryExecMode: %v", mode)
 		rows.fatal(err)
@@ -1229,28 +1164,6 @@ func (c *Conn) sendBatchExtendedWithDescription(ctx context.Context, b *Batch, d
 	//	b:        b,
 	//}
 	panic("implement me")
-}
-
-func (c *Conn) sanitizeForSimpleQuery(sql string, args ...any) (string, error) {
-	//FIXME: fbx need to check anything for RDB?
-	//if c.pgConn.ParameterStatus("standard_conforming_strings") != "on" {
-	//	return "", errors.New("simple protocol queries must be run with standard_conforming_strings=on")
-	//}
-	//
-	//if c.pgConn.ParameterStatus("client_encoding") != "UTF8" {
-	//	return "", errors.New("simple protocol queries must be run with client_encoding=UTF8")
-	//}
-
-	var err error
-	valueArgs := make([]any, len(args))
-	for i, a := range args {
-		valueArgs[i], err = convertSimpleArgument(c.typeMap, a)
-		if err != nil {
-			return "", err
-		}
-	}
-
-	return sanitize.SanitizeSQL(sql, valueArgs...)
 }
 
 // LoadType inspects the database for typeName and produces a pgtype.Type suitable for registration. typeName must be

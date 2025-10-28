@@ -16,7 +16,6 @@ import (
 var AllQueryExecModes = []pgx.QueryExecMode{
 	pgx.QueryExecModeCacheStatement,
 	pgx.QueryExecModeExec,
-	pgx.QueryExecModeSimpleProtocol,
 }
 
 // KnownOIDQueryExecModes is a slice of all query exec modes where the param and result OIDs are known before sending the query.

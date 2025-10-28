@@ -978,7 +978,7 @@ func TestSendBatchSimpleProtocol(t *testing.T) {
 	defer cancel()
 
 	config := mustParseConfig(t, os.Getenv("PGX_TEST_DATABASE"))
-	config.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+	config.DefaultQueryExecMode = pgx.QueryExecModeExec
 
 	conn := mustConnect(t, config)
 	defer closeConn(t, conn)
