@@ -3530,3 +3530,43 @@ end
 	require.NoError(t, res.Err)
 	assert.Equal(t, 0, len(res.Rows))
 }
+
+func TestConnExecImmediate(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	require.NoError(t, err)
+	defer closeConn(t, pgConn)
+
+	err = pgConn.ExecImmediate(ctx, "recreate table a(id int)")
+	require.NoError(t, err)
+
+	err = pgConn.Commit(ctx)
+	require.NoError(t, err)
+
+	tx, err := pgConn.StartTransaction(ctx)
+	require.NoError(t, err)
+
+	err = pgConn.ExecImmediateTx(ctx, tx, "drop table a")
+	require.NoError(t, err)
+	ensureConnValid(t, pgConn)
+}
+
+func TestConnExecImmediateNoTx(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	require.NoError(t, err)
+	defer closeConn(t, pgConn)
+
+	err = pgConn.ExecImmediateTx(ctx, nil, "set transaction")
+	require.NoError(t, err)
+
+	ensureConnValid(t, pgConn)
+}

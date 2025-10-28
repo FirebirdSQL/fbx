@@ -523,7 +523,7 @@ const (
 	Op_create_blob2       = 57
 	Op_allocate_statement = 62
 	Op_execute            = 63
-	Op_execute_immediate  = 64
+	Op_exec_immediate     = 64
 	Op_fetch              = 65
 	Op_fetch_response     = 66
 	Op_free_statement     = 67

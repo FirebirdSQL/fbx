@@ -1268,6 +1268,70 @@ func (pgConn *PgConn) WaitForNotification(ctx context.Context) error {
 	panic("implement me")
 }
 
+// ExecImmediate executes statement immediate inside internal transaction
+func (pgConn *PgConn) ExecImmediate(ctx context.Context, sql string) error {
+	tx, err := pgConn.ensureInternalTransaction(ctx, nil)
+	if err != nil {
+		pgConn.asyncClose()
+		return err
+	}
+	return pgConn.ExecImmediateTx(ctx, tx, sql)
+}
+
+// ExecImmediateTx executes statement immediate inside specified transaction
+func (pgConn *PgConn) ExecImmediateTx(ctx context.Context, tx *FBTransaction, sql string) error {
+	var err error
+
+	if err = pgConn.lock(); err != nil {
+		return err
+	}
+	defer pgConn.unlock()
+
+	if ctx != context.Background() {
+		select {
+		case <-ctx.Done():
+			return newContextAlreadyDoneError(ctx)
+		default:
+		}
+		pgConn.contextWatcher.Watch(ctx)
+		defer pgConn.contextWatcher.Unwatch()
+	}
+
+	txHandle := 0
+	if tx != nil {
+		txHandle = tx.Handle
+	}
+	if err = pgConn.client.WriteMessage(&fbproto.OpExecuteImmediate{
+		Encoding:          pgConn.Encoding,
+		TransactionHandle: txHandle,
+		Dialect:           3,
+		Query:             sql,
+	}); err != nil {
+		pgConn.asyncClose()
+		return err
+	}
+
+	if err = pgConn.writer.Flush(); err != nil {
+		pgConn.asyncClose()
+		return err
+	}
+
+	msg, err := pgConn.receiveMessage()
+	if err != nil {
+		pgConn.asyncClose()
+		return err
+	}
+
+	switch m := msg.(type) {
+	case *fbproto.OpResponse:
+	case *fbproto.ErrorResponse:
+		return ErrorResponseToFbError(m)
+	default:
+		panic(fmt.Sprintf("wrong response message type %T instead expected OpResponse or ErrorResponse", m))
+	}
+	return nil
+}
+
 // Exec executes SQL via the PostgreSQL simple query protocol. SQL may contain multiple queries. Execution is
 // implicitly wrapped in a transaction unless a transaction is already in progress or SQL contains transaction control
 // statements.
