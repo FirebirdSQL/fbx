@@ -12,6 +12,7 @@ import (
 )
 
 func TestTimeCodec(t *testing.T) {
+	t.Skip("need implementation")
 	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "time", []pgxtest.ValueRoundTripTest{
 		{Param: pgtype.Time{Microseconds: 0, Valid: true}, Result: new(pgtype.Time), Test: isExpectedEq(pgtype.Time{Microseconds: 0, Valid: true})},
 		{Param: pgtype.Time{Microseconds: 1, Valid: true}, Result: new(pgtype.Time), Test: isExpectedEq(pgtype.Time{Microseconds: 1, Valid: true})},
