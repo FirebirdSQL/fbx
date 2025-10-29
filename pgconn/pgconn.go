@@ -472,7 +472,11 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 	pgConn.client = fbproto.NewClient(pgConn.bgReader, pgConn.writer, pgConn.Encoding)
 	pgConn.wireCrypt = wirecrypt.NewDefaultManager()
 
-	authManager := auth.NewAuthManager(config.User, config.Password)
+	authManager, err := auth.NewAuthManager(config.User, config.Password, config.AuthPluginList)
+	if err != nil {
+		pgConn.conn.Close()
+		return nil, newPerDialConnectError("authentication setup failed", err)
+	}
 	initialHandshake := authManager.BeginHandshake()
 	if initialHandshake == nil {
 		pgConn.conn.Close()

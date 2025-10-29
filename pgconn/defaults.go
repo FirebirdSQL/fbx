@@ -2,14 +2,18 @@
 
 package pgconn
 
-import "os/user"
+import (
+	"os/user"
+
+	"github.com/red-soft/fbx/fbproto/auth"
+)
 
 func defaultSettings() map[string]string {
 	settings := make(map[string]string)
 
 	settings["host"] = defaultHost()
 	settings["port"] = "3050"
-	settings["auth_plugin"] = "Srp"
+	settings["auth_plugin_list"] = auth.DefaultPluginListString()
 	settings["wire_crypt"] = "true"
 
 	user, err := user.Current()
