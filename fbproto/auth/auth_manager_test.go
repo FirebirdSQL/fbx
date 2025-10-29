@@ -9,7 +9,8 @@ import (
 )
 
 func TestAuthManagerBuildListAndCurrent(t *testing.T) {
-	m := NewAuthManager("user", "secret")
+	m, err := NewAuthManager("user", "secret", nil)
+	require.NoError(t, err)
 	require.NotNil(t, m)
 	require.Equal(t, "Srp256,Srp224,Srp384,Srp512,Srp,Gss,Legacy_Auth", m.BuildList())
 
@@ -44,21 +45,24 @@ func TestAuthManagerEmptyAndBounds(t *testing.T) {
 	var empty AuthManager
 	require.Nil(t, empty.GetCurrentPlugin())
 
-	m := NewAuthManager("user", "secret")
+	m, err := NewAuthManager("user", "secret", nil)
+	require.NoError(t, err)
 	m.current = 999
 	first := m.GetCurrentPlugin()
 	require.Equal(t, m.plugins[0], first)
 }
 
 func TestSetCurrentPluginNotFound(t *testing.T) {
-	m := NewAuthManager("user", "secret")
+	m, err := NewAuthManager("user", "secret", nil)
+	require.NoError(t, err)
 	p, ok := m.SetCurrentPlugin("unknown_plugin")
 	require.False(t, ok)
 	require.Nil(t, p)
 }
 
 func TestAuthManagerHandleServerChallenge(t *testing.T) {
-	m := NewAuthManager("user", "secret")
+	m, err := NewAuthManager("user", "secret", nil)
+	require.NoError(t, err)
 	step, err := m.HandleServerChallenge("legacy_auth", nil)
 	require.NoError(t, err)
 	require.NotNil(t, step)
@@ -77,8 +81,9 @@ func TestAuthManagerHandleServerChallenge(t *testing.T) {
 }
 
 func TestHandleServerChallengeUnsupportedPlugin(t *testing.T) {
-	m := NewAuthManager("user", "secret")
-	_, err := m.HandleServerChallenge("unknown", nil)
+	m, err := NewAuthManager("user", "secret", nil)
+	require.NoError(t, err)
+	_, err = m.HandleServerChallenge("unknown", nil)
 	require.Error(t, err)
 }
 
@@ -91,4 +96,18 @@ func TestLegacyAuthPluginInitialClientData(t *testing.T) {
 
 	p2 := NewLegacyAuthPlugin("other")
 	require.NotEqual(t, data, p2.InitialClientData())
+}
+
+func TestNewAuthManagerCustomList(t *testing.T) {
+	m, err := NewAuthManager("user", "secret", []string{"Legacy_Auth", "Srp", "Legacy_Auth"})
+	require.NoError(t, err)
+	require.Equal(t, "Legacy_Auth,Srp", m.BuildList())
+	cur := m.GetCurrentPlugin()
+	require.NotNil(t, cur)
+	require.Equal(t, "Legacy_Auth", cur.Name())
+}
+
+func TestNewAuthManagerUnknownPlugin(t *testing.T) {
+	_, err := NewAuthManager("user", "secret", []string{"unknown"})
+	require.Error(t, err)
 }

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/red-soft/fbx/fbproto"
+	"github.com/red-soft/fbx/fbproto/auth"
 	"github.com/red-soft/fbx/pgconn/ctxwatch"
 )
 
@@ -35,7 +36,7 @@ type Config struct {
 	DialFunc       DialFunc   // e.g. net.Dialer.DialContext
 	LookupFunc     LookupFunc // e.g. net.Resolver.LookupHost
 	BuildFrontend  BuildFrontendFunc
-	AuthPlugin     string
+	AuthPluginList []string
 	WireCrypt      bool
 	Encoding       string
 
@@ -91,6 +92,11 @@ func (c *Config) Copy() *Config {
 		for k, v := range c.RuntimeParams {
 			newConf.RuntimeParams[k] = v
 		}
+	}
+	if len(newConf.AuthPluginList) > 0 {
+		newList := make([]string, len(c.AuthPluginList))
+		copy(newList, c.AuthPluginList)
+		newConf.AuthPluginList = newList
 	}
 	return newConf
 }
@@ -252,6 +258,13 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 	if err != nil {
 		return nil, err
 	}
+
+	rawPluginList := settings["auth_plugin_list"]
+	pluginList := parseAuthPluginList(rawPluginList)
+	if len(pluginList) == 0 {
+		pluginList = auth.DefaultPluginSequence()
+	}
+
 	config := &Config{
 		createdByParseConfig: true,
 		Database:             settings["database"],
@@ -273,8 +286,8 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 			//}
 			return true
 		},
-		AuthPlugin: settings["auth_plugin"],
-		WireCrypt:  convertToBool(settings["wire_crypt"], true),
+		AuthPluginList: pluginList,
+		WireCrypt:      convertToBool(settings["wire_crypt"], true),
 	}
 
 	if connectTimeoutSetting, present := settings["connect_timeout"]; present {
@@ -292,14 +305,15 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 	config.LookupFunc = makeDefaultResolver().LookupHost
 
 	notRuntimeParams := map[string]struct{}{
-		"host":            {},
-		"port":            {},
-		"database":        {},
-		"user":            {},
-		"password":        {},
-		"connect_timeout": {},
-		"krbspn":          {},
-		"krbsrvname":      {},
+		"host":             {},
+		"port":             {},
+		"database":         {},
+		"user":             {},
+		"password":         {},
+		"connect_timeout":  {},
+		"krbspn":           {},
+		"krbsrvname":       {},
+		"auth_plugin_list": {},
 	}
 
 	// Adding kerberos configuration
@@ -377,6 +391,37 @@ func parseEnvSettings() map[string]string {
 	}
 
 	return settings
+}
+
+func parseAuthPluginList(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+
+	splitFn := func(r rune) bool {
+		switch r {
+		case ',', ';', ' ', '\t', '\n', '\r':
+			return true
+		default:
+			return false
+		}
+	}
+
+	parts := strings.FieldsFunc(raw, splitFn)
+	if len(parts) == 0 {
+		return nil
+	}
+
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 func parseURLSettings(connString string) (map[string]string, error) {

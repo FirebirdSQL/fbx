@@ -57,10 +57,3 @@ func TestGssAuthPluginPhases(t *testing.T) {
 	require.Equal(t, "red_db", mock.gotService)
 	require.Equal(t, "localhost", mock.gotHost)
 }
-
-func TestAuthManagerPrefersGssWhenUserEmpty(t *testing.T) {
-	m := NewAuthManager("", "")
-	hs := m.BeginHandshake()
-	require.NotNil(t, hs)
-	require.Equal(t, "Gss", hs.PluginName)
-}

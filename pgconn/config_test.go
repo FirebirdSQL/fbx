@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/red-soft/fbx/fbproto/auth"
 	"github.com/red-soft/fbx/pgconn"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -111,6 +112,19 @@ func TestParseConfig(t *testing.T) {
 				Port:          5432,
 				Database:      "mydb",
 				RuntimeParams: map[string]string{},
+			},
+		},
+		{
+			name:       "database url custom auth plugin list",
+			connString: "firebird://jack:secret@localhost:5432/mydb?auth_plugin_list=Srp,Legacy_Auth",
+			config: &pgconn.Config{
+				User:           "jack",
+				Password:       "secret",
+				Host:           "localhost",
+				Port:           5432,
+				Database:       "mydb",
+				RuntimeParams:  map[string]string{},
+				AuthPluginList: []string{"Srp", "Legacy_Auth"},
 			},
 		},
 		{
@@ -450,6 +464,11 @@ func assertConfigsEqual(t *testing.T, expected, actual *pgconn.Config, testName 
 	assert.Equalf(t, expected.Password, actual.Password, "%s - Password", testName)
 	assert.Equalf(t, expected.ConnectTimeout, actual.ConnectTimeout, "%s - ConnectTimeout", testName)
 	assert.Equalf(t, expected.RuntimeParams, actual.RuntimeParams, "%s - RuntimeParams", testName)
+	expectedPlugins := expected.AuthPluginList
+	if len(expectedPlugins) == 0 {
+		expectedPlugins = auth.DefaultPluginSequence()
+	}
+	assert.Equalf(t, expectedPlugins, actual.AuthPluginList, "%s - AuthPluginList", testName)
 
 	// Can't test function equality, so just test that they are set or not.
 	assert.Equalf(t, expected.ValidateConnect == nil, actual.ValidateConnect == nil, "%s - ValidateConnect", testName)

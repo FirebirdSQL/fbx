@@ -1,6 +1,9 @@
 package auth
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 type AuthPluginStep struct {
 	Reply        []byte
@@ -22,6 +25,38 @@ type AuthPlugin interface {
 	HandleAuthResponse(data []byte) error
 }
 
+var defaultPluginSequence = []string{
+	"Srp256",
+	"Srp224",
+	"Srp384",
+	"Srp512",
+	"Srp",
+	"Gss",
+	"Legacy_Auth",
+}
+
+var pluginConstructors = map[string]func(password string) AuthPlugin{
+	"srp":    func(string) AuthPlugin { return NewSrpAuthPlugin() },
+	"srp256": func(string) AuthPlugin { return NewSrp256AuthPlugin() },
+	"srp224": func(string) AuthPlugin { return NewSrp224AuthPlugin() },
+	"srp384": func(string) AuthPlugin { return NewSrp384AuthPlugin() },
+	"srp512": func(string) AuthPlugin { return NewSrp512AuthPlugin() },
+	"gss":    func(string) AuthPlugin { return NewGssAuthPlugin() },
+	"legacy_auth": func(password string) AuthPlugin {
+		return NewLegacyAuthPlugin(password)
+	},
+}
+
+// DefaultPluginSequence returns a copy of the default authentication plugin order.
+func DefaultPluginSequence() []string {
+	return cloneStrings(defaultPluginSequence)
+}
+
+// DefaultPluginListString returns the default authentication plugin order as a comma separated list.
+func DefaultPluginListString() string {
+	return strings.Join(defaultPluginSequence, ",")
+}
+
 type AuthManager struct {
 	user             string
 	password         string
@@ -36,21 +71,45 @@ type SpecificDataChunk struct {
 	Data []byte
 }
 
-func NewAuthManager(user string, password string) *AuthManager {
-	plugins := make([]AuthPlugin, 0, 6)
-	plugins = append(plugins, NewSrp256AuthPlugin())
-	plugins = append(plugins, NewSrp224AuthPlugin())
-	plugins = append(plugins, NewSrp384AuthPlugin())
-	plugins = append(plugins, NewSrp512AuthPlugin())
-	plugins = append(plugins, NewSrpAuthPlugin())
-	plugins = append(plugins, NewGssAuthPlugin())
-	plugins = append(plugins, NewLegacyAuthPlugin(password))
+func NewAuthManager(user string, password string, pluginNames []string) (*AuthManager, error) {
+	order := pluginNames
+	if len(order) == 0 {
+		order = DefaultPluginSequence()
+	} else {
+		order = cloneStrings(pluginNames)
+	}
+
+	plugins := make([]AuthPlugin, 0, len(order))
+	seen := make(map[string]struct{}, len(order))
+	for _, name := range order {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			continue
+		}
+		key := strings.ToLower(trimmed)
+		if _, dup := seen[key]; dup {
+			continue
+		}
+
+		constructor, ok := pluginConstructors[key]
+		if !ok {
+			return nil, fmt.Errorf("auth: unknown authentication plugin %q", name)
+		}
+
+		plugins = append(plugins, constructor(password))
+		seen[key] = struct{}{}
+	}
+
+	if len(plugins) == 0 {
+		return nil, fmt.Errorf("auth: no authentication plugins available")
+	}
+
 	return &AuthManager{
 		user:     user,
 		password: password,
 		plugins:  plugins,
 		current:  0,
-	}
+	}, nil
 }
 
 func (m *AuthManager) GetCurrentPlugin() AuthPlugin {
@@ -155,6 +214,35 @@ func cloneBytes(src []byte) []byte {
 	dst := make([]byte, len(src))
 	copy(dst, src)
 	return dst
+}
+
+func cloneStrings(src []string) []string {
+	if len(src) == 0 {
+		return nil
+	}
+	dst := make([]string, len(src))
+	copy(dst, src)
+	return dst
+}
+
+func prioritizePlugin(names []string, target string) []string {
+	idx := -1
+	targetLower := strings.ToLower(strings.TrimSpace(target))
+	for i, name := range names {
+		if strings.ToLower(strings.TrimSpace(name)) == targetLower {
+			idx = i
+			break
+		}
+	}
+	if idx <= 0 {
+		return names
+	}
+
+	result := make([]string, 0, len(names))
+	result = append(result, names[idx])
+	result = append(result, names[:idx]...)
+	result = append(result, names[idx+1:]...)
+	return result
 }
 
 const maxSpecificChunkSize = 254
