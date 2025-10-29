@@ -88,6 +88,17 @@ type Statement struct {
 //
 // ResultReader must be closed before PgConn can be used again.
 func (st *Statement) Exec(ctx context.Context, paramValues [][]byte) *ResultReader {
+	if st.transaction != nil && st.transaction == st.conn.internalTransaction {
+		if _, err := st.conn.ensureInternalTransaction(ctx, nil); err != nil {
+			rr := &ResultReader{
+				pgConn: st.conn,
+				ctx:    ctx,
+			}
+			rr.concludeCommand(QueryStatus{}, err)
+			rr.closed = true
+			return rr
+		}
+	}
 	return st.ExecTx(ctx, st.transaction, paramValues)
 }
 
