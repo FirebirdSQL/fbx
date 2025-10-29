@@ -11,7 +11,6 @@ import (
 	"strings"
 )
 
-var big0 *big.Int = big.NewInt(0)
 var big10 *big.Int = big.NewInt(10)
 
 type NumericScanner interface {
@@ -136,7 +135,7 @@ func (n *Numeric) toBigInt() (*big.Int, error) {
 	div.Exp(big10, big.NewInt(int64(-n.Exp)), nil)
 	remainder := &big.Int{}
 	num.DivMod(num, div, remainder)
-	if remainder.Cmp(big0) != 0 {
+	if remainder.Sign() != 0 {
 		return nil, fmt.Errorf("cannot convert %v to integer", n)
 	}
 	return num, nil
