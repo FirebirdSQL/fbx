@@ -629,6 +629,7 @@ connectLoop:
 		return nil, ErrorResponseToFbError(m)
 	}
 
+	pgConn.status = connStatusIdle
 	return pgConn, nil
 }
 
