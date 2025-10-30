@@ -176,21 +176,26 @@ func (c *Client) ReceiveMessage() (ServerMessage, error) {
 		case *OpDummy:
 			continue
 		case *OpResponse:
-			if m.Failure {
-				if c.lazyCounter == 0 {
+			if c.lazyCounter == 0 {
+				if m.Failure {
 					return &ErrorResponse{Object: m.Object, BlobId: m.BlobId, GdsCodes: m.GdsCodes, SqlCode: m.SqlCode, SqlState: m.SqlState, Message: m.Message}, nil
-				} else {
-					//FIXME: fbx need some callback for lazy response error?
-					fmt.Printf("Ignoring lazy response: %s", m.Message)
 				}
+			} else {
+				if m.Failure {
+					//FIXME: fbx need some callback for lazy response error?
+					fmt.Printf("Ignoring lazy response with error: %s", m.Message)
+				}
+				c.lazyCounter--
+				continue
 			}
 		case *OpReject:
 			return msg, fmt.Errorf("server rejected connection")
+		default:
+			if c.lazyCounter > 0 {
+				panic(fmt.Sprintf("unexpected response of type %T but expected lazy op_response", m))
+			}
 		}
-		if c.lazyCounter == 0 {
-			break
-		}
-		c.lazyCounter--
+		break
 	}
 	return msg, nil
 }
