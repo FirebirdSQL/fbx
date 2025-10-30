@@ -324,7 +324,10 @@ func (c *Conn) internalPrepare(ctx context.Context, tx *dbTx, name, sql string) 
 	var st *pgconn.Statement
 	if name != "" {
 		var ok bool
-		if st, ok = c.preparedStatements[name]; ok && st.Description.SQL == sql {
+		if st, ok = c.preparedStatements[name]; ok {
+			if sql != c.preparedStatements[name].Description.SQL {
+				return nil, fmt.Errorf("prepared query '%s' already exists", name)
+			}
 			if c.prepareTracer != nil {
 				c.prepareTracer.TracePrepareEnd(ctx, c, TracePrepareEndData{AlreadyPrepared: true})
 			}
