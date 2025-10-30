@@ -2,7 +2,9 @@ package pgx
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strconv"
@@ -341,10 +343,13 @@ func (c *Conn) internalPrepare(ctx context.Context, tx *dbTx, name, sql string) 
 		}()
 	}
 
-	var psKey string
+	var psName, psKey string
 	if name == sql {
+		digest := sha256.Sum256([]byte(sql))
+		psName = "stmt_" + hex.EncodeToString(digest[0:24])
 		psKey = sql
 	} else {
+		psName = name
 		psKey = name
 	}
 
@@ -360,7 +365,7 @@ func (c *Conn) internalPrepare(ctx context.Context, tx *dbTx, name, sql string) 
 	if psKey != "" {
 		c.preparedStatements[psKey] = st
 	}
-
+	st.Description.Name = psName
 	return st, nil
 }
 
