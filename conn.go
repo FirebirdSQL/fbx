@@ -366,7 +366,7 @@ func (c *Conn) Deallocate(ctx context.Context, name string) error {
 	st := c.preparedStatements[name]
 
 	if st != nil {
-		err := st.Close(ctx)
+		err := st.Deallocate(ctx)
 
 		if err != nil {
 			return err
@@ -540,7 +540,7 @@ optionLoop:
 		if err != nil {
 			return pgconn.QueryStatus{}, err
 		}
-		defer st.Close(ctx)
+		defer st.Deallocate(ctx)
 		return c.execPrepared(ctx, tx, st, arguments)
 	default:
 		return pgconn.QueryStatus{}, fmt.Errorf("unknown QueryExecMode: %v", mode)
@@ -749,6 +749,7 @@ optionLoop:
 		}
 
 		rows.sql = st.Description.SQL
+		rows.boundStatement = st
 
 		err = c.eqb.Build(c.typeMap, st.Description, args)
 		if err != nil {
@@ -770,7 +771,7 @@ optionLoop:
 
 		err = c.eqb.Build(c.typeMap, st.Description, args)
 		if err != nil {
-			st.Close(ctx)
+			st.Deallocate(ctx)
 			rows.fatal(err)
 			return rows, rows.err
 		}

@@ -80,6 +80,7 @@ type Statement struct {
 	Description  *StatementDescription
 	transaction  *FBTransaction
 	cursorOpened bool
+	closed       bool
 }
 
 // Exec executed a prepared statement inside bound transaction
@@ -88,6 +89,19 @@ type Statement struct {
 //
 // ResultReader must be closed before PgConn can be used again.
 func (st *Statement) Exec(ctx context.Context, paramValues [][]byte) *ResultReader {
+	var err error
+	rr := &ResultReader{
+		pgConn: st.conn,
+		ctx:    ctx,
+	}
+	if err = st.CloseCursor(ctx); err != nil {
+		st.conn.asyncClose()
+		rr.concludeCommand(QueryStatus{}, err)
+		st.conn.contextWatcher.Unwatch()
+		rr.closed = true
+		return rr
+	}
+
 	if st.transaction != nil && st.transaction == st.conn.internalTransaction {
 		if _, err := st.conn.ensureInternalTransaction(ctx, nil); err != nil {
 			rr := &ResultReader{
@@ -109,15 +123,24 @@ func (st *Statement) Exec(ctx context.Context, paramValues [][]byte) *ResultRead
 //
 // ResultReader must be closed before PgConn can be used again.
 func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues [][]byte) *ResultReader {
+	var err error
 	rr := &ResultReader{
 		pgConn: st.conn,
 		ctx:    ctx,
 	}
 
+	if err = st.CloseCursor(ctx); err != nil {
+		st.conn.asyncClose()
+		rr.concludeCommand(QueryStatus{}, err)
+		st.conn.contextWatcher.Unwatch()
+		rr.closed = true
+		return rr
+	}
+
 	rr.statementDescription = st.Description
 	rr.fieldDescriptions = st.Description.Fields
 
-	if err := st.conn.lock(); err != nil {
+	if err = st.conn.lock(); err != nil {
 		rr.concludeCommand(QueryStatus{}, err)
 		rr.closed = true
 		return rr
@@ -133,22 +156,6 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 		default:
 		}
 		st.conn.contextWatcher.Watch(ctx)
-	}
-
-	var err error
-
-	if st.cursorOpened {
-		st.cursorOpened = false
-		if err = st.conn.client.WriteMessage(&fbproto.OpFreeStatement{
-			StatementHandle: st.Description.StatementHandle,
-			Option:          fbproto.DSQL_close,
-		}); err != nil {
-			st.conn.asyncClose()
-			rr.concludeCommand(QueryStatus{}, err)
-			st.conn.contextWatcher.Unwatch()
-			rr.closed = true
-			return rr
-		}
 	}
 
 	execKind := fbproto.Op_execute
@@ -232,6 +239,7 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 		}
 	}
 
+	st.closed = false
 	st.cursorOpened = st.Description.HaveCursorResult()
 	rr.cursorOpened = st.Description.HaveCursorResult()
 	rr.singletonResult = st.Description.HaveSingletonResult()
@@ -239,8 +247,10 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 	return rr
 }
 
-// Close frees statement on server
-func (st *Statement) Close(ctx context.Context) error {
+func (st *Statement) internalClose(ctx context.Context, closeOption int) error {
+	if !st.cursorOpened || st.closed {
+		return nil
+	}
 	var err error
 	if err = st.conn.lock(); err != nil {
 		return err
@@ -257,15 +267,30 @@ func (st *Statement) Close(ctx context.Context) error {
 		defer st.conn.contextWatcher.Unwatch()
 	}
 
-	if err = st.conn.client.WriteMessage(&fbproto.OpFreeStatement{StatementHandle: st.Description.StatementHandle, Option: fbproto.DSQL_drop}); err != nil {
+	st.cursorOpened = false
+	st.closed = closeOption == fbproto.DSQL_drop
+
+	if err = st.conn.client.WriteMessage(&fbproto.OpFreeStatement{StatementHandle: st.Description.StatementHandle, Option: closeOption}); err != nil {
 		st.conn.asyncClose()
 		return err
 	}
 
-	if err = st.conn.writer.Flush(); err != nil {
-		st.conn.asyncClose()
-		return err
+	if closeOption == fbproto.DSQL_drop {
+		if err = st.conn.writer.Flush(); err != nil {
+			st.conn.asyncClose()
+			return err
+		}
 	}
 
 	return nil
+}
+
+// Deallocate frees statement on server
+func (st *Statement) Deallocate(ctx context.Context) error {
+	return st.internalClose(ctx, fbproto.DSQL_drop)
+}
+
+// CloseCursor close opened cursor without deallocating statement on server
+func (st *Statement) CloseCursor(ctx context.Context) error {
+	return st.internalClose(ctx, fbproto.DSQL_close)
 }
