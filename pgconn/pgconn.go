@@ -1923,57 +1923,6 @@ func (rr *ResultReader) Close() (QueryStatus, error) {
 	return rr.queryStatus, rr.err
 }
 
-// readUntilRowDescription ensures the ResultReader's fieldDescriptions are loaded. It does not return an error as any
-// error will be stored in the ResultReader.
-func (rr *ResultReader) readUntilRowDescription() {
-	//for !rr.commandConcluded {
-	//	// Peek before receive to avoid consuming a DataRow if the result set does not include a RowDescription method.
-	//	// This should never happen under normal pgconn usage, but it is possible if SendBytes and ReceiveResults are
-	//	// manually used to construct a query that does not issue a describe statement.
-	//	msg, _ := rr.pgConn.peekMessage()
-	//	if _, ok := msg.(*pgproto3.DataRow); ok {
-	//		return
-	//	}
-	//
-	//	// Consume the message
-	//	msg, _ = rr.receiveMessage()
-	//	if _, ok := msg.(*pgproto3.RowDescription); ok {
-	//		return
-	//	}
-	//}
-}
-
-func (rr *ResultReader) receiveMessage() (msg fbproto.ServerMessage, err error) {
-	msg, err = rr.pgConn.receiveMessage()
-
-	if err != nil {
-		err = normalizeTimeoutError(rr.ctx, err)
-		rr.concludeCommand(QueryStatus{}, err)
-		rr.pgConn.contextWatcher.Unwatch()
-		rr.closed = true
-		rr.pgConn.asyncClose()
-		return nil, rr.err
-	}
-
-	//switch msg := msg.(type) {
-	//case *pgproto3.RowDescription:
-	//	rr.fieldDescriptions = rr.pgConn.convertRowDescription(rr.pgConn.fieldDescriptions[:], msg)
-	//case *pgproto3.CommandComplete:
-	//	rr.concludeCommand(rr.pgConn.makeCommandTag(msg.QueryStatus), nil)
-	//case *pgproto3.EmptyQueryResponse:
-	//	rr.concludeCommand(QueryStatus{}, nil)
-	//case *pgproto3.ErrorResponse:
-	//	pgErr := ErrorResponseToPgError(msg)
-	//	if rr.pipeline != nil {
-	//		rr.pipeline.state.HandleError(pgErr)
-	//	}
-	//	rr.concludeCommand(QueryStatus{}, pgErr)
-	//}
-	//
-	//return msg, nil
-	panic("implement me")
-}
-
 func (rr *ResultReader) concludeCommand(queryStatus QueryStatus, err error) {
 	// Keep the first error that is recorded. Store the error before checking if the command is already concluded to
 	// allow for receiving an error after CommandComplete but before ReadyForQuery.
