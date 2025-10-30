@@ -135,6 +135,7 @@ func ExampleForEachRow() {
 		fmt.Printf("Unable to establish connection: %v", err)
 		return
 	}
+	defer conn.Close(context.Background())
 
 	rows, _ := conn.Query(
 		context.Background(),
@@ -200,6 +201,7 @@ func ExampleCollectRows() {
 		fmt.Printf("Unable to establish connection: %v", err)
 		return
 	}
+	defer conn.Close(ctx)
 
 	rows, _ := conn.Query(ctx, generateSeriesQuery("1", "5", ""))
 	numbers, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (int32, error) {
@@ -368,6 +370,7 @@ func ExampleRowTo() {
 		fmt.Printf("Unable to establish connection: %v", err)
 		return
 	}
+	defer conn.Close(ctx)
 
 	rows, _ := conn.Query(ctx, generateSeriesQuery("1", "5", ""))
 	numbers, err := pgx.CollectRows(rows, pgx.RowTo[int32])
@@ -404,6 +407,7 @@ func ExampleRowToAddrOf() {
 		fmt.Printf("Unable to establish connection: %v", err)
 		return
 	}
+	defer conn.Close(ctx)
 
 	rows, _ := conn.Query(ctx, generateSeriesQuery("1", "5", ""))
 	pNumbers, err := pgx.CollectRows(rows, pgx.RowToAddrOf[int32])
@@ -581,6 +585,7 @@ func ExampleRowToStructByPos() {
 		fmt.Printf("Unable to establish connection: %v", err)
 		return
 	}
+	defer conn.Close(ctx)
 
 	if conn.PgConn().ParameterStatus("crdb_version") != "" {
 		// Skip test / example when running on CockroachDB. Since an example can't be skipped fake success instead.
@@ -765,6 +770,7 @@ func ExampleRowToStructByName() {
 		fmt.Printf("Unable to establish connection: %v", err)
 		return
 	}
+	defer conn.Close(ctx)
 
 	if conn.PgConn().ParameterStatus("crdb_version") != "" {
 		// Skip test / example when running on CockroachDB. Since an example can't be skipped fake success instead.
