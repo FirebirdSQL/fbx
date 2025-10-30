@@ -1763,10 +1763,13 @@ type ResultReader struct {
 	err               error
 
 	statementDescription *StatementDescription
-	lastFetchResponse    *fbproto.OpFetchResponse
 	singleton            *fbproto.SQLData
 	singletonResult      bool
 	cursorOpened         bool
+	fetchExecuted        bool
+	currentFetch         [][][]byte
+	currentFetchPos      int
+	eoc                  bool
 }
 
 // Result is the saved query response that is returned by calling Read on a ResultReader.
@@ -1806,72 +1809,94 @@ func (rr *ResultReader) Read() *Result {
 // NextRow advances the ResultReader to the next row and returns true if a row is available.
 func (rr *ResultReader) NextRow() bool {
 	var err error
-	for !rr.commandConcluded {
-		if rr.singletonResult {
-			if rr.singleton == nil {
-				return false
-			}
-			rr.rowValues = rr.singleton.RowData
-			rr.singleton = nil
-			return true
-		}
-
-		if !rr.cursorOpened {
+	if rr.singletonResult {
+		if rr.singleton == nil {
 			return false
 		}
+		rr.rowValues = rr.singleton.RowData
+		rr.singleton = nil
+		return true
+	}
 
-		if rr.lastFetchResponse != nil && rr.lastFetchResponse.MoreRows() {
-			row, msg, err := rr.pgConn.client.ReceiveSQLData(rr.statementDescription.StatementInfo.FieldDescriptors)
-			if err != nil {
-				rr.pgConn.asyncClose()
-				rr.concludeCommand(QueryStatus{}, err)
-				return false
-			}
-			switch m := msg.(type) {
-			case *fbproto.OpFetchResponse:
-				rr.lastFetchResponse = m
-			case *fbproto.ErrorResponse:
-				rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(m))
-				return false
-			default:
-				panic(fmt.Sprintf("wrong response message type %T instead expected OpFetchResponse or ErrorResponse", m))
-			}
-			rr.rowValues = row.RowData
+	if !rr.cursorOpened {
+		return false
+	}
+
+	if rr.currentFetch != nil {
+		if rr.currentFetchPos+1 < len(rr.currentFetch) {
+			rr.currentFetchPos += 1
+			rr.rowValues = rr.currentFetch[rr.currentFetchPos]
 			return true
-		} else if rr.lastFetchResponse == nil || !rr.lastFetchResponse.EndOfCursor() {
-			if err = rr.pgConn.client.WriteMessage(&fbproto.OpFetch{
-				StatementHandle: rr.statementDescription.StatementHandle,
-				//FIXME: fbx need only on first fetch
-				RowBlr:   rr.statementDescription.StatementInfo.GetRowBlr(),
-				Messages: 400,
-			}); err != nil {
-				return false
-			}
-			if err = rr.pgConn.writer.Flush(); err != nil {
-				return false
-			}
-
-			msg, err := rr.pgConn.receiveMessage()
-			if err != nil {
-				rr.pgConn.asyncClose()
-				rr.err = err
-				return false
-			}
-			switch m := msg.(type) {
-			case *fbproto.OpFetchResponse:
-				rr.lastFetchResponse = m
-			case *fbproto.ErrorResponse:
-				rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(m))
-				return false
-			default:
-				panic(fmt.Sprintf("wrong response message type %T instead expected OpFetchResponse or ErrorResponse", m))
-			}
-		} else {
-			return false
 		}
 	}
 
-	return false
+	if rr.eoc {
+		return false
+	}
+
+	var rowBlr []byte
+	if !rr.fetchExecuted {
+		rowBlr = rr.statementDescription.StatementInfo.GetRowBlr()
+	}
+	if err = rr.pgConn.client.WriteMessage(&fbproto.OpFetch{
+		StatementHandle: rr.statementDescription.StatementHandle,
+		RowBlr:          rowBlr,
+		Messages:        400,
+	}); err != nil {
+		return false
+	}
+	if err = rr.pgConn.writer.Flush(); err != nil {
+		return false
+	}
+	rr.fetchExecuted = true
+
+	var fetchResp *fbproto.OpFetchResponse
+	msg, err := rr.pgConn.receiveMessage()
+	if err != nil {
+		rr.pgConn.asyncClose()
+		rr.err = err
+		return false
+	}
+	switch m := msg.(type) {
+	case *fbproto.OpFetchResponse:
+		fetchResp = m
+	case *fbproto.ErrorResponse:
+		rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(m))
+		return false
+	default:
+		panic(fmt.Sprintf("wrong response message type %T instead expected OpFetchResponse or ErrorResponse", m))
+	}
+	rr.currentFetch = nil
+	rr.currentFetchPos = 0
+
+	if fetchResp.EndOfCursor() {
+		rr.eoc = true
+		return false
+	}
+
+	for fetchResp.MoreRows() {
+		row, msg, err := rr.pgConn.client.ReceiveSQLData(rr.statementDescription.StatementInfo.FieldDescriptors)
+		if err != nil {
+			rr.pgConn.asyncClose()
+			rr.concludeCommand(QueryStatus{}, err)
+			return false
+		}
+		switch m := msg.(type) {
+		case *fbproto.OpFetchResponse:
+			fetchResp = m
+		case *fbproto.ErrorResponse:
+			rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(m))
+			return false
+		default:
+			panic(fmt.Sprintf("wrong response message type %T instead expected OpFetchResponse or ErrorResponse", m))
+		}
+		rr.currentFetch = append(rr.currentFetch, row.RowData)
+	}
+	rr.eoc = fetchResp.EndOfCursor()
+	rr.currentFetchPos = 0
+	rr.rowValues = rr.currentFetch[rr.currentFetchPos]
+
+	return true
 }
 
 // FieldDescriptions returns the field descriptions for the current result set. The returned slice is only valid until
