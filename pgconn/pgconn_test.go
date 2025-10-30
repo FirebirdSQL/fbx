@@ -563,7 +563,7 @@ func TestConnDeallocate(t *testing.T) {
 	_, err = st.Exec(ctx, nil).Close()
 	require.NoError(t, err)
 
-	err = st.Close(ctx)
+	err = st.Deallocate(ctx)
 	require.NoError(t, err)
 
 	_, err = st.Exec(ctx, nil).Close()
@@ -990,7 +990,7 @@ func TestConnExecPrepared(t *testing.T) {
 	assert.Equal(t, "", commandTag.String())
 	assert.NoError(t, err)
 
-	err = ps.Close(ctx)
+	err = ps.Deallocate(ctx)
 	assert.NoError(t, err)
 
 	ensureConnValid(t, pgConn)

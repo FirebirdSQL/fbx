@@ -66,7 +66,7 @@ func mustExec(t testing.TB, conn *pgx.Conn, sql string, arguments ...any) (comma
 func ensureConnValid(t testing.TB, conn *pgx.Conn) {
 	var sum, rowCount int32
 
-	rows, err := conn.Query(context.Background(), "select generate_series(1,$1)", 10)
+	rows, err := conn.Query(context.Background(), generateSeriesQuery("1", "?", ""), 10)
 	if err != nil {
 		t.Fatalf("conn.Query failed: %v", err)
 	}

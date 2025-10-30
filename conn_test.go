@@ -205,23 +205,19 @@ func TestExec(t *testing.T) {
 	defer cancel()
 
 	pgxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
-		if results := mustExec(t, conn, "recreate table "+t.Name()+"(id integer primary key);"); results.String() != "CREATE TABLE" {
-			t.Error("Unexpected results from Exec")
-		}
+		table := strings.ReplaceAll(t.Name(), "/", "_")
+		results := mustExec(t, conn, "recreate table "+table+"(id integer primary key)")
+		assert.Equal(t, "DDL", results.String())
+		conn.Commit(ctx)
 
 		// Accept parameters
-		if results := mustExec(t, conn, "insert into "+t.Name()+"(id) values($1)", 1); results.String() != "INSERT 0 1" {
-			t.Errorf("Unexpected results from Exec: %v", results)
-		}
+		results = mustExec(t, conn, "insert into "+table+"(id) values(?)", 1)
+		assert.Equal(t, "INSERT", results.String())
+		conn.Commit(ctx)
 
-		if results := mustExec(t, conn, "drop table "+t.Name()); results.String() != "DROP TABLE" {
-			t.Error("Unexpected results from Exec")
-		}
-
-		// Exec no-op which does not return a command tag
-		if results := mustExec(t, conn, "--;"); results.String() != "" {
-			t.Errorf("Unexpected results from Exec: %v", results)
-		}
+		results = mustExec(t, conn, "drop table "+table)
+		assert.Equal(t, "DDL", results.String())
+		conn.Commit(ctx)
 	})
 }
 
@@ -241,7 +237,7 @@ func TestExecWithQueryRewriter(t *testing.T) {
 	defer cancel()
 
 	pgxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
-		qr := testQueryRewriter{sql: "select $1::int", args: []any{42}}
+		qr := testQueryRewriter{sql: "select cast(? as int) from rdb$database", args: []any{42}}
 		_, err := conn.Exec(ctx, "should be replaced", &qr)
 		require.NoError(t, err)
 	})
@@ -291,14 +287,15 @@ func TestExecContextWithoutCancelation(t *testing.T) {
 	defer cancel()
 
 	pgxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+		table := strings.ReplaceAll(t.Name(), "/", "_")
 		ctx, cancelFunc := context.WithCancel(ctx)
 		defer cancelFunc()
 
-		commandTag, err := conn.Exec(ctx, "create temporary table foo(id integer primary key);")
+		commandTag, err := conn.Exec(ctx, "recreate table "+table+"(id integer primary key);")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if commandTag.String() != "CREATE TABLE" {
+		if commandTag.String() != "DDL" {
 			t.Fatalf("Unexpected results from Exec: %v", commandTag)
 		}
 		assert.False(t, pgconn.SafeToRetry(err))
@@ -354,7 +351,7 @@ func TestExecFailureCloseBefore(t *testing.T) {
 	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	closeConn(t, conn)
 
-	_, err := conn.Exec(context.Background(), "select 1")
+	_, err := conn.Exec(context.Background(), "select 1 from rdb$database")
 	require.Error(t, err)
 	assert.True(t, pgconn.SafeToRetry(err))
 }
@@ -433,7 +430,7 @@ func TestPrepareIdempotency(t *testing.T) {
 
 	pgxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
 		for i := 0; i < 2; i++ {
-			_, err := conn.Prepare(context.Background(), "test", "select 42::integer")
+			_, err := conn.Prepare(context.Background(), "test", "select cast(42 as integer) from rdb$database")
 			if err != nil {
 				t.Fatalf("%d. Unable to prepare statement: %v", i, err)
 			}
@@ -449,7 +446,7 @@ func TestPrepareIdempotency(t *testing.T) {
 			}
 		}
 
-		_, err := conn.Prepare(context.Background(), "test", "select 'fail'::varchar")
+		_, err := conn.Prepare(context.Background(), "test", "select cast('fail' as varchar) from rdb$database")
 		if err == nil {
 			t.Fatalf("Prepare statement with same name but different SQL should have failed but it didn't")
 			return
@@ -464,7 +461,7 @@ func TestPrepareStatementCacheModes(t *testing.T) {
 	defer cancel()
 
 	pgxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
-		_, err := conn.Prepare(context.Background(), "test", "select $1::text")
+		_, err := conn.Prepare(context.Background(), "test", "select cast(? as varchar) from rdb$database")
 		require.NoError(t, err)
 
 		var s string
@@ -481,7 +478,7 @@ func TestPrepareWithDigestedName(t *testing.T) {
 	defer cancel()
 
 	pgxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
-		sql := "select $1::text"
+		sql := "select cast(? as varchar) from rdb$database"
 		sd, err := conn.Prepare(ctx, sql, sql)
 		require.NoError(t, err)
 		require.Equal(t, "stmt_2510cc7db17de3f42758a2a29c8b9ef8305d007b997ebdd6", sd.Name)

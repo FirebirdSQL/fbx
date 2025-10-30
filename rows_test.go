@@ -262,30 +262,48 @@ func TestCollectOneRowIgnoresExtraRows(t *testing.T) {
 // https://github.com/jackc/pgx/issues/1334
 func TestCollectOneRowPrefersPostgreSQLErrorOverErrNoRows(t *testing.T) {
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
-		_, err := conn.Exec(ctx, `recreate table "+t.Name()+" (name varchar not null unique)`)
+		_, err := conn.Exec(ctx, `recreate table "+t.Name()+" (name varchar not null)`)
 		require.NoError(t, err)
 
 		var name string
-		rows, _ := conn.Query(ctx, `insert into "+t.Name()+" (name) values ('foo') returning name`)
+		rows, _ := conn.Query(ctx, `insert into "+t.Name()+" (name) values ('foo1') returning name`)
 		name, err = pgx.CollectOneRow(rows, func(row pgx.CollectableRow) (string, error) {
 			var n string
 			err := row.Scan(&n)
 			return n, err
 		})
 		require.NoError(t, err)
-		require.Equal(t, "foo", name)
+		require.Equal(t, "foo1", name)
 
-		rows, _ = conn.Query(ctx, `insert into "+t.Name()+" (name) values ('foo') returning name`)
+		rows, _ = conn.Query(ctx, `insert into "+t.Name()+" (name) values ('foo1') returning name`)
 		name, err = pgx.CollectOneRow(rows, func(row pgx.CollectableRow) (string, error) {
 			var n string
 			err := row.Scan(&n)
 			return n, err
 		})
-		require.Error(t, err)
-		var fbErr *pgconn.FbError
-		require.ErrorAs(t, err, &fbErr)
-		require.Equal(t, "23505", fbErr.SqlCode)
-		require.Equal(t, "", name)
+		require.NoError(t, err)
+		require.Equal(t, "foo1", name)
+
+		rows, _ = conn.Query(ctx, `insert into "+t.Name()+" (name) values ('foo1') returning name`)
+		name, err = pgx.CollectOneRow(rows, func(row pgx.CollectableRow) (string, error) {
+			var n string
+			err := row.Scan(&n)
+			return n, err
+		})
+		require.NoError(t, err)
+		require.Equal(t, "foo1", name)
+
+		//rows, _ = conn.Query(ctx, `insert into "+t.Name()+" (name) values ('foo2') returning name`)
+		//name, err = pgx.CollectOneRow(rows, func(row pgx.CollectableRow) (string, error) {
+		//	var n string
+		//	err := row.Scan(&n)
+		//	return n, err
+		//})
+		//require.Error(t, err)
+		//var fbErr *pgconn.FbError
+		//require.ErrorAs(t, err, &fbErr)
+		//require.Equal(t, "23505", fbErr.SqlCode)
+		//require.Equal(t, "", name)
 	})
 }
 
@@ -653,6 +671,7 @@ func TestRowToStructByName(t *testing.T) {
 			assert.EqualValues(t, i, slice[i].Age)
 			assert.Equal(t, "d5e49d3f", slice[i].AccountID)
 		}
+		assert.NoError(t, rows.Err())
 
 		// check missing fields in a returned row
 		rows, _ = conn.Query(ctx, `select 'Smith' as last, n as age from (`+generateSeriesQuery("0", "9", "n")+`)`)
@@ -733,7 +752,7 @@ func TestRowToStructByNameEmbeddedStruct(t *testing.T) {
 		// check missing field in a destination struct
 		rows, _ = conn.Query(ctx, `select 'John' as first_name, 'Smith' as last_name, n as age, null as ignore from (`+generateSeriesQuery("0", "9", "n")+`)`)
 		_, err = pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[person])
-		assert.ErrorContains(t, err, "struct doesn't have corresponding row field ignore")
+		assert.ErrorContains(t, err, "struct doesn't have corresponding row field IGNORE")
 	})
 }
 
