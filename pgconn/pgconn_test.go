@@ -2877,7 +2877,7 @@ func Example() {
 	}
 	defer pgConn.Close(ctx)
 
-	result := pgConn.ExecParams(ctx, fmt.Sprintf(generateSeriesTemplate, 1, 3), nil).Read()
+	result := pgConn.ExecParams(ctx, generateSeriesQuery(1, 3, ""), nil).Read()
 	if result.Err != nil {
 		log.Fatalln(result.Err)
 	}
