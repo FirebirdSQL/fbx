@@ -1038,7 +1038,7 @@ func (ct QueryStatus) DDL() bool {
 type FieldDescription struct {
 	Index             int
 	Type              uint32
-	Format            int16 // 0 - binary, 1 - text
+	Format            int16 // 0 - text, 1 - binary
 	Scale             int
 	Subtype           int
 	Length            int
