@@ -387,7 +387,7 @@ func TestPrepare(t *testing.T) {
 	// Create another prepared statement to ensure Deallocate left the connection
 	// in a working state and that we can reuse the prepared statement name.
 
-	_, err = conn.Prepare(context.Background(), "test", "select ? from rdb$database")
+	_, err = conn.Prepare(context.Background(), "test", "select cast(? as integer) from rdb$database")
 	if err != nil {
 		t.Errorf("Unable to prepare statement: %v", err)
 		return
