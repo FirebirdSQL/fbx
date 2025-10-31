@@ -1174,7 +1174,12 @@ func (pgConn *PgConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 		StatementHandle: statementHandle,
 		StatementInfo:   statementInfo,
 	}
-	return &Statement{conn: pgConn, transaction: tx, Description: desc}, nil
+
+	if tx == pgConn.internalTransaction {
+		return &Statement{conn: pgConn, Description: desc}, nil
+	} else {
+		return &Statement{conn: pgConn, transaction: tx, Description: desc}, nil
+	}
 }
 
 //func noticeResponseToNotice(msg *pgproto3.NoticeResponse) *Notice {

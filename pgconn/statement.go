@@ -102,7 +102,8 @@ func (st *Statement) Exec(ctx context.Context, paramValues [][]byte) *ResultRead
 		return rr
 	}
 
-	if st.transaction != nil && st.transaction == st.conn.internalTransaction {
+	tx := st.transaction
+	if tx == nil {
 		if _, err := st.conn.ensureInternalTransaction(ctx, nil); err != nil {
 			rr := &ResultReader{
 				pgConn: st.conn,
@@ -112,8 +113,9 @@ func (st *Statement) Exec(ctx context.Context, paramValues [][]byte) *ResultRead
 			rr.closed = true
 			return rr
 		}
+		tx = st.conn.internalTransaction
 	}
-	return st.ExecTx(ctx, st.transaction, paramValues)
+	return st.ExecTx(ctx, tx, paramValues)
 }
 
 // ExecTx executed a prepared statement inside specified transaction
