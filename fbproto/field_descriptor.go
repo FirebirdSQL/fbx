@@ -269,8 +269,8 @@ func (p *StatementInfo) CalculateBlr(descriptors []FieldDescriptor) []byte {
 
 // GetIOLength returns physical length of field by its type
 // If length is 0 - field length should be obtained from stream
-// If length < 0 - field data used as is without padding (note +1 to length below to distinguish from 0, it should be subtracted later)
-// If length > 0 - padding bytes must be obtained after field data
+// If length < 0 - field data used as is without padding
+// If length > 0 - padding bytes must be obtained after field data (note +1 to length below to distinguish from 0, it should be subtracted later)
 func (f *FieldDescriptor) GetIOLength() int {
 	switch f.Type {
 	case SQL_TYPE_TEXT:
