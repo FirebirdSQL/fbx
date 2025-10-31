@@ -159,7 +159,7 @@ func (rows *baseRows) Close() {
 		return
 	}
 
-	if rows.boundTransaction != nil && rows.boundStatement != nil {
+	if rows.boundStatement != nil {
 		defer rows.boundStatement.CloseCursor(rows.ctx)
 	}
 

@@ -258,6 +258,18 @@ func (st *Statement) internalClose(ctx context.Context, closeOption int) error {
 		return nil
 	}
 
+	var tx *FBTransaction
+	if st.transaction == nil && st.conn.internalTransaction != nil {
+		tx = st.conn.internalTransaction
+	} else {
+		tx = st.transaction
+	}
+	if tx.Closed {
+		st.cursorOpened = false
+		st.closed = true
+		return nil
+	}
+
 	var err error
 	if err = st.conn.lock(); err != nil {
 		return err
