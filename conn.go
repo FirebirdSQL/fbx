@@ -772,6 +772,7 @@ optionLoop:
 		}
 
 		if tx != nil {
+			rows.boundTransaction = tx.tx
 			rows.resultReader = st.ExecTx(ctx, tx.tx, c.eqb.ParamValues)
 		} else {
 			rows.resultReader = st.Exec(ctx, c.eqb.ParamValues)

@@ -146,7 +146,8 @@ type baseRows struct {
 	args      []any
 	rowCount  int
 
-	boundStatement *pgconn.Statement
+	boundStatement   *pgconn.Statement
+	boundTransaction *pgconn.FBTransaction
 }
 
 func (rows *baseRows) FieldDescriptions() []pgconn.FieldDescription {
@@ -160,6 +161,10 @@ func (rows *baseRows) Close() {
 
 	if rows.boundStatement != nil {
 		defer rows.boundStatement.CloseCursor(rows.ctx)
+	}
+
+	if rows.boundTransaction == nil && rows.Conn().autocommit {
+		defer rows.Conn().pgConn.Commit(rows.ctx)
 	}
 
 	rows.closed = true
