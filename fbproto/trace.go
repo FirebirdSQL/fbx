@@ -58,6 +58,8 @@ func (t *tracer) traceRequest(sender byte, msg ClientMessage) {
 		t.traceContAuthMessage(sender, msg)
 	case *OpCrypt:
 		t.traceCryptMessage(sender, msg)
+	default:
+		t.writeTrace(sender, fmt.Sprintf("Unknown message type: %T", msg), nil)
 	}
 }
 
@@ -79,6 +81,8 @@ func (t *tracer) traceResponse(sender byte, msg ServerMessage) {
 		t.traceDataAcceptMessage(sender, msg)
 	case *OpDummy:
 		t.writeTrace(sender, "Dummy", nil)
+	default:
+		t.writeTrace(sender, fmt.Sprintf("Unknown message type: %T", msg), nil)
 	}
 }
 
@@ -153,9 +157,9 @@ func (t *tracer) traceExecuteMessage(sender byte, op *OpExecute) {
 		if t.FullLogMode {
 			for _, v := range op.SQLData {
 				if v == nil {
-					t.buf.WriteString(" -1")
+					t.buf.WriteString(" sqldata:-1")
 				} else {
-					fmt.Fprintf(t.buf, " %d %s", len(v), traceSingleQuotedString(v))
+					fmt.Fprintf(t.buf, " sqldata:%d %s", len(v), traceSingleQuotedString(v))
 				}
 			}
 		}
@@ -163,7 +167,7 @@ func (t *tracer) traceExecuteMessage(sender byte, op *OpExecute) {
 		fmt.Fprintf(t.buf, " lenParamDes=%d", len(op.ParametersDescriptors))
 		if t.FullLogMode {
 			for _, v := range op.ParametersDescriptors {
-				fmt.Fprintf(t.buf, " %d %d %d %d %d %d %t %s %s %s %s %s %s %t", v.Index, v.Type, v.Format, v.Scale,
+				fmt.Fprintf(t.buf, " paramsdesc:%d %d %d %d %d %d %t %s %s %s %s %s %s %t", v.Index, v.Type, v.Format, v.Scale,
 					v.Subtype, v.Length, v.NullOk, traceDoubleQuotedString([]byte(v.Name)), traceDoubleQuotedString([]byte(v.TableAliasName)),
 					traceDoubleQuotedString([]byte(v.RelName)), traceDoubleQuotedString([]byte(v.OwnerName)), traceDoubleQuotedString([]byte(v.OriginalName)),
 					traceDoubleQuotedString([]byte(v.OriginalTableName)), v.Nullable)
@@ -190,7 +194,7 @@ func (t *tracer) traceConnectMessage(sender byte, op *OpConnect) {
 		fmt.Fprintf(t.buf, " authSpecificChunks=%d", n)
 		if t.FullLogMode {
 			for _, data := range op.AuthSpecificData {
-				fmt.Fprintf(t.buf, " %c %s", data.Part, traceSingleQuotedString(data.Data))
+				fmt.Fprintf(t.buf, " authspdata:%c %s", data.Part, traceSingleQuotedString(data.Data))
 			}
 		}
 		fmt.Fprintf(t.buf, " charset=%s", traceDoubleQuotedString([]byte(op.Charset)))
@@ -372,7 +376,7 @@ func (t *tracer) writeTrace(sender byte, msgType string, writeDetails func()) {
 	t.buf.WriteByte(sender)
 	t.buf.WriteByte('\t')
 	t.buf.WriteString(msgType)
-	t.buf.WriteByte('\t')
+	// t.buf.WriteByte('\t')
 	//t.buf.WriteString(strconv.FormatInt(int64(encodedLen), 10))
 
 	if writeDetails != nil {
@@ -384,16 +388,14 @@ func (t *tracer) writeTrace(sender byte, msgType string, writeDetails func()) {
 }
 
 func traceSingleQuotedString(buf []byte) string {
-	var sb strings.Builder
+	sb := &strings.Builder{}
+
 	sb.WriteByte('\'')
 	for _, b := range buf {
-		switch {
-		case b == '\'':
-			sb.WriteString("\\'")
-		case b >= 32 && b <= 126:
+		if b < 32 || b > 126 {
+			fmt.Fprintf(sb, `\x%02x`, b)
+		} else {
 			sb.WriteByte(b)
-		default:
-			fmt.Fprintf(&sb, `\x%02x`, b)
 		}
 	}
 	sb.WriteByte('\'')
