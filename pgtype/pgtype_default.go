@@ -63,7 +63,7 @@ func initDefaultMap() {
 	defaultMap.RegisterType(&Type{Name: "float4", OID: Float4OID, Codec: Float4Codec{}})
 	defaultMap.RegisterType(&Type{Name: "float8", OID: Float8OID, Codec: Float8Codec{}})
 	defaultMap.RegisterType(&Type{Name: "inet", OID: InetOID, Codec: InetCodec{}})
-	defaultMap.RegisterType(&Type{Name: "smallint", OID: fbproto.SQL_TYPE_SHORT, Codec: Int2Codec{}})
+	defaultMap.RegisterType(&Type{Name: "smallint", OID: fbproto.SQL_TYPE_SHORT, Codec: Int4Codec{}})
 	defaultMap.RegisterType(&Type{Name: "int", OID: fbproto.SQL_TYPE_LONG, Codec: Int4Codec{}})
 	defaultMap.RegisterType(&Type{Name: "bigint", OID: fbproto.SQL_TYPE_INT64, Codec: Int8Codec{}})
 	defaultMap.RegisterType(&Type{Name: "interval", OID: IntervalOID, Codec: IntervalCodec{}})

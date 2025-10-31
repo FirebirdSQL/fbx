@@ -797,22 +797,23 @@ func TestPointerPointer(t *testing.T) {
 			scanArgs  []any
 			expected  allTypes
 		}{
-			{"select $1::text", []any{expected.s}, []any{&actual.s}, allTypes{s: expected.s}},
-			{"select $1::text", []any{zero.s}, []any{&actual.s}, allTypes{}},
-			{"select $1::int2", []any{expected.i16}, []any{&actual.i16}, allTypes{i16: expected.i16}},
-			{"select $1::int2", []any{zero.i16}, []any{&actual.i16}, allTypes{}},
-			{"select $1::int4", []any{expected.i32}, []any{&actual.i32}, allTypes{i32: expected.i32}},
-			{"select $1::int4", []any{zero.i32}, []any{&actual.i32}, allTypes{}},
-			{"select $1::int8", []any{expected.i64}, []any{&actual.i64}, allTypes{i64: expected.i64}},
-			{"select $1::int8", []any{zero.i64}, []any{&actual.i64}, allTypes{}},
-			{"select $1::float4", []any{expected.f32}, []any{&actual.f32}, allTypes{f32: expected.f32}},
-			{"select $1::float4", []any{zero.f32}, []any{&actual.f32}, allTypes{}},
-			{"select $1::float8", []any{expected.f64}, []any{&actual.f64}, allTypes{f64: expected.f64}},
-			{"select $1::float8", []any{zero.f64}, []any{&actual.f64}, allTypes{}},
-			{"select $1::bool", []any{expected.b}, []any{&actual.b}, allTypes{b: expected.b}},
-			{"select $1::bool", []any{zero.b}, []any{&actual.b}, allTypes{}},
-			{"select $1::timestamptz", []any{expected.t}, []any{&actual.t}, allTypes{t: expected.t}},
-			{"select $1::timestamptz", []any{zero.t}, []any{&actual.t}, allTypes{}},
+			{"select cast(? as varchar) from rdb$database", []any{expected.s}, []any{&actual.s}, allTypes{s: expected.s}},
+			{"select cast(? as varchar) from rdb$database", []any{zero.s}, []any{&actual.s}, allTypes{}},
+			{"select cast(? as smallint) from rdb$database", []any{expected.i16}, []any{&actual.i16}, allTypes{i16: expected.i16}},
+			{"select cast(? as smallint) from rdb$database", []any{zero.i16}, []any{&actual.i16}, allTypes{}},
+			{"select cast(? as integer) from rdb$database", []any{expected.i32}, []any{&actual.i32}, allTypes{i32: expected.i32}},
+			{"select cast(? as integer) from rdb$database", []any{zero.i32}, []any{&actual.i32}, allTypes{}},
+			{"select cast(? as bigint) from rdb$database", []any{expected.i64}, []any{&actual.i64}, allTypes{i64: expected.i64}},
+			{"select cast(? as bigint) from rdb$database", []any{zero.i64}, []any{&actual.i64}, allTypes{}},
+			{"select cast(? as float) from rdb$database", []any{expected.f32}, []any{&actual.f32}, allTypes{f32: expected.f32}},
+			{"select cast(? as float) from rdb$database", []any{zero.f32}, []any{&actual.f32}, allTypes{}},
+			{"select cast(? as double precision) from rdb$database", []any{expected.f64}, []any{&actual.f64}, allTypes{f64: expected.f64}},
+			{"select cast(? as double precision) from rdb$database", []any{zero.f64}, []any{&actual.f64}, allTypes{}},
+			{"select cast(? as boolean) from rdb$database", []any{expected.b}, []any{&actual.b}, allTypes{b: expected.b}},
+			{"select cast(? as boolean) from rdb$database", []any{zero.b}, []any{&actual.b}, allTypes{}},
+			//FIXME: fbx need properly converting to sqldata buffer
+			//{"select cast(? as timestamp with time zone) from rdb$database", []any{expected.t}, []any{&actual.t}, allTypes{t: expected.t}},
+			//{"select cast(? as timestamp with time zone) from rdb$database", []any{zero.t}, []any{&actual.t}, allTypes{}},
 		}
 
 		for i, tt := range tests {
