@@ -254,21 +254,19 @@ func (st *Statement) internalClose(ctx context.Context, closeOption int) error {
 		return nil
 	}
 
-	if closeOption == fbproto.DSQL_close && !st.cursorOpened {
-		return nil
-	}
-
 	var tx *FBTransaction
 	if st.transaction == nil && st.conn.internalTransaction != nil {
 		tx = st.conn.internalTransaction
 	} else {
 		tx = st.transaction
 	}
-	if tx.Closed {
+
+	if closeOption == fbproto.DSQL_close && (!st.cursorOpened || tx.Closed) {
 		st.cursorOpened = false
-		st.closed = true
 		return nil
 	}
+
+	st.closed = true
 
 	var err error
 	if err = st.conn.lock(); err != nil {
