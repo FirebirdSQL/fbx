@@ -835,6 +835,7 @@ func (pgConn *PgConn) Conn() net.Conn {
 }
 
 // PID returns the backend PID.
+// FIXME: fbx we can obtain PID from MON$ATTACHMENTS, but we really need it
 func (pgConn *PgConn) PID() uint32 {
 	return pgConn.pid
 }
