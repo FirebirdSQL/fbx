@@ -2,6 +2,7 @@ package pgxpool_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -24,9 +25,9 @@ type execer interface {
 }
 
 func testExec(t *testing.T, ctx context.Context, db execer) {
-	results, err := db.Exec(ctx, "set time zone 'America/Chicago'")
+	results, err := db.Exec(ctx, "select RDB$SET_CONTEXT('USER_TRANSACTION', 'var', 'val') from rdb$database")
 	require.NoError(t, err)
-	assert.EqualValues(t, "SET", results.String())
+	assert.EqualValues(t, "SELECT", results.String())
 }
 
 type queryer interface {
@@ -36,7 +37,7 @@ type queryer interface {
 func testQuery(t *testing.T, ctx context.Context, db queryer) {
 	var sum, rowCount int32
 
-	rows, err := db.Query(ctx, "select generate_series(1,$1)", 10)
+	rows, err := db.Query(ctx, generateSeriesQuery("1", "?", "generate_series"), 10)
 	require.NoError(t, err)
 
 	for rows.Next() {
@@ -57,7 +58,7 @@ type queryRower interface {
 
 func testQueryRow(t *testing.T, ctx context.Context, db queryRower) {
 	var what, who string
-	err := db.QueryRow(ctx, "select 'hello', $1::text", "world").Scan(&what, &who)
+	err := db.QueryRow(ctx, "select 'hello', cast(? as varchar) from rdb$database", "world").Scan(&what, &who)
 	assert.NoError(t, err)
 	assert.Equal(t, "hello", what)
 	assert.Equal(t, "world", who)
@@ -177,4 +178,16 @@ func assertConnConfigsEqual(t *testing.T, expected, actual *pgx.ConnConfig, test
 	// Can't test function equality, so just test that they are set or not.
 	assert.Equalf(t, expected.ValidateConnect == nil, actual.ValidateConnect == nil, "%s - ValidateConnect", testName)
 	assert.Equalf(t, expected.AfterConnect == nil, actual.AfterConnect == nil, "%s - AfterConnect", testName)
+}
+
+var generateSeriesTemplate = `WITH RECURSIVE generate_series(%[3]s)
+AS (SELECT %[1]s FROM RDB$DATABASE UNION ALL SELECT (%[3]s + 1)
+FROM generate_series WHERE %[3]s < %[2]s)
+SELECT %[3]s FROM generate_series`
+
+func generateSeriesQuery(begin, end, fieldName string) string {
+	if len(fieldName) == 0 {
+		fieldName = "generate_series"
+	}
+	return fmt.Sprintf(generateSeriesTemplate, begin, end, fieldName)
 }

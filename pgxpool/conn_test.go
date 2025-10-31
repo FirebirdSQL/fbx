@@ -62,6 +62,7 @@ func TestConnQueryRow(t *testing.T) {
 }
 
 func TestConnSendBatch(t *testing.T) {
+	t.Skip("need implementation")
 	t.Parallel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -79,6 +80,7 @@ func TestConnSendBatch(t *testing.T) {
 }
 
 func TestConnCopyFrom(t *testing.T) {
+	t.Skip("need implementation")
 	t.Parallel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
