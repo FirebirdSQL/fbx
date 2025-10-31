@@ -358,17 +358,24 @@ func TestPoolAfterRelease(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	connPIDs := map[uint32]struct{}{}
+	connIds := map[int32]struct{}{}
 
 	for i := 0; i < 10; i++ {
 		conn, err := db.Acquire(ctx)
 		assert.NoError(t, err)
-		connPIDs[conn.Conn().PgConn().PID()] = struct{}{}
+		rows, err := conn.Query(ctx, "select mon$attachment_id from mon$attachments where mon$attachment_id = current_connection")
+		assert.NoError(t, err)
+		var id int32
+		assert.True(t, rows.Next())
+		err = rows.Scan(&id)
+		assert.NoError(t, err)
+		rows.Close()
+		connIds[id] = struct{}{}
 		conn.Release()
 		waitForReleaseToComplete()
 	}
 
-	assert.EqualValues(t, 5, len(connPIDs))
+	assert.EqualValues(t, 5, len(connIds))
 }
 
 func TestPoolBeforeClose(t *testing.T) {
