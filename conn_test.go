@@ -205,19 +205,19 @@ func TestExec(t *testing.T) {
 	defer cancel()
 
 	pgxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
-		table := strings.ReplaceAll(t.Name(), "/", "_")
-		results := mustExec(t, conn, "recreate table "+table+"(id integer primary key)")
+		table := strings.ReplaceAll(t.Name(), "/", "_") + "_conn_test"
+		results := mustExec(t, conn, "recreate table "+table+" (id integer primary key)")
 		assert.Equal(t, "DDL", results.String())
-		conn.Commit(ctx)
 
 		// Accept parameters
 		results = mustExec(t, conn, "insert into "+table+"(id) values(?)", 1)
 		assert.Equal(t, "INSERT", results.String())
-		conn.Commit(ctx)
+
+		err := conn.DeallocateAll(ctx)
+		assert.NoError(t, err)
 
 		results = mustExec(t, conn, "drop table "+table)
 		assert.Equal(t, "DDL", results.String())
-		conn.Commit(ctx)
 	})
 }
 
