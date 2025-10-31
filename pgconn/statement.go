@@ -250,9 +250,14 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 }
 
 func (st *Statement) internalClose(ctx context.Context, closeOption int) error {
-	if !st.cursorOpened || st.closed {
+	if st.closed {
 		return nil
 	}
+
+	if closeOption == fbproto.DSQL_close && !st.cursorOpened {
+		return nil
+	}
+
 	var err error
 	if err = st.conn.lock(); err != nil {
 		return err
