@@ -1,26 +1,3 @@
-/*******************************************************************************
-The MIT License (MIT)
-
-Copyright (c) 2013-2019 Hajime Nakagami
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software is furnished to do so,
-subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
-FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
-COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
-CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*******************************************************************************/
-
 package fbproto
 
 const (
@@ -629,4 +606,31 @@ const (
 const (
 	BLOB_SUB_TYPE_BINARY = Isc_blob_untyped
 	BLOB_SUB_TYPE_TEXT   = Isc_blob_text
+)
+
+const (
+	SQL_TYPE_TEXT         = 452
+	SQL_TYPE_VARYING      = 448
+	SQL_TYPE_SHORT        = 500
+	SQL_TYPE_LONG         = 496
+	SQL_TYPE_FLOAT        = 482
+	SQL_TYPE_DOUBLE       = 480
+	SQL_TYPE_D_FLOAT      = 530
+	SQL_TYPE_TIMESTAMP    = 510
+	SQL_TYPE_BLOB         = 520
+	SQL_TYPE_ARRAY        = 540
+	SQL_TYPE_QUAD         = 550
+	SQL_TYPE_TIME         = 560
+	SQL_TYPE_DATE         = 570
+	SQL_TYPE_INT64        = 580
+	SQL_TYPE_INT128       = 32752
+	SQL_TYPE_TIMESTAMP_TZ = 32754
+	SQL_TYPE_TIME_TZ      = 32756
+	SQL_TIMESTAMP_TZ_EX   = 32748
+	SQL_TIME_TZ_EX        = 32750
+	SQL_TYPE_DEC_FIXED    = 32758
+	SQL_TYPE_DEC64        = 32760
+	SQL_TYPE_DEC128       = 32762
+	SQL_TYPE_BOOLEAN      = 32764
+	SQL_TYPE_NULL         = 32766
 )
