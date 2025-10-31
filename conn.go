@@ -1338,9 +1338,10 @@ func (c *Conn) getCompositeFields(ctx context.Context, oid uint32) ([]pgtype.Com
 }
 
 func (c *Conn) deallocateInvalidatedCachedStatements(ctx context.Context) error {
-	if txStatus := c.pgConn.TxStatus(); txStatus != 'I' && txStatus != 'T' {
-		return nil
-	}
+	//FIXME: fbx need to check state of transaction bound to statement?
+	//	if txStatus := c.pgConn.TxStatus(); txStatus != 'I' && txStatus != 'T' {
+	//		return nil
+	//	}
 
 	var invalidatedStatements []*pgconn.Statement
 	if c.statementCache != nil {

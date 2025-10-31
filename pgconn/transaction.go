@@ -37,14 +37,18 @@ func (tx *FBTransaction) Commit(ctx context.Context) error {
 		defer tx.Connection.contextWatcher.Unwatch()
 	}
 
-	opTransaction := fbproto.OpCommit{
+	delete(tx.Connection.activeTransactions, tx)
+
+	opCommit := fbproto.OpCommit{
 		TransactionHandle: tx.Handle,
 	}
-	if err = tx.Connection.client.WriteMessage(&opTransaction); err != nil {
+	if err = tx.Connection.client.WriteMessage(&opCommit); err != nil {
+		tx.Connection.asyncClose()
 		return err
 	}
 
 	if err = tx.Connection.writer.Flush(); err != nil {
+		tx.Connection.asyncClose()
 		return err
 	}
 
@@ -53,6 +57,7 @@ func (tx *FBTransaction) Commit(ctx context.Context) error {
 		tx.Connection.asyncClose()
 		return err
 	}
+
 	switch m := msg.(type) {
 	case *fbproto.ErrorResponse:
 		return ErrorResponseToFbError(m)
@@ -83,14 +88,18 @@ func (tx *FBTransaction) Rollback(ctx context.Context) error {
 		defer tx.Connection.contextWatcher.Unwatch()
 	}
 
-	opTransaction := fbproto.OpRollback{
+	delete(tx.Connection.activeTransactions, tx)
+
+	opRollback := fbproto.OpRollback{
 		TransactionHandle: tx.Handle,
 	}
-	if err = tx.Connection.client.WriteMessage(&opTransaction); err != nil {
+	if err = tx.Connection.client.WriteMessage(&opRollback); err != nil {
+		tx.Connection.asyncClose()
 		return err
 	}
 
 	if err = tx.Connection.writer.Flush(); err != nil {
+		tx.Connection.asyncClose()
 		return err
 	}
 

@@ -117,6 +117,7 @@ type PgConn struct {
 	cleanupDone         chan struct{}
 	Encoding            *fbproto.Encoding
 	internalTransaction *FBTransaction
+	activeTransactions  map[*FBTransaction]struct{}
 
 	preparedMap map[string]*StatementDescription
 
@@ -433,7 +434,7 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 	pgConn.config = config
 	pgConn.cleanupDone = make(chan struct{})
 	pgConn.customData = make(map[string]any)
-	pgConn.preparedMap = make(map[string]*StatementDescription)
+	pgConn.activeTransactions = make(map[*FBTransaction]struct{})
 
 	var err error
 
@@ -838,17 +839,9 @@ func (pgConn *PgConn) PID() uint32 {
 	return pgConn.pid
 }
 
-// TxStatus returns the current TxStatus as reported by the server in the ReadyForQuery message.
-//
-// Possible return values:
-//
-//	'I' - idle / not in transaction
-//	'T' - in a transaction
-//	'E' - in a failed transaction
-//
-// See https://www.postgresql.org/docs/current/protocol-message-formats.html.
-func (pgConn *PgConn) TxStatus() byte {
-	return pgConn.txStatus
+// ActiveTx returns true if connection have active transactions
+func (pgConn *PgConn) ActiveTx() bool {
+	return len(pgConn.activeTransactions) > 0
 }
 
 // SecretKey returns the backend secret key used to send a cancel query message to the server.
@@ -2436,7 +2429,9 @@ func (pgConn *PgConn) StartTransactionTPB(ctx context.Context, tpb []byte) (*FBT
 
 	switch m := msg.(type) {
 	case *fbproto.OpResponse:
-		return &FBTransaction{Connection: pgConn, Handle: m.Object, Closed: false}, nil
+		tx := &FBTransaction{Connection: pgConn, Handle: m.Object, Closed: false}
+		pgConn.activeTransactions[tx] = struct{}{}
+		return tx, nil
 	case *fbproto.ErrorResponse:
 		return nil, ErrorResponseToFbError(m)
 	default:
