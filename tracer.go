@@ -21,8 +21,8 @@ type TraceQueryStartData struct {
 }
 
 type TraceQueryEndData struct {
-	CommandTag pgconn.QueryStatus
-	Err        error
+	QueryStatus pgconn.QueryStatus
+	Err         error
 }
 
 // BatchTracer traces SendBatch.

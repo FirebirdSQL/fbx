@@ -495,7 +495,7 @@ func (c *Conn) execTx(ctx context.Context, tx *dbTx, sql string, arguments ...an
 	commandTag, err := c.exec(ctx, tx, sql, arguments...)
 
 	if c.queryTracer != nil {
-		c.queryTracer.TraceQueryEnd(ctx, c, TraceQueryEndData{CommandTag: commandTag, Err: err})
+		c.queryTracer.TraceQueryEnd(ctx, c, TraceQueryEndData{QueryStatus: commandTag, Err: err})
 	}
 
 	if err == nil && tx == nil && c.autocommit {
