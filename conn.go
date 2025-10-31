@@ -755,6 +755,7 @@ optionLoop:
 				rows.fatal(err)
 				return rows, err
 			}
+			c.statementCache.Put(st)
 		}
 
 		if len(st.Description.Parameters) != len(args) {
@@ -1353,21 +1354,13 @@ func (c *Conn) deallocateInvalidatedCachedStatements(ctx context.Context) error 
 		return nil
 	}
 
-	pipeline := c.pgConn.StartPipeline(ctx)
-	defer pipeline.Close()
+	//pipeline := c.pgConn.StartPipeline(ctx)
+	//defer pipeline.Close()
 
 	for _, st := range invalidatedStatements {
-		pipeline.SendDeallocate(st.Description.Name)
-	}
-
-	err := pipeline.Sync()
-	if err != nil {
-		return fmt.Errorf("failed to deallocate cached statement(s): %w", err)
-	}
-
-	err = pipeline.Close()
-	if err != nil {
-		return fmt.Errorf("failed to deallocate cached statement(s): %w", err)
+		if err := c.Deallocate(ctx, st.Description.SQL); err != nil {
+			return err
+		}
 	}
 
 	c.statementCache.RemoveInvalidated()

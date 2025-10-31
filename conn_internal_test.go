@@ -43,7 +43,7 @@ func TestStmtCacheSizeLimit(t *testing.T) {
 	ctx := context.Background()
 	for i := 0; i < cacheLimit*2; i++ {
 		uniqueString := fmt.Sprintf("unique %d", i)
-		uniqueSQL := fmt.Sprintf("select '%s'", uniqueString)
+		uniqueSQL := fmt.Sprintf("select '%s' from rdb$database", uniqueString)
 		var output string
 		err := conn.QueryRow(ctx, uniqueSQL).Scan(&output)
 		require.NoError(t, err)
