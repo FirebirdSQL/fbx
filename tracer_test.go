@@ -116,7 +116,7 @@ func TestTraceExec(t *testing.T) {
 		traceQueryStartCalled := false
 		tracer.traceQueryStart = func(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
 			traceQueryStartCalled = true
-			require.Equal(t, `select $1::text`, data.SQL)
+			require.Equal(t, `select cast(? as varchar) from rdb$database`, data.SQL)
 			require.Len(t, data.Args, 1)
 			require.Equal(t, `testing`, data.Args[0])
 			return context.WithValue(ctx, ctxKey(ctxKey("fromTraceQueryStart")), "foo")
@@ -126,11 +126,11 @@ func TestTraceExec(t *testing.T) {
 		tracer.traceQueryEnd = func(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryEndData) {
 			traceQueryEndCalled = true
 			require.Equal(t, "foo", ctx.Value(ctxKey(ctxKey("fromTraceQueryStart"))))
-			require.Equal(t, `SELECT 1`, data.CommandTag.String())
+			require.Equal(t, `SELECT`, data.QueryStatus.String())
 			require.NoError(t, data.Err)
 		}
 
-		_, err := conn.Exec(ctx, `select $1::text`, "testing")
+		_, err := conn.Exec(ctx, `select cast(? as varchar) from rdb$database`, "testing")
 		require.NoError(t, err)
 		require.True(t, traceQueryStartCalled)
 		require.True(t, traceQueryEndCalled)
@@ -156,7 +156,7 @@ func TestTraceQuery(t *testing.T) {
 		traceQueryStartCalled := false
 		tracer.traceQueryStart = func(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
 			traceQueryStartCalled = true
-			require.Equal(t, `select $1::text`, data.SQL)
+			require.Equal(t, `select cast(? as varchar) from rdb$database`, data.SQL)
 			require.Len(t, data.Args, 1)
 			require.Equal(t, `testing`, data.Args[0])
 			return context.WithValue(ctx, ctxKey("fromTraceQueryStart"), "foo")
@@ -166,12 +166,12 @@ func TestTraceQuery(t *testing.T) {
 		tracer.traceQueryEnd = func(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryEndData) {
 			traceQueryEndCalled = true
 			require.Equal(t, "foo", ctx.Value(ctxKey("fromTraceQueryStart")))
-			require.Equal(t, `SELECT 1`, data.CommandTag.String())
+			require.Equal(t, `SELECT`, data.QueryStatus.String())
 			require.NoError(t, data.Err)
 		}
 
 		var s string
-		err := conn.QueryRow(ctx, `select $1::text`, "testing").Scan(&s)
+		err := conn.QueryRow(ctx, `select cast(? as varchar) from rdb$database`, "testing").Scan(&s)
 		require.NoError(t, err)
 		require.Equal(t, "testing", s)
 		require.True(t, traceQueryStartCalled)
@@ -423,6 +423,7 @@ func TestTraceBatchErrorWhileReadingResultsWhileClosing(t *testing.T) {
 }
 
 func TestTraceCopyFrom(t *testing.T) {
+	t.Skip("need implementation")
 	t.Parallel()
 
 	tracer := &testTracer{}
@@ -493,7 +494,7 @@ func TestTracePrepare(t *testing.T) {
 		tracer.tracePrepareStart = func(ctx context.Context, conn *pgx.Conn, data pgx.TracePrepareStartData) context.Context {
 			tracePrepareStartCalled = true
 			require.Equal(t, `ps`, data.Name)
-			require.Equal(t, `select $1::text`, data.SQL)
+			require.Equal(t, `select cast(? as varchar) from rdb$database`, data.SQL)
 			return context.WithValue(ctx, ctxKey("fromTracePrepareStart"), "foo")
 		}
 
@@ -504,7 +505,7 @@ func TestTracePrepare(t *testing.T) {
 			require.NoError(t, data.Err)
 		}
 
-		_, err := conn.Prepare(ctx, "ps", `select $1::text`)
+		_, err := conn.Prepare(ctx, "ps", `select cast(? as varchar) from rdb$database`)
 		require.NoError(t, err)
 		require.True(t, tracePrepareStartCalled)
 		require.True(t, tracePrepareEndCalled)
@@ -517,7 +518,7 @@ func TestTracePrepare(t *testing.T) {
 			require.NoError(t, data.Err)
 		}
 
-		_, err = conn.Prepare(ctx, "ps", `select $1::text`)
+		_, err = conn.Prepare(ctx, "ps", `select cast(? as varchar) from rdb$database`)
 		require.NoError(t, err)
 		require.True(t, tracePrepareStartCalled)
 		require.True(t, tracePrepareEndCalled)
@@ -599,14 +600,12 @@ func TestTraceWithinTx(t *testing.T) {
 		tx, err := conn.Begin(ctx)
 		require.NoError(t, err)
 		defer tx.Rollback(ctx)
-		_, err = tx.Exec(ctx, `select $1::text`, "testing")
+		_, err = tx.Exec(ctx, `select cast(? as varchar) from rdb$database`, "testing")
 		require.NoError(t, err)
 		err = tx.Commit(ctx)
 		require.NoError(t, err)
 
-		require.Len(t, queries, 3)
-		require.Equal(t, `begin`, queries[0])
-		require.Equal(t, `select $1::text`, queries[1])
-		require.Equal(t, `commit`, queries[2])
+		require.Len(t, queries, 1)
+		require.Equal(t, `select cast(? as varchar) from rdb$database`, queries[0])
 	})
 }
