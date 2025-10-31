@@ -198,10 +198,16 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 			defaultQueryExecMode = QueryExecModeCacheStatement
 		case "exec":
 			defaultQueryExecMode = QueryExecModeExec
-		case "noautocommit":
-			autocommit = false
 		default:
 			return nil, fmt.Errorf("invalid default_query_exec_mode: %s", s)
+		}
+	}
+
+	if s, ok := config.RuntimeParams["noautocommit"]; ok {
+		delete(config.RuntimeParams, "noautocommit")
+		autocommit = true
+		if res, err := strconv.ParseBool(s); err == nil {
+			autocommit = !res
 		}
 	}
 
