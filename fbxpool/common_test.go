@@ -1,4 +1,4 @@
-package pgxpool_test
+package fbxpool_test
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 
 	pgx "github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbconn"
-	"github.com/red-soft/fbx/pgxpool"
+	"github.com/red-soft/fbx/fbxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -128,7 +128,7 @@ func testCopyFrom(t *testing.T, ctx context.Context, db interface {
 	assert.Equal(t, inputRows, outputRows)
 }
 
-func assertConfigsEqual(t *testing.T, expected, actual *pgxpool.Config, testName string) {
+func assertConfigsEqual(t *testing.T, expected, actual *fbxpool.Config, testName string) {
 	if !assert.NotNil(t, expected) {
 		return
 	}

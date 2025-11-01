@@ -4,7 +4,7 @@ pgxpool implements a nearly identical interface to pgx connections.
 
 Creating a Pool
 
-The primary way of creating a pool is with [pgxpool.New]:
+The primary way of creating a pool is with [fbxpool.New]:
 
     pool, err := pgxpool.New(context.Background(), os.Getenv("DATABASE_URL"))
 
@@ -24,4 +24,4 @@ specified here. In addition, a config struct can be created by [ParseConfig].
 A pool returns without waiting for any connections to be established. Acquire a connection immediately after creating
 the pool to check if a connection can successfully be established.
 */
-package pgxpool
+package fbxpool

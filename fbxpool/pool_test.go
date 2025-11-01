@@ -1,4 +1,4 @@
-package pgxpool_test
+package fbxpool_test
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"time"
 
 	pgx "github.com/red-soft/fbx"
-	"github.com/red-soft/fbx/pgxpool"
+	"github.com/red-soft/fbx/fbxpool"
 	"github.com/red-soft/fbx/pgxtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,7 +21,7 @@ func TestConnect(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 	connString := os.Getenv("PGX_TEST_DATABASE")
-	pool, err := pgxpool.New(ctx, connString)
+	pool, err := fbxpool.New(ctx, connString)
 	require.NoError(t, err)
 	assert.Equal(t, connString, pool.Config().ConnString())
 	pool.Close()
@@ -32,9 +32,9 @@ func TestConnectConfig(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 	connString := os.Getenv("PGX_TEST_DATABASE")
-	config, err := pgxpool.ParseConfig(connString)
+	config, err := fbxpool.ParseConfig(connString)
 	require.NoError(t, err)
-	pool, err := pgxpool.NewWithConfig(ctx, config)
+	pool, err := fbxpool.NewWithConfig(ctx, config)
 	require.NoError(t, err)
 	assertConfigsEqual(t, config, pool.Config(), "Pool.Config() returns original config")
 	pool.Close()
@@ -43,7 +43,7 @@ func TestConnectConfig(t *testing.T) {
 func TestParseConfigExtractsPoolArguments(t *testing.T) {
 	t.Parallel()
 
-	config, err := pgxpool.ParseConfig("pool_max_conns=42 pool_min_conns=1 pool_min_idle_conns=2")
+	config, err := fbxpool.ParseConfig("pool_max_conns=42 pool_min_conns=1 pool_min_idle_conns=2")
 	assert.NoError(t, err)
 	assert.EqualValues(t, 42, config.MaxConns)
 	assert.EqualValues(t, 1, config.MinConns)
@@ -55,7 +55,7 @@ func TestParseConfigExtractsPoolArguments(t *testing.T) {
 func TestConstructorIgnoresContext(t *testing.T) {
 	t.Parallel()
 
-	config, err := pgxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	assert.NoError(t, err)
 	var cancel func()
 	config.BeforeConnect = func(context.Context, *pgx.ConnConfig) error {
@@ -65,7 +65,7 @@ func TestConstructorIgnoresContext(t *testing.T) {
 		return nil
 	}
 
-	pool, err := pgxpool.NewWithConfig(context.Background(), config)
+	pool, err := fbxpool.NewWithConfig(context.Background(), config)
 	require.NoError(t, err)
 
 	assert.EqualValues(t, 0, pool.Stat().TotalConns())
@@ -81,14 +81,14 @@ func TestConstructorIgnoresContext(t *testing.T) {
 func TestConnectConfigRequiresConnConfigFromParseConfig(t *testing.T) {
 	t.Parallel()
 
-	config := &pgxpool.Config{}
+	config := &fbxpool.Config{}
 
-	require.PanicsWithValue(t, "config must be created by ParseConfig", func() { pgxpool.NewWithConfig(context.Background(), config) })
+	require.PanicsWithValue(t, "config must be created by ParseConfig", func() { fbxpool.NewWithConfig(context.Background(), config) })
 }
 
 func TestConfigCopyReturnsEqualConfig(t *testing.T) {
 	connString := "postgres://jack:secret@localhost:5432/mydb?application_name=pgxtest&search_path=myschema&connect_timeout=5"
-	original, err := pgxpool.ParseConfig(connString)
+	original, err := fbxpool.ParseConfig(connString)
 	require.NoError(t, err)
 
 	copied := original.Copy()
@@ -98,12 +98,12 @@ func TestConfigCopyReturnsEqualConfig(t *testing.T) {
 
 func TestConfigCopyCanBeUsedToConnect(t *testing.T) {
 	connString := os.Getenv("PGX_TEST_DATABASE")
-	original, err := pgxpool.ParseConfig(connString)
+	original, err := fbxpool.ParseConfig(connString)
 	require.NoError(t, err)
 
 	copied := original.Copy()
 	assert.NotPanics(t, func() {
-		_, err = pgxpool.NewWithConfig(context.Background(), copied)
+		_, err = fbxpool.NewWithConfig(context.Background(), copied)
 	})
 	assert.NoError(t, err)
 }
@@ -114,7 +114,7 @@ func TestPoolAcquireAndConnRelease(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pool, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer pool.Close()
 
@@ -129,7 +129,7 @@ func TestPoolAcquireAndConnHijack(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pool, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer pool.Close()
 
@@ -162,11 +162,11 @@ func TestPoolAcquireChecksIdleConns(t *testing.T) {
 	defer controllerConn.Close(ctx)
 	pgxtest.SkipCockroachDB(t, controllerConn, "Server does not support pg_terminate_backend() (https://github.com/cockroachdb/cockroach/issues/35897)")
 
-	pool, err := pgxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pool, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer pool.Close()
 
-	var conns []*pgxpool.Conn
+	var conns []*fbxpool.Conn
 	for i := 0; i < 3; i++ {
 		c, err := pool.Acquire(ctx)
 		require.NoError(t, err)
@@ -211,12 +211,12 @@ func TestPoolAcquireFunc(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pool, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer pool.Close()
 
 	var n int32
-	err = pool.AcquireFunc(ctx, func(c *pgxpool.Conn) error {
+	err = pool.AcquireFunc(ctx, func(c *fbxpool.Conn) error {
 		return c.QueryRow(ctx, "select 1 from rdb$database").Scan(&n)
 	})
 	require.NoError(t, err)
@@ -229,11 +229,11 @@ func TestPoolAcquireFuncReturnsFnError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pool, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer pool.Close()
 
-	err = pool.AcquireFunc(ctx, func(c *pgxpool.Conn) error {
+	err = pool.AcquireFunc(ctx, func(c *fbxpool.Conn) error {
 		return fmt.Errorf("some error")
 	})
 	require.EqualError(t, err, "some error")
@@ -246,7 +246,7 @@ func TestPoolBeforeConnect(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	config, err := pgxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	config.BeforeConnect = func(ctx context.Context, cfg *pgx.ConnConfig) error {
@@ -254,7 +254,7 @@ func TestPoolBeforeConnect(t *testing.T) {
 		return nil
 	}
 
-	db, err := pgxpool.NewWithConfig(ctx, config)
+	db, err := fbxpool.NewWithConfig(ctx, config)
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -270,7 +270,7 @@ func TestPoolAfterConnect(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	config, err := pgxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	config.AfterConnect = func(ctx context.Context, c *pgx.Conn) error {
@@ -278,7 +278,7 @@ func TestPoolAfterConnect(t *testing.T) {
 		return err
 	}
 
-	db, err := pgxpool.NewWithConfig(ctx, config)
+	db, err := fbxpool.NewWithConfig(ctx, config)
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -294,7 +294,7 @@ func TestPoolBeforeAcquire(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	config, err := pgxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	acquireAttempts := 0
@@ -304,11 +304,11 @@ func TestPoolBeforeAcquire(t *testing.T) {
 		return acquireAttempts%2 == 0
 	}
 
-	db, err := pgxpool.NewWithConfig(ctx, config)
+	db, err := fbxpool.NewWithConfig(ctx, config)
 	require.NoError(t, err)
 	defer db.Close()
 
-	conns := make([]*pgxpool.Conn, 4)
+	conns := make([]*fbxpool.Conn, 4)
 	for i := range conns {
 		conns[i], err = db.Acquire(ctx)
 		assert.NoError(t, err)
@@ -339,12 +339,12 @@ func TestPoolAfterRelease(t *testing.T) {
 	defer cancel()
 
 	func() {
-		pool, err := pgxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+		pool, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
 		require.NoError(t, err)
 		defer pool.Close()
 	}()
 
-	config, err := pgxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	afterReleaseCount := 0
@@ -354,7 +354,7 @@ func TestPoolAfterRelease(t *testing.T) {
 		return afterReleaseCount%2 == 1
 	}
 
-	db, err := pgxpool.NewWithConfig(ctx, config)
+	db, err := fbxpool.NewWithConfig(ctx, config)
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -385,12 +385,12 @@ func TestPoolBeforeClose(t *testing.T) {
 	defer cancel()
 
 	func() {
-		pool, err := pgxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+		pool, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
 		require.NoError(t, err)
 		defer pool.Close()
 	}()
 
-	config, err := pgxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	connPIDs := make(chan uint32, 5)
@@ -398,7 +398,7 @@ func TestPoolBeforeClose(t *testing.T) {
 		connPIDs <- c.PgConn().PID()
 	}
 
-	db, err := pgxpool.NewWithConfig(ctx, config)
+	db, err := fbxpool.NewWithConfig(ctx, config)
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -422,11 +422,11 @@ func TestPoolAcquireAllIdle(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	db, err := pgxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	db, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer db.Close()
 
-	conns := make([]*pgxpool.Conn, 3)
+	conns := make([]*fbxpool.Conn, 3)
 	for i := range conns {
 		conns[i], err = db.Acquire(ctx)
 		assert.NoError(t, err)
@@ -453,11 +453,11 @@ func TestPoolReset(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	db, err := pgxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	db, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer db.Close()
 
-	conns := make([]*pgxpool.Conn, 3)
+	conns := make([]*fbxpool.Conn, 3)
 	for i := range conns {
 		conns[i], err = db.Acquire(ctx)
 		assert.NoError(t, err)
@@ -481,12 +481,12 @@ func TestConnReleaseChecksMaxConnLifetime(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	config, err := pgxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	config.MaxConnLifetime = 250 * time.Millisecond
 
-	db, err := pgxpool.NewWithConfig(ctx, config)
+	db, err := fbxpool.NewWithConfig(ctx, config)
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -508,7 +508,7 @@ func TestConnReleaseClosesBusyConn(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	db, err := pgxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	db, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -539,13 +539,13 @@ func TestPoolBackgroundChecksMaxConnLifetime(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	config, err := pgxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	config.MaxConnLifetime = 100 * time.Millisecond
 	config.HealthCheckPeriod = 100 * time.Millisecond
 
-	db, err := pgxpool.NewWithConfig(ctx, config)
+	db, err := fbxpool.NewWithConfig(ctx, config)
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -567,14 +567,14 @@ func TestPoolBackgroundChecksMaxConnIdleTime(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	config, err := pgxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	config.MaxConnLifetime = 1 * time.Minute
 	config.MaxConnIdleTime = 100 * time.Millisecond
 	config.HealthCheckPeriod = 150 * time.Millisecond
 
-	db, err := pgxpool.NewWithConfig(ctx, config)
+	db, err := fbxpool.NewWithConfig(ctx, config)
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -603,13 +603,13 @@ func TestPoolBackgroundChecksMinConns(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	config, err := pgxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	config.HealthCheckPeriod = 100 * time.Millisecond
 	config.MinConns = 2
 
-	db, err := pgxpool.NewWithConfig(ctx, config)
+	db, err := fbxpool.NewWithConfig(ctx, config)
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -650,7 +650,7 @@ func TestPoolExec(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pool, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer pool.Close()
 
@@ -663,7 +663,7 @@ func TestPoolQuery(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pool, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer pool.Close()
 
@@ -695,7 +695,7 @@ func TestPoolQueryRow(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pool, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer pool.Close()
 
@@ -714,7 +714,7 @@ func TestPoolQueryRowErrNoRows(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pool, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer pool.Close()
 
@@ -729,7 +729,7 @@ func TestPoolQueryRowScanPanicReleasesConnection(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pool, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer pool.Close()
 
@@ -748,7 +748,7 @@ func TestPoolSendBatch(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pool, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer pool.Close()
 
@@ -769,7 +769,7 @@ func TestPoolCopyFrom(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pool, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer pool.Close()
 
@@ -813,7 +813,7 @@ func TestConnReleaseClosesConnInFailedTransaction(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pool, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer pool.Close()
 
@@ -852,7 +852,7 @@ func TestConnReleaseClosesConnInTransaction(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pool, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer pool.Close()
 
@@ -886,7 +886,7 @@ func TestConnReleaseDestroysClosedConn(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pool, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer pool.Close()
 
@@ -918,7 +918,7 @@ func TestConnPoolQueryConcurrentLoad(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pool, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer pool.Close()
 
@@ -944,7 +944,7 @@ func TestConnReleaseWhenBeginFail(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	db, err := pgxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	db, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -971,7 +971,7 @@ func TestTxBeginFuncNestedTransactionCommit(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	db, err := pgxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	db, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -1021,7 +1021,7 @@ func TestTxBeginFuncNestedTransactionRollback(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	db, err := pgxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	db, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -1068,7 +1068,7 @@ func TestIdempotentPoolClose(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pool, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	// Close the open pool.
@@ -1084,7 +1084,7 @@ func TestConnectEagerlyReachesMinPoolSize(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	config, err := pgxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	config.MinConns = int32(12)
@@ -1102,7 +1102,7 @@ func TestConnectEagerlyReachesMinPoolSize(t *testing.T) {
 		return nil
 	}
 
-	pool, err := pgxpool.NewWithConfig(ctx, config)
+	pool, err := fbxpool.NewWithConfig(ctx, config)
 	require.NoError(t, err)
 	defer pool.Close()
 
@@ -1126,7 +1126,7 @@ func TestPoolSendBatchBatchCloseTwice(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pool, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer pool.Close()
 

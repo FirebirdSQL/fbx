@@ -1,4 +1,4 @@
-package pgxpool
+package fbxpool
 
 import (
 	"context"

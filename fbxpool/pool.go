@@ -1,4 +1,4 @@
-package pgxpool
+package fbxpool
 
 import (
 	"context"
@@ -169,7 +169,7 @@ func (c *Config) Copy() *Config {
 	return newConfig
 }
 
-// ConnString returns the connection string as parsed by pgxpool.ParseConfig into pgxpool.Config.
+// ConnString returns the connection string as parsed by fbxpool.ParseConfig into fbxpool.Config.
 func (c *Config) ConnString() string { return c.ConnConfig.ConnString() }
 
 // New creates a new Pool. See [ParseConfig] for information on connString format.
@@ -611,7 +611,7 @@ func (p *Pool) Reset() {
 // Config returns a copy of config that was used to initialize this pool.
 func (p *Pool) Config() *Config { return p.config.Copy() }
 
-// Stat returns a pgxpool.Stat struct with a snapshot of Pool statistics.
+// Stat returns a fbxpool.Stat struct with a snapshot of Pool statistics.
 func (p *Pool) Stat() *Stat {
 	return &Stat{
 		s:                    p.p.Stat(),
@@ -694,7 +694,7 @@ func (p *Pool) SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults {
 
 // Begin acquires a connection from the Pool and starts a transaction. Unlike database/sql, the context only affects the begin command. i.e. there is no
 // auto-rollback on context cancellation. Begin initiates a transaction block without explicitly setting a transaction mode for the block (see BeginTx with TxOptions if transaction mode is required).
-// *pgxpool.Tx is returned, which implements the pgx.Tx interface.
+// *fbxpool.Tx is returned, which implements the pgx.Tx interface.
 // Commit or Rollback must be called on the returned transaction to finalize the transaction block.
 func (p *Pool) Begin(ctx context.Context) (pgx.Tx, error) {
 	return p.BeginTx(ctx, pgx.TxOptions{})
@@ -702,7 +702,7 @@ func (p *Pool) Begin(ctx context.Context) (pgx.Tx, error) {
 
 // BeginTx acquires a connection from the Pool and starts a transaction with pgx.TxOptions determining the transaction mode.
 // Unlike database/sql, the context only affects the begin command. i.e. there is no auto-rollback on context cancellation.
-// *pgxpool.Tx is returned, which implements the pgx.Tx interface.
+// *fbxpool.Tx is returned, which implements the pgx.Tx interface.
 // Commit or Rollback must be called on the returned transaction to finalize the transaction block.
 func (p *Pool) BeginTx(ctx context.Context, txOptions pgx.TxOptions) (pgx.Tx, error) {
 	c, err := p.Acquire(ctx)

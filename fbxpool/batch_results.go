@@ -1,4 +1,4 @@
-package pgxpool
+package fbxpool
 
 import (
 	pgx "github.com/red-soft/fbx"
