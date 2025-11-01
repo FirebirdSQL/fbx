@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	pgx "github.com/red-soft/fbx"
+	"github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbxpool"
 	"github.com/stretchr/testify/require"
 )
@@ -29,7 +29,7 @@ func BenchmarkMinimalPreparedSelectBaseline(b *testing.B) {
 	config, err := fbxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(b, err)
 
-	config.AfterConnect = func(ctx context.Context, c *pgx.Conn) error {
+	config.AfterConnect = func(ctx context.Context, c *fbx.Conn) error {
 		_, err := c.Prepare(ctx, "ps1", "select $1::int8")
 		return err
 	}
@@ -60,7 +60,7 @@ func BenchmarkMinimalPreparedSelect(b *testing.B) {
 	config, err := fbxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(b, err)
 
-	config.AfterConnect = func(ctx context.Context, c *pgx.Conn) error {
+	config.AfterConnect = func(ctx context.Context, c *fbx.Conn) error {
 		_, err := c.Prepare(ctx, "ps1", "select $1::int8")
 		return err
 	}

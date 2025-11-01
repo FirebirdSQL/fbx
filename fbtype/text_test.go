@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	pgx "github.com/red-soft/fbx"
+	"github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbtype"
 	"github.com/red-soft/fbx/fbxtest"
 	"github.com/stretchr/testify/require"
@@ -76,7 +76,7 @@ func TestTextCodecBPChar(t *testing.T) {
 // It only supports the text format.
 func TestTextCodecACLItem(t *testing.T) {
 	ctr := defaultConnTestRunner
-	ctr.AfterConnect = func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	ctr.AfterConnect = func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		fbxtest.SkipCockroachDB(t, conn, "Server does not support type aclitem")
 	}
 
@@ -89,7 +89,7 @@ func TestTextCodecACLItem(t *testing.T) {
 
 func TestTextCodecACLItemRoleWithSpecialCharacters(t *testing.T) {
 	ctr := defaultConnTestRunner
-	ctr.AfterConnect = func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	ctr.AfterConnect = func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		fbxtest.SkipCockroachDB(t, conn, "Server does not support type aclitem")
 
 		// The tricky test user, below, has to actually exist so that it can be used in a test

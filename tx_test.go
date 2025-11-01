@@ -1,4 +1,4 @@
-package pgx_test
+package fbx_test
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	pgx "github.com/red-soft/fbx"
+	"github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbconn"
 	"github.com/red-soft/fbx/fbxtest"
 	"github.com/stretchr/testify/require"
@@ -87,8 +87,8 @@ func TestTxCommitWhenTxBroken(t *testing.T) {
 	}
 
 	err = tx.Commit(context.Background())
-	if err != pgx.ErrTxCommitRollback {
-		t.Fatalf("Expected error %v, got %v", pgx.ErrTxCommitRollback, err)
+	if err != fbx.ErrTxCommitRollback {
+		t.Fatalf("Expected error %v, got %v", fbx.ErrTxCommitRollback, err)
 	}
 
 	var n int64
@@ -170,13 +170,13 @@ func TestTxCommitSerializationFailure(t *testing.T) {
 	}
 	defer c1.Exec(ctx, `drop table `+t.Name())
 
-	tx1, err := c1.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
+	tx1, err := c1.BeginTx(ctx, fbx.TxOptions{IsoLevel: fbx.Serializable})
 	if err != nil {
 		t.Fatalf("Begin failed: %v", err)
 	}
 	defer tx1.Rollback(ctx)
 
-	tx2, err := c2.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
+	tx2, err := c2.BeginTx(ctx, fbx.TxOptions{IsoLevel: fbx.Serializable})
 	if err != nil {
 		t.Fatalf("Begin failed: %v", err)
 	}
@@ -275,14 +275,14 @@ func TestBeginIsoLevels(t *testing.T) {
 
 	fbxtest.SkipCockroachDB(t, conn, "Server always uses SERIALIZABLE isolation (https://www.cockroachlabs.com/docs/stable/demo-serializable.html)")
 
-	isoLevels := []pgx.TxIsoLevel{pgx.Serializable, pgx.RepeatableRead, pgx.ReadCommitted, pgx.ReadUncommitted}
+	isoLevels := []fbx.TxIsoLevel{fbx.Serializable, fbx.RepeatableRead, fbx.ReadCommitted, fbx.ReadUncommitted}
 	for _, iso := range isoLevels {
-		tx, err := conn.BeginTx(context.Background(), pgx.TxOptions{IsoLevel: iso})
+		tx, err := conn.BeginTx(context.Background(), fbx.TxOptions{IsoLevel: iso})
 		if err != nil {
 			t.Fatalf("conn.Begin failed: %v", err)
 		}
 
-		var level pgx.TxIsoLevel
+		var level fbx.TxIsoLevel
 		conn.QueryRow(context.Background(), "select current_setting('transaction_isolation')").Scan(&level)
 		if level != iso {
 			t.Errorf("Expected to be in isolation level %v but was %v", iso, level)
@@ -311,7 +311,7 @@ func TestBeginFunc(t *testing.T) {
 	_, err := conn.Exec(context.Background(), createSql)
 	require.NoError(t, err)
 
-	err = pgx.BeginFunc(context.Background(), conn, func(tx pgx.Tx) error {
+	err = fbx.BeginFunc(context.Background(), conn, func(tx fbx.Tx) error {
 		_, err := tx.Exec(context.Background(), "insert into "+t.Name()+"(id) values (1)")
 		require.NoError(t, err)
 		return nil
@@ -340,7 +340,7 @@ func TestBeginFuncRollbackOnError(t *testing.T) {
 	_, err := conn.Exec(context.Background(), createSql)
 	require.NoError(t, err)
 
-	err = pgx.BeginFunc(context.Background(), conn, func(tx pgx.Tx) error {
+	err = fbx.BeginFunc(context.Background(), conn, func(tx fbx.Tx) error {
 		_, err := tx.Exec(context.Background(), "insert into "+t.Name()+"(id) values (1)")
 		require.NoError(t, err)
 		return errors.New("some error")
@@ -359,7 +359,7 @@ func TestBeginReadOnly(t *testing.T) {
 	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 
-	tx, err := conn.BeginTx(context.Background(), pgx.TxOptions{AccessMode: pgx.ReadOnly})
+	tx, err := conn.BeginTx(context.Background(), fbx.TxOptions{AccessMode: fbx.ReadOnly})
 	if err != nil {
 		t.Fatalf("conn.Begin failed: %v", err)
 	}
@@ -525,15 +525,15 @@ func TestTxBeginFuncNestedTransactionCommit(t *testing.T) {
 	_, err := db.Exec(context.Background(), createSql)
 	require.NoError(t, err)
 
-	err = pgx.BeginFunc(context.Background(), db, func(db pgx.Tx) error {
+	err = fbx.BeginFunc(context.Background(), db, func(db fbx.Tx) error {
 		_, err := db.Exec(context.Background(), "insert into foo(id) values (1)")
 		require.NoError(t, err)
 
-		err = pgx.BeginFunc(context.Background(), db, func(db pgx.Tx) error {
+		err = fbx.BeginFunc(context.Background(), db, func(db fbx.Tx) error {
 			_, err := db.Exec(context.Background(), "insert into foo(id) values (2)")
 			require.NoError(t, err)
 
-			err = pgx.BeginFunc(context.Background(), db, func(db pgx.Tx) error {
+			err = fbx.BeginFunc(context.Background(), db, func(db fbx.Tx) error {
 				_, err := db.Exec(context.Background(), "insert into foo(id) values (3)")
 				require.NoError(t, err)
 				return nil
@@ -569,11 +569,11 @@ func TestTxBeginFuncNestedTransactionRollback(t *testing.T) {
 	_, err := db.Exec(context.Background(), createSql)
 	require.NoError(t, err)
 
-	err = pgx.BeginFunc(context.Background(), db, func(db pgx.Tx) error {
+	err = fbx.BeginFunc(context.Background(), db, func(db fbx.Tx) error {
 		_, err := db.Exec(context.Background(), "insert into foo(id) values (1)")
 		require.NoError(t, err)
 
-		err = pgx.BeginFunc(context.Background(), db, func(db pgx.Tx) error {
+		err = fbx.BeginFunc(context.Background(), db, func(db fbx.Tx) error {
 			_, err := db.Exec(context.Background(), "insert into foo(id) values (2)")
 			require.NoError(t, err)
 			return errors.New("do a rollback")
@@ -607,7 +607,7 @@ func TestTxSendBatchClosed(t *testing.T) {
 	err = tx.Commit(context.Background())
 	require.NoError(t, err)
 
-	batch := &pgx.Batch{}
+	batch := &fbx.Batch{}
 	batch.Queue("select 1")
 	batch.Queue("select 2")
 	batch.Queue("select 3")

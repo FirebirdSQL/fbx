@@ -5,11 +5,11 @@ import (
 	"sync/atomic"
 
 	"github.com/jackc/puddle/v2"
-	pgx "github.com/red-soft/fbx"
+	"github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbconn"
 )
 
-// Conn is an acquired *pgx.Conn from a Pool.
+// Conn is an acquired *fbx.Conn from a Pool.
 type Conn struct {
 	res *puddle.Resource[*connResource]
 	p   *Pool
@@ -69,7 +69,7 @@ func (c *Conn) Release() {
 
 // Hijack assumes ownership of the connection from the pool. Caller is responsible for closing the connection. Hijack
 // will panic if called on an already released or hijacked connection.
-func (c *Conn) Hijack() *pgx.Conn {
+func (c *Conn) Hijack() *fbx.Conn {
 	if c.res == nil {
 		panic("cannot hijack already released or hijacked connection")
 	}
@@ -87,29 +87,29 @@ func (c *Conn) Exec(ctx context.Context, sql string, arguments ...any) (fbconn.Q
 	return c.Conn().Exec(ctx, sql, arguments...)
 }
 
-func (c *Conn) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+func (c *Conn) Query(ctx context.Context, sql string, args ...any) (fbx.Rows, error) {
 	return c.Conn().Query(ctx, sql, args...)
 }
 
-func (c *Conn) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
+func (c *Conn) QueryRow(ctx context.Context, sql string, args ...any) fbx.Row {
 	return c.Conn().QueryRow(ctx, sql, args...)
 }
 
-func (c *Conn) SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults {
+func (c *Conn) SendBatch(ctx context.Context, b *fbx.Batch) fbx.BatchResults {
 	return c.Conn().SendBatch(ctx, b)
 }
 
-func (c *Conn) CopyFrom(ctx context.Context, tableName pgx.Identifier, columnNames []string, rowSrc pgx.CopyFromSource) (int64, error) {
+func (c *Conn) CopyFrom(ctx context.Context, tableName fbx.Identifier, columnNames []string, rowSrc fbx.CopyFromSource) (int64, error) {
 	return c.Conn().CopyFrom(ctx, tableName, columnNames, rowSrc)
 }
 
 // Begin starts a transaction block from the *Conn without explicitly setting a transaction mode (see BeginTx with TxOptions if transaction mode is required).
-func (c *Conn) Begin(ctx context.Context) (pgx.Tx, error) {
+func (c *Conn) Begin(ctx context.Context) (fbx.Tx, error) {
 	return c.Conn().Begin(ctx)
 }
 
 // BeginTx starts a transaction block from the *Conn with txOptions determining the transaction mode.
-func (c *Conn) BeginTx(ctx context.Context, txOptions pgx.TxOptions) (pgx.Tx, error) {
+func (c *Conn) BeginTx(ctx context.Context, txOptions fbx.TxOptions) (fbx.Tx, error) {
 	return c.Conn().BeginTx(ctx, txOptions)
 }
 
@@ -117,7 +117,7 @@ func (c *Conn) Ping(ctx context.Context) error {
 	return c.Conn().Ping(ctx)
 }
 
-func (c *Conn) Conn() *pgx.Conn {
+func (c *Conn) Conn() *fbx.Conn {
 	return c.connResource().conn
 }
 
@@ -125,10 +125,10 @@ func (c *Conn) connResource() *connResource {
 	return c.res.Value()
 }
 
-func (c *Conn) getPoolRow(r pgx.Row) *poolRow {
+func (c *Conn) getPoolRow(r fbx.Row) *poolRow {
 	return c.connResource().getPoolRow(c, r)
 }
 
-func (c *Conn) getPoolRows(r pgx.Rows) *poolRows {
+func (c *Conn) getPoolRows(r fbx.Rows) *poolRows {
 	return c.connResource().getPoolRows(c, r)
 }

@@ -4,13 +4,13 @@ import (
 	"context"
 	"testing"
 
-	pgx "github.com/red-soft/fbx"
+	"github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbtype"
 	"github.com/stretchr/testify/require"
 )
 
 func TestRecordCodec(t *testing.T) {
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		var a string
 		var b int32
 		err := conn.QueryRow(ctx, `select row('foo'::text, 42::int4)`).Scan(fbtype.CompositeFields{&a, &b})
@@ -24,7 +24,7 @@ func TestRecordCodec(t *testing.T) {
 func TestRecordCodecDecodeValue(t *testing.T) {
 	skipCockroachDB(t, "Server converts row int4 to int8")
 
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, _ testing.TB, conn *pgx.Conn) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		for _, tt := range []struct {
 			sql      string
 			expected any

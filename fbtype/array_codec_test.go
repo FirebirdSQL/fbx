@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	pgx "github.com/red-soft/fbx"
+	"github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbtype"
 	"github.com/red-soft/fbx/fbxtest"
 	"github.com/stretchr/testify/assert"
@@ -15,7 +15,7 @@ import (
 )
 
 func TestArrayCodec(t *testing.T) {
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		for i, tt := range []struct {
 			expected any
 		}{
@@ -65,9 +65,9 @@ func TestArrayCodecFlatArrayString(t *testing.T) {
 		{[]string{"a\vb", "a\tb", "a\nb", "a\rb", "a\fb", "a b"}},
 	}
 
-	queryModes := []pgx.QueryExecMode{pgx.QueryExecModeExec}
+	queryModes := []fbx.QueryExecMode{fbx.QueryExecModeExec}
 
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		for i, testCase := range testCases {
 			for _, queryMode := range queryModes {
 				var out []string
@@ -87,11 +87,11 @@ func TestArrayCodecFlatArrayString(t *testing.T) {
 
 func TestArrayCodecArray(t *testing.T) {
 	ctr := defaultConnTestRunner
-	ctr.AfterConnect = func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	ctr.AfterConnect = func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		fbxtest.SkipCockroachDB(t, conn, "Server does not support multi-dimensional arrays")
 	}
 
-	ctr.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	ctr.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		for i, tt := range []struct {
 			expected any
 		}{
@@ -117,7 +117,7 @@ func TestArrayCodecArray(t *testing.T) {
 }
 
 func TestArrayCodecNamedSliceType(t *testing.T) {
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		type _int16Slice []int16
 
 		for i, tt := range []struct {
@@ -141,7 +141,7 @@ func TestArrayCodecNamedSliceType(t *testing.T) {
 
 // https://github.com/jackc/pgx/issues/1488
 func TestArrayCodecAnySliceArgument(t *testing.T) {
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		type _int16Slice []int16
 
 		for i, tt := range []struct {
@@ -164,7 +164,7 @@ func TestArrayCodecAnySliceArgument(t *testing.T) {
 
 // https://github.com/jackc/pgx/issues/1442
 func TestArrayCodecAnyArray(t *testing.T) {
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		type _point3 [3]float32
 
 		for i, tt := range []struct {
@@ -187,7 +187,7 @@ func TestArrayCodecAnyArray(t *testing.T) {
 
 // https://github.com/jackc/pgx/issues/1273#issuecomment-1218262703
 func TestArrayCodecSliceArgConversion(t *testing.T) {
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		arg := []string{
 			"3ad95bfd-ecea-4032-83c3-0c823cafb372",
 			"951baf11-c0cc-4afc-a779-abff0611dbf1",
@@ -217,7 +217,7 @@ func TestArrayCodecSliceArgConversion(t *testing.T) {
 }
 
 func TestArrayCodecDecodeValue(t *testing.T) {
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, _ testing.TB, conn *pgx.Conn) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		for _, tt := range []struct {
 			sql      string
 			expected any
@@ -255,7 +255,7 @@ func TestArrayCodecDecodeValue(t *testing.T) {
 func TestArrayCodecScanMultipleDimensions(t *testing.T) {
 	skipCockroachDB(t, "Server does not support nested arrays (https://github.com/cockroachdb/cockroach/issues/36815)")
 
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 
 		rows, err := conn.Query(ctx, `select '{{1,2,3,4}, {5,6,7,8}, {9,10,11,12}}'::int4[]`)
 		require.NoError(t, err)
@@ -274,7 +274,7 @@ func TestArrayCodecScanMultipleDimensions(t *testing.T) {
 func TestArrayCodecScanMultipleDimensionsEmpty(t *testing.T) {
 	skipCockroachDB(t, "Server does not support nested arrays (https://github.com/cockroachdb/cockroach/issues/36815)")
 
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		rows, err := conn.Query(ctx, `select '{}'::int4[]`)
 		require.NoError(t, err)
 
@@ -292,7 +292,7 @@ func TestArrayCodecScanMultipleDimensionsEmpty(t *testing.T) {
 func TestArrayCodecScanWrongMultipleDimensions(t *testing.T) {
 	skipCockroachDB(t, "Server does not support nested arrays (https://github.com/cockroachdb/cockroach/issues/36815)")
 
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		rows, err := conn.Query(ctx, `select '{{1,2,3,4}, {5,6,7,8}, {9,10,11,12}}'::int4[]`)
 		require.NoError(t, err)
 
@@ -307,7 +307,7 @@ func TestArrayCodecScanWrongMultipleDimensions(t *testing.T) {
 func TestArrayCodecEncodeMultipleDimensions(t *testing.T) {
 	skipCockroachDB(t, "Server does not support nested arrays (https://github.com/cockroachdb/cockroach/issues/36815)")
 
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		rows, err := conn.Query(ctx, `select $1::int4[]`, [][]int32{{1, 2, 3, 4}, {5, 6, 7, 8}, {9, 10, 11, 12}})
 		require.NoError(t, err)
 
@@ -325,7 +325,7 @@ func TestArrayCodecEncodeMultipleDimensions(t *testing.T) {
 func TestArrayCodecEncodeMultipleDimensionsRagged(t *testing.T) {
 	skipCockroachDB(t, "Server does not support nested arrays (https://github.com/cockroachdb/cockroach/issues/36815)")
 
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		rows, err := conn.Query(ctx, `select $1::int4[]`, [][]int32{{1, 2, 3, 4}, {5}, {9, 10, 11, 12}})
 		require.Error(t, err, "cannot convert [][]int32 to ArrayGetter because it is a ragged multi-dimensional")
 		defer rows.Close()
@@ -334,7 +334,7 @@ func TestArrayCodecEncodeMultipleDimensionsRagged(t *testing.T) {
 
 // https://github.com/jackc/pgx/issues/1494
 func TestArrayCodecDecodeTextArrayWithTextOfNULL(t *testing.T) {
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		{
 			var actual []string
 			err := conn.QueryRow(ctx, `select '{"foo", "NULL", " NULL "}'::text[]`).Scan(&actual)
@@ -357,7 +357,7 @@ func TestArrayCodecDecodeTextArrayWithTextOfNULL(t *testing.T) {
 }
 
 func TestArrayCodecDecodeTextArrayPrefersBinaryFormat(t *testing.T) {
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		sd, err := conn.Prepare(ctx, "", `select '{"foo", "NULL", " NULL "}'::text[]`)
 		require.NoError(t, err)
 		require.Equal(t, int16(1), conn.TypeMap().FormatCodeForOID(sd.Fields[0].Type))

@@ -1,15 +1,15 @@
-package pgx_test
+package fbx_test
 
 import (
 	"context"
 	"os"
 	"testing"
 
-	pgx "github.com/red-soft/fbx"
+	"github.com/red-soft/fbx"
 )
 
 func skipCockroachDB(t testing.TB, msg string) {
-	conn, err := pgx.Connect(context.Background(), os.Getenv("PGX_TEST_DATABASE"))
+	conn, err := fbx.Connect(context.Background(), os.Getenv("PGX_TEST_DATABASE"))
 	if err != nil {
 		t.Fatal(err)
 	}

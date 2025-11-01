@@ -1,17 +1,17 @@
-package pgx_test
+package fbx_test
 
 import (
 	"context"
 	"testing"
 
-	pgx "github.com/red-soft/fbx"
+	"github.com/red-soft/fbx"
 	"github.com/stretchr/testify/require"
 )
 
 func TestCompositeCodecTranscodeWithLoadTypes(t *testing.T) {
 	skipCockroachDB(t, "Server does not support composite types (see https://github.com/cockroachdb/cockroach/issues/27792)")
 
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		_, err := conn.Exec(ctx, `
 drop type if exists dtype_test;
 drop domain if exists anotheruint64;

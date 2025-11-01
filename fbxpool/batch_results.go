@@ -1,7 +1,7 @@
 package fbxpool
 
 import (
-	pgx "github.com/red-soft/fbx"
+	"github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbconn"
 )
 
@@ -13,11 +13,11 @@ func (br errBatchResults) Exec() (fbconn.QueryStatus, error) {
 	return fbconn.QueryStatus{}, br.err
 }
 
-func (br errBatchResults) Query() (pgx.Rows, error) {
+func (br errBatchResults) Query() (fbx.Rows, error) {
 	return errRows{err: br.err}, br.err
 }
 
-func (br errBatchResults) QueryRow() pgx.Row {
+func (br errBatchResults) QueryRow() fbx.Row {
 	return errRow{err: br.err}
 }
 
@@ -26,7 +26,7 @@ func (br errBatchResults) Close() error {
 }
 
 type poolBatchResults struct {
-	br pgx.BatchResults
+	br fbx.BatchResults
 	c  *Conn
 }
 
@@ -34,11 +34,11 @@ func (br *poolBatchResults) Exec() (fbconn.QueryStatus, error) {
 	return br.br.Exec()
 }
 
-func (br *poolBatchResults) Query() (pgx.Rows, error) {
+func (br *poolBatchResults) Query() (fbx.Rows, error) {
 	return br.br.Query()
 }
 
-func (br *poolBatchResults) QueryRow() pgx.Row {
+func (br *poolBatchResults) QueryRow() fbx.Row {
 	return br.br.QueryRow()
 }
 

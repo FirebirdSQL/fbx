@@ -1,4 +1,4 @@
-package pgx_test
+package fbx_test
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	pgx "github.com/red-soft/fbx"
+	"github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbconn"
 	"github.com/red-soft/fbx/fbxtest"
 	"github.com/stretchr/testify/assert"
@@ -18,43 +18,43 @@ var defaultConnTestRunner fbxtest.ConnTestRunner
 
 func init() {
 	defaultConnTestRunner = fbxtest.DefaultConnTestRunner()
-	defaultConnTestRunner.CreateConfig = func(ctx context.Context, t testing.TB) *pgx.ConnConfig {
-		config, err := pgx.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	defaultConnTestRunner.CreateConfig = func(ctx context.Context, t testing.TB) *fbx.ConnConfig {
+		config, err := fbx.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 		require.NoError(t, err)
 		return config
 	}
 }
 
-func mustConnectString(t testing.TB, connString string) *pgx.Conn {
-	conn, err := pgx.Connect(context.Background(), connString)
+func mustConnectString(t testing.TB, connString string) *fbx.Conn {
+	conn, err := fbx.Connect(context.Background(), connString)
 	if err != nil {
 		t.Fatalf("Unable to establish connection: %v", err)
 	}
 	return conn
 }
 
-func mustParseConfig(t testing.TB, connString string) *pgx.ConnConfig {
-	config, err := pgx.ParseConfig(connString)
+func mustParseConfig(t testing.TB, connString string) *fbx.ConnConfig {
+	config, err := fbx.ParseConfig(connString)
 	require.Nil(t, err)
 	return config
 }
 
-func mustConnect(t testing.TB, config *pgx.ConnConfig) *pgx.Conn {
-	conn, err := pgx.ConnectConfig(context.Background(), config)
+func mustConnect(t testing.TB, config *fbx.ConnConfig) *fbx.Conn {
+	conn, err := fbx.ConnectConfig(context.Background(), config)
 	if err != nil {
 		t.Fatalf("Unable to establish connection: %v", err)
 	}
 	return conn
 }
 
-func closeConn(t testing.TB, conn *pgx.Conn) {
+func closeConn(t testing.TB, conn *fbx.Conn) {
 	err := conn.Close(context.Background())
 	if err != nil {
 		t.Fatalf("conn.Close unexpectedly failed: %v", err)
 	}
 }
 
-func mustExec(t testing.TB, conn *pgx.Conn, sql string, arguments ...any) (commandTag fbconn.QueryStatus) {
+func mustExec(t testing.TB, conn *fbx.Conn, sql string, arguments ...any) (commandTag fbconn.QueryStatus) {
 	var err error
 	if commandTag, err = conn.Exec(context.Background(), sql, arguments...); err != nil {
 		t.Fatalf("Exec unexpectedly failed with %v: %v", sql, err)
@@ -63,7 +63,7 @@ func mustExec(t testing.TB, conn *pgx.Conn, sql string, arguments ...any) (comma
 }
 
 // Do a simple query to ensure the connection is still usable
-func ensureConnValid(t testing.TB, conn *pgx.Conn) {
+func ensureConnValid(t testing.TB, conn *fbx.Conn) {
 	var sum, rowCount int32
 
 	rows, err := conn.Query(context.Background(), generateSeriesQuery("1", "?", ""), 10)
@@ -91,7 +91,7 @@ func ensureConnValid(t testing.TB, conn *pgx.Conn) {
 	}
 }
 
-func assertConfigsEqual(t *testing.T, expected, actual *pgx.ConnConfig, testName string) {
+func assertConfigsEqual(t *testing.T, expected, actual *fbx.ConnConfig, testName string) {
 	if !assert.NotNil(t, expected) {
 		return
 	}

@@ -3,7 +3,7 @@ package fbxpool
 import (
 	"context"
 
-	pgx "github.com/red-soft/fbx"
+	"github.com/red-soft/fbx"
 )
 
 // AcquireTracer traces Acquire.
@@ -18,7 +18,7 @@ type AcquireTracer interface {
 type TraceAcquireStartData struct{}
 
 type TraceAcquireEndData struct {
-	Conn *pgx.Conn
+	Conn *fbx.Conn
 	Err  error
 }
 
@@ -29,5 +29,5 @@ type ReleaseTracer interface {
 }
 
 type TraceReleaseData struct {
-	Conn *pgx.Conn
+	Conn *fbx.Conn
 }

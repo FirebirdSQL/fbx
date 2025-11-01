@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	pgx "github.com/red-soft/fbx"
+	"github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbtype"
 	"github.com/red-soft/fbx/fbxtest"
 	"github.com/stretchr/testify/require"
@@ -34,7 +34,7 @@ func TestRangeCodecTranscode(t *testing.T) {
 
 func TestRangeCodecTranscodeCompatibleRangeElementTypes(t *testing.T) {
 	ctr := defaultConnTestRunner
-	ctr.AfterConnect = func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	ctr.AfterConnect = func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		fbxtest.SkipCockroachDB(t, conn, "Server does not support range types (see https://github.com/cockroachdb/cockroach/issues/27791)")
 	}
 
@@ -60,7 +60,7 @@ func TestRangeCodecTranscodeCompatibleRangeElementTypes(t *testing.T) {
 func TestRangeCodecScanRangeTwiceWithUnbounded(t *testing.T) {
 	skipCockroachDB(t, "Server does not support range types (see https://github.com/cockroachdb/cockroach/issues/27791)")
 
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 
 		var r fbtype.Range[fbtype.Int4]
 
@@ -114,7 +114,7 @@ func TestRangeCodecScanRangeTwiceWithUnbounded(t *testing.T) {
 func TestRangeCodecDecodeValue(t *testing.T) {
 	skipCockroachDB(t, "Server does not support range types (see https://github.com/cockroachdb/cockroach/issues/27791)")
 
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, _ testing.TB, conn *pgx.Conn) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 
 		for _, tt := range []struct {
 			sql      string

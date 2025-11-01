@@ -6,7 +6,7 @@ import (
 	"encoding/xml"
 	"testing"
 
-	pgx "github.com/red-soft/fbx"
+	"github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbxtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -50,7 +50,7 @@ func TestXMLCodec(t *testing.T) {
 // https://github.com/jackc/pgx/issues/1273#issuecomment-1221414648
 func TestXMLCodecUnmarshalSQLNull(t *testing.T) {
 	skipCockroachDB(t, "CockroachDB does not support XML.")
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		// Byte arrays are nilified
 		slice := []byte{10, 4}
 		err := conn.QueryRow(ctx, "select null::xml").Scan(&slice)
@@ -85,7 +85,7 @@ func TestXMLCodecUnmarshalSQLNull(t *testing.T) {
 
 func TestXMLCodecPointerToPointerToString(t *testing.T) {
 	skipCockroachDB(t, "CockroachDB does not support XML.")
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		var s *string
 		err := conn.QueryRow(ctx, "select ''::xml").Scan(&s)
 		require.NoError(t, err)
@@ -100,7 +100,7 @@ func TestXMLCodecPointerToPointerToString(t *testing.T) {
 
 func TestXMLCodecDecodeValue(t *testing.T) {
 	skipCockroachDB(t, "CockroachDB does not support XML.")
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, _ testing.TB, conn *pgx.Conn) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		for _, tt := range []struct {
 			sql      string
 			expected any

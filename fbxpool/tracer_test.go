@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	pgx "github.com/red-soft/fbx"
+	"github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbxpool"
 	"github.com/stretchr/testify/require"
 )
@@ -38,11 +38,11 @@ func (tt *testTracer) TraceRelease(pool *fbxpool.Pool, data fbxpool.TraceRelease
 	}
 }
 
-func (tt *testTracer) TraceQueryStart(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
+func (tt *testTracer) TraceQueryStart(ctx context.Context, conn *fbx.Conn, data fbx.TraceQueryStartData) context.Context {
 	return ctx
 }
 
-func (tt *testTracer) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryEndData) {
+func (tt *testTracer) TraceQueryEnd(ctx context.Context, conn *fbx.Conn, data fbx.TraceQueryEndData) {
 }
 
 func TestTraceAcquire(t *testing.T) {

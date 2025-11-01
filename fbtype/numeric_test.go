@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"testing"
 
-	pgx "github.com/red-soft/fbx"
+	"github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbtype"
 	"github.com/red-soft/fbx/fbxtest"
 	"github.com/stretchr/testify/assert"
@@ -197,7 +197,7 @@ func TestNumericCodecFuzz(t *testing.T) {
 func TestNumericMarshalJSON(t *testing.T) {
 	skipCockroachDB(t, "server formats numeric text format differently")
 
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 
 		for i, tt := range []struct {
 			decString string

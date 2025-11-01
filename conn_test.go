@@ -1,4 +1,4 @@
-package pgx_test
+package fbx_test
 
 import (
 	"bytes"
@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	pgx "github.com/red-soft/fbx"
+	"github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbconn"
 	"github.com/red-soft/fbx/fbtype"
 	"github.com/red-soft/fbx/fbxtest"
@@ -26,7 +26,7 @@ func TestCrateDBConnect(t *testing.T) {
 		t.Skipf("Skipping due to missing environment variable %v", "PGX_TEST_CRATEDB_CONN_STRING")
 	}
 
-	conn, err := pgx.Connect(context.Background(), connString)
+	conn, err := fbx.Connect(context.Background(), connString)
 	require.Nil(t, err)
 	defer closeConn(t, conn)
 
@@ -48,7 +48,7 @@ func TestConnect(t *testing.T) {
 	connString := os.Getenv("PGX_TEST_DATABASE")
 	config := mustParseConfig(t, connString)
 
-	conn, err := pgx.ConnectConfig(context.Background(), config)
+	conn, err := fbx.ConnectConfig(context.Background(), config)
 	if err != nil {
 		t.Fatalf("Unable to establish connection: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestConnectWithPreferSimpleProtocol(t *testing.T) {
 	t.Parallel()
 
 	connConfig := mustParseConfig(t, os.Getenv("PGX_TEST_DATABASE"))
-	connConfig.DefaultQueryExecMode = pgx.QueryExecModeExec
+	connConfig.DefaultQueryExecMode = fbx.QueryExecModeExec
 
 	conn := mustConnect(t, connConfig)
 	defer closeConn(t, conn)
@@ -100,22 +100,22 @@ func TestConnectWithPreferSimpleProtocol(t *testing.T) {
 }
 
 func TestConnectConfigRequiresConnConfigFromParseConfig(t *testing.T) {
-	config := &pgx.ConnConfig{}
+	config := &fbx.ConnConfig{}
 	require.PanicsWithValue(t, "config must be created by ParseConfig", func() {
-		pgx.ConnectConfig(context.Background(), config)
+		fbx.ConnectConfig(context.Background(), config)
 	})
 }
 
 func TestConfigContainsConnStr(t *testing.T) {
 	connStr := os.Getenv("PGX_TEST_DATABASE")
-	config, err := pgx.ParseConfig(connStr)
+	config, err := fbx.ParseConfig(connStr)
 	require.NoError(t, err)
 	assert.Equal(t, connStr, config.ConnString())
 }
 
 func TestConfigCopyReturnsEqualConfig(t *testing.T) {
 	connString := "postgres://jack:secret@localhost:5432/mydb?application_name=pgxtest&search_path=myschema&connect_timeout=5"
-	original, err := pgx.ParseConfig(connString)
+	original, err := fbx.ParseConfig(connString)
 	require.NoError(t, err)
 
 	copied := original.Copy()
@@ -124,12 +124,12 @@ func TestConfigCopyReturnsEqualConfig(t *testing.T) {
 
 func TestConfigCopyCanBeUsedToConnect(t *testing.T) {
 	connString := os.Getenv("PGX_TEST_DATABASE")
-	original, err := pgx.ParseConfig(connString)
+	original, err := fbx.ParseConfig(connString)
 	require.NoError(t, err)
 
 	copied := original.Copy()
 	assert.NotPanics(t, func() {
-		_, err = pgx.ConnectConfig(context.Background(), copied)
+		_, err = fbx.ConnectConfig(context.Background(), copied)
 	})
 	assert.NoError(t, err)
 }
@@ -137,32 +137,32 @@ func TestConfigCopyCanBeUsedToConnect(t *testing.T) {
 func TestParseConfigExtractsStatementCacheOptions(t *testing.T) {
 	t.Parallel()
 
-	config, err := pgx.ParseConfig("statement_cache_capacity=0")
+	config, err := fbx.ParseConfig("statement_cache_capacity=0")
 	require.NoError(t, err)
 	require.EqualValues(t, 0, config.StatementCacheCapacity)
 
-	config, err = pgx.ParseConfig("statement_cache_capacity=42")
+	config, err = fbx.ParseConfig("statement_cache_capacity=42")
 	require.NoError(t, err)
 	require.EqualValues(t, 42, config.StatementCacheCapacity)
 
-	config, err = pgx.ParseConfig("description_cache_capacity=0")
+	config, err = fbx.ParseConfig("description_cache_capacity=0")
 	require.NoError(t, err)
 	require.EqualValues(t, 0, config.DescriptionCacheCapacity)
 
-	config, err = pgx.ParseConfig("description_cache_capacity=42")
+	config, err = fbx.ParseConfig("description_cache_capacity=42")
 	require.NoError(t, err)
 	require.EqualValues(t, 42, config.DescriptionCacheCapacity)
 
 	//	default_query_exec_mode
 	//		Possible values: "cache_statement", "cache_describe", "describe_exec", "exec", and "simple_protocol". See
 
-	config, err = pgx.ParseConfig("default_query_exec_mode=cache_statement")
+	config, err = fbx.ParseConfig("default_query_exec_mode=cache_statement")
 	require.NoError(t, err)
-	require.Equal(t, pgx.QueryExecModeCacheStatement, config.DefaultQueryExecMode)
+	require.Equal(t, fbx.QueryExecModeCacheStatement, config.DefaultQueryExecMode)
 
-	config, err = pgx.ParseConfig("default_query_exec_mode=exec")
+	config, err = fbx.ParseConfig("default_query_exec_mode=exec")
 	require.NoError(t, err)
-	require.Equal(t, pgx.QueryExecModeExec, config.DefaultQueryExecMode)
+	require.Equal(t, fbx.QueryExecModeExec, config.DefaultQueryExecMode)
 }
 
 func TestParseConfigExtractsDefaultQueryExecMode(t *testing.T) {
@@ -170,13 +170,13 @@ func TestParseConfigExtractsDefaultQueryExecMode(t *testing.T) {
 
 	for _, tt := range []struct {
 		connString           string
-		defaultQueryExecMode pgx.QueryExecMode
+		defaultQueryExecMode fbx.QueryExecMode
 	}{
-		{"", pgx.QueryExecModeCacheStatement},
-		{"default_query_exec_mode=cache_statement", pgx.QueryExecModeCacheStatement},
-		{"default_query_exec_mode=exec", pgx.QueryExecModeExec},
+		{"", fbx.QueryExecModeCacheStatement},
+		{"default_query_exec_mode=cache_statement", fbx.QueryExecModeCacheStatement},
+		{"default_query_exec_mode=exec", fbx.QueryExecModeExec},
 	} {
-		config, err := pgx.ParseConfig(tt.connString)
+		config, err := fbx.ParseConfig(tt.connString)
 		require.NoError(t, err)
 		require.Equalf(t, tt.defaultQueryExecMode, config.DefaultQueryExecMode, "connString: `%s`", tt.connString)
 		require.Empty(t, config.RuntimeParams["default_query_exec_mode"])
@@ -192,7 +192,7 @@ func TestParseConfigErrors(t *testing.T) {
 	}{
 		{"default_query_exec_mode=does_not_exist", "does_not_exist"},
 	} {
-		config, err := pgx.ParseConfig(tt.connString)
+		config, err := fbx.ParseConfig(tt.connString)
 		require.Nil(t, config)
 		require.ErrorContains(t, err, tt.expectedErrSubstring)
 	}
@@ -204,7 +204,7 @@ func TestExec(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		table := strings.ReplaceAll(t.Name(), "/", "_") + "_conn_test"
 		results := mustExec(t, conn, "recreate table "+table+" (id integer primary key)")
 		assert.Equal(t, "DDL", results.String())
@@ -226,7 +226,7 @@ type testQueryRewriter struct {
 	args []any
 }
 
-func (qr *testQueryRewriter) RewriteQuery(ctx context.Context, conn *pgx.Conn, sql string, args []any) (newSQL string, newArgs []any, err error) {
+func (qr *testQueryRewriter) RewriteQuery(ctx context.Context, conn *fbx.Conn, sql string, args []any) (newSQL string, newArgs []any, err error) {
 	return qr.sql, qr.args, nil
 }
 
@@ -236,7 +236,7 @@ func TestExecWithQueryRewriter(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		qr := testQueryRewriter{sql: "select cast(? as int) from rdb$database", args: []any{42}}
 		_, err := conn.Exec(ctx, "should be replaced", &qr)
 		require.NoError(t, err)
@@ -249,7 +249,7 @@ func TestExecFailure(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		if _, err := conn.Exec(context.Background(), "selct;"); err == nil {
 			t.Fatal("Expected SQL syntax error")
 		}
@@ -268,7 +268,7 @@ func TestExecFailureWithArguments(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		_, err := conn.Exec(context.Background(), "selct $1;", 1)
 		if err == nil {
 			t.Fatal("Expected SQL syntax error")
@@ -286,7 +286,7 @@ func TestExecContextWithoutCancelation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		table := strings.ReplaceAll(t.Name(), "/", "_")
 		ctx, cancelFunc := context.WithCancel(ctx)
 		defer cancelFunc()
@@ -308,7 +308,7 @@ func TestExecContextFailureWithoutCancelation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		ctx, cancelFunc := context.WithCancel(ctx)
 		defer cancelFunc()
 
@@ -333,7 +333,7 @@ func TestExecContextFailureWithoutCancelationWithArguments(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		ctx, cancelFunc := context.WithCancel(ctx)
 		defer cancelFunc()
 
@@ -428,7 +428,7 @@ func TestPrepareIdempotency(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		for i := 0; i < 2; i++ {
 			_, err := conn.Prepare(context.Background(), "test", "select cast(42 as integer) from rdb$database")
 			if err != nil {
@@ -460,7 +460,7 @@ func TestPrepareStatementCacheModes(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		_, err := conn.Prepare(context.Background(), "test", "select cast(? as varchar) from rdb$database")
 		require.NoError(t, err)
 
@@ -477,7 +477,7 @@ func TestPrepareWithDigestedName(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		sql := "select cast(? as varchar) from rdb$database"
 		sd, err := conn.Prepare(ctx, sql, sql)
 		require.NoError(t, err)
@@ -500,7 +500,7 @@ func TestDeallocateInAbortedTransaction(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		tx, err := conn.Begin(ctx)
 		require.NoError(t, err)
 
@@ -535,7 +535,7 @@ func TestDeallocateMissingPreparedStatementStillClearsFromPreparedStatementMap(t
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		_, err := conn.Prepare(ctx, "ps", "select cast(? as varchar) from rdb$database")
 		require.NoError(t, err)
 
@@ -789,7 +789,7 @@ func TestInsertBoolArray(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		if results := mustExec(t, conn, "create temporary table foo(spice bool[]);"); results.String() != "CREATE TABLE" {
 			t.Error("Unexpected results from Exec")
 		}
@@ -807,7 +807,7 @@ func TestInsertTimestampArray(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		if results := mustExec(t, conn, "create temporary table foo(spice timestamp[]);"); results.String() != "CREATE TABLE" {
 			t.Error("Unexpected results from Exec")
 		}
@@ -823,31 +823,31 @@ func TestIdentifierSanitize(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		ident    pgx.Identifier
+		ident    fbx.Identifier
 		expected string
 	}{
 		{
-			ident:    pgx.Identifier{`foo`},
+			ident:    fbx.Identifier{`foo`},
 			expected: `"foo"`,
 		},
 		{
-			ident:    pgx.Identifier{`select`},
+			ident:    fbx.Identifier{`select`},
 			expected: `"select"`,
 		},
 		{
-			ident:    pgx.Identifier{`foo`, `bar`},
+			ident:    fbx.Identifier{`foo`, `bar`},
 			expected: `"foo"."bar"`,
 		},
 		{
-			ident:    pgx.Identifier{`you should " not do this`},
+			ident:    fbx.Identifier{`you should " not do this`},
 			expected: `"you should "" not do this"`,
 		},
 		{
-			ident:    pgx.Identifier{`you should " not do this`, `please don't`},
+			ident:    fbx.Identifier{`you should " not do this`, `please don't`},
 			expected: `"you should "" not do this"."please don't"`,
 		},
 		{
-			ident:    pgx.Identifier{`you should ` + string([]byte{0}) + `not do this`},
+			ident:    fbx.Identifier{`you should ` + string([]byte{0}) + `not do this`},
 			expected: `"you should not do this"`,
 		},
 	}
@@ -892,7 +892,7 @@ func TestUnregisteredTypeUsableAsStringArgumentAndBaseResult(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		fbxtest.SkipCockroachDB(t, conn, "Server does support domain types (https://github.com/cockroachdb/cockroach/issues/27796)")
 
 		var n uint64
@@ -911,7 +911,7 @@ func TestDomainType(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		fbxtest.SkipCockroachDB(t, conn, "Server does support domain types (https://github.com/cockroachdb/cockroach/issues/27796)")
 
 		// Domain type uint64 is a PostgreSQL domain of underlying type numeric.
@@ -948,7 +948,7 @@ func TestLoadTypeSameNameInDifferentSchemas(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		fbxtest.SkipCockroachDB(t, conn, "Server does support composite types (https://github.com/cockroachdb/cockroach/issues/27792)")
 
 		tx, err := conn.Begin(ctx)
@@ -993,7 +993,7 @@ func TestLoadCompositeType(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		fbxtest.SkipCockroachDB(t, conn, "Server does support composite types (https://github.com/cockroachdb/cockroach/issues/27792)")
 
 		tx, err := conn.Begin(ctx)
@@ -1015,7 +1015,7 @@ func TestLoadRangeType(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		fbxtest.SkipCockroachDB(t, conn, "Server does support range types")
 
 		tx, err := conn.Begin(ctx)
@@ -1049,7 +1049,7 @@ func TestLoadMultiRangeType(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		fbxtest.SkipCockroachDB(t, conn, "Server does support range types")
 		fbxtest.SkipPostgreSQLVersionLessThan(t, conn, 14) // multirange data type was added in 14 postgresql
 
@@ -1237,7 +1237,7 @@ func TestInsertDurationInterval(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		_, err := conn.Exec(context.Background(), "recreate table t(duration INTERVAL(0) NOT NULL)")
 		require.NoError(t, err)
 
@@ -1252,7 +1252,7 @@ func TestInsertDurationInterval(t *testing.T) {
 func TestRawValuesUnderlyingMemoryReused(t *testing.T) {
 	//FIXME: check for possibility permanent memory allocation for rows
 	t.Skip("too slow")
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		var buf []byte
 
 		rows, err := conn.Query(ctx, `select cast(1 as int) from rdb$database`)
@@ -1287,7 +1287,7 @@ func TestConnDeallocateInvalidatedCachedStatementsWhenCanceled(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		fbxtest.SkipCockroachDB(t, conn, "CockroachDB returns decimal instead of integer for integer division")
 
 		var n int32
@@ -1322,10 +1322,10 @@ func TestConnDeallocateInvalidatedCachedStatementsInTransactionWithBatch(t *test
 
 	connString := os.Getenv("PGX_TEST_DATABASE")
 	config := mustParseConfig(t, connString)
-	config.DefaultQueryExecMode = pgx.QueryExecModeCacheStatement
+	config.DefaultQueryExecMode = fbx.QueryExecModeCacheStatement
 	config.StatementCacheCapacity = 2
 
-	conn, err := pgx.ConnectConfig(ctx, config)
+	conn, err := fbx.ConnectConfig(ctx, config)
 	require.NoError(t, err)
 
 	tx, err := conn.Begin(ctx)
@@ -1342,7 +1342,7 @@ func TestConnDeallocateInvalidatedCachedStatementsInTransactionWithBatch(t *test
 	_, err = tx.Exec(ctx, "select cast(? as integer) + 3 from rdb$database", 1)
 	require.NoError(t, err)
 
-	batch := &pgx.Batch{}
+	batch := &fbx.Batch{}
 	batch.Queue("select cast(? as integer) + 1 from rdb$database", 1)
 	err = tx.SendBatch(ctx, batch).Close()
 	require.NoError(t, err)
@@ -1357,7 +1357,7 @@ func TestErrNoRows(t *testing.T) {
 	t.Parallel()
 
 	// ensure we preserve old error message
-	require.Equal(t, "no rows in result set", pgx.ErrNoRows.Error())
+	require.Equal(t, "no rows in result set", fbx.ErrNoRows.Error())
 
-	require.ErrorIs(t, pgx.ErrNoRows, sql.ErrNoRows, "pgx.ErrNowRows must match sql.ErrNoRows")
+	require.ErrorIs(t, fbx.ErrNoRows, sql.ErrNoRows, "fbx.ErrNowRows must match fbx.ErrNoRows")
 }

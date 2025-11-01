@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	pgx "github.com/red-soft/fbx"
+	"github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbtype"
 	"github.com/red-soft/fbx/fbxtest"
 )
@@ -61,7 +61,7 @@ func stringPtr(s string) *string {
 
 func TestHstoreCodec(t *testing.T) {
 	ctr := defaultConnTestRunner
-	ctr.AfterConnect = func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	ctr.AfterConnect = func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		var hstoreOID uint32
 		err := conn.QueryRow(context.Background(), `select oid from pg_type where typname = 'hstore'`).Scan(&hstoreOID)
 		if err != nil {
@@ -160,7 +160,7 @@ func TestHstoreCodec(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbxtest.RunWithQueryExecModes(ctx, t, ctr, fbxtest.AllQueryExecModes, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	fbxtest.RunWithQueryExecModes(ctx, t, ctr, fbxtest.AllQueryExecModes, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		h := fbtype.Hstore{"should_be_erased": nil}
 		err := conn.QueryRow(ctx, `select cast(null as hstore)`).Scan(&h)
 		if err != nil {

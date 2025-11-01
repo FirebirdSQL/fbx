@@ -3,18 +3,18 @@ package fbxpool
 import (
 	"context"
 
-	pgx "github.com/red-soft/fbx"
+	"github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbconn"
 )
 
 // Tx represents a database transaction acquired from a Pool.
 type Tx struct {
-	t pgx.Tx
+	t fbx.Tx
 	c *Conn
 }
 
 // Begin starts a pseudo nested transaction implemented with a savepoint.
-func (tx *Tx) Begin(ctx context.Context) (pgx.Tx, error) {
+func (tx *Tx) Begin(ctx context.Context) (fbx.Tx, error) {
 	return tx.t.Begin(ctx)
 }
 
@@ -43,15 +43,15 @@ func (tx *Tx) Rollback(ctx context.Context) error {
 	return err
 }
 
-func (tx *Tx) CopyFrom(ctx context.Context, tableName pgx.Identifier, columnNames []string, rowSrc pgx.CopyFromSource) (int64, error) {
+func (tx *Tx) CopyFrom(ctx context.Context, tableName fbx.Identifier, columnNames []string, rowSrc fbx.CopyFromSource) (int64, error) {
 	return tx.t.CopyFrom(ctx, tableName, columnNames, rowSrc)
 }
 
-func (tx *Tx) SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults {
+func (tx *Tx) SendBatch(ctx context.Context, b *fbx.Batch) fbx.BatchResults {
 	return tx.t.SendBatch(ctx, b)
 }
 
-func (tx *Tx) LargeObjects() pgx.LargeObjects {
+func (tx *Tx) LargeObjects() fbx.LargeObjects {
 	return tx.t.LargeObjects()
 }
 
@@ -70,14 +70,14 @@ func (tx *Tx) Exec(ctx context.Context, sql string, arguments ...any) (fbconn.Qu
 	return tx.t.Exec(ctx, sql, arguments...)
 }
 
-func (tx *Tx) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+func (tx *Tx) Query(ctx context.Context, sql string, args ...any) (fbx.Rows, error) {
 	return tx.t.Query(ctx, sql, args...)
 }
 
-func (tx *Tx) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
+func (tx *Tx) QueryRow(ctx context.Context, sql string, args ...any) fbx.Row {
 	return tx.t.QueryRow(ctx, sql, args...)
 }
 
-func (tx *Tx) Conn() *pgx.Conn {
+func (tx *Tx) Conn() *fbx.Conn {
 	return tx.t.Conn()
 }

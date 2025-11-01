@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"os"
 
-	pgx "github.com/red-soft/fbx"
+	"github.com/red-soft/fbx"
 )
 
 func Example_json() {
-	conn, err := pgx.Connect(context.Background(), os.Getenv("PGX_TEST_DATABASE"))
+	conn, err := fbx.Connect(context.Background(), os.Getenv("PGX_TEST_DATABASE"))
 	if err != nil {
 		fmt.Printf("Unable to establish connection: %v", err)
 		return

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	pgx "github.com/red-soft/fbx"
+	"github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbconn"
 	"github.com/red-soft/fbx/fbxpool"
 	"github.com/stretchr/testify/assert"
@@ -31,7 +31,7 @@ func testExec(t *testing.T, ctx context.Context, db execer) {
 }
 
 type queryer interface {
-	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	Query(ctx context.Context, sql string, args ...any) (fbx.Rows, error)
 }
 
 func testQuery(t *testing.T, ctx context.Context, db queryer) {
@@ -53,7 +53,7 @@ func testQuery(t *testing.T, ctx context.Context, db queryer) {
 }
 
 type queryRower interface {
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	QueryRow(ctx context.Context, sql string, args ...any) fbx.Row
 }
 
 func testQueryRow(t *testing.T, ctx context.Context, db queryRower) {
@@ -65,11 +65,11 @@ func testQueryRow(t *testing.T, ctx context.Context, db queryRower) {
 }
 
 type sendBatcher interface {
-	SendBatch(context.Context, *pgx.Batch) pgx.BatchResults
+	SendBatch(context.Context, *fbx.Batch) fbx.BatchResults
 }
 
 func testSendBatch(t *testing.T, ctx context.Context, db sendBatcher) {
-	batch := &pgx.Batch{}
+	batch := &fbx.Batch{}
 	batch.Queue("select 1")
 	batch.Queue("select 2")
 
@@ -90,7 +90,7 @@ func testSendBatch(t *testing.T, ctx context.Context, db sendBatcher) {
 }
 
 type copyFromer interface {
-	CopyFrom(context.Context, pgx.Identifier, []string, pgx.CopyFromSource) (int64, error)
+	CopyFrom(context.Context, fbx.Identifier, []string, fbx.CopyFromSource) (int64, error)
 }
 
 func testCopyFrom(t *testing.T, ctx context.Context, db interface {
@@ -108,7 +108,7 @@ func testCopyFrom(t *testing.T, ctx context.Context, db interface {
 		{nil, nil, nil, nil, nil, nil, nil},
 	}
 
-	copyCount, err := db.CopyFrom(ctx, pgx.Identifier{"foo"}, []string{"a", "b", "c", "d", "e", "f", "g"}, pgx.CopyFromRows(inputRows))
+	copyCount, err := db.CopyFrom(ctx, fbx.Identifier{"foo"}, []string{"a", "b", "c", "d", "e", "f", "g"}, fbx.CopyFromRows(inputRows))
 	assert.NoError(t, err)
 	assert.EqualValues(t, len(inputRows), copyCount)
 
@@ -153,7 +153,7 @@ func assertConfigsEqual(t *testing.T, expected, actual *fbxpool.Config, testName
 	assertConnConfigsEqual(t, expected.ConnConfig, actual.ConnConfig, testName)
 }
 
-func assertConnConfigsEqual(t *testing.T, expected, actual *pgx.ConnConfig, testName string) {
+func assertConnConfigsEqual(t *testing.T, expected, actual *fbx.ConnConfig, testName string) {
 	if !assert.NotNil(t, expected) {
 		return
 	}

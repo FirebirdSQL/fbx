@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	pgx "github.com/red-soft/fbx"
+	"github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbtype/zeronull"
 	"github.com/red-soft/fbx/fbxtest"
 	"github.com/stretchr/testify/require"
@@ -15,12 +15,12 @@ var defaultConnTestRunner fbxtest.ConnTestRunner
 
 func init() {
 	defaultConnTestRunner = fbxtest.DefaultConnTestRunner()
-	defaultConnTestRunner.CreateConfig = func(ctx context.Context, t testing.TB) *pgx.ConnConfig {
-		config, err := pgx.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	defaultConnTestRunner.CreateConfig = func(ctx context.Context, t testing.TB) *fbx.ConnConfig {
+		config, err := fbx.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 		require.NoError(t, err)
 		return config
 	}
-	defaultConnTestRunner.AfterConnect = func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	defaultConnTestRunner.AfterConnect = func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		zeronull.Register(conn.TypeMap())
 	}
 }

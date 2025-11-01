@@ -1,4 +1,4 @@
-package pgx
+package fbx
 
 import (
 	"context"
@@ -59,7 +59,7 @@ func (cc *ConnConfig) Copy() *ConnConfig {
 	return newConfig
 }
 
-// ConnString returns the connection string as parsed by pgx.ParseConfig into pgx.ConnConfig.
+// ConnString returns the connection string as parsed by fbx.ParseConfig into fbx.ConnConfig.
 func (cc *ConnConfig) ConnString() string {
 	return cc.connString
 }
@@ -457,10 +457,10 @@ func (c *Conn) Ping(ctx context.Context) error {
 }
 
 // PgConn returns the underlying *pgconn.PgConn. This is an escape hatch method that allows lower level access to the
-// PostgreSQL connection than pgx exposes.
+// PostgreSQL connection than fbx exposes.
 //
 // It is strongly recommended that the connection be idle (no in-progress queries) before the underlying *pgconn.PgConn
-// is used and the connection must be returned to the same state before any *pgx.Conn methods are again used.
+// is used and the connection must be returned to the same state before any *fbx.Conn methods are again used.
 func (c *Conn) PgConn() *fbconn.PgConn {
 	return c.pgConn
 }

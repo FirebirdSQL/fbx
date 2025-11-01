@@ -5,12 +5,9 @@ go 1.24.2
 require (
 	github.com/jackc/puddle/v2 v2.2.2
 	github.com/jcmturner/gokrb5/v8 v8.4.4
-	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0
 	github.com/nakagami/chacha20 v0.1.0
-	github.com/shopspring/decimal v1.2.0
 	github.com/stretchr/testify v1.10.0
 	gitlab.com/nyarla/go-crypt v0.0.0-20160106005555-d9a5dc2b789b
-	golang.org/x/exp v0.0.0-20250813145105-42675adae3e6
 	golang.org/x/text v0.28.0
 	modernc.org/mathutil v1.4.2-0.20220822142738-b13e5b564332
 )

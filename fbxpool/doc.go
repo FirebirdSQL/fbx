@@ -15,7 +15,7 @@ specified here. In addition, a config struct can be created by [ParseConfig].
     if err != nil {
         // ...
     }
-    config.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+    config.AfterConnect = func(ctx context.Context, conn *fbx.Conn) error {
         // do something with every new connection
     }
 

@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	pgx "github.com/red-soft/fbx"
+	"github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbtype"
 	"github.com/red-soft/fbx/fbxtest"
 	"github.com/stretchr/testify/require"
@@ -38,7 +38,7 @@ func TestJSONBTranscode(t *testing.T) {
 }
 
 func TestJSONBCodecUnmarshalSQLNull(t *testing.T) {
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		// Slices are nilified
 		slice := []string{"foo", "bar", "baz"}
 		err := conn.QueryRow(ctx, "select null::jsonb").Scan(&slice)
@@ -76,7 +76,7 @@ func TestJSONBCodecUnmarshalSQLNull(t *testing.T) {
 
 // https://github.com/jackc/pgx/issues/1681
 func TestJSONBCodecEncodeJSONMarshalerThatCanBeWrapped(t *testing.T) {
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		var jsonStr string
 		err := conn.QueryRow(context.Background(), "select $1::jsonb", &ParentIssue1681{}).Scan(&jsonStr)
 		require.NoError(t, err)
@@ -86,7 +86,7 @@ func TestJSONBCodecEncodeJSONMarshalerThatCanBeWrapped(t *testing.T) {
 
 func TestJSONBCodecCustomMarshal(t *testing.T) {
 	connTestRunner := defaultConnTestRunner
-	connTestRunner.AfterConnect = func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	connTestRunner.AfterConnect = func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		conn.TypeMap().RegisterType(&fbtype.Type{
 			Name: "jsonb", OID: fbtype.JSONBOID, Codec: &fbtype.JSONBCodec{
 				Marshal: func(v any) ([]byte, error) {

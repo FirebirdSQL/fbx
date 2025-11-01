@@ -1,4 +1,4 @@
-// Package pgxtest provides utilities for testing pgx and packages that integrate with pgx.
+// Package fbxtest provides utilities for testing fbx and packages that integrate with fbx.
 package fbxtest
 
 import (
@@ -9,49 +9,49 @@ import (
 	"strconv"
 	"testing"
 
-	pgx "github.com/red-soft/fbx"
+	"github.com/red-soft/fbx"
 	"github.com/stretchr/testify/require"
 )
 
-var AllQueryExecModes = []pgx.QueryExecMode{
-	pgx.QueryExecModeCacheStatement,
-	pgx.QueryExecModeExec,
+var AllQueryExecModes = []fbx.QueryExecMode{
+	fbx.QueryExecModeCacheStatement,
+	fbx.QueryExecModeExec,
 }
 
 // KnownOIDQueryExecModes is a slice of all query exec modes where the param and result OIDs are known before sending the query.
-var KnownOIDQueryExecModes = []pgx.QueryExecMode{
-	pgx.QueryExecModeCacheStatement,
+var KnownOIDQueryExecModes = []fbx.QueryExecMode{
+	fbx.QueryExecModeCacheStatement,
 }
 
-// ConnTestRunner controls how a *pgx.Conn is created and closed by tests. All fields are required. Use DefaultConnTestRunner to get a
+// ConnTestRunner controls how a *fbx.Conn is created and closed by tests. All fields are required. Use DefaultConnTestRunner to get a
 // ConnTestRunner with reasonable default values.
 type ConnTestRunner struct {
-	// CreateConfig returns a *pgx.ConnConfig suitable for use with pgx.ConnectConfig.
-	CreateConfig func(ctx context.Context, t testing.TB) *pgx.ConnConfig
+	// CreateConfig returns a *fbx.ConnConfig suitable for use with fbx.ConnectConfig.
+	CreateConfig func(ctx context.Context, t testing.TB) *fbx.ConnConfig
 
 	// AfterConnect is called after conn is established. It allows for arbitrary connection setup before a test begins.
-	AfterConnect func(ctx context.Context, t testing.TB, conn *pgx.Conn)
+	AfterConnect func(ctx context.Context, t testing.TB, conn *fbx.Conn)
 
 	// AfterTest is called after the test is run. It allows for validating the state of the connection before it is closed.
-	AfterTest func(ctx context.Context, t testing.TB, conn *pgx.Conn)
+	AfterTest func(ctx context.Context, t testing.TB, conn *fbx.Conn)
 
 	// CloseConn closes conn.
-	CloseConn func(ctx context.Context, t testing.TB, conn *pgx.Conn)
+	CloseConn func(ctx context.Context, t testing.TB, conn *fbx.Conn)
 }
 
 // DefaultConnTestRunner returns a new ConnTestRunner with all fields set to reasonable default values.
 func DefaultConnTestRunner() ConnTestRunner {
 	return ConnTestRunner{
-		CreateConfig: func(ctx context.Context, t testing.TB) *pgx.ConnConfig {
-			config, err := pgx.ParseConfig("")
+		CreateConfig: func(ctx context.Context, t testing.TB) *fbx.ConnConfig {
+			config, err := fbx.ParseConfig("")
 			if err != nil {
 				t.Fatalf("ParseConfig failed: %v", err)
 			}
 			return config
 		},
-		AfterConnect: func(ctx context.Context, t testing.TB, conn *pgx.Conn) {},
-		AfterTest:    func(ctx context.Context, t testing.TB, conn *pgx.Conn) {},
-		CloseConn: func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+		AfterConnect: func(ctx context.Context, t testing.TB, conn *fbx.Conn) {},
+		AfterTest:    func(ctx context.Context, t testing.TB, conn *fbx.Conn) {},
+		CloseConn: func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 			err := conn.Close(ctx)
 			if err != nil {
 				t.Errorf("Close failed: %v", err)
@@ -60,11 +60,11 @@ func DefaultConnTestRunner() ConnTestRunner {
 	}
 }
 
-func (ctr *ConnTestRunner) RunTest(ctx context.Context, t testing.TB, f func(ctx context.Context, t testing.TB, conn *pgx.Conn)) {
+func (ctr *ConnTestRunner) RunTest(ctx context.Context, t testing.TB, f func(ctx context.Context, t testing.TB, conn *fbx.Conn)) {
 	t.Helper()
 
 	config := ctr.CreateConfig(ctx, t)
-	conn, err := pgx.ConnectConfig(ctx, config)
+	conn, err := fbx.ConnectConfig(ctx, config)
 	if err != nil {
 		t.Fatalf("ConnectConfig failed: %v", err)
 	}
@@ -76,15 +76,15 @@ func (ctr *ConnTestRunner) RunTest(ctx context.Context, t testing.TB, f func(ctx
 }
 
 // RunWithQueryExecModes runs a f in a new test for each element of modes with a new connection created using connector.
-// If modes is nil all pgx.QueryExecModes are tested.
-func RunWithQueryExecModes(ctx context.Context, t *testing.T, ctr ConnTestRunner, modes []pgx.QueryExecMode, f func(ctx context.Context, t testing.TB, conn *pgx.Conn)) {
+// If modes is nil all fbx.QueryExecModes are tested.
+func RunWithQueryExecModes(ctx context.Context, t *testing.T, ctr ConnTestRunner, modes []fbx.QueryExecMode, f func(ctx context.Context, t testing.TB, conn *fbx.Conn)) {
 	if modes == nil {
 		modes = AllQueryExecModes
 	}
 
 	for _, mode := range modes {
 		ctrWithMode := ctr
-		ctrWithMode.CreateConfig = func(ctx context.Context, t testing.TB) *pgx.ConnConfig {
+		ctrWithMode.CreateConfig = func(ctx context.Context, t testing.TB) *fbx.ConnConfig {
 			config := ctr.CreateConfig(ctx, t)
 			config.DefaultQueryExecMode = mode
 			return config
@@ -108,7 +108,7 @@ func RunValueRoundTripTests(
 	ctx context.Context,
 	t testing.TB,
 	ctr ConnTestRunner,
-	modes []pgx.QueryExecMode,
+	modes []fbx.QueryExecMode,
 	pgTypeName string,
 	tests []ValueRoundTripTest,
 ) {
@@ -118,7 +118,7 @@ func RunValueRoundTripTests(
 		modes = AllQueryExecModes
 	}
 
-	ctr.RunTest(ctx, t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	ctr.RunTest(ctx, t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		t.Helper()
 
 		sql := fmt.Sprintf("select cast(? as %s) from rdb$database", pgTypeName)
@@ -144,13 +144,13 @@ func RunValueRoundTripTests(
 }
 
 // SkipCockroachDB calls Skip on t with msg if the connection is to a CockroachDB server.
-func SkipCockroachDB(t testing.TB, conn *pgx.Conn, msg string) {
+func SkipCockroachDB(t testing.TB, conn *fbx.Conn, msg string) {
 	if conn.PgConn().ParameterStatus("crdb_version") != "" {
 		t.Skip(msg)
 	}
 }
 
-func SkipPostgreSQLVersionLessThan(t testing.TB, conn *pgx.Conn, minVersion int64) {
+func SkipPostgreSQLVersionLessThan(t testing.TB, conn *fbx.Conn, minVersion int64) {
 	serverVersionStr := conn.PgConn().ParameterStatus("server_version")
 	serverVersionStr = regexp.MustCompile(`^[0-9]+`).FindString(serverVersionStr)
 	// if not PostgreSQL do nothing

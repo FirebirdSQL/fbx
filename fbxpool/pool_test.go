@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	pgx "github.com/red-soft/fbx"
+	"github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbxpool"
 	"github.com/red-soft/fbx/fbxtest"
 	"github.com/stretchr/testify/assert"
@@ -58,7 +58,7 @@ func TestConstructorIgnoresContext(t *testing.T) {
 	config, err := fbxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	assert.NoError(t, err)
 	var cancel func()
-	config.BeforeConnect = func(context.Context, *pgx.ConnConfig) error {
+	config.BeforeConnect = func(context.Context, *fbx.ConnConfig) error {
 		// cancel the query's context before we actually Dial to ensure the Dial's
 		// context isn't cancelled
 		cancel()
@@ -157,7 +157,7 @@ func TestPoolAcquireChecksIdleConns(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	controllerConn, err := pgx.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	controllerConn, err := fbx.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer controllerConn.Close(ctx)
 	fbxtest.SkipCockroachDB(t, controllerConn, "Server does not support pg_terminate_backend() (https://github.com/cockroachdb/cockroach/issues/35897)")
@@ -249,7 +249,7 @@ func TestPoolBeforeConnect(t *testing.T) {
 	config, err := fbxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 
-	config.BeforeConnect = func(ctx context.Context, cfg *pgx.ConnConfig) error {
+	config.BeforeConnect = func(ctx context.Context, cfg *fbx.ConnConfig) error {
 		cfg.Config.RuntimeParams["application_name"] = "pgx"
 		return nil
 	}
@@ -273,7 +273,7 @@ func TestPoolAfterConnect(t *testing.T) {
 	config, err := fbxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 
-	config.AfterConnect = func(ctx context.Context, c *pgx.Conn) error {
+	config.AfterConnect = func(ctx context.Context, c *fbx.Conn) error {
 		_, err := c.Prepare(ctx, "ps1", "select 1 from rdb$database")
 		return err
 	}
@@ -299,7 +299,7 @@ func TestPoolBeforeAcquire(t *testing.T) {
 
 	acquireAttempts := 0
 
-	config.BeforeAcquire = func(ctx context.Context, c *pgx.Conn) bool {
+	config.BeforeAcquire = func(ctx context.Context, c *fbx.Conn) bool {
 		acquireAttempts++
 		return acquireAttempts%2 == 0
 	}
@@ -349,7 +349,7 @@ func TestPoolAfterRelease(t *testing.T) {
 
 	afterReleaseCount := 0
 
-	config.AfterRelease = func(c *pgx.Conn) bool {
+	config.AfterRelease = func(c *fbx.Conn) bool {
 		afterReleaseCount++
 		return afterReleaseCount%2 == 1
 	}
@@ -394,7 +394,7 @@ func TestPoolBeforeClose(t *testing.T) {
 	require.NoError(t, err)
 
 	connPIDs := make(chan uint32, 5)
-	config.BeforeClose = func(c *pgx.Conn) {
+	config.BeforeClose = func(c *fbx.Conn) {
 		connPIDs <- c.PgConn().PID()
 	}
 
@@ -719,7 +719,7 @@ func TestPoolQueryRowErrNoRows(t *testing.T) {
 	defer pool.Close()
 
 	err = pool.QueryRow(ctx, "select * from rdb$database where false").Scan(nil)
-	require.Equal(t, pgx.ErrNoRows, err)
+	require.Equal(t, fbx.ErrNoRows, err)
 }
 
 // https://github.com/jackc/pgx/issues/1628
@@ -787,7 +787,7 @@ func TestPoolCopyFrom(t *testing.T) {
 		{nil, nil, nil, nil, nil, nil, nil},
 	}
 
-	copyCount, err := pool.CopyFrom(ctx, pgx.Identifier{"poolcopyfromtest"}, []string{"a", "b", "c", "d", "e", "f", "g"}, pgx.CopyFromRows(inputRows))
+	copyCount, err := pool.CopyFrom(ctx, fbx.Identifier{"poolcopyfromtest"}, []string{"a", "b", "c", "d", "e", "f", "g"}, fbx.CopyFromRows(inputRows))
 	assert.NoError(t, err)
 	assert.EqualValues(t, len(inputRows), copyCount)
 
@@ -948,8 +948,8 @@ func TestConnReleaseWhenBeginFail(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	tx, err := db.BeginTx(ctx, pgx.TxOptions{
-		IsoLevel: pgx.TxIsoLevel("foo"),
+	tx, err := db.BeginTx(ctx, fbx.TxOptions{
+		IsoLevel: fbx.TxIsoLevel("foo"),
 	})
 	assert.Error(t, err)
 	if !assert.Zero(t, tx) {
@@ -990,15 +990,15 @@ func TestTxBeginFuncNestedTransactionCommit(t *testing.T) {
 		db.Exec(ctx, "drop table pgxpooltx")
 	}()
 
-	err = pgx.BeginFunc(ctx, db, func(db pgx.Tx) error {
+	err = fbx.BeginFunc(ctx, db, func(db fbx.Tx) error {
 		_, err := db.Exec(ctx, "insert into pgxpooltx(id) values (1)")
 		require.NoError(t, err)
 
-		err = pgx.BeginFunc(ctx, db, func(db pgx.Tx) error {
+		err = fbx.BeginFunc(ctx, db, func(db fbx.Tx) error {
 			_, err := db.Exec(ctx, "insert into pgxpooltx(id) values (2)")
 			require.NoError(t, err)
 
-			err = pgx.BeginFunc(ctx, db, func(db pgx.Tx) error {
+			err = fbx.BeginFunc(ctx, db, func(db fbx.Tx) error {
 				_, err := db.Exec(ctx, "insert into pgxpooltx(id) values (3)")
 				require.NoError(t, err)
 				return nil
@@ -1040,11 +1040,11 @@ func TestTxBeginFuncNestedTransactionRollback(t *testing.T) {
 		db.Exec(ctx, "drop table pgxpooltx")
 	}()
 
-	err = pgx.BeginFunc(ctx, db, func(db pgx.Tx) error {
+	err = fbx.BeginFunc(ctx, db, func(db fbx.Tx) error {
 		_, err := db.Exec(ctx, "insert into pgxpooltx(id) values (1)")
 		require.NoError(t, err)
 
-		err = pgx.BeginFunc(ctx, db, func(db pgx.Tx) error {
+		err = fbx.BeginFunc(ctx, db, func(db fbx.Tx) error {
 			_, err := db.Exec(ctx, "insert into pgxpooltx(id) values (2)")
 			require.NoError(t, err)
 			return errors.New("do a rollback")
@@ -1093,11 +1093,11 @@ func TestConnectEagerlyReachesMinPoolSize(t *testing.T) {
 	acquireAttempts := int64(0)
 	connectAttempts := int64(0)
 
-	config.BeforeAcquire = func(ctx context.Context, conn *pgx.Conn) bool {
+	config.BeforeAcquire = func(ctx context.Context, conn *fbx.Conn) bool {
 		atomic.AddInt64(&acquireAttempts, 1)
 		return true
 	}
-	config.BeforeConnect = func(ctx context.Context, cfg *pgx.ConnConfig) error {
+	config.BeforeConnect = func(ctx context.Context, cfg *fbx.ConnConfig) error {
 		atomic.AddInt64(&connectAttempts, 1)
 		return nil
 	}
@@ -1135,7 +1135,7 @@ func TestPoolSendBatchBatchCloseTwice(t *testing.T) {
 
 	for i := 0; i < testCount; i++ {
 		go func() {
-			batch := &pgx.Batch{}
+			batch := &fbx.Batch{}
 			batch.Queue("select 1")
 			batch.Queue("select 2")
 
