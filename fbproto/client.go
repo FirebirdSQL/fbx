@@ -1,6 +1,7 @@
 package fbproto
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 )
@@ -13,6 +14,7 @@ type Client struct {
 	codec       StreamCodec
 	xdrReader   *XDRReader
 	xdrWriter   *XDRWriter
+	tracer      *tracer
 	lazyCounter int
 }
 
@@ -72,14 +74,21 @@ func (c *Client) Write(buf []byte) (n int, err error) {
 
 func (c *Client) WriteMessage(msg ClientMessage) error {
 	err := msg.Write(c.xdrWriter)
-	if err == nil {
-		switch msg.(type) {
-		//FIXME: fbx should be implicit or explicit?
-		case *OpFreeStatement:
-			c.lazyCounter++
-		}
+	if err != nil {
+		return err
 	}
-	return err
+
+	switch msg.(type) {
+	//FIXME: fbx should be implicit or explicit?
+	case *OpFreeStatement:
+		c.lazyCounter++
+	}
+
+	if c.tracer != nil {
+		c.tracer.traceRequest('C', msg)
+	}
+	return nil
+
 	//var buf []byte
 	//buf, err := msg.Pack(buf)
 	//if err != nil {
@@ -149,6 +158,11 @@ func (c *Client) ReceiveMessage() (ServerMessage, error) {
 		if err != nil {
 			return nil, err
 		}
+
+		if c.tracer != nil {
+			c.tracer.traceResponse('S', msg)
+		}
+
 		switch m := msg.(type) {
 		case *OpDummy:
 			continue
@@ -174,14 +188,18 @@ func (c *Client) ReceiveMessage() (ServerMessage, error) {
 		}
 		break
 	}
+
 	return msg, nil
 }
 
 func (c *Client) ReceiveSQLData(row []FieldDescriptor) (*SQLData, ServerMessage, error) {
-	var sqlData *SQLData
-	var err error
-	if sqlData, err = ReadRowData(c.xdrReader, row); err != nil {
+	sqlData, err := ReadRowData(c.xdrReader, row)
+	if err != nil {
 		return nil, nil, err
+	}
+
+	if c.tracer != nil {
+		c.tracer.traceRowData('S', sqlData, len(row))
 	}
 
 	msg, err := c.ReceiveMessage()
@@ -189,4 +207,16 @@ func (c *Client) ReceiveSQLData(row []FieldDescriptor) (*SQLData, ServerMessage,
 		return nil, nil, err
 	}
 	return sqlData, msg, nil
+}
+
+func (c *Client) Trace(w io.Writer, options TracerOptions) {
+	c.tracer = &tracer{
+		w:             w,
+		buf:           &bytes.Buffer{},
+		TracerOptions: options,
+	}
+}
+
+func (c *Client) Untrace() {
+	c.tracer = nil
 }
