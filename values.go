@@ -3,8 +3,8 @@ package pgx
 import (
 	"errors"
 
+	"github.com/red-soft/fbx/fbtype"
 	"github.com/red-soft/fbx/internal/pgio"
-	"github.com/red-soft/fbx/pgtype"
 )
 
 // PostgreSQL format codes
@@ -13,7 +13,7 @@ const (
 	BinaryFormatCode = 1
 )
 
-func convertSimpleArgument(m *pgtype.Map, arg any) (any, error) {
+func convertSimpleArgument(m *fbtype.Map, arg any) (any, error) {
 	buf, err := m.Encode(0, TextFormatCode, arg, []byte{})
 	if err != nil {
 		return nil, err
@@ -24,7 +24,7 @@ func convertSimpleArgument(m *pgtype.Map, arg any) (any, error) {
 	return string(buf), nil
 }
 
-func encodeCopyValue(m *pgtype.Map, buf []byte, oid uint32, arg any) ([]byte, error) {
+func encodeCopyValue(m *fbtype.Map, buf []byte, oid uint32, arg any) ([]byte, error) {
 	sp := len(buf)
 	buf = pgio.AppendInt32(buf, -1)
 	argBuf, err := m.Encode(oid, BinaryFormatCode, arg, buf)
@@ -43,7 +43,7 @@ func encodeCopyValue(m *pgtype.Map, buf []byte, oid uint32, arg any) ([]byte, er
 	return buf, nil
 }
 
-func tryScanStringCopyValueThenEncode(m *pgtype.Map, buf []byte, oid uint32, arg any) ([]byte, error) {
+func tryScanStringCopyValueThenEncode(m *fbtype.Map, buf []byte, oid uint32, arg any) ([]byte, error) {
 	s, ok := arg.(string)
 	if !ok {
 		textBuf, err := m.Encode(oid, TextFormatCode, arg, nil)

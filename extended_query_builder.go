@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/red-soft/fbx/fbconn"
-	"github.com/red-soft/fbx/pgtype"
+	"github.com/red-soft/fbx/fbtype"
 )
 
 // ExtendedQueryBuilder is used to choose the parameter formats, to format the parameters and to choose the result
@@ -18,12 +18,12 @@ type ExtendedQueryBuilder struct {
 
 // Build sets ParamValues, ParamFormats, and ResultFormats for use with *PgConn.ExecParams or *PgConn.ExecPrepared. If
 // sd is nil then QueryExecModeExec behavior will be used.
-func (eqb *ExtendedQueryBuilder) Build(m *pgtype.Map, sd *fbconn.StatementDescription, args []any) error {
+func (eqb *ExtendedQueryBuilder) Build(m *fbtype.Map, sd *fbconn.StatementDescription, args []any) error {
 	eqb.reset()
 
 	if sd == nil {
 		for i := range args {
-			err := eqb.appendParam(m, 0, pgtype.TextFormatCode, args[i])
+			err := eqb.appendParam(m, 0, fbtype.TextFormatCode, args[i])
 			if err != nil {
 				err = fmt.Errorf("failed to encode args[%d]: %w", i, err)
 				return err
@@ -53,7 +53,7 @@ func (eqb *ExtendedQueryBuilder) Build(m *pgtype.Map, sd *fbconn.StatementDescri
 
 // appendParam appends a parameter to the query. format may be -1 to automatically choose the format. If arg is nil it
 // must be an untyped nil.
-func (eqb *ExtendedQueryBuilder) appendParam(m *pgtype.Map, oid uint32, format int16, arg any) error {
+func (eqb *ExtendedQueryBuilder) appendParam(m *fbtype.Map, oid uint32, format int16, arg any) error {
 	format = 1
 	if format == -1 {
 		preferredFormat := eqb.chooseParameterFormatCode(m, oid, arg)
@@ -116,7 +116,7 @@ func (eqb *ExtendedQueryBuilder) reset() {
 	}
 }
 
-func (eqb *ExtendedQueryBuilder) encodeExtendedParamValue(m *pgtype.Map, oid uint32, formatCode int16, arg any) ([]byte, error) {
+func (eqb *ExtendedQueryBuilder) encodeExtendedParamValue(m *fbtype.Map, oid uint32, formatCode int16, arg any) ([]byte, error) {
 	if eqb.paramValueBytes == nil {
 		eqb.paramValueBytes = make([]byte, 0, 128)
 	}
@@ -137,7 +137,7 @@ func (eqb *ExtendedQueryBuilder) encodeExtendedParamValue(m *pgtype.Map, oid uin
 // chooseParameterFormatCode determines the correct format code for an
 // argument to a prepared statement. It defaults to TextFormatCode if no
 // determination can be made.
-func (eqb *ExtendedQueryBuilder) chooseParameterFormatCode(m *pgtype.Map, oid uint32, arg any) int16 {
+func (eqb *ExtendedQueryBuilder) chooseParameterFormatCode(m *fbtype.Map, oid uint32, arg any) int16 {
 	switch arg.(type) {
 	case string, *string:
 		return TextFormatCode

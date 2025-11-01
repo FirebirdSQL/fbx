@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/red-soft/fbx/fbconn"
-	"github.com/red-soft/fbx/pgtype"
+	"github.com/red-soft/fbx/fbtype"
 )
 
 // Rows is the result set returned from *Conn.Query. Rows must be closed before
@@ -103,7 +103,7 @@ func (r *connRow) Scan(dest ...any) (err error) {
 	}
 
 	for _, d := range dest {
-		if _, ok := d.(*pgtype.DriverBytes); ok {
+		if _, ok := d.(*fbtype.DriverBytes); ok {
 			rows.Close()
 			return fmt.Errorf("cannot scan into *pgtype.DriverBytes from QueryRow")
 		}
@@ -123,7 +123,7 @@ func (r *connRow) Scan(dest ...any) (err error) {
 
 // baseRows implements the Rows interface for Conn.Query.
 type baseRows struct {
-	typeMap      *pgtype.Map
+	typeMap      *fbtype.Map
 	resultReader *fbconn.ResultReader
 
 	values [][]byte
@@ -132,7 +132,7 @@ type baseRows struct {
 	err        error
 	closed     bool
 
-	scanPlans []pgtype.ScanPlan
+	scanPlans []fbtype.ScanPlan
 	scanTypes []reflect.Type
 
 	conn *Conn
@@ -263,7 +263,7 @@ func (rows *baseRows) Scan(dest ...any) error {
 	}
 
 	if rows.scanPlans == nil {
-		rows.scanPlans = make([]pgtype.ScanPlan, len(values))
+		rows.scanPlans = make([]fbtype.ScanPlan, len(values))
 		rows.scanTypes = make([]reflect.Type, len(values))
 		for i := range dest {
 			rows.scanPlans[i] = m.PlanScan(fieldDescriptions[i].Type, fieldDescriptions[i].Format, dest[i])
@@ -367,7 +367,7 @@ func (e ScanArgError) Unwrap() error {
 // fieldDescriptions - OID and format of values
 // values - the raw data as returned from the PostgreSQL server
 // dest - the destination that values will be decoded into
-func ScanRow(typeMap *pgtype.Map, fieldDescriptions []fbconn.FieldDescription, values [][]byte, dest ...any) error {
+func ScanRow(typeMap *fbtype.Map, fieldDescriptions []fbconn.FieldDescription, values [][]byte, dest ...any) error {
 	if len(fieldDescriptions) != len(values) {
 		return fmt.Errorf("number of field descriptions must equal number of values, got %d and %d", len(fieldDescriptions), len(values))
 	}
@@ -391,7 +391,7 @@ func ScanRow(typeMap *pgtype.Map, fieldDescriptions []fbconn.FieldDescription, v
 
 // RowsFromResultReader returns a Rows that will read from values resultReader and decode with typeMap. It can be used
 // to read from the lower level pgconn interface.
-func RowsFromResultReader(typeMap *pgtype.Map, resultReader *fbconn.ResultReader) Rows {
+func RowsFromResultReader(typeMap *fbtype.Map, resultReader *fbconn.ResultReader) Rows {
 	return &baseRows{
 		typeMap:      typeMap,
 		resultReader: resultReader,

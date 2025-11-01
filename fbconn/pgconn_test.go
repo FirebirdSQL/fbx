@@ -16,7 +16,7 @@ import (
 
 	"github.com/red-soft/fbx/fbconn"
 	"github.com/red-soft/fbx/fbconn/ctxwatch"
-	"github.com/red-soft/fbx/pgtype"
+	"github.com/red-soft/fbx/fbtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -2000,7 +2000,7 @@ func TestPipelinePrepare(t *testing.T) {
 	require.Truef(t, ok, "expected StatementDescription, got: %#v", results)
 	require.Len(t, sd.Fields, 1)
 	require.Equal(t, "a", string(sd.Fields[0].Name))
-	require.Equal(t, []uint32{pgtype.Int8OID}, sd.Parameters[0].Type)
+	require.Equal(t, []uint32{fbtype.Int8OID}, sd.Parameters[0].Type)
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
@@ -2008,7 +2008,7 @@ func TestPipelinePrepare(t *testing.T) {
 	require.Truef(t, ok, "expected StatementDescription, got: %#v", results)
 	require.Len(t, sd.Fields, 1)
 	require.Equal(t, "b", string(sd.Fields[0].Name))
-	require.Equal(t, []uint32{pgtype.TextOID}, sd.Parameters[0].Type)
+	require.Equal(t, []uint32{fbtype.TextOID}, sd.Parameters[0].Type)
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
@@ -2023,7 +2023,7 @@ func TestPipelinePrepare(t *testing.T) {
 	sd, ok = results.(*fbconn.StatementDescription)
 	require.Truef(t, ok, "expected StatementDescription, got: %#v", results)
 	require.Len(t, sd.Fields, 0)
-	require.Equal(t, []uint32{pgtype.TextOID}, sd.Parameters[0].Type)
+	require.Equal(t, []uint32{fbtype.TextOID}, sd.Parameters[0].Type)
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
@@ -2071,7 +2071,7 @@ func TestPipelinePrepareError(t *testing.T) {
 	require.Truef(t, ok, "expected StatementDescription, got: %#v", results)
 	require.Len(t, sd.Fields, 1)
 	require.Equal(t, "a", string(sd.Fields[0].Name))
-	require.Equal(t, []uint32{pgtype.Int8OID}, sd.Parameters[0].Type)
+	require.Equal(t, []uint32{fbtype.Int8OID}, sd.Parameters[0].Type)
 
 	results, err = pipeline.GetResults()
 	var pgErr *fbconn.PgError
@@ -2116,7 +2116,7 @@ func TestPipelinePrepareAndDeallocate(t *testing.T) {
 	require.Truef(t, ok, "expected StatementDescription, got: %#v", results)
 	require.Len(t, sd.Fields, 1)
 	require.Equal(t, "a", string(sd.Fields[0].Name))
-	require.Equal(t, []uint32{pgtype.Int8OID}, sd.Parameters[0].Type)
+	require.Equal(t, []uint32{fbtype.Int8OID}, sd.Parameters[0].Type)
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
@@ -2255,7 +2255,7 @@ func TestPipelinePrepareQuery(t *testing.T) {
 	require.Truef(t, ok, "expected StatementDescription, got: %#v", results)
 	require.Len(t, sd.Fields, 1)
 	require.Equal(t, "msg", string(sd.Fields[0].Name))
-	require.Equal(t, []uint32{pgtype.TextOID}, sd.Parameters[0].Type)
+	require.Equal(t, []uint32{fbtype.TextOID}, sd.Parameters[0].Type)
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
@@ -2424,7 +2424,7 @@ func TestPipelineFlushForSingleRequests(t *testing.T) {
 	require.Truef(t, ok, "expected StatementDescription, got: %#v", results)
 	require.Len(t, sd.Fields, 1)
 	require.Equal(t, "msg", string(sd.Fields[0].Name))
-	require.Equal(t, []uint32{pgtype.TextOID}, sd.Parameters[0].Type)
+	require.Equal(t, []uint32{fbtype.TextOID}, sd.Parameters[0].Type)
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
@@ -2522,7 +2522,7 @@ func TestPipelineFlushForRequestSeries(t *testing.T) {
 	require.Truef(t, ok, "expected StatementDescription, got: %#v", results)
 	require.Len(t, sd.Fields, 1)
 	require.Equal(t, "num", string(sd.Fields[0].Name))
-	require.Equal(t, []uint32{pgtype.Int8OID}, sd.Parameters[0].Type)
+	require.Equal(t, []uint32{fbtype.Int8OID}, sd.Parameters[0].Type)
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)

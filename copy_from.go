@@ -255,7 +255,7 @@ func (ct *copyFrom) buildCopyBuf(buf []byte, sd *fbconn.StatementDescription) (b
 // CopyFrom uses the PostgreSQL copy protocol to perform bulk data insertion. It returns the number of rows copied and
 // an error.
 //
-// CopyFrom requires all values use the binary format. A pgtype.Type that supports the binary format must be registered
+// CopyFrom requires all values use the binary format. A fbtype.Type that supports the binary format must be registered
 // for the type of each column. Almost all types implemented by pgx support the binary format.
 //
 // Even though enum types appear to be strings they still must be registered to use with CopyFrom. This can be done with

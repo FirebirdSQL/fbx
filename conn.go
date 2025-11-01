@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/red-soft/fbx/fbconn"
+	"github.com/red-soft/fbx/fbtype"
 	"github.com/red-soft/fbx/internal/stmtcache"
-	"github.com/red-soft/fbx/pgtype"
 )
 
 // ConnConfig contains all the options used to establish a connection. It must be created by ParseConfig and
@@ -82,7 +82,7 @@ type Conn struct {
 	doneChan   chan struct{}
 	closedChan chan error
 
-	typeMap *pgtype.Map
+	typeMap *fbtype.Map
 
 	wbuf []byte
 	eqb  ExtendedQueryBuilder
@@ -255,7 +255,7 @@ func connect(ctx context.Context, config *ConnConfig) (c *Conn, err error) {
 
 	c = &Conn{
 		config:      config,
-		typeMap:     pgtype.NewMap(),
+		typeMap:     fbtype.NewMap(),
 		queryTracer: config.Tracer,
 	}
 
@@ -466,7 +466,7 @@ func (c *Conn) PgConn() *fbconn.PgConn {
 }
 
 // TypeMap returns the connection info used for this connection.
-func (c *Conn) TypeMap() *pgtype.Map {
+func (c *Conn) TypeMap() *fbtype.Map {
 	return c.typeMap
 }
 
@@ -647,7 +647,7 @@ const (
 	// is possible that changing query mode from another mode to QueryExecModeExec could change the behavior of the query.
 	// This should not occur with types pgx supports directly and can be avoided by registering the types with
 	// pgtype.Map.RegisterDefaultPgType and implementing the appropriate type interfaces. In the cas of RomanNumeral, it
-	// should implement pgtype.Int64Valuer.
+	// should implement fbtype.Int64Valuer.
 	QueryExecModeExec
 )
 
@@ -1184,7 +1184,7 @@ func (c *Conn) sendBatchExtendedWithDescription(ctx context.Context, b *Batch, d
 	panic("implement me")
 }
 
-// LoadType inspects the database for typeName and produces a pgtype.Type suitable for registration. typeName must be
+// LoadType inspects the database for typeName and produces a fbtype.Type suitable for registration. typeName must be
 // the name of a type where the underlying type(s) is already understood by pgx. It is for derived types. In particular,
 // typeName must be one of the following:
 //   - An array type name of a type that is already registered. e.g. "_foo" when "foo" is registered.
@@ -1193,7 +1193,7 @@ func (c *Conn) sendBatchExtendedWithDescription(ctx context.Context, b *Batch, d
 //   - An enum type name.
 //   - A range type name where the element type is already registered.
 //   - A multirange type name where the element type is already registered.
-func (c *Conn) LoadType(ctx context.Context, typeName string) (*pgtype.Type, error) {
+func (c *Conn) LoadType(ctx context.Context, typeName string) (*fbtype.Type, error) {
 	//var oid uint32
 	//
 	//err := c.QueryRow(ctx, "select $1::text::regtype::oid;", typeName).Scan(&oid)
@@ -1304,7 +1304,7 @@ func (c *Conn) getMultiRangeElementOID(ctx context.Context, oid uint32) (uint32,
 	panic("implement me")
 }
 
-func (c *Conn) getCompositeFields(ctx context.Context, oid uint32) ([]pgtype.CompositeCodecField, error) {
+func (c *Conn) getCompositeFields(ctx context.Context, oid uint32) ([]fbtype.CompositeCodecField, error) {
 	//	var typrelid uint32
 	//
 	//	err := c.QueryRow(ctx, "select typrelid from pg_type where oid=$1", oid).Scan(&typrelid)

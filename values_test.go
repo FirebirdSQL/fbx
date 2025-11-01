@@ -916,18 +916,18 @@ func TestEncodeTypeRename(t *testing.T) {
 		var outBool _bool
 
 		// pgx.QueryExecModeExec requires all types to be registered.
-		conn.TypeMap().RegisterDefaultPgType(inInt, "int8")
-		conn.TypeMap().RegisterDefaultPgType(inInt8, "int8")
-		conn.TypeMap().RegisterDefaultPgType(inInt16, "int8")
-		conn.TypeMap().RegisterDefaultPgType(inInt32, "int8")
-		conn.TypeMap().RegisterDefaultPgType(inInt64, "int8")
-		conn.TypeMap().RegisterDefaultPgType(inUint, "int8")
-		conn.TypeMap().RegisterDefaultPgType(inUint8, "int8")
-		conn.TypeMap().RegisterDefaultPgType(inUint16, "int8")
-		conn.TypeMap().RegisterDefaultPgType(inUint32, "int8")
-		conn.TypeMap().RegisterDefaultPgType(inUint64, "int8")
-		conn.TypeMap().RegisterDefaultPgType(inString, "text")
-		conn.TypeMap().RegisterDefaultPgType(inBool, "bool")
+		conn.TypeMap().RegisterDefaultFbType(inInt, "int8")
+		conn.TypeMap().RegisterDefaultFbType(inInt8, "int8")
+		conn.TypeMap().RegisterDefaultFbType(inInt16, "int8")
+		conn.TypeMap().RegisterDefaultFbType(inInt32, "int8")
+		conn.TypeMap().RegisterDefaultFbType(inInt64, "int8")
+		conn.TypeMap().RegisterDefaultFbType(inUint, "int8")
+		conn.TypeMap().RegisterDefaultFbType(inUint8, "int8")
+		conn.TypeMap().RegisterDefaultFbType(inUint16, "int8")
+		conn.TypeMap().RegisterDefaultFbType(inUint32, "int8")
+		conn.TypeMap().RegisterDefaultFbType(inUint64, "int8")
+		conn.TypeMap().RegisterDefaultFbType(inString, "text")
+		conn.TypeMap().RegisterDefaultFbType(inBool, "bool")
 
 		err := conn.QueryRow(context.Background(), "select $1::int, $2::int, $3::int2, $4::int4, $5::int8, $6::int, $7::int, $8::int, $9::int, $10::int, $11::text, $12::bool",
 			inInt, inInt8, inInt16, inInt32, inInt64, inUint, inUint8, inUint16, inUint32, inUint64, inString, inBool,

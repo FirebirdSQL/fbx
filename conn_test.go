@@ -12,7 +12,7 @@ import (
 
 	pgx "github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbconn"
-	"github.com/red-soft/fbx/pgtype"
+	"github.com/red-soft/fbx/fbtype"
 	"github.com/red-soft/fbx/pgxtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -91,10 +91,10 @@ func TestConnectWithPreferSimpleProtocol(t *testing.T) {
 	// If simple protocol is used we should be able to correctly scan the result
 	// into a pgtype.Text as the integer will have been encoded in text.
 
-	var s pgtype.Text
+	var s fbtype.Text
 	err := conn.QueryRow(context.Background(), "select cast(? as int) from rdb$database", 42).Scan(&s)
 	require.NoError(t, err)
-	require.Equal(t, pgtype.Text{String: "42", Valid: true}, s)
+	require.Equal(t, fbtype.Text{String: "42", Valid: true}, s)
 
 	ensureConnValid(t, conn)
 }
@@ -866,10 +866,10 @@ func TestConnInitTypeMap(t *testing.T) {
 
 	// spot check that the standard postgres type names aren't qualified
 	nameOIDs := map[string]uint32{
-		"_int8": pgtype.Int8ArrayOID,
-		"int8":  pgtype.Int8OID,
-		"json":  pgtype.JSONOID,
-		"text":  pgtype.TextOID,
+		"_int8": fbtype.Int8ArrayOID,
+		"int8":  fbtype.Int8OID,
+		"json":  fbtype.JSONOID,
+		"text":  fbtype.TextOID,
 	}
 	for name, oid := range nameOIDs {
 		dtByName, ok := conn.TypeMap().TypeForName(name)
@@ -1029,16 +1029,16 @@ func TestLoadRangeType(t *testing.T) {
 		newRangeType, err := conn.LoadType(ctx, "examplefloatrange")
 		require.NoError(t, err)
 		conn.TypeMap().RegisterType(newRangeType)
-		conn.TypeMap().RegisterDefaultPgType(pgtype.Range[float64]{}, "examplefloatrange")
+		conn.TypeMap().RegisterDefaultFbType(fbtype.Range[float64]{}, "examplefloatrange")
 
-		var inputRangeType = pgtype.Range[float64]{
+		var inputRangeType = fbtype.Range[float64]{
 			Lower:     1.0,
 			Upper:     2.0,
-			LowerType: pgtype.Inclusive,
-			UpperType: pgtype.Inclusive,
+			LowerType: fbtype.Inclusive,
+			UpperType: fbtype.Inclusive,
 			Valid:     true,
 		}
-		var outputRangeType pgtype.Range[float64]
+		var outputRangeType fbtype.Range[float64]
 		err = tx.QueryRow(ctx, "SELECT $1::examplefloatrange", inputRangeType).Scan(&outputRangeType)
 		require.NoError(t, err)
 		require.Equal(t, inputRangeType, outputRangeType)
@@ -1064,30 +1064,30 @@ func TestLoadMultiRangeType(t *testing.T) {
 		newRangeType, err := conn.LoadType(ctx, "examplefloatrange")
 		require.NoError(t, err)
 		conn.TypeMap().RegisterType(newRangeType)
-		conn.TypeMap().RegisterDefaultPgType(pgtype.Range[float64]{}, "examplefloatrange")
+		conn.TypeMap().RegisterDefaultFbType(fbtype.Range[float64]{}, "examplefloatrange")
 
 		newMultiRangeType, err := conn.LoadType(ctx, "examplefloatmultirange")
 		require.NoError(t, err)
 		conn.TypeMap().RegisterType(newMultiRangeType)
-		conn.TypeMap().RegisterDefaultPgType(pgtype.Multirange[pgtype.Range[float64]]{}, "examplefloatmultirange")
+		conn.TypeMap().RegisterDefaultFbType(fbtype.Multirange[fbtype.Range[float64]]{}, "examplefloatmultirange")
 
-		var inputMultiRangeType = pgtype.Multirange[pgtype.Range[float64]]{
+		var inputMultiRangeType = fbtype.Multirange[fbtype.Range[float64]]{
 			{
 				Lower:     1.0,
 				Upper:     2.0,
-				LowerType: pgtype.Inclusive,
-				UpperType: pgtype.Inclusive,
+				LowerType: fbtype.Inclusive,
+				UpperType: fbtype.Inclusive,
 				Valid:     true,
 			},
 			{
 				Lower:     3.0,
 				Upper:     4.0,
-				LowerType: pgtype.Exclusive,
-				UpperType: pgtype.Exclusive,
+				LowerType: fbtype.Exclusive,
+				UpperType: fbtype.Exclusive,
 				Valid:     true,
 			},
 		}
-		var outputMultiRangeType pgtype.Multirange[pgtype.Range[float64]]
+		var outputMultiRangeType fbtype.Multirange[fbtype.Range[float64]]
 		err = tx.QueryRow(ctx, "SELECT $1::examplefloatmultirange", inputMultiRangeType).Scan(&outputMultiRangeType)
 		require.NoError(t, err)
 		require.Equal(t, inputMultiRangeType, outputMultiRangeType)
