@@ -6,7 +6,7 @@ import (
 
 	pgx "github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbtype"
-	"github.com/red-soft/fbx/pgxtest"
+	"github.com/red-soft/fbx/fbxtest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,7 +18,7 @@ func (someFmtStringer) String() string {
 
 func TestTextCodec(t *testing.T) {
 	for _, pgTypeName := range []string{"text", "varchar"} {
-		pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, pgTypeName, []pgxtest.ValueRoundTripTest{
+		fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, pgTypeName, []fbxtest.ValueRoundTripTest{
 			{Param: fbtype.Text{String: "", Valid: true}, Result: new(fbtype.Text), Test: isExpectedEq(fbtype.Text{String: "", Valid: true})},
 			{Param: fbtype.Text{String: "foo", Valid: true}, Result: new(fbtype.Text), Test: isExpectedEq(fbtype.Text{String: "foo", Valid: true})},
 			{Param: nil, Result: new(fbtype.Text), Test: isExpectedEq(fbtype.Text{})},
@@ -39,7 +39,7 @@ func TestTextCodec(t *testing.T) {
 //
 // So this is simply a smoke test of the name type.
 func TestTextCodecName(t *testing.T) {
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "name", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "name", []fbxtest.ValueRoundTripTest{
 		{Param: fbtype.Text{String: "", Valid: true}, Result: new(fbtype.Text), Test: isExpectedEq(fbtype.Text{String: "", Valid: true})},
 		{Param: fbtype.Text{String: "foo", Valid: true}, Result: new(fbtype.Text), Test: isExpectedEq(fbtype.Text{String: "foo", Valid: true})},
 		{Param: nil, Result: new(fbtype.Text), Test: isExpectedEq(fbtype.Text{})},
@@ -52,7 +52,7 @@ func TestTextCodecBPChar(t *testing.T) {
 	t.Skip("need fix")
 	skipCockroachDB(t, "Server does not properly handle bpchar with multi-byte character")
 
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "char(3)", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "char(3)", []fbxtest.ValueRoundTripTest{
 		{Param: fbtype.Text{String: "a  ", Valid: true}, Result: new(fbtype.Text), Test: isExpectedEq(fbtype.Text{String: "a  ", Valid: true})},
 		{Param: nil, Result: new(fbtype.Text), Test: isExpectedEq(fbtype.Text{})},
 		{Param: "   ", Result: new(string), Test: isExpectedEq("   ")},
@@ -77,10 +77,10 @@ func TestTextCodecBPChar(t *testing.T) {
 func TestTextCodecACLItem(t *testing.T) {
 	ctr := defaultConnTestRunner
 	ctr.AfterConnect = func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
-		pgxtest.SkipCockroachDB(t, conn, "Server does not support type aclitem")
+		fbxtest.SkipCockroachDB(t, conn, "Server does not support type aclitem")
 	}
 
-	pgxtest.RunValueRoundTripTests(context.Background(), t, ctr, nil, "aclitem", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, ctr, nil, "aclitem", []fbxtest.ValueRoundTripTest{
 		{Param: fbtype.Text{String: "postgres=arwdDxt/postgres", Valid: true}, Result: new(fbtype.Text), Test: isExpectedEq(fbtype.Text{String: "postgres=arwdDxt/postgres", Valid: true})},
 		{Param: fbtype.Text{}, Result: new(fbtype.Text), Test: isExpectedEq(fbtype.Text{})},
 		{Param: nil, Result: new(fbtype.Text), Test: isExpectedEq(fbtype.Text{})},
@@ -90,7 +90,7 @@ func TestTextCodecACLItem(t *testing.T) {
 func TestTextCodecACLItemRoleWithSpecialCharacters(t *testing.T) {
 	ctr := defaultConnTestRunner
 	ctr.AfterConnect = func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
-		pgxtest.SkipCockroachDB(t, conn, "Server does not support type aclitem")
+		fbxtest.SkipCockroachDB(t, conn, "Server does not support type aclitem")
 
 		// The tricky test user, below, has to actually exist so that it can be used in a test
 		// of aclitem formatting. It turns out aclitems cannot contain non-existing users/roles.
@@ -104,7 +104,7 @@ func TestTextCodecACLItemRoleWithSpecialCharacters(t *testing.T) {
 		}
 	}
 
-	pgxtest.RunValueRoundTripTests(context.Background(), t, ctr, nil, "aclitem", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, ctr, nil, "aclitem", []fbxtest.ValueRoundTripTest{
 		{Param: fbtype.Text{String: `postgres=arwdDxt/" tricky, ' } "" \ test user "`, Valid: true}, Result: new(fbtype.Text), Test: isExpectedEq(fbtype.Text{String: `postgres=arwdDxt/" tricky, ' } "" \ test user "`, Valid: true})},
 	})
 }

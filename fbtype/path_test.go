@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/red-soft/fbx/fbtype"
-	"github.com/red-soft/fbx/pgxtest"
+	"github.com/red-soft/fbx/fbxtest"
 )
 
 func isExpectedEqPath(a any) func(any) bool {
@@ -30,7 +30,7 @@ func isExpectedEqPath(a any) func(any) bool {
 func TestPathTranscode(t *testing.T) {
 	skipCockroachDB(t, "Server does not support type path")
 
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "path", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "path", []fbxtest.ValueRoundTripTest{
 		{Param: fbtype.Path{
 			P:      []fbtype.Vec2{{3.14, 1.678901234}, {7.1, 5.234}},
 			Closed: false,

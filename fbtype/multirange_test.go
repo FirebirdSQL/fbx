@@ -7,7 +7,7 @@ import (
 
 	pgx "github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbtype"
-	"github.com/red-soft/fbx/pgxtest"
+	"github.com/red-soft/fbx/fbxtest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -15,7 +15,7 @@ func TestMultirangeCodecTranscode(t *testing.T) {
 	skipPostgreSQLVersionLessThan(t, 14)
 	skipCockroachDB(t, "Server does not support range types (see https://github.com/cockroachdb/cockroach/issues/27791)")
 
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "int4multirange", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "int4multirange", []fbxtest.ValueRoundTripTest{
 		{Param: fbtype.Multirange[fbtype.Range[fbtype.Int4]](nil), Result: new(fbtype.Multirange[fbtype.Range[fbtype.Int4]]), Test: func(a any) bool { return reflect.DeepEqual(fbtype.Multirange[fbtype.Range[fbtype.Int4]](nil), a) }},
 		{Param: fbtype.Multirange[fbtype.Range[fbtype.Int4]]{}, Result: new(fbtype.Multirange[fbtype.Range[fbtype.Int4]]), Test: func(a any) bool { return reflect.DeepEqual(fbtype.Multirange[fbtype.Range[fbtype.Int4]]{}, a) }},
 		{Param: fbtype.Multirange[fbtype.Range[fbtype.Int4]]{

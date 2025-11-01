@@ -12,7 +12,7 @@ import (
 
 	pgx "github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbtype"
-	"github.com/red-soft/fbx/pgxtest"
+	"github.com/red-soft/fbx/fbxtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -79,7 +79,7 @@ func TestNumericCodec(t *testing.T) {
 	max.Add(max, big.NewInt(1))
 	longestNumeric := fbtype.Numeric{Int: max, Exp: -16383, Valid: true}
 
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "numeric", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "numeric", []fbxtest.ValueRoundTripTest{
 		{Param: mustParseNumeric(t, "1"), Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(mustParseNumeric(t, "1"))},
 		{Param: mustParseNumeric(t, "3.14159"), Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(mustParseNumeric(t, "3.14159"))},
 		{Param: mustParseNumeric(t, "100010001"), Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(mustParseNumeric(t, "100010001"))},
@@ -122,7 +122,7 @@ func TestNumericCodec(t *testing.T) {
 		{Param: fbtype.Numeric{NaN: true, Valid: true}, Result: new(string), Test: isExpectedEq("NaN")},
 	})
 
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "int8", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "int8", []fbxtest.ValueRoundTripTest{
 		{Param: mustParseNumeric(t, "-1"), Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(mustParseNumeric(t, "-1"))},
 		{Param: mustParseNumeric(t, "0"), Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(mustParseNumeric(t, "0"))},
 		{Param: mustParseNumeric(t, "1"), Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(mustParseNumeric(t, "1"))},
@@ -133,7 +133,7 @@ func TestNumericCodecInfinity(t *testing.T) {
 	skipCockroachDB(t, "server formats numeric text format differently")
 	skipPostgreSQLVersionLessThan(t, 14)
 
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "numeric", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "numeric", []fbxtest.ValueRoundTripTest{
 		{Param: math.Inf(1), Result: new(float64), Test: isExpectedEq(math.Inf(1))},
 		{Param: float32(math.Inf(1)), Result: new(float32), Test: isExpectedEq(float32(math.Inf(1)))},
 		{Param: math.Inf(-1), Result: new(float64), Test: isExpectedEq(math.Inf(-1))},
@@ -176,22 +176,22 @@ func TestNumericCodecFuzz(t *testing.T) {
 	max := &big.Int{}
 	max.SetString("9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999", 10)
 
-	tests := make([]pgxtest.ValueRoundTripTest, 0, 2000)
+	tests := make([]fbxtest.ValueRoundTripTest, 0, 2000)
 	for i := 0; i < 10; i++ {
 		for j := -50; j < 50; j++ {
 			num := (&big.Int{}).Rand(r, max)
 
 			n := fbtype.Numeric{Int: num, Exp: int32(j), Valid: true}
-			tests = append(tests, pgxtest.ValueRoundTripTest{Param: n, Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(n)})
+			tests = append(tests, fbxtest.ValueRoundTripTest{Param: n, Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(n)})
 
 			negNum := &big.Int{}
 			negNum.Neg(num)
 			n = fbtype.Numeric{Int: negNum, Exp: int32(j), Valid: true}
-			tests = append(tests, pgxtest.ValueRoundTripTest{Param: n, Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(n)})
+			tests = append(tests, fbxtest.ValueRoundTripTest{Param: n, Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(n)})
 		}
 	}
 
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "numeric", tests)
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "numeric", tests)
 }
 
 func TestNumericMarshalJSON(t *testing.T) {

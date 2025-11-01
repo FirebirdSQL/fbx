@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/red-soft/fbx/fbtype/zeronull"
-	"github.com/red-soft/fbx/pgxtest"
+	"github.com/red-soft/fbx/fbxtest"
 )
 
 func isExpectedEq(a any) func(any) bool {
@@ -15,7 +15,7 @@ func isExpectedEq(a any) func(any) bool {
 }
 
 func TestFloat8Transcode(t *testing.T) {
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "float8", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "float8", []fbxtest.ValueRoundTripTest{
 		{
 			Param:  (zeronull.Float8)(1),
 			Result: new(zeronull.Float8),

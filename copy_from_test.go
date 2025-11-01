@@ -10,12 +10,12 @@ import (
 
 	pgx "github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbconn"
-	"github.com/red-soft/fbx/pgxtest"
+	"github.com/red-soft/fbx/fbxtest"
 	"github.com/stretchr/testify/require"
 )
 
 func TestConnCopyWithAllQueryExecModes(t *testing.T) {
-	for _, mode := range pgxtest.AllQueryExecModes {
+	for _, mode := range fbxtest.AllQueryExecModes {
 		t.Run(mode.String(), func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 			defer cancel()
@@ -77,7 +77,7 @@ func TestConnCopyWithAllQueryExecModes(t *testing.T) {
 
 func TestConnCopyWithKnownOIDQueryExecModes(t *testing.T) {
 
-	for _, mode := range pgxtest.KnownOIDQueryExecModes {
+	for _, mode := range fbxtest.KnownOIDQueryExecModes {
 		t.Run(mode.String(), func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 			defer cancel()
@@ -563,7 +563,7 @@ func TestConnCopyFromFailServerSideMidwayAbortsWithoutWaiting(t *testing.T) {
 	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 
-	pgxtest.SkipCockroachDB(t, conn, "Server copy error does not fail fast")
+	fbxtest.SkipCockroachDB(t, conn, "Server copy error does not fail fast")
 
 	mustExec(t, conn, `create temporary table foo(
 		a bytea not null

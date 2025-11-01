@@ -8,16 +8,16 @@ import (
 
 	pgx "github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbconn"
-	"github.com/red-soft/fbx/pgxtest"
+	"github.com/red-soft/fbx/fbxtest"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/stretchr/testify/require"
 )
 
-var defaultConnTestRunner pgxtest.ConnTestRunner
+var defaultConnTestRunner fbxtest.ConnTestRunner
 
 func init() {
-	defaultConnTestRunner = pgxtest.DefaultConnTestRunner()
+	defaultConnTestRunner = fbxtest.DefaultConnTestRunner()
 	defaultConnTestRunner.CreateConfig = func(ctx context.Context, t testing.TB) *pgx.ConnConfig {
 		config, err := pgx.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 		require.NoError(t, err)

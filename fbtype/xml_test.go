@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	pgx "github.com/red-soft/fbx"
-	"github.com/red-soft/fbx/pgxtest"
+	"github.com/red-soft/fbx/fbxtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -20,7 +20,7 @@ type xmlStruct struct {
 
 func TestXMLCodec(t *testing.T) {
 	skipCockroachDB(t, "CockroachDB does not support XML.")
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "xml", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "xml", []fbxtest.ValueRoundTripTest{
 		{Param: nil, Result: new(*xmlStruct), Test: isExpectedEq((*xmlStruct)(nil))},
 		{Param: map[string]any(nil), Result: new(*string), Test: isExpectedEq((*string)(nil))},
 		{Param: map[string]any(nil), Result: new([]byte), Test: isExpectedEqBytes([]byte(nil))},
@@ -34,7 +34,7 @@ func TestXMLCodec(t *testing.T) {
 		{Param: sql.NullString{String: "", Valid: true}, Result: new(sql.NullString), Test: isExpectedEq(sql.NullString{String: "", Valid: true})},
 	})
 
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, pgxtest.KnownOIDQueryExecModes, "xml", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, fbxtest.KnownOIDQueryExecModes, "xml", []fbxtest.ValueRoundTripTest{
 		{Param: []byte(`<?xml version="1.0"?><Root></Root>`), Result: new([]byte), Test: isExpectedEqBytes([]byte(`<Root></Root>`))},
 		{Param: []byte(`<?xml version="1.0"?>`), Result: new([]byte), Test: isExpectedEqBytes([]byte(``))},
 		{Param: []byte(`<?xml version="1.0"?>`), Result: new(string), Test: isExpectedEq(``)},

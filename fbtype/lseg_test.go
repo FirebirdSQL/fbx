@@ -5,13 +5,13 @@ import (
 	"testing"
 
 	"github.com/red-soft/fbx/fbtype"
-	"github.com/red-soft/fbx/pgxtest"
+	"github.com/red-soft/fbx/fbxtest"
 )
 
 func TestLsegTranscode(t *testing.T) {
 	skipCockroachDB(t, "Server does not support type lseg")
 
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "lseg", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "lseg", []fbxtest.ValueRoundTripTest{
 		{Param: fbtype.Lseg{
 			P:     [2]fbtype.Vec2{{3.14, 1.678}, {7.1, 5.2345678901}},
 			Valid: true,

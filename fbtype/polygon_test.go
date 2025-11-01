@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/red-soft/fbx/fbtype"
-	"github.com/red-soft/fbx/pgxtest"
+	"github.com/red-soft/fbx/fbxtest"
 )
 
 func isExpectedEqPolygon(a any) func(any) bool {
@@ -30,7 +30,7 @@ func isExpectedEqPolygon(a any) func(any) bool {
 func TestPolygonTranscode(t *testing.T) {
 	skipCockroachDB(t, "Server does not support type polygon")
 
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "polygon", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "polygon", []fbxtest.ValueRoundTripTest{
 		{Param: fbtype.Polygon{
 			P:     []fbtype.Vec2{{3.14, 1.678901234}, {7.1, 5.234}, {5.0, 3.234}},
 			Valid: true,

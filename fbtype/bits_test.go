@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/red-soft/fbx/fbtype"
-	"github.com/red-soft/fbx/pgxtest"
+	"github.com/red-soft/fbx/fbxtest"
 )
 
 func isExpectedEqBits(a any) func(any) bool {
@@ -18,7 +18,7 @@ func isExpectedEqBits(a any) func(any) bool {
 }
 
 func TestBitsCodecBit(t *testing.T) {
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "bit(40)", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "bit(40)", []fbxtest.ValueRoundTripTest{
 		{Param: fbtype.Bits{Bytes: []byte{0, 0, 0, 0, 0}, Len: 40, Valid: true}, Result: new(fbtype.Bits), Test: isExpectedEqBits(fbtype.Bits{Bytes: []byte{0, 0, 0, 0, 0}, Len: 40, Valid: true})},
 		{Param: fbtype.Bits{Bytes: []byte{0, 1, 128, 254, 255}, Len: 40, Valid: true}, Result: new(fbtype.Bits), Test: isExpectedEqBits(fbtype.Bits{Bytes: []byte{0, 1, 128, 254, 255}, Len: 40, Valid: true})},
 		{Param: fbtype.Bits{}, Result: new(fbtype.Bits), Test: isExpectedEqBits(fbtype.Bits{})},
@@ -27,7 +27,7 @@ func TestBitsCodecBit(t *testing.T) {
 }
 
 func TestBitsCodecVarbit(t *testing.T) {
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "varbit", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "varbit", []fbxtest.ValueRoundTripTest{
 		{Param: fbtype.Bits{Bytes: []byte{}, Len: 0, Valid: true}, Result: new(fbtype.Bits), Test: isExpectedEqBits(fbtype.Bits{Bytes: []byte{}, Len: 0, Valid: true})},
 		{Param: fbtype.Bits{Bytes: []byte{0, 1, 128, 254, 255}, Len: 40, Valid: true}, Result: new(fbtype.Bits), Test: isExpectedEqBits(fbtype.Bits{Bytes: []byte{0, 1, 128, 254, 255}, Len: 40, Valid: true})},
 		{Param: fbtype.Bits{Bytes: []byte{0, 1, 128, 254, 128}, Len: 33, Valid: true}, Result: new(fbtype.Bits), Test: isExpectedEqBits(fbtype.Bits{Bytes: []byte{0, 1, 128, 254, 128}, Len: 33, Valid: true})},

@@ -8,7 +8,7 @@ import (
 
 	pgx "github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbtype"
-	"github.com/red-soft/fbx/pgxtest"
+	"github.com/red-soft/fbx/fbxtest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,7 +18,7 @@ func TestJSONBTranscode(t *testing.T) {
 		Age  int    `json:"age"`
 	}
 
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "jsonb", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "jsonb", []fbxtest.ValueRoundTripTest{
 		{Param: nil, Result: new(*jsonStruct), Test: isExpectedEq((*jsonStruct)(nil))},
 		{Param: map[string]any(nil), Result: new(*string), Test: isExpectedEq((*string)(nil))},
 		{Param: map[string]any(nil), Result: new([]byte), Test: isExpectedEqBytes([]byte(nil))},
@@ -26,7 +26,7 @@ func TestJSONBTranscode(t *testing.T) {
 		{Param: nil, Result: new([]byte), Test: isExpectedEqBytes([]byte(nil))},
 	})
 
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, pgxtest.KnownOIDQueryExecModes, "jsonb", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, fbxtest.KnownOIDQueryExecModes, "jsonb", []fbxtest.ValueRoundTripTest{
 		{Param: []byte("{}"), Result: new([]byte), Test: isExpectedEqBytes([]byte("{}"))},
 		{Param: []byte("null"), Result: new([]byte), Test: isExpectedEqBytes([]byte("null"))},
 		{Param: []byte("42"), Result: new([]byte), Test: isExpectedEqBytes([]byte("42"))},
@@ -98,7 +98,7 @@ func TestJSONBCodecCustomMarshal(t *testing.T) {
 			}})
 	}
 
-	pgxtest.RunValueRoundTripTests(context.Background(), t, connTestRunner, pgxtest.KnownOIDQueryExecModes, "jsonb", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, connTestRunner, fbxtest.KnownOIDQueryExecModes, "jsonb", []fbxtest.ValueRoundTripTest{
 		// There is space between "custom" and "value" in jsonb type.
 		{Param: map[string]any{"something": "else"}, Result: new(string), Test: isExpectedEq(`{"custom": "value"}`)},
 		{Param: []byte(`{"something":"else"}`), Result: new(map[string]any), Test: func(v any) bool {

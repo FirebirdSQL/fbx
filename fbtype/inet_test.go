@@ -6,7 +6,7 @@ import (
 	"net/netip"
 	"testing"
 
-	"github.com/red-soft/fbx/pgxtest"
+	"github.com/red-soft/fbx/fbxtest"
 )
 
 func isExpectedEqIPNet(a any) func(any) bool {
@@ -19,7 +19,7 @@ func isExpectedEqIPNet(a any) func(any) bool {
 }
 
 func TestInetTranscode(t *testing.T) {
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "inet", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "inet", []fbxtest.ValueRoundTripTest{
 		{Param: mustParseInet(t, "0.0.0.0/32"), Result: new(net.IPNet), Test: isExpectedEqIPNet(mustParseInet(t, "0.0.0.0/32"))},
 		{Param: mustParseInet(t, "127.0.0.1/8"), Result: new(net.IPNet), Test: isExpectedEqIPNet(mustParseInet(t, "127.0.0.1/8"))},
 		{Param: mustParseInet(t, "12.34.56.65/32"), Result: new(net.IPNet), Test: isExpectedEqIPNet(mustParseInet(t, "12.34.56.65/32"))},
@@ -73,7 +73,7 @@ func TestInetTranscode(t *testing.T) {
 func TestCidrTranscode(t *testing.T) {
 	skipCockroachDB(t, "Server does not support cidr type (see https://github.com/cockroachdb/cockroach/issues/18846)")
 
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "cidr", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "cidr", []fbxtest.ValueRoundTripTest{
 		{Param: mustParseInet(t, "0.0.0.0/32"), Result: new(net.IPNet), Test: isExpectedEqIPNet(mustParseInet(t, "0.0.0.0/32"))},
 		{Param: mustParseInet(t, "127.0.0.1/32"), Result: new(net.IPNet), Test: isExpectedEqIPNet(mustParseInet(t, "127.0.0.1/32"))},
 		{Param: mustParseInet(t, "12.34.56.0/32"), Result: new(net.IPNet), Test: isExpectedEqIPNet(mustParseInet(t, "12.34.56.0/32"))},

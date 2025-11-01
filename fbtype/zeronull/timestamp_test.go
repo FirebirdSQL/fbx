@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/red-soft/fbx/fbtype/zeronull"
-	"github.com/red-soft/fbx/pgxtest"
+	"github.com/red-soft/fbx/fbxtest"
 )
 
 func isExpectedEqTimestamp(a any) func(any) bool {
@@ -19,7 +19,7 @@ func isExpectedEqTimestamp(a any) func(any) bool {
 }
 
 func TestTimestampTranscode(t *testing.T) {
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "timestamp", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "timestamp", []fbxtest.ValueRoundTripTest{
 		{
 			Param:  (zeronull.Timestamp)(time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)),
 			Result: new(zeronull.Timestamp),

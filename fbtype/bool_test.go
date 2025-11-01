@@ -5,11 +5,11 @@ import (
 	"testing"
 
 	"github.com/red-soft/fbx/fbtype"
-	"github.com/red-soft/fbx/pgxtest"
+	"github.com/red-soft/fbx/fbxtest"
 )
 
 func TestBoolCodec(t *testing.T) {
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "bool", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "bool", []fbxtest.ValueRoundTripTest{
 		{Param: true, Result: new(bool), Test: isExpectedEq(true)},
 		{Param: false, Result: new(bool), Test: isExpectedEq(false)},
 		{Param: true, Result: new(fbtype.Bool), Test: isExpectedEq(fbtype.Bool{Bool: true, Valid: true})},

@@ -7,13 +7,13 @@ import (
 	"time"
 
 	"github.com/red-soft/fbx/fbtype"
-	"github.com/red-soft/fbx/pgxtest"
+	"github.com/red-soft/fbx/fbxtest"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestTimeCodec(t *testing.T) {
 	t.Skip("need implementation")
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "time", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "time", []fbxtest.ValueRoundTripTest{
 		{Param: fbtype.Time{Microseconds: 0, Valid: true}, Result: new(fbtype.Time), Test: isExpectedEq(fbtype.Time{Microseconds: 0, Valid: true})},
 		{Param: fbtype.Time{Microseconds: 1, Valid: true}, Result: new(fbtype.Time), Test: isExpectedEq(fbtype.Time{Microseconds: 1, Valid: true})},
 		{Param: fbtype.Time{Microseconds: 86399999999, Valid: true}, Result: new(fbtype.Time), Test: isExpectedEq(fbtype.Time{Microseconds: 86399999999, Valid: true})},

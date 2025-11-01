@@ -9,7 +9,7 @@ import (
 
 	pgx "github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbtype"
-	"github.com/red-soft/fbx/pgxtest"
+	"github.com/red-soft/fbx/fbxtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -88,7 +88,7 @@ func TestArrayCodecFlatArrayString(t *testing.T) {
 func TestArrayCodecArray(t *testing.T) {
 	ctr := defaultConnTestRunner
 	ctr.AfterConnect = func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
-		pgxtest.SkipCockroachDB(t, conn, "Server does not support multi-dimensional arrays")
+		fbxtest.SkipCockroachDB(t, conn, "Server does not support multi-dimensional arrays")
 	}
 
 	ctr.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {

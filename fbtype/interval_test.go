@@ -6,12 +6,12 @@ import (
 	"time"
 
 	"github.com/red-soft/fbx/fbtype"
-	"github.com/red-soft/fbx/pgxtest"
+	"github.com/red-soft/fbx/fbxtest"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestIntervalCodec(t *testing.T) {
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "interval", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "interval", []fbxtest.ValueRoundTripTest{
 		{Param: fbtype.Interval{Microseconds: 1, Valid: true}, Result: new(fbtype.Interval), Test: isExpectedEq(fbtype.Interval{Microseconds: 1, Valid: true})},
 		{Param: fbtype.Interval{Microseconds: 1000000, Valid: true}, Result: new(fbtype.Interval), Test: isExpectedEq(fbtype.Interval{Microseconds: 1000000, Valid: true})},
 		{Param: fbtype.Interval{Microseconds: 1000001, Valid: true}, Result: new(fbtype.Interval), Test: isExpectedEq(fbtype.Interval{Microseconds: 1000001, Valid: true})},

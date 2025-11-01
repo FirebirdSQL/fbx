@@ -8,7 +8,7 @@ import (
 
 	pgx "github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbtype"
-	"github.com/red-soft/fbx/pgxtest"
+	"github.com/red-soft/fbx/fbxtest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -30,7 +30,7 @@ func isExpectedEqBytes(a any) func(any) bool {
 }
 
 func TestByteaCodec(t *testing.T) {
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "bytea", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "bytea", []fbxtest.ValueRoundTripTest{
 		{Param: []byte{1, 2, 3}, Result: new([]byte), Test: isExpectedEqBytes([]byte{1, 2, 3})},
 		{Param: []byte{}, Result: new([]byte), Test: isExpectedEqBytes([]byte{})},
 		{Param: []byte(nil), Result: new([]byte), Test: isExpectedEqBytes([]byte(nil))},

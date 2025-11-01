@@ -6,14 +6,14 @@ import (
 
 	pgx "github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbtype"
-	"github.com/red-soft/fbx/pgxtest"
+	"github.com/red-soft/fbx/fbxtest"
 	"github.com/stretchr/testify/require"
 )
 
 func TestRangeCodecTranscode(t *testing.T) {
 	skipCockroachDB(t, "Server does not support range types (see https://github.com/cockroachdb/cockroach/issues/27791)")
 
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "int4range", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "int4range", []fbxtest.ValueRoundTripTest{
 		{Param: fbtype.Range[fbtype.Int4]{LowerType: fbtype.Empty, UpperType: fbtype.Empty, Valid: true}, Result: new(fbtype.Range[fbtype.Int4]), Test: isExpectedEq(fbtype.Range[fbtype.Int4]{LowerType: fbtype.Empty, UpperType: fbtype.Empty, Valid: true})},
 		{Param: fbtype.Range[fbtype.Int4]{
 			LowerType: fbtype.Inclusive,
@@ -35,10 +35,10 @@ func TestRangeCodecTranscode(t *testing.T) {
 func TestRangeCodecTranscodeCompatibleRangeElementTypes(t *testing.T) {
 	ctr := defaultConnTestRunner
 	ctr.AfterConnect = func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
-		pgxtest.SkipCockroachDB(t, conn, "Server does not support range types (see https://github.com/cockroachdb/cockroach/issues/27791)")
+		fbxtest.SkipCockroachDB(t, conn, "Server does not support range types (see https://github.com/cockroachdb/cockroach/issues/27791)")
 	}
 
-	pgxtest.RunValueRoundTripTests(context.Background(), t, ctr, nil, "numrange", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, ctr, nil, "numrange", []fbxtest.ValueRoundTripTest{
 		{Param: fbtype.Range[fbtype.Float8]{LowerType: fbtype.Empty, UpperType: fbtype.Empty, Valid: true}, Result: new(fbtype.Range[fbtype.Float8]), Test: isExpectedEq(fbtype.Range[fbtype.Float8]{LowerType: fbtype.Empty, UpperType: fbtype.Empty, Valid: true})},
 		{Param: fbtype.Range[fbtype.Float8]{
 			LowerType: fbtype.Inclusive,

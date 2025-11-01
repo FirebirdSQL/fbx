@@ -1,5 +1,5 @@
 // Package pgxtest provides utilities for testing pgx and packages that integrate with pgx.
-package pgxtest
+package fbxtest
 
 import (
 	"context"

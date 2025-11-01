@@ -5,11 +5,11 @@ import (
 	"testing"
 
 	"github.com/red-soft/fbx/fbtype/zeronull"
-	"github.com/red-soft/fbx/pgxtest"
+	"github.com/red-soft/fbx/fbxtest"
 )
 
 func TestUUIDTranscode(t *testing.T) {
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "uuid", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "uuid", []fbxtest.ValueRoundTripTest{
 		{
 			Param:  (zeronull.UUID)([16]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}),
 			Result: new(zeronull.UUID),

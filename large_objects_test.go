@@ -9,7 +9,7 @@ import (
 
 	pgx "github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbconn"
-	"github.com/red-soft/fbx/pgxtest"
+	"github.com/red-soft/fbx/fbxtest"
 )
 
 func TestLargeObjects(t *testing.T) {
@@ -24,7 +24,7 @@ func TestLargeObjects(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pgxtest.SkipCockroachDB(t, conn, "Server does support large objects")
+	fbxtest.SkipCockroachDB(t, conn, "Server does support large objects")
 
 	tx, err := conn.Begin(ctx)
 	if err != nil {
@@ -144,7 +144,7 @@ func TestLargeObjectsMultipleTransactions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pgxtest.SkipCockroachDB(t, conn, "Server does support large objects")
+	fbxtest.SkipCockroachDB(t, conn, "Server does support large objects")
 
 	tx, err := conn.Begin(ctx)
 	if err != nil {

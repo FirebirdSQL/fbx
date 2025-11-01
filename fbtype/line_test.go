@@ -6,13 +6,13 @@ import (
 
 	pgx "github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbtype"
-	"github.com/red-soft/fbx/pgxtest"
+	"github.com/red-soft/fbx/fbxtest"
 )
 
 func TestLineTranscode(t *testing.T) {
 	ctr := defaultConnTestRunner
 	ctr.AfterConnect = func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
-		pgxtest.SkipCockroachDB(t, conn, "Server does not support type line")
+		fbxtest.SkipCockroachDB(t, conn, "Server does not support type line")
 
 		if _, ok := conn.TypeMap().TypeForName("line"); !ok {
 			t.Skip("Skipping due to no line type")
@@ -29,7 +29,7 @@ func TestLineTranscode(t *testing.T) {
 		}
 	}
 
-	pgxtest.RunValueRoundTripTests(context.Background(), t, ctr, nil, "line", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, ctr, nil, "line", []fbxtest.ValueRoundTripTest{
 		{Param: fbtype.Line{
 			A: 1.23, B: 4.56, C: 7.89012345,
 			Valid: true,

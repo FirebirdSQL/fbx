@@ -5,13 +5,13 @@ import (
 	"testing"
 
 	"github.com/red-soft/fbx/fbtype"
-	"github.com/red-soft/fbx/pgxtest"
+	"github.com/red-soft/fbx/fbxtest"
 )
 
 func TestLtreeCodec(t *testing.T) {
 	skipCockroachDB(t, "Server does not support type ltree")
 
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, pgxtest.KnownOIDQueryExecModes, "ltree", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, fbxtest.KnownOIDQueryExecModes, "ltree", []fbxtest.ValueRoundTripTest{
 		{
 			Param:  "A.B.C",
 			Result: new(string),

@@ -5,13 +5,13 @@ import (
 	"testing"
 
 	"github.com/red-soft/fbx/fbtype"
-	"github.com/red-soft/fbx/pgxtest"
+	"github.com/red-soft/fbx/fbxtest"
 )
 
 func TestBoxCodec(t *testing.T) {
 	skipCockroachDB(t, "Server does not support box type")
 
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "box", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "box", []fbxtest.ValueRoundTripTest{
 		{Param: fbtype.Box{
 			P:     [2]fbtype.Vec2{{7.1, 5.2345678}, {3.14, 1.678}},
 			Valid: true,

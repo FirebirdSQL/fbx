@@ -5,11 +5,11 @@ import (
 	"testing"
 
 	"github.com/red-soft/fbx/fbtype"
-	"github.com/red-soft/fbx/pgxtest"
+	"github.com/red-soft/fbx/fbxtest"
 )
 
 func TestFloat4Codec(t *testing.T) {
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "float4", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "float4", []fbxtest.ValueRoundTripTest{
 		{Param: fbtype.Float4{Float32: -1, Valid: true}, Result: new(fbtype.Float4), Test: isExpectedEq(fbtype.Float4{Float32: -1, Valid: true})},
 		{Param: fbtype.Float4{Float32: 0, Valid: true}, Result: new(fbtype.Float4), Test: isExpectedEq(fbtype.Float4{Float32: 0, Valid: true})},
 		{Param: fbtype.Float4{Float32: 1, Valid: true}, Result: new(fbtype.Float4), Test: isExpectedEq(fbtype.Float4{Float32: 1, Valid: true})},

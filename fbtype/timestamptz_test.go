@@ -7,14 +7,14 @@ import (
 
 	pgx "github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbtype"
-	"github.com/red-soft/fbx/pgxtest"
+	"github.com/red-soft/fbx/fbxtest"
 	"github.com/stretchr/testify/require"
 )
 
 func TestTimestamptzCodec(t *testing.T) {
 	skipCockroachDB(t, "Server does not support infinite timestamps (see https://github.com/cockroachdb/cockroach/issues/41564)")
 
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "timestamptz", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "timestamptz", []fbxtest.ValueRoundTripTest{
 		{Param: time.Date(-100, 1, 1, 0, 0, 0, 0, time.Local), Result: new(time.Time), Test: isExpectedEqTime(time.Date(-100, 1, 1, 0, 0, 0, 0, time.Local))},
 		{Param: time.Date(-1, 1, 1, 0, 0, 0, 0, time.Local), Result: new(time.Time), Test: isExpectedEqTime(time.Date(-1, 1, 1, 0, 0, 0, 0, time.Local))},
 		{Param: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local), Result: new(time.Time), Test: isExpectedEqTime(time.Date(0, 1, 1, 0, 0, 0, 0, time.Local))},
@@ -50,7 +50,7 @@ func TestTimestamptzCodecWithLocationUTC(t *testing.T) {
 		})
 	}
 
-	pgxtest.RunValueRoundTripTests(context.Background(), t, connTestRunner, nil, "timestamptz", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, connTestRunner, nil, "timestamptz", []fbxtest.ValueRoundTripTest{
 		{Param: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC), Result: new(time.Time), Test: isExpectedEq(time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC))},
 	})
 }
@@ -67,7 +67,7 @@ func TestTimestamptzCodecWithLocationLocal(t *testing.T) {
 		})
 	}
 
-	pgxtest.RunValueRoundTripTests(context.Background(), t, connTestRunner, nil, "timestamptz", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, connTestRunner, nil, "timestamptz", []fbxtest.ValueRoundTripTest{
 		{Param: time.Date(2000, 1, 1, 0, 0, 0, 0, time.Local), Result: new(time.Time), Test: isExpectedEq(time.Date(2000, 1, 1, 0, 0, 0, 0, time.Local))},
 	})
 }

@@ -5,11 +5,11 @@ import (
 	"testing"
 
 	"github.com/red-soft/fbx/fbtype/zeronull"
-	"github.com/red-soft/fbx/pgxtest"
+	"github.com/red-soft/fbx/fbxtest"
 )
 
 func TestTextTranscode(t *testing.T) {
-	pgxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "text", []pgxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "text", []fbxtest.ValueRoundTripTest{
 		{
 			Param:  (zeronull.Text)("foo"),
 			Result: new(zeronull.Text),
