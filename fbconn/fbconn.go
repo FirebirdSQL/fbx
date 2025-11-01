@@ -23,7 +23,7 @@ import (
 	"github.com/red-soft/fbx/fbconn/internal/bgreader"
 	"github.com/red-soft/fbx/fbproto"
 	"github.com/red-soft/fbx/fbproto/auth"
-	"github.com/red-soft/fbx/wirecrypt"
+	"github.com/red-soft/fbx/fbproto/wirecrypt"
 )
 
 // Debug printing for authentication handshake. Enable by setting
