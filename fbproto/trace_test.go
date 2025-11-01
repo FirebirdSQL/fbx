@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/red-soft/fbx/fbconn"
 	"github.com/red-soft/fbx/fbproto"
-	"github.com/red-soft/fbx/pgconn"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,7 +21,7 @@ func TestTrace(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	conn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	conn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer conn.Close(ctx)
 
@@ -68,7 +68,7 @@ func TestFullLogTrace(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	conn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	conn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer conn.Close(ctx)
 
@@ -113,7 +113,7 @@ func TestTrace_SuccessCTE(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	conn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	conn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer conn.Close(ctx)
 
@@ -148,7 +148,7 @@ func TestTrace_ErrorPath(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	conn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	conn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer conn.Close(ctx)
 
