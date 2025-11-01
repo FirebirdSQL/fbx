@@ -8,7 +8,7 @@ import (
 	"time"
 
 	pgx "github.com/red-soft/fbx"
-	"github.com/red-soft/fbx/pgconn"
+	"github.com/red-soft/fbx/fbconn"
 	"github.com/red-soft/fbx/pgxtest"
 	"github.com/stretchr/testify/require"
 )
@@ -134,7 +134,7 @@ func TestTxCommitWhenDeferredConstraintFailure(t *testing.T) {
 	}
 
 	err = tx.Commit(context.Background())
-	if pgErr, ok := err.(*pgconn.PgError); !ok || pgErr.Code != "23505" {
+	if pgErr, ok := err.(*fbconn.PgError); !ok || pgErr.Code != "23505" {
 		t.Fatalf("Expected unique constraint violation 23505, got %#v", err)
 	}
 
@@ -198,7 +198,7 @@ func TestTxCommitSerializationFailure(t *testing.T) {
 	}
 
 	err = tx2.Commit(ctx)
-	if fbErr, ok := err.(*pgconn.FbError); !ok || fbErr.SqlState != "40001" {
+	if fbErr, ok := err.(*fbconn.FbError); !ok || fbErr.SqlState != "40001" {
 		t.Fatalf("Expected serialization error 40001, got %#v", err)
 	}
 
@@ -370,7 +370,7 @@ func TestBeginReadOnly(t *testing.T) {
 		t.Fatalf("conn.Exec failed: %v", err)
 	}
 	err = tx.Commit(context.Background())
-	if fbErr, ok := err.(*pgconn.FbError); !ok || fbErr.SqlCode != 25006 {
+	if fbErr, ok := err.(*fbconn.FbError); !ok || fbErr.SqlCode != 25006 {
 		t.Errorf("Expected error SQLSTATE 25006, but got %#v", err)
 	}
 }

@@ -4,7 +4,7 @@ import (
 	"context"
 
 	pgx "github.com/red-soft/fbx"
-	"github.com/red-soft/fbx/pgconn"
+	"github.com/red-soft/fbx/fbconn"
 )
 
 // Tx represents a database transaction acquired from a Pool.
@@ -62,11 +62,11 @@ func (tx *Tx) LargeObjects() pgx.LargeObjects {
 // Prepare is idempotent; i.e. it is safe to call Prepare multiple times with the same
 // name and sql arguments. This allows a code path to Prepare and Query/Exec without
 // needing to first check whether the statement has already been prepared.
-func (tx *Tx) Prepare(ctx context.Context, name, sql string) (*pgconn.StatementDescription, error) {
+func (tx *Tx) Prepare(ctx context.Context, name, sql string) (*fbconn.StatementDescription, error) {
 	return tx.t.Prepare(ctx, name, sql)
 }
 
-func (tx *Tx) Exec(ctx context.Context, sql string, arguments ...any) (pgconn.QueryStatus, error) {
+func (tx *Tx) Exec(ctx context.Context, sql string, arguments ...any) (fbconn.QueryStatus, error) {
 	return tx.t.Exec(ctx, sql, arguments...)
 }
 

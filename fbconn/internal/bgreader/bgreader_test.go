@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/red-soft/fbx/pgconn/internal/bgreader"
+	"github.com/red-soft/fbx/fbconn/internal/bgreader"
 	"github.com/stretchr/testify/require"
 )
 

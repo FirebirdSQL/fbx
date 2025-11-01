@@ -2,7 +2,7 @@ package pgxpool
 
 import (
 	pgx "github.com/red-soft/fbx"
-	"github.com/red-soft/fbx/pgconn"
+	"github.com/red-soft/fbx/fbconn"
 )
 
 type errRows struct {
@@ -11,8 +11,8 @@ type errRows struct {
 
 func (errRows) Close()                                       {}
 func (e errRows) Err() error                                 { return e.err }
-func (errRows) QueryStatus() pgconn.QueryStatus              { return pgconn.QueryStatus{} }
-func (errRows) FieldDescriptions() []pgconn.FieldDescription { return nil }
+func (errRows) QueryStatus() fbconn.QueryStatus              { return fbconn.QueryStatus{} }
+func (errRows) FieldDescriptions() []fbconn.FieldDescription { return nil }
 func (errRows) Next() bool                                   { return false }
 func (e errRows) Scan(dest ...any) error                     { return e.err }
 func (e errRows) Values() ([]any, error)                     { return nil, e.err }
@@ -46,11 +46,11 @@ func (rows *poolRows) Err() error {
 	return rows.r.Err()
 }
 
-func (rows *poolRows) QueryStatus() pgconn.QueryStatus {
+func (rows *poolRows) QueryStatus() fbconn.QueryStatus {
 	return rows.r.QueryStatus()
 }
 
-func (rows *poolRows) FieldDescriptions() []pgconn.FieldDescription {
+func (rows *poolRows) FieldDescriptions() []fbconn.FieldDescription {
 	return rows.r.FieldDescriptions()
 }
 

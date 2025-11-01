@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/red-soft/fbx/pgconn"
+	"github.com/red-soft/fbx/fbconn"
 )
 
 // QueuedQuery is a query that has been queued for execution via a Batch.
@@ -12,7 +12,7 @@ type QueuedQuery struct {
 	SQL       string
 	Arguments []any
 	Fn        batchItemFunc
-	sd        *pgconn.StatementDescription
+	sd        *fbconn.StatementDescription
 }
 
 type batchItemFunc func(br BatchResults) error
@@ -42,7 +42,7 @@ func (qq *QueuedQuery) QueryRow(fn func(row Row) error) {
 }
 
 // Exec sets fn to be called when the response to qq is received.
-func (qq *QueuedQuery) Exec(fn func(ct pgconn.QueryStatus) error) {
+func (qq *QueuedQuery) Exec(fn func(ct fbconn.QueryStatus) error) {
 	qq.Fn = func(br BatchResults) error {
 		ct, err := br.Exec()
 		if err != nil {
@@ -83,7 +83,7 @@ func (b *Batch) Len() int {
 type BatchResults interface {
 	// Exec reads the results from the next query in the batch as if the query has been sent with Conn.Exec. Prefer
 	// calling Exec on the QueuedQuery.
-	Exec() (pgconn.QueryStatus, error)
+	Exec() (fbconn.QueryStatus, error)
 
 	// Query reads the results from the next query in the batch as if the query has been sent with Conn.Query. Prefer
 	// calling Query on the QueuedQuery.
@@ -109,7 +109,7 @@ type BatchResults interface {
 type batchResults struct {
 	ctx       context.Context
 	conn      *Conn
-	mrr       *pgconn.MultiResultReader
+	mrr       *fbconn.MultiResultReader
 	err       error
 	b         *Batch
 	qqIdx     int
@@ -118,7 +118,7 @@ type batchResults struct {
 }
 
 // Exec reads the results from the next query in the batch as if the query has been sent with Exec.
-func (br *batchResults) Exec() (pgconn.QueryStatus, error) {
+func (br *batchResults) Exec() (fbconn.QueryStatus, error) {
 	//if br.err != nil {
 	//	return pgconn.QueryStatus{}, br.err
 	//}
@@ -272,7 +272,7 @@ func (br *batchResults) nextQueryAndArgs() (query string, args []any, ok bool) {
 type pipelineBatchResults struct {
 	ctx       context.Context
 	conn      *Conn
-	pipeline  *pgconn.Pipeline
+	pipeline  *fbconn.Pipeline
 	lastRows  *baseRows
 	err       error
 	b         *Batch
@@ -282,7 +282,7 @@ type pipelineBatchResults struct {
 }
 
 // Exec reads the results from the next query in the batch as if the query has been sent with Exec.
-func (br *pipelineBatchResults) Exec() (pgconn.QueryStatus, error) {
+func (br *pipelineBatchResults) Exec() (fbconn.QueryStatus, error) {
 	//if br.err != nil {
 	//	return pgconn.QueryStatus{}, br.err
 	//}

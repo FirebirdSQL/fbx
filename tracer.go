@@ -3,7 +3,7 @@ package pgx
 import (
 	"context"
 
-	"github.com/red-soft/fbx/pgconn"
+	"github.com/red-soft/fbx/fbconn"
 )
 
 // QueryTracer traces Query, QueryRow, and Exec.
@@ -21,7 +21,7 @@ type TraceQueryStartData struct {
 }
 
 type TraceQueryEndData struct {
-	QueryStatus pgconn.QueryStatus
+	QueryStatus fbconn.QueryStatus
 	Err         error
 }
 
@@ -42,7 +42,7 @@ type TraceBatchStartData struct {
 type TraceBatchQueryData struct {
 	SQL        string
 	Args       []any
-	CommandTag pgconn.QueryStatus
+	CommandTag fbconn.QueryStatus
 	Err        error
 }
 
@@ -65,7 +65,7 @@ type TraceCopyFromStartData struct {
 }
 
 type TraceCopyFromEndData struct {
-	CommandTag pgconn.QueryStatus
+	CommandTag fbconn.QueryStatus
 	Err        error
 }
 

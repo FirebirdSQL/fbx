@@ -3,7 +3,7 @@ package pgx
 import (
 	"context"
 
-	"github.com/red-soft/fbx/pgconn"
+	"github.com/red-soft/fbx/fbconn"
 )
 
 // CopyFromRows returns a CopyFromSource interface over the provided rows slice
@@ -211,7 +211,7 @@ func (ct *copyFrom) run(ctx context.Context) (int64, error) {
 	panic("implement me")
 }
 
-func (ct *copyFrom) buildCopyBuf(buf []byte, sd *pgconn.StatementDescription) (bool, []byte, error) {
+func (ct *copyFrom) buildCopyBuf(buf []byte, sd *fbconn.StatementDescription) (bool, []byte, error) {
 	//const sendBufSize = 65536 - 5 // The packet has a 5-byte header
 	//lastBufLen := 0
 	//largestRowLen := 0

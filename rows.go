@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/red-soft/fbx/pgconn"
+	"github.com/red-soft/fbx/fbconn"
 	"github.com/red-soft/fbx/pgtype"
 )
 
@@ -35,11 +35,11 @@ type Rows interface {
 	Err() error
 
 	// QueryStatus returns status of query. It is only available after Rows is closed.
-	QueryStatus() pgconn.QueryStatus
+	QueryStatus() fbconn.QueryStatus
 
 	// FieldDescriptions returns the field descriptions of the columns. It may return nil. In particular this can occur
 	// when there was an error executing the query.
-	FieldDescriptions() []pgconn.FieldDescription
+	FieldDescriptions() []fbconn.FieldDescription
 
 	// Next prepares the next row for reading. It returns true if there is another
 	// row and false if no more rows are available or a fatal error has occurred.
@@ -124,11 +124,11 @@ func (r *connRow) Scan(dest ...any) (err error) {
 // baseRows implements the Rows interface for Conn.Query.
 type baseRows struct {
 	typeMap      *pgtype.Map
-	resultReader *pgconn.ResultReader
+	resultReader *fbconn.ResultReader
 
 	values [][]byte
 
-	commandTag pgconn.QueryStatus
+	commandTag fbconn.QueryStatus
 	err        error
 	closed     bool
 
@@ -146,11 +146,11 @@ type baseRows struct {
 	args      []any
 	rowCount  int
 
-	boundStatement   *pgconn.Statement
-	boundTransaction *pgconn.FBTransaction
+	boundStatement   *fbconn.Statement
+	boundTransaction *fbconn.FBTransaction
 }
 
-func (rows *baseRows) FieldDescriptions() []pgconn.FieldDescription {
+func (rows *baseRows) FieldDescriptions() []fbconn.FieldDescription {
 	return rows.resultReader.FieldDescriptions()
 }
 
@@ -201,7 +201,7 @@ func (rows *baseRows) Close() {
 	rows.args = nil
 }
 
-func (rows *baseRows) QueryStatus() pgconn.QueryStatus {
+func (rows *baseRows) QueryStatus() fbconn.QueryStatus {
 	return rows.commandTag
 }
 
@@ -367,7 +367,7 @@ func (e ScanArgError) Unwrap() error {
 // fieldDescriptions - OID and format of values
 // values - the raw data as returned from the PostgreSQL server
 // dest - the destination that values will be decoded into
-func ScanRow(typeMap *pgtype.Map, fieldDescriptions []pgconn.FieldDescription, values [][]byte, dest ...any) error {
+func ScanRow(typeMap *pgtype.Map, fieldDescriptions []fbconn.FieldDescription, values [][]byte, dest ...any) error {
 	if len(fieldDescriptions) != len(values) {
 		return fmt.Errorf("number of field descriptions must equal number of values, got %d and %d", len(fieldDescriptions), len(values))
 	}
@@ -391,7 +391,7 @@ func ScanRow(typeMap *pgtype.Map, fieldDescriptions []pgconn.FieldDescription, v
 
 // RowsFromResultReader returns a Rows that will read from values resultReader and decode with typeMap. It can be used
 // to read from the lower level pgconn interface.
-func RowsFromResultReader(typeMap *pgtype.Map, resultReader *pgconn.ResultReader) Rows {
+func RowsFromResultReader(typeMap *pgtype.Map, resultReader *fbconn.ResultReader) Rows {
 	return &baseRows{
 		typeMap:      typeMap,
 		resultReader: resultReader,
@@ -401,23 +401,23 @@ func RowsFromResultReader(typeMap *pgtype.Map, resultReader *pgconn.ResultReader
 // ForEachRow iterates through rows. For each row it scans into the elements of scans and calls fn. If any row
 // fails to scan or fn returns an error the query will be aborted and the error will be returned. Rows will be closed
 // when ForEachRow returns.
-func ForEachRow(rows Rows, scans []any, fn func() error) (pgconn.QueryStatus, error) {
+func ForEachRow(rows Rows, scans []any, fn func() error) (fbconn.QueryStatus, error) {
 	defer rows.Close()
 
 	for rows.Next() {
 		err := rows.Scan(scans...)
 		if err != nil {
-			return pgconn.QueryStatus{}, err
+			return fbconn.QueryStatus{}, err
 		}
 
 		err = fn()
 		if err != nil {
-			return pgconn.QueryStatus{}, err
+			return fbconn.QueryStatus{}, err
 		}
 	}
 
 	if err := rows.Err(); err != nil {
-		return pgconn.QueryStatus{}, err
+		return fbconn.QueryStatus{}, err
 	}
 
 	return rows.QueryStatus(), nil
@@ -425,7 +425,7 @@ func ForEachRow(rows Rows, scans []any, fn func() error) (pgconn.QueryStatus, er
 
 // CollectableRow is the subset of Rows methods that a RowToFunc is allowed to call.
 type CollectableRow interface {
-	FieldDescriptions() []pgconn.FieldDescription
+	FieldDescriptions() []fbconn.FieldDescription
 	Scan(dest ...any) error
 	Values() ([]any, error)
 	RawValues() [][]byte
@@ -716,7 +716,7 @@ type namedStructFields struct {
 
 func lookupNamedStructFields(
 	t reflect.Type,
-	fldDescs []pgconn.FieldDescription,
+	fldDescs []fbconn.FieldDescription,
 ) (*namedStructFields, error) {
 	key := namedStructFieldsKey{
 		t:        t,
@@ -752,7 +752,7 @@ func lookupNamedStructFields(
 	return fieldsIface.(*namedStructFields), nil
 }
 
-func joinFieldNames(fldDescs []pgconn.FieldDescription) string {
+func joinFieldNames(fldDescs []fbconn.FieldDescription) string {
 	switch len(fldDescs) {
 	case 0:
 		return ""
@@ -775,7 +775,7 @@ func joinFieldNames(fldDescs []pgconn.FieldDescription) string {
 }
 
 func computeNamedStructFields(
-	fldDescs []pgconn.FieldDescription,
+	fldDescs []fbconn.FieldDescription,
 	t reflect.Type,
 	fields []structRowField,
 	fieldStack *[]int,
@@ -834,7 +834,7 @@ func computeNamedStructFields(
 
 const structTagKey = "db"
 
-func fieldPosByName(fldDescs []pgconn.FieldDescription, field string, normalize bool) (i int) {
+func fieldPosByName(fldDescs []fbconn.FieldDescription, field string, normalize bool) (i int) {
 	i = -1
 
 	if normalize {

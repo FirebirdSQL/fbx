@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	pgx "github.com/red-soft/fbx"
-	"github.com/red-soft/fbx/pgconn"
+	"github.com/red-soft/fbx/fbconn"
 	"github.com/red-soft/fbx/pgxtest"
 	"github.com/stretchr/testify/assert"
 
@@ -54,7 +54,7 @@ func closeConn(t testing.TB, conn *pgx.Conn) {
 	}
 }
 
-func mustExec(t testing.TB, conn *pgx.Conn, sql string, arguments ...any) (commandTag pgconn.QueryStatus) {
+func mustExec(t testing.TB, conn *pgx.Conn, sql string, arguments ...any) (commandTag fbconn.QueryStatus) {
 	var err error
 	if commandTag, err = conn.Exec(context.Background(), sql, arguments...); err != nil {
 		t.Fatalf("Exec unexpectedly failed with %v: %v", sql, err)

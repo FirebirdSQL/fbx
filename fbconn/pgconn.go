@@ -1,4 +1,4 @@
-package pgconn
+package fbconn
 
 import (
 	"bufio"
@@ -19,10 +19,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/red-soft/fbx/fbconn/ctxwatch"
+	"github.com/red-soft/fbx/fbconn/internal/bgreader"
 	"github.com/red-soft/fbx/fbproto"
 	"github.com/red-soft/fbx/fbproto/auth"
-	"github.com/red-soft/fbx/pgconn/ctxwatch"
-	"github.com/red-soft/fbx/pgconn/internal/bgreader"
 	"github.com/red-soft/fbx/wirecrypt"
 )
 

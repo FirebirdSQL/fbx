@@ -1,4 +1,4 @@
-package pgconn_test
+package fbconn_test
 
 import (
 	"context"
@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/red-soft/fbx/fbconn"
 	"github.com/red-soft/fbx/fbproto/auth"
-	"github.com/red-soft/fbx/pgconn"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -56,7 +56,7 @@ func TestParseConfig(t *testing.T) {
 	skipOnWindows(t)
 	t.Parallel()
 
-	config, err := pgconn.ParseConfig("")
+	config, err := fbconn.ParseConfig("")
 	require.NoError(t, err)
 	defaultHost := config.Host
 
@@ -66,20 +66,20 @@ func TestParseConfig(t *testing.T) {
 	tests := []struct {
 		name       string
 		connString string
-		config     *pgconn.Config
+		config     *fbconn.Config
 	}{
 		// Test all sslmodes
 		{
 			name:       "sslmode not set (prefer)",
 			connString: "firebird://jack:secret@localhost:5432/mydb",
-			config: &pgconn.Config{
+			config: &fbconn.Config{
 				User:          "jack",
 				Password:      "secret",
 				Host:          "localhost",
 				Port:          5432,
 				Database:      "mydb",
 				RuntimeParams: map[string]string{},
-				Fallbacks: []*pgconn.FallbackConfig{
+				Fallbacks: []*fbconn.FallbackConfig{
 					{
 						Host: "localhost",
 						Port: 5432,
@@ -90,7 +90,7 @@ func TestParseConfig(t *testing.T) {
 		{
 			name:       "database url everything",
 			connString: "firebird://jack:secret@localhost:5432/mydb?application_name=pgxtest&search_path=myschema&connect_timeout=5",
-			config: &pgconn.Config{
+			config: &fbconn.Config{
 				User:           "jack",
 				Password:       "secret",
 				Host:           "localhost",
@@ -106,7 +106,7 @@ func TestParseConfig(t *testing.T) {
 		{
 			name:       "database url missing password",
 			connString: "firebird://jack@localhost:5432/mydb",
-			config: &pgconn.Config{
+			config: &fbconn.Config{
 				User:          "jack",
 				Host:          "localhost",
 				Port:          5432,
@@ -117,7 +117,7 @@ func TestParseConfig(t *testing.T) {
 		{
 			name:       "database url custom auth plugin list",
 			connString: "firebird://jack:secret@localhost:5432/mydb?auth_plugin_list=Srp,Legacy_Auth",
-			config: &pgconn.Config{
+			config: &fbconn.Config{
 				User:           "jack",
 				Password:       "secret",
 				Host:           "localhost",
@@ -130,7 +130,7 @@ func TestParseConfig(t *testing.T) {
 		{
 			name:       "database url missing user and password",
 			connString: "firebird://localhost:5432/mydb",
-			config: &pgconn.Config{
+			config: &fbconn.Config{
 				User:          defaultUser,
 				Host:          "localhost",
 				Port:          5432,
@@ -141,7 +141,7 @@ func TestParseConfig(t *testing.T) {
 		{
 			name:       "database url missing port",
 			connString: "firebird://jack:secret@localhost:5432/mydb",
-			config: &pgconn.Config{
+			config: &fbconn.Config{
 				User:          "jack",
 				Password:      "secret",
 				Host:          "localhost",
@@ -153,7 +153,7 @@ func TestParseConfig(t *testing.T) {
 		{
 			name:       "database url unix domain socket host",
 			connString: "firebird:///foo?host=/tmp",
-			config: &pgconn.Config{
+			config: &fbconn.Config{
 				User:          defaultUser,
 				Host:          "/tmp",
 				Port:          defaultPort,
@@ -164,7 +164,7 @@ func TestParseConfig(t *testing.T) {
 		{
 			name:       "database url unix domain socket host on windows",
 			connString: "firebird:///foo?host=C:\\tmp",
-			config: &pgconn.Config{
+			config: &fbconn.Config{
 				User:          defaultUser,
 				Host:          "C:\\tmp",
 				Port:          defaultPort,
@@ -175,7 +175,7 @@ func TestParseConfig(t *testing.T) {
 		{
 			name:       "database url dbname",
 			connString: "firebird://localhost/?dbname=foo",
-			config: &pgconn.Config{
+			config: &fbconn.Config{
 				User:          defaultUser,
 				Host:          "localhost",
 				Port:          defaultPort,
@@ -186,7 +186,7 @@ func TestParseConfig(t *testing.T) {
 		{
 			name:       "database url postgresql protocol",
 			connString: "firebird://jack@localhost:5432/mydb",
-			config: &pgconn.Config{
+			config: &fbconn.Config{
 				User:          "jack",
 				Host:          "localhost",
 				Port:          5432,
@@ -197,7 +197,7 @@ func TestParseConfig(t *testing.T) {
 		{
 			name:       "database url IPv4 with port",
 			connString: "firebird://jack@127.0.0.1:5433/mydb",
-			config: &pgconn.Config{
+			config: &fbconn.Config{
 				User:          "jack",
 				Host:          "127.0.0.1",
 				Port:          5433,
@@ -208,7 +208,7 @@ func TestParseConfig(t *testing.T) {
 		{
 			name:       "database url IPv6 with port",
 			connString: "firebird://jack@[2001:db8::1]:5433/mydb",
-			config: &pgconn.Config{
+			config: &fbconn.Config{
 				User:          "jack",
 				Host:          "2001:db8::1",
 				Port:          5433,
@@ -219,7 +219,7 @@ func TestParseConfig(t *testing.T) {
 		{
 			name:       "database url IPv6 no port",
 			connString: "firebird://jack@[2001:db8::1]/mydb",
-			config: &pgconn.Config{
+			config: &fbconn.Config{
 				User:          "jack",
 				Host:          "2001:db8::1",
 				Port:          defaultPort,
@@ -230,7 +230,7 @@ func TestParseConfig(t *testing.T) {
 		{
 			name:       "Key/value everything",
 			connString: "user=jack password=secret host=localhost port=5432 dbname=mydb application_name=pgxtest search_path=myschema connect_timeout=5",
-			config: &pgconn.Config{
+			config: &fbconn.Config{
 				User:           "jack",
 				Password:       "secret",
 				Host:           "localhost",
@@ -246,7 +246,7 @@ func TestParseConfig(t *testing.T) {
 		{
 			name:       "Key/value with escaped single quote",
 			connString: "user=jack\\'s password=secret host=localhost port=5432 dbname=mydb",
-			config: &pgconn.Config{
+			config: &fbconn.Config{
 				User:          "jack's",
 				Password:      "secret",
 				Host:          "localhost",
@@ -258,7 +258,7 @@ func TestParseConfig(t *testing.T) {
 		{
 			name:       "Key/value with escaped backslash",
 			connString: "user=jack password=sooper\\\\secret host=localhost port=5432 dbname=mydb",
-			config: &pgconn.Config{
+			config: &fbconn.Config{
 				User:          "jack",
 				Password:      "sooper\\secret",
 				Host:          "localhost",
@@ -270,7 +270,7 @@ func TestParseConfig(t *testing.T) {
 		{
 			name:       "Key/value with single quoted values",
 			connString: "user='jack' host='localhost' dbname='mydb'",
-			config: &pgconn.Config{
+			config: &fbconn.Config{
 				User:          "jack",
 				Host:          "localhost",
 				Port:          defaultPort,
@@ -281,7 +281,7 @@ func TestParseConfig(t *testing.T) {
 		{
 			name:       "Key/value with single quoted value with escaped single quote",
 			connString: "user='jack\\'s' host='localhost' dbname='mydb'",
-			config: &pgconn.Config{
+			config: &fbconn.Config{
 				User:          "jack's",
 				Host:          "localhost",
 				Port:          defaultPort,
@@ -292,7 +292,7 @@ func TestParseConfig(t *testing.T) {
 		{
 			name:       "Key/value with empty single quoted value",
 			connString: "user='jack' password='' host='localhost' dbname='mydb'",
-			config: &pgconn.Config{
+			config: &fbconn.Config{
 				User:          "jack",
 				Host:          "localhost",
 				Port:          defaultPort,
@@ -303,7 +303,7 @@ func TestParseConfig(t *testing.T) {
 		{
 			name:       "Key/value with space between key and value",
 			connString: "user = 'jack' password = '' host = 'localhost' dbname = 'mydb'",
-			config: &pgconn.Config{
+			config: &fbconn.Config{
 				User:          "jack",
 				Host:          "localhost",
 				Port:          defaultPort,
@@ -315,7 +315,7 @@ func TestParseConfig(t *testing.T) {
 		{
 			name:       "URL without host but with port still uses default host",
 			connString: "firebird://jack:secret@:1/mydb",
-			config: &pgconn.Config{
+			config: &fbconn.Config{
 				User:          "jack",
 				Password:      "secret",
 				Host:          defaultHost,
@@ -327,7 +327,7 @@ func TestParseConfig(t *testing.T) {
 		{
 			name:       "database url with unix path to database",
 			connString: "firebird://user:secret@localhost:3050//db/mydb.fdb",
-			config: &pgconn.Config{
+			config: &fbconn.Config{
 				User:           "user",
 				Password:       "secret",
 				Host:           "localhost",
@@ -342,7 +342,7 @@ func TestParseConfig(t *testing.T) {
 		{
 			name:       "database url with windows path to database",
 			connString: "firebird://user:secret@localhost:3050/c:\\db\\mydb.fdb",
-			config: &pgconn.Config{
+			config: &fbconn.Config{
 				User:           "user",
 				Password:       "secret",
 				Host:           "localhost",
@@ -358,7 +358,7 @@ func TestParseConfig(t *testing.T) {
 
 	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config, err := pgconn.ParseConfig(tt.connString)
+			config, err := fbconn.ParseConfig(tt.connString)
 			assert.Nilf(t, err, "Test %d (%s)", i, tt.name)
 
 			assertConfigsEqual(t, tt.config, config, fmt.Sprintf("Test %d (%s)", i, tt.name))
@@ -368,25 +368,25 @@ func TestParseConfig(t *testing.T) {
 
 // https://github.com/jackc/pgconn/issues/47
 func TestParseConfigKVWithTrailingEmptyEqualDoesNotPanic(t *testing.T) {
-	_, err := pgconn.ParseConfig("host= user= password= port= database=")
+	_, err := fbconn.ParseConfig("host= user= password= port= database=")
 	require.NoError(t, err)
 }
 
 func TestParseConfigKVLeadingEqual(t *testing.T) {
-	_, err := pgconn.ParseConfig("= user=jack")
+	_, err := fbconn.ParseConfig("= user=jack")
 	require.Error(t, err)
 }
 
 // https://github.com/jackc/pgconn/issues/49
 func TestParseConfigKVTrailingBackslash(t *testing.T) {
-	_, err := pgconn.ParseConfig(`x=x\`)
+	_, err := fbconn.ParseConfig(`x=x\`)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid backslash")
 }
 
 func TestConfigCopyReturnsEqualConfig(t *testing.T) {
 	connString := "postgres://jack:secret@localhost:5432/mydb?application_name=pgxtest&search_path=myschema&connect_timeout=5"
-	original, err := pgconn.ParseConfig(connString)
+	original, err := fbconn.ParseConfig(connString)
 	require.NoError(t, err)
 
 	copied := original.Copy()
@@ -395,7 +395,7 @@ func TestConfigCopyReturnsEqualConfig(t *testing.T) {
 
 func TestConfigCopyOriginalConfigDidNotChange(t *testing.T) {
 	connString := "postgres://jack:secret@localhost:5432/mydb?application_name=pgxtest&search_path=myschema&connect_timeout=5&sslmode=prefer"
-	original, err := pgconn.ParseConfig(connString)
+	original, err := fbconn.ParseConfig(connString)
 	require.NoError(t, err)
 
 	copied := original.Copy()
@@ -410,12 +410,12 @@ func TestConfigCopyOriginalConfigDidNotChange(t *testing.T) {
 
 func TestConfigCopyCanBeUsedToConnect(t *testing.T) {
 	connString := os.Getenv("PGX_TEST_DATABASE")
-	original, err := pgconn.ParseConfig(connString)
+	original, err := fbconn.ParseConfig(connString)
 	require.NoError(t, err)
 
 	copied := original.Copy()
 	assert.NotPanics(t, func() {
-		_, err = pgconn.ConnectConfig(context.Background(), copied)
+		_, err = fbconn.ConnectConfig(context.Background(), copied)
 	})
 	assert.NoError(t, err)
 }
@@ -443,13 +443,13 @@ func TestNetworkAddress(t *testing.T) {
 		},
 	}
 	for i, tt := range tests {
-		gotNet, _ := pgconn.NetworkAddress(tt.host, 5432)
+		gotNet, _ := fbconn.NetworkAddress(tt.host, 5432)
 
 		assert.Equalf(t, tt.wantNet, gotNet, "Test %d (%s)", i, tt.name)
 	}
 }
 
-func assertConfigsEqual(t *testing.T, expected, actual *pgconn.Config, testName string) {
+func assertConfigsEqual(t *testing.T, expected, actual *fbconn.Config, testName string) {
 	if !assert.NotNil(t, expected) {
 		return
 	}
@@ -493,19 +493,19 @@ func TestParseConfigEnvLibpq(t *testing.T) {
 	tests := []struct {
 		name    string
 		envvars map[string]string
-		config  *pgconn.Config
+		config  *fbconn.Config
 	}{
 		{
 			// not testing no environment at all as that would use default host and that can vary.
 			name:    "PGHOST only",
 			envvars: map[string]string{"PGHOST": "123.123.123.123"},
-			config: &pgconn.Config{
+			config: &fbconn.Config{
 				User: osUserName,
 				Host: "123.123.123.123",
 				Port: 3050,
 
 				RuntimeParams: map[string]string{},
-				Fallbacks: []*pgconn.FallbackConfig{
+				Fallbacks: []*fbconn.FallbackConfig{
 					{
 						Host: "123.123.123.123",
 						Port: 3050,
@@ -527,7 +527,7 @@ func TestParseConfigEnvLibpq(t *testing.T) {
 				"PGTZ":              "America/New_York",
 				"PGOPTIONS":         "-c search_path=myschema",
 			},
-			config: &pgconn.Config{
+			config: &fbconn.Config{
 				Host:           "123.123.123.123",
 				Port:           7777,
 				Database:       "foo",
@@ -544,7 +544,7 @@ func TestParseConfigEnvLibpq(t *testing.T) {
 				"PGSSLMODE": "require",
 				"PGSSLSNI":  "0",
 			},
-			config: &pgconn.Config{
+			config: &fbconn.Config{
 				User:          osUserName,
 				Host:          "test.foo",
 				Port:          3050,
@@ -559,7 +559,7 @@ func TestParseConfigEnvLibpq(t *testing.T) {
 				t.Setenv(env, tt.envvars[env])
 			}
 
-			config, err := pgconn.ParseConfig("")
+			config, err := fbconn.ParseConfig("")
 			assert.Nilf(t, err, "Test %d (%s)", i, tt.name)
 
 			assertConfigsEqual(t, tt.config, config, fmt.Sprintf("Test %d (%s)", i, tt.name))

@@ -1,4 +1,4 @@
-package pgconn
+package fbconn
 
 import (
 	"context"
@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/red-soft/fbx/fbconn/ctxwatch"
 	"github.com/red-soft/fbx/fbproto"
 	"github.com/red-soft/fbx/fbproto/auth"
-	"github.com/red-soft/fbx/pgconn/ctxwatch"
 )
 
 type AfterConnectFunc func(ctx context.Context, pgconn *PgConn) error

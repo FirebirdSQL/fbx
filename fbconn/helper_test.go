@@ -1,4 +1,4 @@
-package pgconn_test
+package fbconn_test
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/red-soft/fbx/pgconn"
+	"github.com/red-soft/fbx/fbconn"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -23,7 +23,7 @@ func generateSeriesQuery(begin, end int, fieldName string) string {
 	return fmt.Sprintf(generateSeriesTemplate, begin, end, fieldName)
 }
 
-func closeConn(t testing.TB, conn *pgconn.PgConn) {
+func closeConn(t testing.TB, conn *fbconn.PgConn) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	require.NoError(t, conn.Close(ctx))
@@ -35,7 +35,7 @@ func closeConn(t testing.TB, conn *pgconn.PgConn) {
 }
 
 // Do a simple query to ensure the connection is still usable
-func ensureConnValid(t *testing.T, pgConn *pgconn.PgConn) {
+func ensureConnValid(t *testing.T, pgConn *fbconn.PgConn) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	//select generate_series(1,$1)
 	result := pgConn.ExecParams(ctx, "WITH RECURSIVE generate_series(generate_series) AS (SELECT 1 FROM RDB$DATABASE UNION ALL SELECT (generate_series + 1) FROM generate_series WHERE generate_series < 3) SELECT generate_series FROM generate_series", [][]byte{[]byte("3")}).Read()

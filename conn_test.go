@@ -11,7 +11,7 @@ import (
 	"time"
 
 	pgx "github.com/red-soft/fbx"
-	"github.com/red-soft/fbx/pgconn"
+	"github.com/red-soft/fbx/fbconn"
 	"github.com/red-soft/fbx/pgtype"
 	"github.com/red-soft/fbx/pgxtest"
 	"github.com/stretchr/testify/assert"
@@ -273,7 +273,7 @@ func TestExecFailureWithArguments(t *testing.T) {
 		if err == nil {
 			t.Fatal("Expected SQL syntax error")
 		}
-		assert.False(t, pgconn.SafeToRetry(err))
+		assert.False(t, fbconn.SafeToRetry(err))
 
 		_, err = conn.Exec(context.Background(), "select $1::varchar(1);", "1", "2")
 		require.Error(t, err)
@@ -298,7 +298,7 @@ func TestExecContextWithoutCancelation(t *testing.T) {
 		if commandTag.String() != "DDL" {
 			t.Fatalf("Unexpected results from Exec: %v", commandTag)
 		}
-		assert.False(t, pgconn.SafeToRetry(err))
+		assert.False(t, fbconn.SafeToRetry(err))
 	})
 }
 
@@ -316,14 +316,14 @@ func TestExecContextFailureWithoutCancelation(t *testing.T) {
 		if err == nil {
 			t.Fatal("Expected SQL syntax error")
 		}
-		assert.False(t, pgconn.SafeToRetry(err))
+		assert.False(t, fbconn.SafeToRetry(err))
 
 		rows, _ := conn.Query(context.Background(), "select 1 from rdb$database")
 		rows.Close()
 		if rows.Err() != nil {
 			t.Fatalf("ExecEx failure appears to have broken connection: %v", rows.Err())
 		}
-		assert.False(t, pgconn.SafeToRetry(err))
+		assert.False(t, fbconn.SafeToRetry(err))
 	})
 }
 
@@ -341,7 +341,7 @@ func TestExecContextFailureWithoutCancelationWithArguments(t *testing.T) {
 		if err == nil {
 			t.Fatal("Expected SQL syntax error")
 		}
-		assert.False(t, pgconn.SafeToRetry(err))
+		assert.False(t, fbconn.SafeToRetry(err))
 	})
 }
 
@@ -353,7 +353,7 @@ func TestExecFailureCloseBefore(t *testing.T) {
 
 	_, err := conn.Exec(context.Background(), "select 1 from rdb$database")
 	require.Error(t, err)
-	assert.True(t, pgconn.SafeToRetry(err))
+	assert.True(t, fbconn.SafeToRetry(err))
 }
 
 func TestPrepare(t *testing.T) {
@@ -592,7 +592,7 @@ func TestListenNotify(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
 	defer cancel()
 	notification, err = listener.WaitForNotification(ctx)
-	assert.True(t, pgconn.Timeout(err))
+	assert.True(t, fbconn.Timeout(err))
 	assert.Nil(t, notification)
 
 	// listener can listen again after a timeout
@@ -731,7 +731,7 @@ func TestFatalRxError(t *testing.T) {
 		var n int32
 		var s string
 		err := conn.QueryRow(context.Background(), "select 1::int4, pg_sleep(10)::varchar").Scan(&n, &s)
-		if pgErr, ok := err.(*pgconn.PgError); ok && pgErr.Severity == "FATAL" {
+		if pgErr, ok := err.(*fbconn.PgError); ok && pgErr.Severity == "FATAL" {
 		} else {
 			t.Errorf("Expected QueryRow Scan to return fatal PgError, but instead received %v", err)
 			return

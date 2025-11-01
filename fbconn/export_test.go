@@ -1,6 +1,6 @@
 // File export_test exports some methods for better testing.
 
-package pgconn
+package fbconn
 
 func NewParseConfigError(conn, msg string, err error) error {
 	return &ParseConfigError{

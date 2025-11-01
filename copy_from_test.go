@@ -9,7 +9,7 @@ import (
 	"time"
 
 	pgx "github.com/red-soft/fbx"
-	"github.com/red-soft/fbx/pgconn"
+	"github.com/red-soft/fbx/fbconn"
 	"github.com/red-soft/fbx/pgxtest"
 	"github.com/stretchr/testify/require"
 )
@@ -499,7 +499,7 @@ func TestConnCopyFromFailServerSideMidway(t *testing.T) {
 	if err == nil {
 		t.Errorf("Expected CopyFrom return error, but it did not")
 	}
-	if _, ok := err.(*pgconn.PgError); !ok {
+	if _, ok := err.(*fbconn.PgError); !ok {
 		t.Errorf("Expected CopyFrom return pgx.PgError, but instead it returned: %v", err)
 	}
 	if copyCount != 0 {
@@ -575,7 +575,7 @@ func TestConnCopyFromFailServerSideMidwayAbortsWithoutWaiting(t *testing.T) {
 	if err == nil {
 		t.Errorf("Expected CopyFrom return error, but it did not")
 	}
-	if _, ok := err.(*pgconn.PgError); !ok {
+	if _, ok := err.(*fbconn.PgError); !ok {
 		t.Errorf("Expected CopyFrom return pgx.PgError, but instead it returned: %v", err)
 	}
 	if copyCount != 0 {
@@ -652,7 +652,7 @@ func TestConnCopyFromSlowFailRace(t *testing.T) {
 	if err == nil {
 		t.Errorf("Expected CopyFrom return error, but it did not")
 	}
-	if _, ok := err.(*pgconn.PgError); !ok {
+	if _, ok := err.(*fbconn.PgError); !ok {
 		t.Errorf("Expected CopyFrom return pgx.PgError, but instead it returned: %v", err)
 	}
 	if copyCount != 0 {

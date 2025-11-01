@@ -3,7 +3,7 @@ package stmtcache
 import (
 	"container/list"
 
-	"github.com/red-soft/fbx/pgconn"
+	"github.com/red-soft/fbx/fbconn"
 )
 
 // LRUCache implements Cache with a Least Recently Used (LRU) cache.
@@ -11,7 +11,7 @@ type LRUCache struct {
 	cap          int
 	m            map[string]*list.Element
 	l            *list.List
-	invalidStmts []*pgconn.Statement
+	invalidStmts []*fbconn.Statement
 }
 
 // NewLRUCache creates a new LRUCache. cap is the maximum size of the cache.
@@ -24,10 +24,10 @@ func NewLRUCache(cap int) *LRUCache {
 }
 
 // Get returns the statement description for sql. Returns nil if not found.
-func (c *LRUCache) Get(key string) *pgconn.Statement {
+func (c *LRUCache) Get(key string) *fbconn.Statement {
 	if el, ok := c.m[key]; ok {
 		c.l.MoveToFront(el)
-		return el.Value.(*pgconn.Statement)
+		return el.Value.(*fbconn.Statement)
 	}
 
 	return nil
@@ -36,7 +36,7 @@ func (c *LRUCache) Get(key string) *pgconn.Statement {
 
 // Put stores sd in the cache. Put panics if sd.SQL is "". Put does nothing if sd.SQL already exists in the cache or
 // sd.SQL has been invalidated and HandleInvalidated has not been called yet.
-func (c *LRUCache) Put(st *pgconn.Statement) {
+func (c *LRUCache) Put(st *fbconn.Statement) {
 	if st.Description.SQL == "" {
 		panic("cannot store statement description with empty SQL")
 	}
@@ -64,7 +64,7 @@ func (c *LRUCache) Put(st *pgconn.Statement) {
 func (c *LRUCache) Invalidate(sql string) {
 	if el, ok := c.m[sql]; ok {
 		delete(c.m, sql)
-		c.invalidStmts = append(c.invalidStmts, el.Value.(*pgconn.Statement))
+		c.invalidStmts = append(c.invalidStmts, el.Value.(*fbconn.Statement))
 		c.l.Remove(el)
 	}
 }
@@ -73,7 +73,7 @@ func (c *LRUCache) Invalidate(sql string) {
 func (c *LRUCache) InvalidateAll() {
 	el := c.l.Front()
 	for el != nil {
-		c.invalidStmts = append(c.invalidStmts, el.Value.(*pgconn.Statement))
+		c.invalidStmts = append(c.invalidStmts, el.Value.(*fbconn.Statement))
 		el = el.Next()
 	}
 
@@ -82,7 +82,7 @@ func (c *LRUCache) InvalidateAll() {
 }
 
 // GetInvalidated returns a slice of all statement descriptions invalidated since the last call to RemoveInvalidated.
-func (c *LRUCache) GetInvalidated() []*pgconn.Statement {
+func (c *LRUCache) GetInvalidated() []*fbconn.Statement {
 	return c.invalidStmts
 }
 
@@ -105,7 +105,7 @@ func (c *LRUCache) Cap() int {
 
 func (c *LRUCache) invalidateOldest() {
 	oldest := c.l.Back()
-	st := oldest.Value.(*pgconn.Statement)
+	st := oldest.Value.(*fbconn.Statement)
 	c.invalidStmts = append(c.invalidStmts, st)
 	delete(c.m, st.Description.SQL)
 	c.l.Remove(oldest)

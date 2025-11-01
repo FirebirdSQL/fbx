@@ -35,4 +35,4 @@ interrupting the query in such a way as to close the connection.
 The CancelRequest method may be used to request the PostgreSQL server cancel an in-progress query without forcing the
 client to abort.
 */
-package pgconn
+package fbconn

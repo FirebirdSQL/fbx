@@ -1,4 +1,4 @@
-package pgconn_test
+package fbconn_test
 
 import (
 	"context"
@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/red-soft/fbx/pgconn"
-	"github.com/red-soft/fbx/pgconn/ctxwatch"
+	"github.com/red-soft/fbx/fbconn"
+	"github.com/red-soft/fbx/fbconn/ctxwatch"
 	"github.com/red-soft/fbx/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -42,7 +42,7 @@ func TestConnect(t *testing.T) {
 				t.Skipf("Skipping due to missing environment variable %v", tt.env)
 			}
 
-			conn, err := pgconn.Connect(ctx, connString)
+			conn, err := fbconn.Connect(ctx, connString)
 			require.NoError(t, err)
 
 			closeConn(t, conn)
@@ -68,9 +68,9 @@ func TestConnectWithOptions(t *testing.T) {
 			if connString == "" {
 				t.Skipf("Skipping due to missing environment variable %v", tt.env)
 			}
-			var sslOptions pgconn.ParseConfigOptions
+			var sslOptions fbconn.ParseConfigOptions
 			sslOptions.GetSSLPassword = GetSSLPassword
-			conn, err := pgconn.ConnectWithOptions(ctx, connString, sslOptions)
+			conn, err := fbconn.ConnectWithOptions(ctx, connString, sslOptions)
 			require.NoError(t, err)
 
 			closeConn(t, conn)
@@ -176,17 +176,17 @@ func TestConnectTimeoutStuckOnTLSHandshake(t *testing.T) {
 			connect: func(connStr string) error {
 				ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*10)
 				defer cancel()
-				_, err := pgconn.Connect(ctx, connStr)
+				_, err := fbconn.Connect(ctx, connStr)
 				return err
 			},
 		},
 		{
 			name: "via config ConnectTimeout",
 			connect: func(connStr string) error {
-				conf, err := pgconn.ParseConfig(connStr)
+				conf, err := fbconn.ParseConfig(connStr)
 				require.NoError(t, err)
 				conf.ConnectTimeout = time.Millisecond * 10
-				_, err = pgconn.ConnectConfig(context.Background(), conf)
+				_, err = fbconn.ConnectConfig(context.Background(), conf)
 				return err
 			},
 		},
@@ -230,7 +230,7 @@ func TestConnectTimeoutStuckOnTLSHandshake(t *testing.T) {
 
 			select {
 			case err = <-errChan:
-				require.True(t, pgconn.Timeout(err), err)
+				require.True(t, fbconn.Timeout(err), err)
 			case err = <-serverErrChan:
 				t.Fatalf("server failed with error: %s", err)
 			case <-time.After(time.Millisecond * 500):
@@ -251,14 +251,14 @@ func TestConnectInvalidUser(t *testing.T) {
 		t.Skipf("Skipping due to missing environment variable %v", "PGX_TEST_TCP_CONN_STRING")
 	}
 
-	config, err := pgconn.ParseConfig(connString)
+	config, err := fbconn.ParseConfig(connString)
 	require.NoError(t, err)
 
 	config.User = "pgxinvalidusertest"
 
-	_, err = pgconn.ConnectConfig(ctx, config)
+	_, err = fbconn.ConnectConfig(ctx, config)
 	require.Error(t, err)
-	var pgErr *pgconn.PgError
+	var pgErr *fbconn.PgError
 	require.ErrorAs(t, err, &pgErr)
 	if pgErr.Code != "28000" && pgErr.Code != "28P01" {
 		t.Fatalf("Expected to receive a PgError with code 28000 or 28P01, instead received: %v", pgErr)
@@ -272,7 +272,7 @@ func TestConnectWithConnectionRefused(t *testing.T) {
 	defer cancel()
 
 	// Presumably nothing is listening on 127.0.0.1:1
-	conn, err := pgconn.Connect(ctx, "host=127.0.0.1 port=1")
+	conn, err := fbconn.Connect(ctx, "host=127.0.0.1 port=1")
 	if err == nil {
 		conn.Close(ctx)
 		t.Fatal("Expected error establishing connection to bad port")
@@ -285,7 +285,7 @@ func TestConnectCustomDialer(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	config, err := pgconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	dialed := false
@@ -294,7 +294,7 @@ func TestConnectCustomDialer(t *testing.T) {
 		return net.Dial(network, address)
 	}
 
-	conn, err := pgconn.ConnectConfig(ctx, config)
+	conn, err := fbconn.ConnectConfig(ctx, config)
 	require.NoError(t, err)
 	require.True(t, dialed)
 	closeConn(t, conn)
@@ -311,7 +311,7 @@ func TestConnectCustomLookup(t *testing.T) {
 		t.Skipf("Skipping due to missing environment variable %v", "PGX_TEST_TCP_CONN_STRING")
 	}
 
-	config, err := pgconn.ParseConfig(connString)
+	config, err := fbconn.ParseConfig(connString)
 	require.NoError(t, err)
 
 	looked := false
@@ -320,7 +320,7 @@ func TestConnectCustomLookup(t *testing.T) {
 		return net.LookupHost(host)
 	}
 
-	conn, err := pgconn.ConnectConfig(ctx, config)
+	conn, err := fbconn.ConnectConfig(ctx, config)
 	require.NoError(t, err)
 	require.True(t, looked)
 	closeConn(t, conn)
@@ -337,7 +337,7 @@ func TestConnectCustomLookupWithPort(t *testing.T) {
 		t.Skipf("Skipping due to missing environment variable %v", "PGX_TEST_TCP_CONN_STRING")
 	}
 
-	config, err := pgconn.ParseConfig(connString)
+	config, err := fbconn.ParseConfig(connString)
 	require.NoError(t, err)
 
 	origPort := config.Port
@@ -357,7 +357,7 @@ func TestConnectCustomLookupWithPort(t *testing.T) {
 		return addrs, nil
 	}
 
-	conn, err := pgconn.ConnectConfig(ctx, config)
+	conn, err := fbconn.ConnectConfig(ctx, config)
 	require.NoError(t, err)
 	require.True(t, looked)
 	closeConn(t, conn)
@@ -369,11 +369,11 @@ func TestConnectWithFallback(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	config, err := pgconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	// Prepend current primary config to fallbacks
-	config.Fallbacks = append([]*pgconn.FallbackConfig{
+	config.Fallbacks = append([]*fbconn.FallbackConfig{
 		{
 			Host: config.Host,
 			Port: config.Port,
@@ -385,14 +385,14 @@ func TestConnectWithFallback(t *testing.T) {
 	config.Port = 1 // presumably nothing listening here
 
 	// Prepend bad first fallback
-	config.Fallbacks = append([]*pgconn.FallbackConfig{
+	config.Fallbacks = append([]*fbconn.FallbackConfig{
 		{
 			Host: "localhost",
 			Port: 1,
 		},
 	}, config.Fallbacks...)
 
-	conn, err := pgconn.ConnectConfig(ctx, config)
+	conn, err := fbconn.ConnectConfig(ctx, config)
 	require.NoError(t, err)
 	closeConn(t, conn)
 }
@@ -403,7 +403,7 @@ func TestConnectFailsWithResolveFailureAndFailedConnectionAttempts(t *testing.T)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	conn, err := pgconn.Connect(ctx, "host=localhost,127.0.0.1,foo.invalid port=1,2,3 sslmode=disable")
+	conn, err := fbconn.Connect(ctx, "host=localhost,127.0.0.1,foo.invalid port=1,2,3 sslmode=disable")
 	require.Error(t, err)
 	require.Nil(t, conn)
 
@@ -419,7 +419,7 @@ func TestConnectWithValidateConnect(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	config, err := pgconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	dialCount := 0
@@ -429,7 +429,7 @@ func TestConnectWithValidateConnect(t *testing.T) {
 	}
 
 	acceptConnCount := 0
-	config.ValidateConnect = func(ctx context.Context, conn *pgconn.PgConn) error {
+	config.ValidateConnect = func(ctx context.Context, conn *fbconn.PgConn) error {
 		acceptConnCount++
 		if acceptConnCount < 2 {
 			return errors.New("reject first conn")
@@ -438,7 +438,7 @@ func TestConnectWithValidateConnect(t *testing.T) {
 	}
 
 	// Append current primary config to fallbacks
-	config.Fallbacks = append(config.Fallbacks, &pgconn.FallbackConfig{
+	config.Fallbacks = append(config.Fallbacks, &fbconn.FallbackConfig{
 		Host: config.Host,
 		Port: config.Port,
 	})
@@ -446,7 +446,7 @@ func TestConnectWithValidateConnect(t *testing.T) {
 	// Repeat fallbacks
 	config.Fallbacks = append(config.Fallbacks, config.Fallbacks...)
 
-	conn, err := pgconn.ConnectConfig(ctx, config)
+	conn, err := fbconn.ConnectConfig(ctx, config)
 	require.NoError(t, err)
 	closeConn(t, conn)
 
@@ -460,13 +460,13 @@ func TestConnectWithValidateConnectTargetSessionAttrsReadWrite(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	config, err := pgconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 
-	config.ValidateConnect = pgconn.ValidateConnectTargetSessionAttrsReadWrite
+	config.ValidateConnect = fbconn.ValidateConnectTargetSessionAttrsReadWrite
 	config.RuntimeParams["default_transaction_read_only"] = "on"
 
-	conn, err := pgconn.ConnectConfig(ctx, config)
+	conn, err := fbconn.ConnectConfig(ctx, config)
 	if !assert.NotNil(t, err) {
 		conn.Close(ctx)
 	}
@@ -478,16 +478,16 @@ func TestConnectWithAfterConnect(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	config, err := pgconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	//"set search_path to foobar;"
-	config.AfterConnect = func(ctx context.Context, conn *pgconn.PgConn) error {
+	config.AfterConnect = func(ctx context.Context, conn *fbconn.PgConn) error {
 		res := conn.Exec(ctx, "select RDB$SET_CONTEXT('USER_TRANSACTION', 'search_path', 'foobar') from rdb$database").Read()
 		return res.Err
 	}
 
-	conn, err := pgconn.ConnectConfig(ctx, config)
+	conn, err := fbconn.ConnectConfig(ctx, config)
 	require.NoError(t, err)
 
 	res := conn.Exec(ctx, "select RDB$GET_CONTEXT('USER_TRANSACTION', 'search_path') from rdb$database search_path;").Read()
@@ -503,9 +503,9 @@ func TestConnectConfigRequiresConfigFromParseConfig(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	config := &pgconn.Config{}
+	config := &fbconn.Config{}
 
-	require.PanicsWithValue(t, "config must be created by ParseConfig", func() { pgconn.ConnectConfig(ctx, config) })
+	require.PanicsWithValue(t, "config must be created by ParseConfig", func() { fbconn.ConnectConfig(ctx, config) })
 }
 
 func TestConnPrepareSyntaxError(t *testing.T) {
@@ -514,7 +514,7 @@ func TestConnPrepareSyntaxError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -531,7 +531,7 @@ func TestConnPrepareContextPrecanceled(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -541,7 +541,7 @@ func TestConnPrepareContextPrecanceled(t *testing.T) {
 	assert.Nil(t, psd)
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, context.Canceled))
-	assert.True(t, pgconn.SafeToRetry(err))
+	assert.True(t, fbconn.SafeToRetry(err))
 
 	ensureConnValid(t, pgConn)
 }
@@ -552,7 +552,7 @@ func TestConnDeallocate(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -568,7 +568,7 @@ func TestConnDeallocate(t *testing.T) {
 
 	_, err = st.Exec(ctx, nil).Close()
 	require.Error(t, err)
-	var pgErr *pgconn.PgError
+	var pgErr *fbconn.PgError
 	require.ErrorAs(t, err, &pgErr)
 	require.Equal(t, "26000", pgErr.Code)
 
@@ -636,7 +636,7 @@ func TestConnExec(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -718,7 +718,7 @@ func TestConnExecContextPrecanceled(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -726,7 +726,7 @@ func TestConnExecContextPrecanceled(t *testing.T) {
 	res := pgConn.Exec(ctx, "select 'Hello, world' from rdb$database").Read()
 	assert.Error(t, res.Err)
 	assert.True(t, errors.Is(res.Err, context.Canceled))
-	assert.True(t, pgconn.SafeToRetry(res.Err))
+	assert.True(t, fbconn.SafeToRetry(res.Err))
 
 	ensureConnValid(t, pgConn)
 }
@@ -737,7 +737,7 @@ func TestConnExecParams(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -763,7 +763,7 @@ func TestConnExecParamsDeferredError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -784,7 +784,7 @@ func TestConnExecParamsDeferredError(t *testing.T) {
 
 	result := pgConn.ExecParams(ctx, `update t set n=n+1 where id='b' returning *`, nil).Read()
 	require.NotNil(t, result.Err)
-	var pgErr *pgconn.PgError
+	var pgErr *fbconn.PgError
 	require.True(t, errors.As(result.Err, &pgErr))
 	require.Equal(t, "23505", pgErr.Code)
 
@@ -797,7 +797,7 @@ func TestConnExecParamsMaxNumberOfParams(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -823,7 +823,7 @@ func TestConnExecParamsTooManyParams(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -849,7 +849,7 @@ func TestConnExecParamsCanceled(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -862,8 +862,8 @@ func TestConnExecParamsCanceled(t *testing.T) {
 	}
 	assert.Equal(t, 0, rowCount)
 	commandTag, err := result.Close()
-	assert.Equal(t, pgconn.QueryStatus{}, commandTag)
-	assert.True(t, pgconn.Timeout(err))
+	assert.Equal(t, fbconn.QueryStatus{}, commandTag)
+	assert.True(t, fbconn.Timeout(err))
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
 
 	assert.True(t, pgConn.IsClosed())
@@ -880,7 +880,7 @@ func TestConnExecParamsPrecanceled(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -888,7 +888,7 @@ func TestConnExecParamsPrecanceled(t *testing.T) {
 	result := pgConn.ExecParams(ctx, "select $1::text", [][]byte{[]byte("Hello, world")}).Read()
 	require.Error(t, result.Err)
 	assert.True(t, errors.Is(result.Err, context.Canceled))
-	assert.True(t, pgconn.SafeToRetry(result.Err))
+	assert.True(t, fbconn.SafeToRetry(result.Err))
 
 	ensureConnValid(t, pgConn)
 }
@@ -899,12 +899,12 @@ func TestConnExecParamsEmptySQL(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
 	result := pgConn.ExecParams(ctx, "", nil).Read()
-	assert.Equal(t, pgconn.QueryStatus{}, result.QueryStatus)
+	assert.Equal(t, fbconn.QueryStatus{}, result.QueryStatus)
 	assert.Len(t, result.Rows, 0)
 	assert.NoError(t, result.Err)
 
@@ -918,7 +918,7 @@ func TestResultReaderValuesHaveSameCapacityAsLength(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -947,7 +947,7 @@ func TestResultReaderReadNil(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -964,7 +964,7 @@ func TestConnExecPrepared(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -1002,7 +1002,7 @@ func TestConnExecPreparedMaxNumberOfParams(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -1034,7 +1034,7 @@ func TestConnExecPreparedTooManyParams(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -1071,7 +1071,7 @@ func TestConnExecPreparedCanceled(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -1088,8 +1088,8 @@ func TestConnExecPreparedCanceled(t *testing.T) {
 	}
 	assert.Equal(t, 0, rowCount)
 	commandTag, err := result.Close()
-	assert.Equal(t, pgconn.QueryStatus{}, commandTag)
-	assert.True(t, pgconn.Timeout(err))
+	assert.Equal(t, fbconn.QueryStatus{}, commandTag)
+	assert.True(t, fbconn.Timeout(err))
 	assert.True(t, pgConn.IsClosed())
 	select {
 	case <-pgConn.CleanupDone():
@@ -1104,7 +1104,7 @@ func TestConnExecPreparedPrecanceled(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -1116,7 +1116,7 @@ func TestConnExecPreparedPrecanceled(t *testing.T) {
 	result := ps.Exec(ctx, nil).Read()
 	require.Error(t, result.Err)
 	assert.True(t, errors.Is(result.Err, context.Canceled))
-	assert.True(t, pgconn.SafeToRetry(result.Err))
+	assert.True(t, fbconn.SafeToRetry(result.Err))
 
 	ensureConnValid(t, pgConn)
 }
@@ -1127,7 +1127,7 @@ func TestConnExecPreparedEmptySQL(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -1136,7 +1136,7 @@ func TestConnExecPreparedEmptySQL(t *testing.T) {
 	require.NoError(t, err)
 
 	result := ps.Exec(ctx, nil).Read()
-	assert.Equal(t, pgconn.QueryStatus{}, result.QueryStatus)
+	assert.Equal(t, fbconn.QueryStatus{}, result.QueryStatus)
 	assert.Len(t, result.Rows, 0)
 	assert.NoError(t, result.Err)
 
@@ -1365,7 +1365,7 @@ func TestConnLocking(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -1373,7 +1373,7 @@ func TestConnLocking(t *testing.T) {
 	res := pgConn.Exec(ctx, "select 'Hello, world' from rdb$database").Read()
 	assert.Error(t, res.Err)
 	assert.Equal(t, "conn busy", res.Err.Error())
-	assert.True(t, pgconn.SafeToRetry(res.Err))
+	assert.True(t, fbconn.SafeToRetry(res.Err))
 
 	result := rr.Read()
 	assert.NoError(t, err)
@@ -1391,16 +1391,16 @@ func TestConnOnNotice(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	config, err := pgconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 
-	var notice *pgconn.Notice
-	config.OnNotice = func(c *pgconn.PgConn, n *pgconn.Notice) {
+	var notice *fbconn.Notice
+	config.OnNotice = func(c *fbconn.PgConn, n *fbconn.Notice) {
 		notice = n
 	}
 	config.RuntimeParams["client_min_messages"] = "notice" // Ensure we only get the message we expect.
 
-	pgConn, err := pgconn.ConnectConfig(ctx, config)
+	pgConn, err := fbconn.ConnectConfig(ctx, config)
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -1561,10 +1561,10 @@ func TestConnCopyFromDataWriteAfterErrorAndReturn(t *testing.T) {
 		t.Skipf("Skipping due to missing environment variable %v", "PGX_TEST_DATABASE")
 	}
 
-	config, err := pgconn.ParseConfig(connString)
+	config, err := fbconn.ParseConfig(connString)
 	require.NoError(t, err)
 
-	pgConn, err := pgconn.ConnectConfig(ctx, config)
+	pgConn, err := fbconn.ConnectConfig(ctx, config)
 	require.NoError(t, err)
 
 	if pgConn.ParameterStatus("crdb_version") != "" {
@@ -1595,7 +1595,7 @@ func TestConnEscapeString(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -1627,7 +1627,7 @@ func TestConnCancelRequest(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -1651,8 +1651,8 @@ func TestConnCancelRequest(t *testing.T) {
 	}
 	res := rr.Read()
 
-	require.IsType(t, &pgconn.PgError{}, res.Err)
-	require.Equal(t, "57014", err.(*pgconn.PgError).Code)
+	require.IsType(t, &fbconn.PgError{}, res.Err)
+	require.Equal(t, "57014", err.(*fbconn.PgError).Code)
 
 	err = <-errChan
 	require.NoError(t, err)
@@ -1686,7 +1686,7 @@ func testConnContextCanceledCancelsRunningQueryOnServer(t *testing.T, connString
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, connString)
+	pgConn, err := fbconn.Connect(ctx, connString)
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -1706,7 +1706,7 @@ func testConnContextCanceledCancelsRunningQueryOnServer(t *testing.T, connString
 	for rr.NextRow() {
 	}
 	res := rr.Read()
-	assert.True(t, pgconn.Timeout(res.Err))
+	assert.True(t, fbconn.Timeout(res.Err))
 	assert.True(t, pgConn.IsClosed())
 	select {
 	case <-pgConn.CleanupDone():
@@ -1717,7 +1717,7 @@ func testConnContextCanceledCancelsRunningQueryOnServer(t *testing.T, connString
 	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	otherConn, err := pgconn.Connect(ctx, connString)
+	otherConn, err := fbconn.Connect(ctx, connString)
 	require.NoError(t, err)
 	defer closeConn(t, otherConn)
 
@@ -1743,7 +1743,7 @@ func TestHijackAndConstruct(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	origConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	origConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	err = origConn.SyncConn(ctx)
@@ -1755,7 +1755,7 @@ func TestHijackAndConstruct(t *testing.T) {
 	res := origConn.Exec(ctx, "select 'Hello, world'").Read()
 	require.Error(t, res.Err)
 
-	newConn, err := pgconn.Construct(hc)
+	newConn, err := fbconn.Construct(hc)
 	require.NoError(t, err)
 
 	defer closeConn(t, newConn)
@@ -1775,7 +1775,7 @@ func TestConnCloseWhileCancellableQueryInProgress(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	pgConn.Exec(ctx, generateSeriesQuery(1, 10, "n"))
@@ -1864,7 +1864,7 @@ func TestConnLargeResponseWhileWritingDoesNotDeadlock(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -1903,7 +1903,7 @@ func TestConnCheckConn(t *testing.T) {
 		t.Skipf("Skipping due to missing environment variable %v", "PGX_TEST_TCP_CONN_STRING")
 	}
 
-	c1, err := pgconn.Connect(ctx, connString)
+	c1, err := fbconn.Connect(ctx, connString)
 	require.NoError(t, err)
 	defer c1.Close(ctx)
 
@@ -1914,7 +1914,7 @@ func TestConnCheckConn(t *testing.T) {
 	err = c1.CheckConn()
 	require.NoError(t, err)
 
-	c2, err := pgconn.Connect(ctx, connString)
+	c2, err := fbconn.Connect(ctx, connString)
 	require.NoError(t, err)
 	defer c2.Close(ctx)
 
@@ -1943,7 +1943,7 @@ func TestConnPing(t *testing.T) {
 		t.Skipf("Skipping due to missing environment variable %v", "PGX_TEST_TCP_CONN_STRING")
 	}
 
-	c1, err := pgconn.Connect(ctx, connString)
+	c1, err := fbconn.Connect(ctx, connString)
 	require.NoError(t, err)
 	defer c1.Close(ctx)
 
@@ -1957,7 +1957,7 @@ func TestConnPing(t *testing.T) {
 	err = c1.Ping(ctx)
 	require.NoError(t, err)
 
-	c2, err := pgconn.Connect(ctx, connString)
+	c2, err := fbconn.Connect(ctx, connString)
 	require.NoError(t, err)
 	defer c2.Close(ctx)
 
@@ -1978,7 +1978,7 @@ func TestPipelinePrepare(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -1996,7 +1996,7 @@ func TestPipelinePrepare(t *testing.T) {
 
 	results, err := pipeline.GetResults()
 	require.NoError(t, err)
-	sd, ok := results.(*pgconn.StatementDescription)
+	sd, ok := results.(*fbconn.StatementDescription)
 	require.Truef(t, ok, "expected StatementDescription, got: %#v", results)
 	require.Len(t, sd.Fields, 1)
 	require.Equal(t, "a", string(sd.Fields[0].Name))
@@ -2004,7 +2004,7 @@ func TestPipelinePrepare(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	sd, ok = results.(*pgconn.StatementDescription)
+	sd, ok = results.(*fbconn.StatementDescription)
 	require.Truef(t, ok, "expected StatementDescription, got: %#v", results)
 	require.Len(t, sd.Fields, 1)
 	require.Equal(t, "b", string(sd.Fields[0].Name))
@@ -2012,7 +2012,7 @@ func TestPipelinePrepare(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	sd, ok = results.(*pgconn.StatementDescription)
+	sd, ok = results.(*fbconn.StatementDescription)
 	require.Truef(t, ok, "expected StatementDescription, got: %#v", results)
 	require.Len(t, sd.Fields, 1)
 	require.Equal(t, "c", string(sd.Fields[0].Name))
@@ -2020,21 +2020,21 @@ func TestPipelinePrepare(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	sd, ok = results.(*pgconn.StatementDescription)
+	sd, ok = results.(*fbconn.StatementDescription)
 	require.Truef(t, ok, "expected StatementDescription, got: %#v", results)
 	require.Len(t, sd.Fields, 0)
 	require.Equal(t, []uint32{pgtype.TextOID}, sd.Parameters[0].Type)
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	sd, ok = results.(*pgconn.StatementDescription)
+	sd, ok = results.(*fbconn.StatementDescription)
 	require.Truef(t, ok, "expected StatementDescription, got: %#v", results)
 	require.Len(t, sd.Fields, 0)
 	require.Len(t, sd.Parameters, 0)
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	_, ok = results.(*pgconn.PipelineSync)
+	_, ok = results.(*fbconn.PipelineSync)
 	require.Truef(t, ok, "expected PipelineSync, got: %#v", results)
 
 	results, err = pipeline.GetResults()
@@ -2054,7 +2054,7 @@ func TestPipelinePrepareError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -2067,20 +2067,20 @@ func TestPipelinePrepareError(t *testing.T) {
 
 	results, err := pipeline.GetResults()
 	require.NoError(t, err)
-	sd, ok := results.(*pgconn.StatementDescription)
+	sd, ok := results.(*fbconn.StatementDescription)
 	require.Truef(t, ok, "expected StatementDescription, got: %#v", results)
 	require.Len(t, sd.Fields, 1)
 	require.Equal(t, "a", string(sd.Fields[0].Name))
 	require.Equal(t, []uint32{pgtype.Int8OID}, sd.Parameters[0].Type)
 
 	results, err = pipeline.GetResults()
-	var pgErr *pgconn.PgError
+	var pgErr *fbconn.PgError
 	require.ErrorAs(t, err, &pgErr)
 	require.Nil(t, results)
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	_, ok = results.(*pgconn.PipelineSync)
+	_, ok = results.(*fbconn.PipelineSync)
 	require.Truef(t, ok, "expected PipelineSync, got: %#v", results)
 
 	results, err = pipeline.GetResults()
@@ -2100,7 +2100,7 @@ func TestPipelinePrepareAndDeallocate(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -2112,7 +2112,7 @@ func TestPipelinePrepareAndDeallocate(t *testing.T) {
 
 	results, err := pipeline.GetResults()
 	require.NoError(t, err)
-	sd, ok := results.(*pgconn.StatementDescription)
+	sd, ok := results.(*fbconn.StatementDescription)
 	require.Truef(t, ok, "expected StatementDescription, got: %#v", results)
 	require.Len(t, sd.Fields, 1)
 	require.Equal(t, "a", string(sd.Fields[0].Name))
@@ -2120,12 +2120,12 @@ func TestPipelinePrepareAndDeallocate(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	_, ok = results.(*pgconn.CloseComplete)
+	_, ok = results.(*fbconn.CloseComplete)
 	require.Truef(t, ok, "expected CloseComplete, got: %#v", results)
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	_, ok = results.(*pgconn.PipelineSync)
+	_, ok = results.(*fbconn.PipelineSync)
 	require.Truef(t, ok, "expected PipelineSync, got: %#v", results)
 
 	results, err = pipeline.GetResults()
@@ -2145,7 +2145,7 @@ func TestPipelineQuery(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -2163,7 +2163,7 @@ func TestPipelineQuery(t *testing.T) {
 
 	results, err := pipeline.GetResults()
 	require.NoError(t, err)
-	rr, ok := results.(*pgconn.ResultReader)
+	rr, ok := results.(*fbconn.ResultReader)
 	require.Truef(t, ok, "expected ResultReader, got: %#v", results)
 	readResult := rr.Read()
 	require.NoError(t, readResult.Err)
@@ -2173,7 +2173,7 @@ func TestPipelineQuery(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	rr, ok = results.(*pgconn.ResultReader)
+	rr, ok = results.(*fbconn.ResultReader)
 	require.Truef(t, ok, "expected ResultReader, got: %#v", results)
 	readResult = rr.Read()
 	require.NoError(t, readResult.Err)
@@ -2183,7 +2183,7 @@ func TestPipelineQuery(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	rr, ok = results.(*pgconn.ResultReader)
+	rr, ok = results.(*fbconn.ResultReader)
 	require.Truef(t, ok, "expected ResultReader, got: %#v", results)
 	readResult = rr.Read()
 	require.NoError(t, readResult.Err)
@@ -2193,12 +2193,12 @@ func TestPipelineQuery(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	_, ok = results.(*pgconn.PipelineSync)
+	_, ok = results.(*fbconn.PipelineSync)
 	require.Truef(t, ok, "expected PipelineSync, got: %#v", results)
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	rr, ok = results.(*pgconn.ResultReader)
+	rr, ok = results.(*fbconn.ResultReader)
 	require.Truef(t, ok, "expected ResultReader, got: %#v", results)
 	readResult = rr.Read()
 	require.NoError(t, readResult.Err)
@@ -2208,7 +2208,7 @@ func TestPipelineQuery(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	rr, ok = results.(*pgconn.ResultReader)
+	rr, ok = results.(*fbconn.ResultReader)
 	require.Truef(t, ok, "expected ResultReader, got: %#v", results)
 	readResult = rr.Read()
 	require.NoError(t, readResult.Err)
@@ -2218,7 +2218,7 @@ func TestPipelineQuery(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	_, ok = results.(*pgconn.PipelineSync)
+	_, ok = results.(*fbconn.PipelineSync)
 	require.Truef(t, ok, "expected PipelineSync, got: %#v", results)
 
 	results, err = pipeline.GetResults()
@@ -2238,7 +2238,7 @@ func TestPipelinePrepareQuery(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -2251,7 +2251,7 @@ func TestPipelinePrepareQuery(t *testing.T) {
 
 	results, err := pipeline.GetResults()
 	require.NoError(t, err)
-	sd, ok := results.(*pgconn.StatementDescription)
+	sd, ok := results.(*fbconn.StatementDescription)
 	require.Truef(t, ok, "expected StatementDescription, got: %#v", results)
 	require.Len(t, sd.Fields, 1)
 	require.Equal(t, "msg", string(sd.Fields[0].Name))
@@ -2259,7 +2259,7 @@ func TestPipelinePrepareQuery(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	rr, ok := results.(*pgconn.ResultReader)
+	rr, ok := results.(*fbconn.ResultReader)
 	require.Truef(t, ok, "expected ResultReader, got: %#v", results)
 	readResult := rr.Read()
 	require.NoError(t, readResult.Err)
@@ -2269,7 +2269,7 @@ func TestPipelinePrepareQuery(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	rr, ok = results.(*pgconn.ResultReader)
+	rr, ok = results.(*fbconn.ResultReader)
 	require.Truef(t, ok, "expected ResultReader, got: %#v", results)
 	readResult = rr.Read()
 	require.NoError(t, readResult.Err)
@@ -2279,7 +2279,7 @@ func TestPipelinePrepareQuery(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	_, ok = results.(*pgconn.PipelineSync)
+	_, ok = results.(*fbconn.PipelineSync)
 	require.Truef(t, ok, "expected PipelineSync, got: %#v", results)
 
 	results, err = pipeline.GetResults()
@@ -2299,7 +2299,7 @@ func TestPipelineQueryErrorBetweenSyncs(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -2322,7 +2322,7 @@ func TestPipelineQueryErrorBetweenSyncs(t *testing.T) {
 
 	results, err := pipeline.GetResults()
 	require.NoError(t, err)
-	rr, ok := results.(*pgconn.ResultReader)
+	rr, ok := results.(*fbconn.ResultReader)
 	require.Truef(t, ok, "expected ResultReader, got: %#v", results)
 	readResult := rr.Read()
 	require.NoError(t, readResult.Err)
@@ -2332,7 +2332,7 @@ func TestPipelineQueryErrorBetweenSyncs(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	rr, ok = results.(*pgconn.ResultReader)
+	rr, ok = results.(*fbconn.ResultReader)
 	require.Truef(t, ok, "expected ResultReader, got: %#v", results)
 	readResult = rr.Read()
 	require.NoError(t, readResult.Err)
@@ -2342,12 +2342,12 @@ func TestPipelineQueryErrorBetweenSyncs(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	_, ok = results.(*pgconn.PipelineSync)
+	_, ok = results.(*fbconn.PipelineSync)
 	require.Truef(t, ok, "expected PipelineSync, got: %#v", results)
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	rr, ok = results.(*pgconn.ResultReader)
+	rr, ok = results.(*fbconn.ResultReader)
 	require.Truef(t, ok, "expected ResultReader, got: %#v", results)
 	readResult = rr.Read()
 	require.NoError(t, readResult.Err)
@@ -2357,21 +2357,21 @@ func TestPipelineQueryErrorBetweenSyncs(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	rr, ok = results.(*pgconn.ResultReader)
+	rr, ok = results.(*fbconn.ResultReader)
 	require.Truef(t, ok, "expected ResultReader, got: %#v", results)
 	readResult = rr.Read()
-	var pgErr *pgconn.PgError
+	var pgErr *fbconn.PgError
 	require.ErrorAs(t, readResult.Err, &pgErr)
 	require.Equal(t, "22012", pgErr.Code)
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	_, ok = results.(*pgconn.PipelineSync)
+	_, ok = results.(*fbconn.PipelineSync)
 	require.Truef(t, ok, "expected PipelineSync, got: %#v", results)
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	rr, ok = results.(*pgconn.ResultReader)
+	rr, ok = results.(*fbconn.ResultReader)
 	require.Truef(t, ok, "expected ResultReader, got: %#v", results)
 	readResult = rr.Read()
 	require.NoError(t, readResult.Err)
@@ -2381,7 +2381,7 @@ func TestPipelineQueryErrorBetweenSyncs(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	rr, ok = results.(*pgconn.ResultReader)
+	rr, ok = results.(*fbconn.ResultReader)
 	require.Truef(t, ok, "expected ResultReader, got: %#v", results)
 	readResult = rr.Read()
 	require.NoError(t, readResult.Err)
@@ -2391,7 +2391,7 @@ func TestPipelineQueryErrorBetweenSyncs(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	_, ok = results.(*pgconn.PipelineSync)
+	_, ok = results.(*fbconn.PipelineSync)
 	require.Truef(t, ok, "expected PipelineSync, got: %#v", results)
 
 	err = pipeline.Close()
@@ -2407,7 +2407,7 @@ func TestPipelineFlushForSingleRequests(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -2420,7 +2420,7 @@ func TestPipelineFlushForSingleRequests(t *testing.T) {
 
 	results, err := pipeline.GetResults()
 	require.NoError(t, err)
-	sd, ok := results.(*pgconn.StatementDescription)
+	sd, ok := results.(*fbconn.StatementDescription)
 	require.Truef(t, ok, "expected StatementDescription, got: %#v", results)
 	require.Len(t, sd.Fields, 1)
 	require.Equal(t, "msg", string(sd.Fields[0].Name))
@@ -2437,7 +2437,7 @@ func TestPipelineFlushForSingleRequests(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	rr, ok := results.(*pgconn.ResultReader)
+	rr, ok := results.(*fbconn.ResultReader)
 	require.Truef(t, ok, "expected ResultReader, got: %#v", results)
 	readResult := rr.Read()
 	require.NoError(t, readResult.Err)
@@ -2456,7 +2456,7 @@ func TestPipelineFlushForSingleRequests(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	_, ok = results.(*pgconn.CloseComplete)
+	_, ok = results.(*fbconn.CloseComplete)
 	require.Truef(t, ok, "expected CloseComplete, got: %#v", results)
 
 	results, err = pipeline.GetResults()
@@ -2470,7 +2470,7 @@ func TestPipelineFlushForSingleRequests(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	rr, ok = results.(*pgconn.ResultReader)
+	rr, ok = results.(*fbconn.ResultReader)
 	require.Truef(t, ok, "expected ResultReader, got: %#v", results)
 	readResult = rr.Read()
 	require.NoError(t, readResult.Err)
@@ -2487,7 +2487,7 @@ func TestPipelineFlushForSingleRequests(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	_, ok = results.(*pgconn.PipelineSync)
+	_, ok = results.(*fbconn.PipelineSync)
 	require.Truef(t, ok, "expected PipelineSync, got: %#v", results)
 
 	results, err = pipeline.GetResults()
@@ -2507,7 +2507,7 @@ func TestPipelineFlushForRequestSeries(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -2518,7 +2518,7 @@ func TestPipelineFlushForRequestSeries(t *testing.T) {
 
 	results, err := pipeline.GetResults()
 	require.NoError(t, err)
-	sd, ok := results.(*pgconn.StatementDescription)
+	sd, ok := results.(*fbconn.StatementDescription)
 	require.Truef(t, ok, "expected StatementDescription, got: %#v", results)
 	require.Len(t, sd.Fields, 1)
 	require.Equal(t, "num", string(sd.Fields[0].Name))
@@ -2526,7 +2526,7 @@ func TestPipelineFlushForRequestSeries(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	_, ok = results.(*pgconn.PipelineSync)
+	_, ok = results.(*fbconn.PipelineSync)
 	require.Truef(t, ok, "expected PipelineSync, got: %#v", results)
 
 	pipeline.SendQueryPrepared(`ps`, [][]byte{[]byte("1")}, nil, nil)
@@ -2537,7 +2537,7 @@ func TestPipelineFlushForRequestSeries(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	rr, ok := results.(*pgconn.ResultReader)
+	rr, ok := results.(*fbconn.ResultReader)
 	require.Truef(t, ok, "expected ResultReader, got: %#v", results)
 	readResult := rr.Read()
 	require.NoError(t, readResult.Err)
@@ -2547,7 +2547,7 @@ func TestPipelineFlushForRequestSeries(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	rr, ok = results.(*pgconn.ResultReader)
+	rr, ok = results.(*fbconn.ResultReader)
 	require.Truef(t, ok, "expected ResultReader, got: %#v", results)
 	readResult = rr.Read()
 	require.NoError(t, readResult.Err)
@@ -2574,7 +2574,7 @@ func TestPipelineFlushForRequestSeries(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	rr, ok = results.(*pgconn.ResultReader)
+	rr, ok = results.(*fbconn.ResultReader)
 	require.Truef(t, ok, "expected ResultReader, got: %#v", results)
 	readResult = rr.Read()
 	require.NoError(t, readResult.Err)
@@ -2584,7 +2584,7 @@ func TestPipelineFlushForRequestSeries(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	rr, ok = results.(*pgconn.ResultReader)
+	rr, ok = results.(*fbconn.ResultReader)
 	require.Truef(t, ok, "expected ResultReader, got: %#v", results)
 	readResult = rr.Read()
 	require.NoError(t, readResult.Err)
@@ -2610,7 +2610,7 @@ func TestPipelineFlushForRequestSeries(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	rr, ok = results.(*pgconn.ResultReader)
+	rr, ok = results.(*fbconn.ResultReader)
 	require.Truef(t, ok, "expected ResultReader, got: %#v", results)
 	readResult = rr.Read()
 	require.NoError(t, readResult.Err)
@@ -2620,7 +2620,7 @@ func TestPipelineFlushForRequestSeries(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	rr, ok = results.(*pgconn.ResultReader)
+	rr, ok = results.(*fbconn.ResultReader)
 	require.Truef(t, ok, "expected ResultReader, got: %#v", results)
 	readResult = rr.Read()
 	require.NoError(t, readResult.Err)
@@ -2637,7 +2637,7 @@ func TestPipelineFlushForRequestSeries(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	_, ok = results.(*pgconn.PipelineSync)
+	_, ok = results.(*fbconn.PipelineSync)
 	require.Truef(t, ok, "expected PipelineSync, got: %#v", results)
 
 	results, err = pipeline.GetResults()
@@ -2657,7 +2657,7 @@ func TestPipelineFlushWithError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -2671,7 +2671,7 @@ func TestPipelineFlushWithError(t *testing.T) {
 
 	results, err := pipeline.GetResults()
 	require.NoError(t, err)
-	rr, ok := results.(*pgconn.ResultReader)
+	rr, ok := results.(*fbconn.ResultReader)
 	require.Truef(t, ok, "expected ResultReader, got: %#v", results)
 	readResult := rr.Read()
 	require.NoError(t, readResult.Err)
@@ -2681,10 +2681,10 @@ func TestPipelineFlushWithError(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	rr, ok = results.(*pgconn.ResultReader)
+	rr, ok = results.(*fbconn.ResultReader)
 	require.Truef(t, ok, "expected ResultReader, got: %#v", results)
 	readResult = rr.Read()
-	var pgErr *pgconn.PgError
+	var pgErr *fbconn.PgError
 	require.ErrorAs(t, readResult.Err, &pgErr)
 	require.Equal(t, "22012", pgErr.Code)
 
@@ -2710,12 +2710,12 @@ func TestPipelineFlushWithError(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	_, ok = results.(*pgconn.PipelineSync)
+	_, ok = results.(*fbconn.PipelineSync)
 	require.Truef(t, ok, "expected PipelineSync, got: %#v", results)
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	rr, ok = results.(*pgconn.ResultReader)
+	rr, ok = results.(*fbconn.ResultReader)
 	require.Truef(t, ok, "expected ResultReader, got: %#v", results)
 	readResult = rr.Read()
 	require.NoError(t, readResult.Err)
@@ -2732,7 +2732,7 @@ func TestPipelineFlushWithError(t *testing.T) {
 
 	results, err = pipeline.GetResults()
 	require.NoError(t, err)
-	_, ok = results.(*pgconn.PipelineSync)
+	_, ok = results.(*fbconn.PipelineSync)
 	require.Truef(t, ok, "expected PipelineSync, got: %#v", results)
 
 	err = pipeline.Close()
@@ -2748,7 +2748,7 @@ func TestPipelineCloseReadsUnreadResults(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -2766,7 +2766,7 @@ func TestPipelineCloseReadsUnreadResults(t *testing.T) {
 
 	results, err := pipeline.GetResults()
 	require.NoError(t, err)
-	rr, ok := results.(*pgconn.ResultReader)
+	rr, ok := results.(*fbconn.ResultReader)
 	require.Truef(t, ok, "expected ResultReader, got: %#v", results)
 	readResult := rr.Read()
 	require.NoError(t, readResult.Err)
@@ -2787,7 +2787,7 @@ func TestPipelineCloseDetectsUnsyncedRequests(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -2803,7 +2803,7 @@ func TestPipelineCloseDetectsUnsyncedRequests(t *testing.T) {
 
 	results, err := pipeline.GetResults()
 	require.NoError(t, err)
-	rr, ok := results.(*pgconn.ResultReader)
+	rr, ok := results.(*fbconn.ResultReader)
 	require.Truef(t, ok, "expected ResultReader, got: %#v", results)
 	readResult := rr.Read()
 	require.NoError(t, readResult.Err)
@@ -2821,9 +2821,9 @@ func TestConnOnPgError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	config, err := pgconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
-	config.OnPgError = func(c *pgconn.PgConn, pgErr *pgconn.FbError) bool {
+	config.OnPgError = func(c *fbconn.PgConn, pgErr *fbconn.FbError) bool {
 		require.NotNil(t, c)
 		require.NotNil(t, pgErr)
 		// close connection on undefined tables only
@@ -2834,7 +2834,7 @@ func TestConnOnPgError(t *testing.T) {
 		return true
 	}
 
-	pgConn, err := pgconn.ConnectConfig(ctx, config)
+	pgConn, err := fbconn.ConnectConfig(ctx, config)
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -2857,7 +2857,7 @@ func TestConnCustomData(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -2871,7 +2871,7 @@ func Example() {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -3338,14 +3338,14 @@ func TestDeadlineContextWatcherHandler(t *testing.T) {
 	t.Parallel()
 
 	t.Run("DeadlineExceeded with zero DeadlineDelay", func(t *testing.T) {
-		config, err := pgconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+		config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 		require.NoError(t, err)
-		config.BuildContextWatcherHandler = func(conn *pgconn.PgConn) ctxwatch.Handler {
-			return &pgconn.DeadlineContextWatcherHandler{Conn: conn.Conn()}
+		config.BuildContextWatcherHandler = func(conn *fbconn.PgConn) ctxwatch.Handler {
+			return &fbconn.DeadlineContextWatcherHandler{Conn: conn.Conn()}
 		}
 		config.ConnectTimeout = 5 * time.Second
 
-		pgConn, err := pgconn.ConnectConfig(context.Background(), config)
+		pgConn, err := fbconn.ConnectConfig(context.Background(), config)
 		require.NoError(t, err)
 		defer closeConn(t, pgConn)
 
@@ -3359,14 +3359,14 @@ func TestDeadlineContextWatcherHandler(t *testing.T) {
 	})
 
 	t.Run("DeadlineExceeded with DeadlineDelay", func(t *testing.T) {
-		config, err := pgconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+		config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 		require.NoError(t, err)
-		config.BuildContextWatcherHandler = func(conn *pgconn.PgConn) ctxwatch.Handler {
-			return &pgconn.DeadlineContextWatcherHandler{Conn: conn.Conn(), DeadlineDelay: 500 * time.Millisecond}
+		config.BuildContextWatcherHandler = func(conn *fbconn.PgConn) ctxwatch.Handler {
+			return &fbconn.DeadlineContextWatcherHandler{Conn: conn.Conn(), DeadlineDelay: 500 * time.Millisecond}
 		}
 		config.ConnectTimeout = 5 * time.Second
 
-		pgConn, err := pgconn.ConnectConfig(context.Background(), config)
+		pgConn, err := fbconn.ConnectConfig(context.Background(), config)
 		require.NoError(t, err)
 		defer closeConn(t, pgConn)
 
@@ -3384,10 +3384,10 @@ func TestCancelRequestContextWatcherHandler(t *testing.T) {
 	t.Parallel()
 
 	t.Run("DeadlineExceeded cancels request after CancelRequestDelay", func(t *testing.T) {
-		config, err := pgconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+		config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 		require.NoError(t, err)
-		config.BuildContextWatcherHandler = func(conn *pgconn.PgConn) ctxwatch.Handler {
-			return &pgconn.CancelRequestContextWatcherHandler{
+		config.BuildContextWatcherHandler = func(conn *fbconn.PgConn) ctxwatch.Handler {
+			return &fbconn.CancelRequestContextWatcherHandler{
 				Conn:               conn,
 				CancelRequestDelay: 250 * time.Millisecond,
 				DeadlineDelay:      5000 * time.Millisecond,
@@ -3395,7 +3395,7 @@ func TestCancelRequestContextWatcherHandler(t *testing.T) {
 		}
 		config.ConnectTimeout = 5 * time.Second
 
-		pgConn, err := pgconn.ConnectConfig(context.Background(), config)
+		pgConn, err := fbconn.ConnectConfig(context.Background(), config)
 		require.NoError(t, err)
 		defer closeConn(t, pgConn)
 
@@ -3404,17 +3404,17 @@ func TestCancelRequestContextWatcherHandler(t *testing.T) {
 
 		res := pgConn.Exec(ctx, "select 1, pg_sleep(3)").Read()
 		require.Error(t, res.Err)
-		var pgErr *pgconn.PgError
+		var pgErr *fbconn.PgError
 		require.ErrorAs(t, err, &pgErr)
 
 		ensureConnValid(t, pgConn)
 	})
 
 	t.Run("DeadlineExceeded - do not send cancel request when query finishes in grace period", func(t *testing.T) {
-		config, err := pgconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+		config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 		require.NoError(t, err)
-		config.BuildContextWatcherHandler = func(conn *pgconn.PgConn) ctxwatch.Handler {
-			return &pgconn.CancelRequestContextWatcherHandler{
+		config.BuildContextWatcherHandler = func(conn *fbconn.PgConn) ctxwatch.Handler {
+			return &fbconn.CancelRequestContextWatcherHandler{
 				Conn:               conn,
 				CancelRequestDelay: 1000 * time.Millisecond,
 				DeadlineDelay:      5000 * time.Millisecond,
@@ -3422,7 +3422,7 @@ func TestCancelRequestContextWatcherHandler(t *testing.T) {
 		}
 		config.ConnectTimeout = 5 * time.Second
 
-		pgConn, err := pgconn.ConnectConfig(context.Background(), config)
+		pgConn, err := fbconn.ConnectConfig(context.Background(), config)
 		require.NoError(t, err)
 		defer closeConn(t, pgConn)
 
@@ -3436,10 +3436,10 @@ func TestCancelRequestContextWatcherHandler(t *testing.T) {
 	})
 
 	t.Run("DeadlineExceeded sets conn deadline with DeadlineDelay", func(t *testing.T) {
-		config, err := pgconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+		config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 		require.NoError(t, err)
-		config.BuildContextWatcherHandler = func(conn *pgconn.PgConn) ctxwatch.Handler {
-			return &pgconn.CancelRequestContextWatcherHandler{
+		config.BuildContextWatcherHandler = func(conn *fbconn.PgConn) ctxwatch.Handler {
+			return &fbconn.CancelRequestContextWatcherHandler{
 				Conn:               conn,
 				CancelRequestDelay: 5000 * time.Millisecond, // purposely setting this higher than DeadlineDelay to ensure the cancel request never happens.
 				DeadlineDelay:      250 * time.Millisecond,
@@ -3447,7 +3447,7 @@ func TestCancelRequestContextWatcherHandler(t *testing.T) {
 		}
 		config.ConnectTimeout = 5 * time.Second
 
-		pgConn, err := pgconn.ConnectConfig(context.Background(), config)
+		pgConn, err := fbconn.ConnectConfig(context.Background(), config)
 		require.NoError(t, err)
 		defer closeConn(t, pgConn)
 
@@ -3464,10 +3464,10 @@ func TestCancelRequestContextWatcherHandler(t *testing.T) {
 		t.Run(fmt.Sprintf("Stress %d", i), func(t *testing.T) {
 			t.Parallel()
 
-			config, err := pgconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+			config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 			require.NoError(t, err)
-			config.BuildContextWatcherHandler = func(conn *pgconn.PgConn) ctxwatch.Handler {
-				return &pgconn.CancelRequestContextWatcherHandler{
+			config.BuildContextWatcherHandler = func(conn *fbconn.PgConn) ctxwatch.Handler {
+				return &fbconn.CancelRequestContextWatcherHandler{
 					Conn:               conn,
 					CancelRequestDelay: 5 * time.Millisecond,
 					DeadlineDelay:      1000 * time.Millisecond,
@@ -3475,7 +3475,7 @@ func TestCancelRequestContextWatcherHandler(t *testing.T) {
 			}
 			config.ConnectTimeout = 5 * time.Second
 
-			pgConn, err := pgconn.ConnectConfig(context.Background(), config)
+			pgConn, err := fbconn.ConnectConfig(context.Background(), config)
 			require.NoError(t, err)
 			defer closeConn(t, pgConn)
 
@@ -3498,7 +3498,7 @@ func TestReadSingletonResult(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -3537,7 +3537,7 @@ func TestConnExecImmediate(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 
@@ -3561,7 +3561,7 @@ func TestConnExecImmediateNoTx(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pgConn, err := pgconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pgConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, pgConn)
 

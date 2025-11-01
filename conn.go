@@ -11,15 +11,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/red-soft/fbx/fbconn"
 	"github.com/red-soft/fbx/internal/stmtcache"
-	"github.com/red-soft/fbx/pgconn"
 	"github.com/red-soft/fbx/pgtype"
 )
 
 // ConnConfig contains all the options used to establish a connection. It must be created by ParseConfig and
 // then it can be modified. A manually initialized ConnConfig will cause ConnectConfig to panic.
 type ConnConfig struct {
-	pgconn.Config
+	fbconn.Config
 
 	Tracer QueryTracer
 
@@ -46,7 +46,7 @@ type ConnConfig struct {
 
 // ParseConfigOptions contains options that control how a config is built such as getsslpassword.
 type ParseConfigOptions struct {
-	pgconn.ParseConfigOptions
+	fbconn.ParseConfigOptions
 }
 
 // Copy returns a deep copy of the config that is safe to use and modify.
@@ -67,9 +67,9 @@ func (cc *ConnConfig) ConnString() string {
 // Conn is a PostgreSQL connection handle. It is not safe for concurrent usage. Use a connection pool to manage access
 // to multiple database connections from multiple goroutines.
 type Conn struct {
-	pgConn             *pgconn.PgConn
+	pgConn             *fbconn.PgConn
 	config             *ConnConfig // config used when establishing this connection
-	preparedStatements map[string]*pgconn.Statement
+	preparedStatements map[string]*fbconn.Statement
 	statementCache     stmtcache.Cache
 
 	queryTracer    QueryTracer
@@ -77,7 +77,7 @@ type Conn struct {
 	copyFromTracer CopyFromTracer
 	prepareTracer  PrepareTracer
 
-	notifications []*pgconn.Notification
+	notifications []*fbconn.Notification
 
 	doneChan   chan struct{}
 	closedChan chan error
@@ -164,7 +164,7 @@ func ConnectConfig(ctx context.Context, connConfig *ConnConfig) (*Conn, error) {
 // ParseConfigWithOptions behaves exactly as ParseConfig does with the addition of options. At the present options is
 // only used to provide a GetSSLPassword function.
 func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*ConnConfig, error) {
-	config, err := pgconn.ParseConfigWithOptions(connString, options.ParseConfigOptions)
+	config, err := fbconn.ParseConfigWithOptions(connString, options.ParseConfigOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -274,12 +274,12 @@ func connect(ctx context.Context, config *ConnConfig) (c *Conn, err error) {
 		config.Config.OnNotification = c.bufferNotifications
 	}
 
-	c.pgConn, err = pgconn.ConnectConfig(ctx, &config.Config)
+	c.pgConn, err = fbconn.ConnectConfig(ctx, &config.Config)
 	if err != nil {
 		return nil, err
 	}
 
-	c.preparedStatements = make(map[string]*pgconn.Statement)
+	c.preparedStatements = make(map[string]*fbconn.Statement)
 	c.doneChan = make(chan struct{})
 	c.closedChan = make(chan error)
 	c.wbuf = make([]byte, 0, 1024)
@@ -312,11 +312,11 @@ func (c *Conn) Close(ctx context.Context) error {
 //
 // Prepare is idempotent; i.e. it is safe to call Prepare multiple times with the same name and sql arguments. This
 // allows a code path to Prepare and Query/Exec without concern for if the statement has already been prepared.
-func (c *Conn) Prepare(ctx context.Context, name, sql string) (sd *pgconn.StatementDescription, err error) {
+func (c *Conn) Prepare(ctx context.Context, name, sql string) (sd *fbconn.StatementDescription, err error) {
 	return c.prepareTx(ctx, nil, name, sql)
 }
 
-func (c *Conn) prepareTx(ctx context.Context, tx *dbTx, name string, sql string) (*pgconn.StatementDescription, error) {
+func (c *Conn) prepareTx(ctx context.Context, tx *dbTx, name string, sql string) (*fbconn.StatementDescription, error) {
 	st, err := c.internalPrepare(ctx, tx, name, sql)
 	if err != nil {
 		return nil, err
@@ -324,12 +324,12 @@ func (c *Conn) prepareTx(ctx context.Context, tx *dbTx, name string, sql string)
 	return st.Description, nil
 }
 
-func (c *Conn) internalPrepare(ctx context.Context, tx *dbTx, name, sql string) (sd *pgconn.Statement, err error) {
+func (c *Conn) internalPrepare(ctx context.Context, tx *dbTx, name, sql string) (sd *fbconn.Statement, err error) {
 	if c.prepareTracer != nil {
 		ctx = c.prepareTracer.TracePrepareStart(ctx, c, TracePrepareStartData{Name: name, SQL: sql})
 	}
 
-	var st *pgconn.Statement
+	var st *fbconn.Statement
 	if name != "" {
 		var ok bool
 		if st, ok = c.preparedStatements[name]; ok {
@@ -403,19 +403,19 @@ func (c *Conn) DeallocateAll(ctx context.Context) error {
 			return err
 		}
 	}
-	c.preparedStatements = map[string]*pgconn.Statement{}
+	c.preparedStatements = map[string]*fbconn.Statement{}
 
 	return nil
 }
 
-func (c *Conn) bufferNotifications(_ *pgconn.PgConn, n *pgconn.Notification) {
+func (c *Conn) bufferNotifications(_ *fbconn.PgConn, n *fbconn.Notification) {
 	c.notifications = append(c.notifications, n)
 }
 
 // WaitForNotification waits for a PostgreSQL notification. It wraps the underlying pgconn notification system in a
 // slightly more convenient form.
-func (c *Conn) WaitForNotification(ctx context.Context) (*pgconn.Notification, error) {
-	var n *pgconn.Notification
+func (c *Conn) WaitForNotification(ctx context.Context) (*fbconn.Notification, error) {
+	var n *fbconn.Notification
 
 	// Return already received notification immediately
 	if len(c.notifications) > 0 {
@@ -461,7 +461,7 @@ func (c *Conn) Ping(ctx context.Context) error {
 //
 // It is strongly recommended that the connection be idle (no in-progress queries) before the underlying *pgconn.PgConn
 // is used and the connection must be returned to the same state before any *pgx.Conn methods are again used.
-func (c *Conn) PgConn() *pgconn.PgConn {
+func (c *Conn) PgConn() *fbconn.PgConn {
 	return c.pgConn
 }
 
@@ -477,19 +477,19 @@ func (c *Conn) Config() *ConnConfig {
 
 // Exec executes sql inside internal transaction. sql can be either a prepared statement name or an SQL string. arguments should be referenced
 // positionally from the sql string as $1, $2, etc.
-func (c *Conn) Exec(ctx context.Context, sql string, arguments ...any) (pgconn.QueryStatus, error) {
+func (c *Conn) Exec(ctx context.Context, sql string, arguments ...any) (fbconn.QueryStatus, error) {
 	return c.execTx(ctx, nil, sql, arguments...)
 }
 
 // ExecTx executes sql inside created transaction. sql can be either a prepared statement name or an SQL string. arguments should be referenced
 // positionally from the sql string as $1, $2, etc.
-func (c *Conn) execTx(ctx context.Context, tx *dbTx, sql string, arguments ...any) (pgconn.QueryStatus, error) {
+func (c *Conn) execTx(ctx context.Context, tx *dbTx, sql string, arguments ...any) (fbconn.QueryStatus, error) {
 	if c.queryTracer != nil {
 		ctx = c.queryTracer.TraceQueryStart(ctx, c, TraceQueryStartData{SQL: sql, Args: arguments})
 	}
 
 	if err := c.deallocateInvalidatedCachedStatements(ctx); err != nil {
-		return pgconn.QueryStatus{}, err
+		return fbconn.QueryStatus{}, err
 	}
 
 	commandTag, err := c.exec(ctx, tx, sql, arguments...)
@@ -505,7 +505,7 @@ func (c *Conn) execTx(ctx context.Context, tx *dbTx, sql string, arguments ...an
 	return commandTag, err
 }
 
-func (c *Conn) exec(ctx context.Context, tx *dbTx, sql string, arguments ...any) (commandTag pgconn.QueryStatus, err error) {
+func (c *Conn) exec(ctx context.Context, tx *dbTx, sql string, arguments ...any) (commandTag fbconn.QueryStatus, err error) {
 	mode := c.config.DefaultQueryExecMode
 	var queryRewriter QueryRewriter
 
@@ -526,7 +526,7 @@ optionLoop:
 	if queryRewriter != nil {
 		sql, arguments, err = queryRewriter.RewriteQuery(ctx, c, sql, arguments)
 		if err != nil {
-			return pgconn.QueryStatus{}, fmt.Errorf("rewrite query failed: %w", err)
+			return fbconn.QueryStatus{}, fmt.Errorf("rewrite query failed: %w", err)
 		}
 	}
 
@@ -537,13 +537,13 @@ optionLoop:
 	switch mode {
 	case QueryExecModeCacheStatement:
 		if c.statementCache == nil {
-			return pgconn.QueryStatus{}, errDisabledStatementCache
+			return fbconn.QueryStatus{}, errDisabledStatementCache
 		}
 		st := c.statementCache.Get(sql)
 		if st == nil {
 			st, err = c.internalPrepare(ctx, tx, stmtcache.StatementName(sql), sql)
 			if err != nil {
-				return pgconn.QueryStatus{}, err
+				return fbconn.QueryStatus{}, err
 			}
 			c.statementCache.Put(st)
 		}
@@ -552,22 +552,22 @@ optionLoop:
 	case QueryExecModeExec:
 		st, err := c.internalPrepare(ctx, tx, stmtcache.StatementName(sql), sql)
 		if err != nil {
-			return pgconn.QueryStatus{}, err
+			return fbconn.QueryStatus{}, err
 		}
 		defer st.Deallocate(ctx)
 		return c.execPrepared(ctx, tx, st, arguments)
 	default:
-		return pgconn.QueryStatus{}, fmt.Errorf("unknown QueryExecMode: %v", mode)
+		return fbconn.QueryStatus{}, fmt.Errorf("unknown QueryExecMode: %v", mode)
 	}
 }
 
-func (c *Conn) execParams(ctx context.Context, tx *dbTx, sd *pgconn.StatementDescription, arguments []any) (pgconn.QueryStatus, error) {
+func (c *Conn) execParams(ctx context.Context, tx *dbTx, sd *fbconn.StatementDescription, arguments []any) (fbconn.QueryStatus, error) {
 	err := c.eqb.Build(c.typeMap, sd, arguments)
 	if err != nil {
-		return pgconn.QueryStatus{}, err
+		return fbconn.QueryStatus{}, err
 	}
 
-	var result *pgconn.Result
+	var result *fbconn.Result
 	if tx != nil {
 		result = c.pgConn.ExecParamsTx(ctx, tx.tx, sd.SQL, c.eqb.ParamValues).Read()
 	} else {
@@ -577,13 +577,13 @@ func (c *Conn) execParams(ctx context.Context, tx *dbTx, sd *pgconn.StatementDes
 	return result.QueryStatus, result.Err
 }
 
-func (c *Conn) execPrepared(ctx context.Context, tx *dbTx, st *pgconn.Statement, arguments []any) (pgconn.QueryStatus, error) {
+func (c *Conn) execPrepared(ctx context.Context, tx *dbTx, st *fbconn.Statement, arguments []any) (fbconn.QueryStatus, error) {
 	err := c.eqb.Build(c.typeMap, st.Description, arguments)
 	if err != nil {
-		return pgconn.QueryStatus{}, err
+		return fbconn.QueryStatus{}, err
 	}
 
-	var result *pgconn.Result
+	var result *fbconn.Result
 	if tx != nil {
 		result = st.ExecTx(ctx, tx.tx, c.eqb.ParamValues).Read()
 	} else {
@@ -593,13 +593,13 @@ func (c *Conn) execPrepared(ctx context.Context, tx *dbTx, st *pgconn.Statement,
 	return result.QueryStatus, result.Err
 }
 
-func (c *Conn) execSQLParams(ctx context.Context, tx *dbTx, sql string, args []any) (pgconn.QueryStatus, error) {
+func (c *Conn) execSQLParams(ctx context.Context, tx *dbTx, sql string, args []any) (fbconn.QueryStatus, error) {
 	err := c.eqb.Build(c.typeMap, nil, args)
 	if err != nil {
-		return pgconn.QueryStatus{}, err
+		return fbconn.QueryStatus{}, err
 	}
 
-	var result *pgconn.Result
+	var result *fbconn.Result
 	if tx != nil {
 		result = c.pgConn.ExecParamsTx(ctx, tx.tx, sql, c.eqb.ParamValues).Read()
 	} else {
@@ -818,7 +818,7 @@ func (c *Conn) getStatementDescription(
 	ctx context.Context,
 	mode QueryExecMode,
 	sql string,
-) (sd *pgconn.StatementDescription, err error) {
+) (sd *fbconn.StatementDescription, err error) {
 	//switch mode {
 	//case QueryExecModeCacheStatement:
 	//	if c.statementCache == nil {
@@ -1084,7 +1084,7 @@ func (c *Conn) sendBatchQueryExecModeDescribeExec(ctx context.Context, b *Batch)
 	panic("implement me")
 }
 
-func (c *Conn) sendBatchExtendedWithDescription(ctx context.Context, b *Batch, distinctNewQueries []*pgconn.StatementDescription, sdCache stmtcache.Cache) (pbr *pipelineBatchResults) {
+func (c *Conn) sendBatchExtendedWithDescription(ctx context.Context, b *Batch, distinctNewQueries []*fbconn.StatementDescription, sdCache stmtcache.Cache) (pbr *pipelineBatchResults) {
 	//pipeline := c.pgConn.StartPipeline(ctx)
 	//defer func() {
 	//	if pbr != nil && pbr.err != nil {
@@ -1345,7 +1345,7 @@ func (c *Conn) deallocateInvalidatedCachedStatements(ctx context.Context) error 
 	//		return nil
 	//	}
 
-	var invalidatedStatements []*pgconn.Statement
+	var invalidatedStatements []*fbconn.Statement
 	if c.statementCache != nil {
 		invalidatedStatements = c.statementCache.GetInvalidated()
 	}

@@ -2,15 +2,15 @@ package pgxpool
 
 import (
 	pgx "github.com/red-soft/fbx"
-	"github.com/red-soft/fbx/pgconn"
+	"github.com/red-soft/fbx/fbconn"
 )
 
 type errBatchResults struct {
 	err error
 }
 
-func (br errBatchResults) Exec() (pgconn.QueryStatus, error) {
-	return pgconn.QueryStatus{}, br.err
+func (br errBatchResults) Exec() (fbconn.QueryStatus, error) {
+	return fbconn.QueryStatus{}, br.err
 }
 
 func (br errBatchResults) Query() (pgx.Rows, error) {
@@ -30,7 +30,7 @@ type poolBatchResults struct {
 	c  *Conn
 }
 
-func (br *poolBatchResults) Exec() (pgconn.QueryStatus, error) {
+func (br *poolBatchResults) Exec() (fbconn.QueryStatus, error) {
 	return br.br.Exec()
 }
 

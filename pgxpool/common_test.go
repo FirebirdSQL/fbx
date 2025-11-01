@@ -7,7 +7,7 @@ import (
 	"time"
 
 	pgx "github.com/red-soft/fbx"
-	"github.com/red-soft/fbx/pgconn"
+	"github.com/red-soft/fbx/fbconn"
 	"github.com/red-soft/fbx/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,7 +21,7 @@ func waitForReleaseToComplete() {
 }
 
 type execer interface {
-	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.QueryStatus, error)
+	Exec(ctx context.Context, sql string, arguments ...any) (fbconn.QueryStatus, error)
 }
 
 func testExec(t *testing.T, ctx context.Context, db execer) {

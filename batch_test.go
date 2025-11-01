@@ -8,7 +8,7 @@ import (
 	"time"
 
 	pgx "github.com/red-soft/fbx"
-	"github.com/red-soft/fbx/pgconn"
+	"github.com/red-soft/fbx/fbconn"
 	"github.com/red-soft/fbx/pgxtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -172,17 +172,17 @@ func TestConnSendBatchQueuedQuery(t *testing.T) {
 
 		batch := &pgx.Batch{}
 
-		batch.Queue("insert into ledger(description, amount) values($1, $2)", "q1", 1).Exec(func(ct pgconn.QueryStatus) error {
+		batch.Queue("insert into ledger(description, amount) values($1, $2)", "q1", 1).Exec(func(ct fbconn.QueryStatus) error {
 			assert.EqualValues(t, 1, ct.RowsAffected())
 			return nil
 		})
 
-		batch.Queue("insert into ledger(description, amount) values($1, $2)", "q2", 2).Exec(func(ct pgconn.QueryStatus) error {
+		batch.Queue("insert into ledger(description, amount) values($1, $2)", "q2", 2).Exec(func(ct fbconn.QueryStatus) error {
 			assert.EqualValues(t, 1, ct.RowsAffected())
 			return nil
 		})
 
-		batch.Queue("insert into ledger(description, amount) values($1, $2)", "q3", 3).Exec(func(ct pgconn.QueryStatus) error {
+		batch.Queue("insert into ledger(description, amount) values($1, $2)", "q3", 3).Exec(func(ct fbconn.QueryStatus) error {
 			assert.EqualValues(t, 1, ct.RowsAffected())
 			return nil
 		})
@@ -579,12 +579,12 @@ func TestConnSendBatchQueryError(t *testing.T) {
 			}
 		}
 
-		if pgErr, ok := rows.Err().(*pgconn.PgError); !(ok && pgErr.Code == "22012") {
+		if pgErr, ok := rows.Err().(*fbconn.PgError); !(ok && pgErr.Code == "22012") {
 			t.Errorf("rows.Err() => %v, want error code %v", rows.Err(), 22012)
 		}
 
 		err = br.Close()
-		if pgErr, ok := err.(*pgconn.PgError); !(ok && pgErr.Code == "22012") {
+		if pgErr, ok := err.(*fbconn.PgError); !(ok && pgErr.Code == "22012") {
 			t.Errorf("br.Close() => %v, want error code %v", err, 22012)
 		}
 
@@ -607,7 +607,7 @@ func TestConnSendBatchQuerySyntaxError(t *testing.T) {
 
 		var n int32
 		err := br.QueryRow().Scan(&n)
-		if pgErr, ok := err.(*pgconn.PgError); !(ok && pgErr.Code == "42601") {
+		if pgErr, ok := err.(*fbconn.PgError); !(ok && pgErr.Code == "42601") {
 			t.Errorf("rows.Err() => %v, want error code %v", err, 42601)
 		}
 
@@ -906,7 +906,7 @@ func TestConnBeginBatchDeferredError(t *testing.T) {
 			t.Fatal("expected error 23505 but got none")
 		}
 
-		if err, ok := err.(*pgconn.PgError); !ok || err.Code != "23505" {
+		if err, ok := err.(*fbconn.PgError); !ok || err.Code != "23505" {
 			t.Fatalf("expected error 23505, got %v", err)
 		}
 

@@ -1,4 +1,4 @@
-package pgconn
+package fbconn
 
 import (
 	"os/user"

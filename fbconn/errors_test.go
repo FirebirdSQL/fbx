@@ -1,9 +1,9 @@
-package pgconn_test
+package fbconn_test
 
 import (
 	"testing"
 
-	"github.com/red-soft/fbx/pgconn"
+	"github.com/red-soft/fbx/fbconn"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -15,32 +15,32 @@ func TestConfigError(t *testing.T) {
 	}{
 		{
 			name:        "url with password",
-			err:         pgconn.NewParseConfigError("postgresql://foo:password@host", "msg", nil),
+			err:         fbconn.NewParseConfigError("postgresql://foo:password@host", "msg", nil),
 			expectedMsg: "cannot parse `postgresql://foo:xxxxx@host`: msg",
 		},
 		{
 			name:        "keyword/value with password unquoted",
-			err:         pgconn.NewParseConfigError("host=host password=password user=user", "msg", nil),
+			err:         fbconn.NewParseConfigError("host=host password=password user=user", "msg", nil),
 			expectedMsg: "cannot parse `host=host password=xxxxx user=user`: msg",
 		},
 		{
 			name:        "keyword/value with password quoted",
-			err:         pgconn.NewParseConfigError("host=host password='pass word' user=user", "msg", nil),
+			err:         fbconn.NewParseConfigError("host=host password='pass word' user=user", "msg", nil),
 			expectedMsg: "cannot parse `host=host password=xxxxx user=user`: msg",
 		},
 		{
 			name:        "weird url",
-			err:         pgconn.NewParseConfigError("postgresql://foo::password@host:1:", "msg", nil),
+			err:         fbconn.NewParseConfigError("postgresql://foo::password@host:1:", "msg", nil),
 			expectedMsg: "cannot parse `postgresql://foo:xxxxx@host:1:`: msg",
 		},
 		{
 			name:        "weird url with slash in password",
-			err:         pgconn.NewParseConfigError("postgres://user:pass/word@host:5432/db_name", "msg", nil),
+			err:         fbconn.NewParseConfigError("postgres://user:pass/word@host:5432/db_name", "msg", nil),
 			expectedMsg: "cannot parse `postgres://user:xxxxxx@host:5432/db_name`: msg",
 		},
 		{
 			name:        "url without password",
-			err:         pgconn.NewParseConfigError("postgresql://other@host/db", "msg", nil),
+			err:         fbconn.NewParseConfigError("postgresql://other@host/db", "msg", nil),
 			expectedMsg: "cannot parse `postgresql://other@host/db`: msg",
 		},
 	}

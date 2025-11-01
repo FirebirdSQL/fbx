@@ -3,29 +3,29 @@ package stmtcache
 import (
 	"math"
 
-	"github.com/red-soft/fbx/pgconn"
+	"github.com/red-soft/fbx/fbconn"
 )
 
 // UnlimitedCache implements Cache with no capacity limit.
 type UnlimitedCache struct {
-	m            map[string]*pgconn.StatementDescription
-	invalidStmts []*pgconn.StatementDescription
+	m            map[string]*fbconn.StatementDescription
+	invalidStmts []*fbconn.StatementDescription
 }
 
 // NewUnlimitedCache creates a new UnlimitedCache.
 func NewUnlimitedCache() *UnlimitedCache {
 	return &UnlimitedCache{
-		m: make(map[string]*pgconn.StatementDescription),
+		m: make(map[string]*fbconn.StatementDescription),
 	}
 }
 
 // Get returns the statement description for sql. Returns nil if not found.
-func (c *UnlimitedCache) Get(sql string) *pgconn.StatementDescription {
+func (c *UnlimitedCache) Get(sql string) *fbconn.StatementDescription {
 	return c.m[sql]
 }
 
 // Put stores sd in the cache. Put panics if sd.SQL is "". Put does nothing if sd.SQL already exists in the cache.
-func (c *UnlimitedCache) Put(sd *pgconn.StatementDescription) {
+func (c *UnlimitedCache) Put(sd *fbconn.StatementDescription) {
 	if sd.SQL == "" {
 		panic("cannot store statement description with empty SQL")
 	}
@@ -51,11 +51,11 @@ func (c *UnlimitedCache) InvalidateAll() {
 		c.invalidStmts = append(c.invalidStmts, sd)
 	}
 
-	c.m = make(map[string]*pgconn.StatementDescription)
+	c.m = make(map[string]*fbconn.StatementDescription)
 }
 
 // GetInvalidated returns a slice of all statement descriptions invalidated since the last call to RemoveInvalidated.
-func (c *UnlimitedCache) GetInvalidated() []*pgconn.StatementDescription {
+func (c *UnlimitedCache) GetInvalidated() []*fbconn.StatementDescription {
 	return c.invalidStmts
 }
 

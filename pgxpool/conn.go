@@ -6,7 +6,7 @@ import (
 
 	"github.com/jackc/puddle/v2"
 	pgx "github.com/red-soft/fbx"
-	"github.com/red-soft/fbx/pgconn"
+	"github.com/red-soft/fbx/fbconn"
 )
 
 // Conn is an acquired *pgx.Conn from a Pool.
@@ -83,7 +83,7 @@ func (c *Conn) Hijack() *pgx.Conn {
 	return conn
 }
 
-func (c *Conn) Exec(ctx context.Context, sql string, arguments ...any) (pgconn.QueryStatus, error) {
+func (c *Conn) Exec(ctx context.Context, sql string, arguments ...any) (fbconn.QueryStatus, error) {
 	return c.Conn().Exec(ctx, sql, arguments...)
 }
 

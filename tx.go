@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strconv"
 
+	"github.com/red-soft/fbx/fbconn"
 	"github.com/red-soft/fbx/fbproto"
-	"github.com/red-soft/fbx/pgconn"
 )
 
 // TxIsoLevel is the transaction isolation level (serializable, repeatable read, read committed or read uncommitted)
@@ -129,9 +129,9 @@ type Tx interface {
 	SendBatch(ctx context.Context, b *Batch) BatchResults
 	LargeObjects() LargeObjects
 
-	Prepare(ctx context.Context, name, sql string) (*pgconn.StatementDescription, error)
+	Prepare(ctx context.Context, name, sql string) (*fbconn.StatementDescription, error)
 
-	Exec(ctx context.Context, sql string, arguments ...any) (commandTag pgconn.QueryStatus, err error)
+	Exec(ctx context.Context, sql string, arguments ...any) (commandTag fbconn.QueryStatus, err error)
 	Query(ctx context.Context, sql string, args ...any) (Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) Row
 
@@ -147,7 +147,7 @@ type dbTx struct {
 	conn         *Conn
 	savepointNum int64
 	closed       bool
-	tx           *pgconn.FBTransaction
+	tx           *fbconn.FBTransaction
 }
 
 // Begin starts a pseudo nested transaction implemented with a savepoint.
@@ -201,16 +201,16 @@ func (tx *dbTx) Rollback(ctx context.Context) error {
 }
 
 // Exec delegates to the underlying *Conn
-func (tx *dbTx) Exec(ctx context.Context, sql string, arguments ...any) (commandTag pgconn.QueryStatus, err error) {
+func (tx *dbTx) Exec(ctx context.Context, sql string, arguments ...any) (commandTag fbconn.QueryStatus, err error) {
 	if tx.closed {
-		return pgconn.QueryStatus{}, ErrTxClosed
+		return fbconn.QueryStatus{}, ErrTxClosed
 	}
 
 	return tx.conn.execTx(ctx, tx, sql, arguments...)
 }
 
 // Prepare delegates to the underlying *Conn
-func (tx *dbTx) Prepare(ctx context.Context, name, sql string) (*pgconn.StatementDescription, error) {
+func (tx *dbTx) Prepare(ctx context.Context, name, sql string) (*fbconn.StatementDescription, error) {
 	if tx.closed {
 		return nil, ErrTxClosed
 	}
@@ -303,16 +303,16 @@ func (sp *dbSimulatedNestedTx) Rollback(ctx context.Context) error {
 }
 
 // Exec delegates to the underlying Tx
-func (sp *dbSimulatedNestedTx) Exec(ctx context.Context, sql string, arguments ...any) (commandTag pgconn.QueryStatus, err error) {
+func (sp *dbSimulatedNestedTx) Exec(ctx context.Context, sql string, arguments ...any) (commandTag fbconn.QueryStatus, err error) {
 	if sp.closed {
-		return pgconn.QueryStatus{}, ErrTxClosed
+		return fbconn.QueryStatus{}, ErrTxClosed
 	}
 
 	return sp.tx.Exec(ctx, sql, arguments...)
 }
 
 // Prepare delegates to the underlying Tx
-func (sp *dbSimulatedNestedTx) Prepare(ctx context.Context, name, sql string) (*pgconn.StatementDescription, error) {
+func (sp *dbSimulatedNestedTx) Prepare(ctx context.Context, name, sql string) (*fbconn.StatementDescription, error) {
 	if sp.closed {
 		return nil, ErrTxClosed
 	}

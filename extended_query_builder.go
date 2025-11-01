@@ -3,7 +3,7 @@ package pgx
 import (
 	"fmt"
 
-	"github.com/red-soft/fbx/pgconn"
+	"github.com/red-soft/fbx/fbconn"
 	"github.com/red-soft/fbx/pgtype"
 )
 
@@ -18,7 +18,7 @@ type ExtendedQueryBuilder struct {
 
 // Build sets ParamValues, ParamFormats, and ResultFormats for use with *PgConn.ExecParams or *PgConn.ExecPrepared. If
 // sd is nil then QueryExecModeExec behavior will be used.
-func (eqb *ExtendedQueryBuilder) Build(m *pgtype.Map, sd *pgconn.StatementDescription, args []any) error {
+func (eqb *ExtendedQueryBuilder) Build(m *pgtype.Map, sd *fbconn.StatementDescription, args []any) error {
 	eqb.reset()
 
 	if sd == nil {
