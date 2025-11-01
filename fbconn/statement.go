@@ -76,7 +76,7 @@ func (sd *StatementDescription) HaveSingletonResult() bool {
 }
 
 type Statement struct {
-	conn         *PgConn
+	conn         *FbConn
 	Description  *StatementDescription
 	transaction  *FBTransaction
 	cursorOpened bool
@@ -87,11 +87,11 @@ type Statement struct {
 //
 // paramValues are the parameter values. It must be encoded in the binary format
 //
-// ResultReader must be closed before PgConn can be used again.
+// ResultReader must be closed before FbConn can be used again.
 func (st *Statement) Exec(ctx context.Context, paramValues [][]byte) *ResultReader {
 	var err error
 	rr := &ResultReader{
-		pgConn: st.conn,
+		fbConn: st.conn,
 		ctx:    ctx,
 	}
 	if err = st.CloseCursor(ctx); err != nil {
@@ -106,7 +106,7 @@ func (st *Statement) Exec(ctx context.Context, paramValues [][]byte) *ResultRead
 	if tx == nil {
 		if _, err := st.conn.ensureInternalTransaction(ctx, nil); err != nil {
 			rr := &ResultReader{
-				pgConn: st.conn,
+				fbConn: st.conn,
 				ctx:    ctx,
 			}
 			rr.concludeCommand(QueryStatus{}, err)
@@ -123,11 +123,11 @@ func (st *Statement) Exec(ctx context.Context, paramValues [][]byte) *ResultRead
 // tx opened transaction
 // paramValues are the parameter values. It must be encoded in the binary format
 //
-// ResultReader must be closed before PgConn can be used again.
+// ResultReader must be closed before FbConn can be used again.
 func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues [][]byte) *ResultReader {
 	var err error
 	rr := &ResultReader{
-		pgConn: st.conn,
+		fbConn: st.conn,
 		ctx:    ctx,
 	}
 

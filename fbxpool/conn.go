@@ -30,7 +30,7 @@ func (c *Conn) Release() {
 		c.p.releaseTracer.TraceRelease(c.p, TraceReleaseData{Conn: conn})
 	}
 
-	if conn.IsClosed() || conn.PgConn().IsBusy() || conn.PgConn().ActiveTx() {
+	if conn.IsClosed() || conn.FbConn().IsBusy() || conn.FbConn().ActiveTx() {
 		res.Destroy()
 		// Signal to the health check to run since we just destroyed a connections
 		// and we might be below minConns now

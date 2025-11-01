@@ -241,7 +241,7 @@ func (c *Conn) LoadTypes(ctx context.Context, typeNames []string) ([]*fbtype.Typ
 
 // serverVersion returns the postgresql server version.
 func serverVersion(c *Conn) (int64, error) {
-	serverVersionStr := c.PgConn().ParameterStatus("server_version")
+	serverVersionStr := c.FbConn().ParameterStatus("server_version")
 	serverVersionStr = regexp.MustCompile(`^[0-9]+`).FindString(serverVersionStr)
 	// if not PostgreSQL do nothing
 	if serverVersionStr == "" {

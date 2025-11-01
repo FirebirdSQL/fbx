@@ -15,7 +15,7 @@ func skipCockroachDB(t testing.TB, msg string) {
 	}
 	defer conn.Close(context.Background())
 
-	if conn.PgConn().ParameterStatus("crdb_version") != "" {
+	if conn.FbConn().ParameterStatus("crdb_version") != "" {
 		t.Skip(msg)
 	}
 }

@@ -145,13 +145,13 @@ func RunValueRoundTripTests(
 
 // SkipCockroachDB calls Skip on t with msg if the connection is to a CockroachDB server.
 func SkipCockroachDB(t testing.TB, conn *fbx.Conn, msg string) {
-	if conn.PgConn().ParameterStatus("crdb_version") != "" {
+	if conn.FbConn().ParameterStatus("crdb_version") != "" {
 		t.Skip(msg)
 	}
 }
 
 func SkipPostgreSQLVersionLessThan(t testing.TB, conn *fbx.Conn, minVersion int64) {
-	serverVersionStr := conn.PgConn().ParameterStatus("server_version")
+	serverVersionStr := conn.FbConn().ParameterStatus("server_version")
 	serverVersionStr = regexp.MustCompile(`^[0-9]+`).FindString(serverVersionStr)
 	// if not PostgreSQL do nothing
 	if serverVersionStr == "" {

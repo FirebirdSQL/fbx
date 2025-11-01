@@ -177,7 +177,7 @@ func TestPoolAcquireChecksIdleConns(t *testing.T) {
 
 	var pids []uint32
 	for _, c := range conns {
-		//pids = append(pids, c.Conn().PgConn().PID())
+		//pids = append(pids, c.Conn().FbConn().PID())
 		c.Release()
 	}
 
@@ -199,7 +199,7 @@ func TestPoolAcquireChecksIdleConns(t *testing.T) {
 	c, err := pool.Acquire(ctx)
 	require.NoError(t, err)
 
-	cPID := c.Conn().PgConn().PID()
+	cPID := c.Conn().FbConn().PID()
 	c.Release()
 
 	require.NotContains(t, pids, cPID)
@@ -395,7 +395,7 @@ func TestPoolBeforeClose(t *testing.T) {
 
 	connPIDs := make(chan uint32, 5)
 	config.BeforeClose = func(c *fbx.Conn) {
-		connPIDs <- c.PgConn().PID()
+		connPIDs <- c.FbConn().PID()
 	}
 
 	db, err := fbxpool.NewWithConfig(ctx, config)
@@ -407,7 +407,7 @@ func TestPoolBeforeClose(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		conn, err := db.Acquire(ctx)
 		assert.NoError(t, err)
-		acquiredPIDs = append(acquiredPIDs, conn.Conn().PgConn().PID())
+		acquiredPIDs = append(acquiredPIDs, conn.Conn().FbConn().PID())
 		conn.Release()
 		db.Reset()
 		closedPIDs = append(closedPIDs, <-connPIDs)
@@ -820,19 +820,19 @@ func TestConnReleaseClosesConnInFailedTransaction(t *testing.T) {
 	c, err := pool.Acquire(ctx)
 	require.NoError(t, err)
 
-	//pid := c.Conn().PgConn().PID()
+	//pid := c.Conn().FbConn().PID()
 
-	assert.False(t, c.Conn().PgConn().ActiveTx())
+	assert.False(t, c.Conn().FbConn().ActiveTx())
 
 	_, err = c.Begin(ctx)
 	assert.NoError(t, err)
 
-	assert.True(t, c.Conn().PgConn().ActiveTx())
+	assert.True(t, c.Conn().FbConn().ActiveTx())
 
 	_, err = c.Exec(ctx, "selct")
 	assert.Error(t, err)
 
-	assert.True(t, c.Conn().PgConn().ActiveTx())
+	assert.True(t, c.Conn().FbConn().ActiveTx())
 
 	c.Release()
 	waitForReleaseToComplete()
@@ -840,8 +840,8 @@ func TestConnReleaseClosesConnInFailedTransaction(t *testing.T) {
 	c, err = pool.Acquire(ctx)
 	require.NoError(t, err)
 
-	//assert.NotEqual(t, pid, c.Conn().PgConn().PID())
-	assert.False(t, c.Conn().PgConn().ActiveTx())
+	//assert.NotEqual(t, pid, c.Conn().FbConn().PID())
+	assert.False(t, c.Conn().FbConn().ActiveTx())
 
 	c.Release()
 }
@@ -859,14 +859,14 @@ func TestConnReleaseClosesConnInTransaction(t *testing.T) {
 	c, err := pool.Acquire(ctx)
 	require.NoError(t, err)
 
-	pid := c.Conn().PgConn().PID()
+	pid := c.Conn().FbConn().PID()
 
-	assert.False(t, c.Conn().PgConn().ActiveTx())
+	assert.False(t, c.Conn().FbConn().ActiveTx())
 
 	_, err = c.Begin(ctx)
 	assert.NoError(t, err)
 
-	assert.True(t, c.Conn().PgConn().ActiveTx())
+	assert.True(t, c.Conn().FbConn().ActiveTx())
 
 	c.Release()
 	waitForReleaseToComplete()
@@ -874,8 +874,8 @@ func TestConnReleaseClosesConnInTransaction(t *testing.T) {
 	c, err = pool.Acquire(ctx)
 	require.NoError(t, err)
 
-	assert.NotEqual(t, pid, c.Conn().PgConn().PID())
-	assert.False(t, c.Conn().PgConn().ActiveTx())
+	assert.NotEqual(t, pid, c.Conn().FbConn().PID())
+	assert.False(t, c.Conn().FbConn().ActiveTx())
 
 	c.Release()
 }

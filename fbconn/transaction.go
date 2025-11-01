@@ -8,7 +8,7 @@ import (
 )
 
 type FBTransaction struct {
-	Connection *PgConn
+	Connection *FbConn
 	Handle     int
 	Closed     bool
 }

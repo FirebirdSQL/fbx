@@ -302,7 +302,7 @@ func TestCollectOneRowPrefersPostgreSQLErrorOverErrNoRows(t *testing.T) {
 		//	return n, err
 		//})
 		//require.Error(t, err)
-		//var fbErr *pgconn.FbError
+		//var fbErr *fbconn.FbError
 		//require.ErrorAs(t, err, &fbErr)
 		//require.Equal(t, "23505", fbErr.SqlCode)
 		//require.Equal(t, "", name)
@@ -587,7 +587,7 @@ func ExampleRowToStructByPos() {
 	}
 	defer conn.Close(ctx)
 
-	if conn.PgConn().ParameterStatus("crdb_version") != "" {
+	if conn.FbConn().ParameterStatus("crdb_version") != "" {
 		// Skip test / example when running on CockroachDB. Since an example can't be skipped fake success instead.
 		fmt.Println(`Cheeseburger: $10
 Fries: $5
@@ -772,7 +772,7 @@ func ExampleRowToStructByName() {
 	}
 	defer conn.Close(ctx)
 
-	if conn.PgConn().ParameterStatus("crdb_version") != "" {
+	if conn.FbConn().ParameterStatus("crdb_version") != "" {
 		// Skip test / example when running on CockroachDB. Since an example can't be skipped fake success instead.
 		fmt.Println(`Cheeseburger: $10
 Fries: $5
@@ -969,7 +969,7 @@ func ExampleRowToStructByNameLax() {
 		return
 	}
 
-	if conn.PgConn().ParameterStatus("crdb_version") != "" {
+	if conn.FbConn().ParameterStatus("crdb_version") != "" {
 		// Skip test / example when running on CockroachDB. Since an example can't be skipped fake success instead.
 		fmt.Println(`Cheeseburger: $10
 Fries: $5

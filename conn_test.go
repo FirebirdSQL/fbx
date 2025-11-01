@@ -560,7 +560,7 @@ func TestListenNotify(t *testing.T) {
 	listener := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	defer closeConn(t, listener)
 
-	if listener.PgConn().ParameterStatus("crdb_version") != "" {
+	if listener.FbConn().ParameterStatus("crdb_version") != "" {
 		t.Skip("Server does not support LISTEN / NOTIFY (https://github.com/cockroachdb/cockroach/issues/41522)")
 	}
 
@@ -741,7 +741,7 @@ func TestFatalRxError(t *testing.T) {
 	otherConn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	defer otherConn.Close(context.Background())
 
-	if _, err := otherConn.Exec(context.Background(), "select pg_terminate_backend($1)", conn.PgConn().PID()); err != nil {
+	if _, err := otherConn.Exec(context.Background(), "select pg_terminate_backend($1)", conn.FbConn().PID()); err != nil {
 		t.Fatalf("Unable to kill backend PostgreSQL process: %v", err)
 	}
 
@@ -766,7 +766,7 @@ func TestFatalTxError(t *testing.T) {
 			otherConn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 			defer otherConn.Close(context.Background())
 
-			_, err := otherConn.Exec(context.Background(), "select pg_terminate_backend($1)", conn.PgConn().PID())
+			_, err := otherConn.Exec(context.Background(), "select pg_terminate_backend($1)", conn.FbConn().PID())
 			if err != nil {
 				t.Fatalf("Unable to kill backend PostgreSQL process: %v", err)
 			}
@@ -1161,7 +1161,7 @@ func TestStmtCacheInvalidationTx(t *testing.T) {
 	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 
-	if conn.PgConn().ParameterStatus("crdb_version") != "" {
+	if conn.FbConn().ParameterStatus("crdb_version") != "" {
 		t.Skip("Server has non-standard prepare in errored transaction behavior (https://github.com/cockroachdb/cockroach/issues/84140)")
 	}
 

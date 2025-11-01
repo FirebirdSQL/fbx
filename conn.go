@@ -67,7 +67,7 @@ func (cc *ConnConfig) ConnString() string {
 // Conn is a PostgreSQL connection handle. It is not safe for concurrent usage. Use a connection pool to manage access
 // to multiple database connections from multiple goroutines.
 type Conn struct {
-	pgConn             *fbconn.PgConn
+	fbConn             *fbconn.FbConn
 	config             *ConnConfig // config used when establishing this connection
 	preparedStatements map[string]*fbconn.Statement
 	statementCache     stmtcache.Cache
@@ -132,7 +132,7 @@ var (
 )
 
 // Connect establishes a connection with a PostgreSQL server with a connection string. See
-// pgconn.Connect for details.
+// fbconn.Connect for details.
 func Connect(ctx context.Context, connString string) (*Conn, error) {
 	connConfig, err := ParseConfig(connString)
 	if err != nil {
@@ -224,7 +224,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 	return connConfig, nil
 }
 
-// ParseConfig creates a ConnConfig from a connection string. ParseConfig handles all options that [pgconn.ParseConfig]
+// ParseConfig creates a ConnConfig from a connection string. ParseConfig handles all options that [fbconn.ParseConfig]
 // does. In addition, it accepts the following options:
 //
 //   - default_query_exec_mode.
@@ -274,7 +274,7 @@ func connect(ctx context.Context, config *ConnConfig) (c *Conn, err error) {
 		config.Config.OnNotification = c.bufferNotifications
 	}
 
-	c.pgConn, err = fbconn.ConnectConfig(ctx, &config.Config)
+	c.fbConn, err = fbconn.ConnectConfig(ctx, &config.Config)
 	if err != nil {
 		return nil, err
 	}
@@ -299,7 +299,7 @@ func (c *Conn) Close(ctx context.Context) error {
 		return nil
 	}
 
-	err := c.pgConn.Close(ctx)
+	err := c.fbConn.Close(ctx)
 	return err
 }
 
@@ -360,9 +360,9 @@ func (c *Conn) internalPrepare(ctx context.Context, tx *dbTx, name, sql string) 
 	}
 
 	if tx != nil {
-		st, err = c.pgConn.PrepareTx(ctx, tx.tx, sql)
+		st, err = c.fbConn.PrepareTx(ctx, tx.tx, sql)
 	} else {
-		st, err = c.pgConn.Prepare(ctx, sql)
+		st, err = c.fbConn.Prepare(ctx, sql)
 	}
 	if err != nil {
 		return nil, err
@@ -408,11 +408,11 @@ func (c *Conn) DeallocateAll(ctx context.Context) error {
 	return nil
 }
 
-func (c *Conn) bufferNotifications(_ *fbconn.PgConn, n *fbconn.Notification) {
+func (c *Conn) bufferNotifications(_ *fbconn.FbConn, n *fbconn.Notification) {
 	c.notifications = append(c.notifications, n)
 }
 
-// WaitForNotification waits for a PostgreSQL notification. It wraps the underlying pgconn notification system in a
+// WaitForNotification waits for a PostgreSQL notification. It wraps the underlying fbconn notification system in a
 // slightly more convenient form.
 func (c *Conn) WaitForNotification(ctx context.Context) (*fbconn.Notification, error) {
 	var n *fbconn.Notification
@@ -424,7 +424,7 @@ func (c *Conn) WaitForNotification(ctx context.Context) (*fbconn.Notification, e
 		return n, nil
 	}
 
-	err := c.pgConn.WaitForNotification(ctx)
+	err := c.fbConn.WaitForNotification(ctx)
 	if len(c.notifications) > 0 {
 		n = c.notifications[0]
 		c.notifications = c.notifications[1:]
@@ -434,7 +434,7 @@ func (c *Conn) WaitForNotification(ctx context.Context) (*fbconn.Notification, e
 
 // IsClosed reports if the connection has been closed.
 func (c *Conn) IsClosed() bool {
-	return c.pgConn.IsClosed()
+	return c.fbConn.IsClosed()
 }
 
 func (c *Conn) die() {
@@ -444,25 +444,25 @@ func (c *Conn) die() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // force immediate hard cancel
-	c.pgConn.Close(ctx)
+	c.fbConn.Close(ctx)
 }
 
 func quoteIdentifier(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
-// Ping delegates to the underlying *pgconn.PgConn.Ping.
+// Ping delegates to the underlying *fbconn.FbConn.Ping.
 func (c *Conn) Ping(ctx context.Context) error {
-	return c.pgConn.Ping(ctx)
+	return c.fbConn.Ping(ctx)
 }
 
-// PgConn returns the underlying *pgconn.PgConn. This is an escape hatch method that allows lower level access to the
-// PostgreSQL connection than fbx exposes.
+// FbConn returns the underlying *fbconn.FbConn. This is an escape hatch method that allows lower level access to the
+// Firebird connection than fbx exposes.
 //
-// It is strongly recommended that the connection be idle (no in-progress queries) before the underlying *pgconn.PgConn
+// It is strongly recommended that the connection be idle (no in-progress queries) before the underlying *fbconn.FbConn
 // is used and the connection must be returned to the same state before any *fbx.Conn methods are again used.
-func (c *Conn) PgConn() *fbconn.PgConn {
-	return c.pgConn
+func (c *Conn) FbConn() *fbconn.FbConn {
+	return c.fbConn
 }
 
 // TypeMap returns the connection info used for this connection.
@@ -499,7 +499,7 @@ func (c *Conn) execTx(ctx context.Context, tx *dbTx, sql string, arguments ...an
 	}
 
 	if err == nil && tx == nil && c.autocommit {
-		err = c.pgConn.Commit(ctx)
+		err = c.fbConn.Commit(ctx)
 	}
 
 	return commandTag, err
@@ -569,9 +569,9 @@ func (c *Conn) execParams(ctx context.Context, tx *dbTx, sd *fbconn.StatementDes
 
 	var result *fbconn.Result
 	if tx != nil {
-		result = c.pgConn.ExecParamsTx(ctx, tx.tx, sd.SQL, c.eqb.ParamValues).Read()
+		result = c.fbConn.ExecParamsTx(ctx, tx.tx, sd.SQL, c.eqb.ParamValues).Read()
 	} else {
-		result = c.pgConn.ExecParams(ctx, sd.SQL, c.eqb.ParamValues).Read()
+		result = c.fbConn.ExecParams(ctx, sd.SQL, c.eqb.ParamValues).Read()
 	}
 	c.eqb.reset() // Allow c.eqb internal memory to be GC'ed as soon as possible.
 	return result.QueryStatus, result.Err
@@ -601,9 +601,9 @@ func (c *Conn) execSQLParams(ctx context.Context, tx *dbTx, sql string, args []a
 
 	var result *fbconn.Result
 	if tx != nil {
-		result = c.pgConn.ExecParamsTx(ctx, tx.tx, sql, c.eqb.ParamValues).Read()
+		result = c.fbConn.ExecParamsTx(ctx, tx.tx, sql, c.eqb.ParamValues).Read()
 	} else {
-		result = c.pgConn.ExecParams(ctx, sql, c.eqb.ParamValues).Read()
+		result = c.fbConn.ExecParams(ctx, sql, c.eqb.ParamValues).Read()
 	}
 	c.eqb.reset() // Allow c.eqb internal memory to be GC'ed as soon as possible.
 	return result.QueryStatus, result.Err
@@ -950,7 +950,7 @@ func (c *Conn) sendBatchQueryExecModeSimpleProtocol(ctx context.Context, b *Batc
 	//	}
 	//	sb.WriteString(sql)
 	//}
-	//mrr := c.pgConn.Exec(ctx, sb.String())
+	//mrr := c.fbConn.Exec(ctx, sb.String())
 	//return &batchResults{
 	//	ctx:   ctx,
 	//	conn:  c,
@@ -962,7 +962,7 @@ func (c *Conn) sendBatchQueryExecModeSimpleProtocol(ctx context.Context, b *Batc
 }
 
 func (c *Conn) sendBatchQueryExecModeExec(ctx context.Context, b *Batch) *batchResults {
-	//batch := &pgconn.Batch{}
+	//batch := &fbconn.Batch{}
 	//
 	//for _, bi := range b.QueuedQueries {
 	//	sd := bi.sd
@@ -984,7 +984,7 @@ func (c *Conn) sendBatchQueryExecModeExec(ctx context.Context, b *Batch) *batchR
 	//
 	//c.eqb.reset() // Allow c.eqb internal memory to be GC'ed as soon as possible.
 	//
-	//mrr := c.pgConn.ExecBatch(ctx, batch)
+	//mrr := c.fbConn.ExecBatch(ctx, batch)
 	//
 	//return &batchResults{
 	//	ctx:   ctx,
@@ -1001,7 +1001,7 @@ func (c *Conn) sendBatchQueryExecModeCacheStatement(ctx context.Context, b *Batc
 	//	return &pipelineBatchResults{ctx: ctx, conn: c, err: errDisabledStatementCache, closed: true}
 	//}
 	//
-	//distinctNewQueries := []*pgconn.StatementDescription{}
+	//distinctNewQueries := []*fbconn.StatementDescription{}
 	//distinctNewQueriesIdxMap := make(map[string]int)
 	//
 	//for _, bi := range b.QueuedQueries {
@@ -1013,7 +1013,7 @@ func (c *Conn) sendBatchQueryExecModeCacheStatement(ctx context.Context, b *Batc
 	//			if idx, present := distinctNewQueriesIdxMap[bi.SQL]; present {
 	//				bi.sd = distinctNewQueries[idx]
 	//			} else {
-	//				sd = &pgconn.StatementDescription{
+	//				sd = &fbconn.StatementDescription{
 	//					Name: stmtcache.StatementName(bi.SQL),
 	//					SQL:  bi.SQL,
 	//				}
@@ -1034,7 +1034,7 @@ func (c *Conn) sendBatchQueryExecModeCacheDescribe(ctx context.Context, b *Batch
 	//	return &pipelineBatchResults{ctx: ctx, conn: c, err: errDisabledDescriptionCache, closed: true}
 	//}
 	//
-	//distinctNewQueries := []*pgconn.StatementDescription{}
+	//distinctNewQueries := []*fbconn.StatementDescription{}
 	//distinctNewQueriesIdxMap := make(map[string]int)
 	//
 	//for _, bi := range b.QueuedQueries {
@@ -1046,7 +1046,7 @@ func (c *Conn) sendBatchQueryExecModeCacheDescribe(ctx context.Context, b *Batch
 	//			if idx, present := distinctNewQueriesIdxMap[bi.SQL]; present {
 	//				bi.sd = distinctNewQueries[idx]
 	//			} else {
-	//				sd = &pgconn.StatementDescription{
+	//				sd = &fbconn.StatementDescription{
 	//					SQL: bi.SQL,
 	//				}
 	//				distinctNewQueriesIdxMap[sd.SQL] = len(distinctNewQueries)
@@ -1062,7 +1062,7 @@ func (c *Conn) sendBatchQueryExecModeCacheDescribe(ctx context.Context, b *Batch
 }
 
 func (c *Conn) sendBatchQueryExecModeDescribeExec(ctx context.Context, b *Batch) (pbr *pipelineBatchResults) {
-	//distinctNewQueries := []*pgconn.StatementDescription{}
+	//distinctNewQueries := []*fbconn.StatementDescription{}
 	//distinctNewQueriesIdxMap := make(map[string]int)
 	//
 	//for _, bi := range b.QueuedQueries {
@@ -1070,7 +1070,7 @@ func (c *Conn) sendBatchQueryExecModeDescribeExec(ctx context.Context, b *Batch)
 	//		if idx, present := distinctNewQueriesIdxMap[bi.SQL]; present {
 	//			bi.sd = distinctNewQueries[idx]
 	//		} else {
-	//			sd := &pgconn.StatementDescription{
+	//			sd := &fbconn.StatementDescription{
 	//				SQL: bi.SQL,
 	//			}
 	//			distinctNewQueriesIdxMap[sd.SQL] = len(distinctNewQueries)
@@ -1085,7 +1085,7 @@ func (c *Conn) sendBatchQueryExecModeDescribeExec(ctx context.Context, b *Batch)
 }
 
 func (c *Conn) sendBatchExtendedWithDescription(ctx context.Context, b *Batch, distinctNewQueries []*fbconn.StatementDescription, sdCache stmtcache.Cache) (pbr *pipelineBatchResults) {
-	//pipeline := c.pgConn.StartPipeline(ctx)
+	//pipeline := c.fbConn.StartPipeline(ctx)
 	//defer func() {
 	//	if pbr != nil && pbr.err != nil {
 	//		pipeline.Close()
@@ -1127,7 +1127,7 @@ func (c *Conn) sendBatchExtendedWithDescription(ctx context.Context, b *Batch, d
 	//				return err
 	//			}
 	//
-	//			resultSD, ok := results.(*pgconn.StatementDescription)
+	//			resultSD, ok := results.(*fbconn.StatementDescription)
 	//			if !ok {
 	//				return fmt.Errorf("expected statement description, got %T", results)
 	//			}
@@ -1142,7 +1142,7 @@ func (c *Conn) sendBatchExtendedWithDescription(ctx context.Context, b *Batch, d
 	//			return err
 	//		}
 	//
-	//		_, ok := results.(*pgconn.PipelineSync)
+	//		_, ok := results.(*fbconn.PipelineSync)
 	//		if !ok {
 	//			return fmt.Errorf("expected sync, got %T", results)
 	//		}
@@ -1341,7 +1341,7 @@ func (c *Conn) getCompositeFields(ctx context.Context, oid uint32) ([]fbtype.Com
 
 func (c *Conn) deallocateInvalidatedCachedStatements(ctx context.Context) error {
 	//FIXME: fbx need to check state of transaction bound to statement?
-	//	if txStatus := c.pgConn.TxStatus(); txStatus != 'I' && txStatus != 'T' {
+	//	if txStatus := c.fbConn.TxStatus(); txStatus != 'I' && txStatus != 'T' {
 	//		return nil
 	//	}
 
@@ -1354,7 +1354,7 @@ func (c *Conn) deallocateInvalidatedCachedStatements(ctx context.Context) error 
 		return nil
 	}
 
-	//pipeline := c.pgConn.StartPipeline(ctx)
+	//pipeline := c.fbConn.StartPipeline(ctx)
 	//defer pipeline.Close()
 
 	for _, st := range invalidatedStatements {
@@ -1373,7 +1373,7 @@ func (c *Conn) deallocateInvalidatedCachedStatements(ctx context.Context) error 
 
 // Commit commits internal transaction
 func (c *Conn) Commit(ctx context.Context) error {
-	return c.pgConn.Commit(ctx)
+	return c.fbConn.Commit(ctx)
 }
 
 func (c *Conn) SetAutocommit(autocommit bool) {

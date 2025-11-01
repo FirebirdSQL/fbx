@@ -268,7 +268,7 @@ func NewWithConfig(ctx context.Context, config *Config) (*Pool, error) {
 				}
 				conn.Close(ctx)
 				select {
-				case <-conn.PgConn().CleanupDone():
+				case <-conn.FbConn().CleanupDone():
 				case <-ctx.Done():
 				}
 				cancel()

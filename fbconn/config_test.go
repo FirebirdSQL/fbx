@@ -33,8 +33,8 @@ func getDefaultPort(t *testing.T) uint16 {
 }
 
 func getDefaultUser(t *testing.T) string {
-	if pguser := os.Getenv("PGUSER"); pguser != "" {
-		return pguser
+	if fbuser := os.Getenv("FBUSER"); fbuser != "" {
+		return fbuser
 	}
 
 	var osUserName string
@@ -89,7 +89,7 @@ func TestParseConfig(t *testing.T) {
 		},
 		{
 			name:       "database url everything",
-			connString: "firebird://jack:secret@localhost:5432/mydb?application_name=pgxtest&search_path=myschema&connect_timeout=5",
+			connString: "firebird://jack:secret@localhost:5432/mydb?application_name=fbxtest&search_path=myschema&connect_timeout=5",
 			config: &fbconn.Config{
 				User:           "jack",
 				Password:       "secret",
@@ -98,7 +98,7 @@ func TestParseConfig(t *testing.T) {
 				Database:       "mydb",
 				ConnectTimeout: 5 * time.Second,
 				RuntimeParams: map[string]string{
-					"application_name": "pgxtest",
+					"application_name": "fbxtest",
 					"search_path":      "myschema",
 				},
 			},
@@ -229,7 +229,7 @@ func TestParseConfig(t *testing.T) {
 		},
 		{
 			name:       "Key/value everything",
-			connString: "user=jack password=secret host=localhost port=5432 dbname=mydb application_name=pgxtest search_path=myschema connect_timeout=5",
+			connString: "user=jack password=secret host=localhost port=5432 dbname=mydb application_name=fbxtest search_path=myschema connect_timeout=5",
 			config: &fbconn.Config{
 				User:           "jack",
 				Password:       "secret",
@@ -238,7 +238,7 @@ func TestParseConfig(t *testing.T) {
 				Database:       "mydb",
 				ConnectTimeout: 5 * time.Second,
 				RuntimeParams: map[string]string{
-					"application_name": "pgxtest",
+					"application_name": "fbxtest",
 					"search_path":      "myschema",
 				},
 			},
@@ -335,7 +335,7 @@ func TestParseConfig(t *testing.T) {
 				Database:       "/db/mydb.fdb",
 				ConnectTimeout: 5 * time.Second,
 				RuntimeParams: map[string]string{
-					"application_name": "pgxtest",
+					"application_name": "fbxtest",
 				},
 			},
 		},
@@ -350,7 +350,7 @@ func TestParseConfig(t *testing.T) {
 				Database:       "c:\\db\\mydb.fdb",
 				ConnectTimeout: 5 * time.Second,
 				RuntimeParams: map[string]string{
-					"application_name": "pgxtest",
+					"application_name": "fbxtest",
 				},
 			},
 		},
@@ -385,7 +385,7 @@ func TestParseConfigKVTrailingBackslash(t *testing.T) {
 }
 
 func TestConfigCopyReturnsEqualConfig(t *testing.T) {
-	connString := "postgres://jack:secret@localhost:5432/mydb?application_name=pgxtest&search_path=myschema&connect_timeout=5"
+	connString := "postgres://jack:secret@localhost:5432/mydb?application_name=fbxtest&search_path=myschema&connect_timeout=5"
 	original, err := fbconn.ParseConfig(connString)
 	require.NoError(t, err)
 
@@ -394,7 +394,7 @@ func TestConfigCopyReturnsEqualConfig(t *testing.T) {
 }
 
 func TestConfigCopyOriginalConfigDidNotChange(t *testing.T) {
-	connString := "postgres://jack:secret@localhost:5432/mydb?application_name=pgxtest&search_path=myschema&connect_timeout=5&sslmode=prefer"
+	connString := "postgres://jack:secret@localhost:5432/mydb?application_name=fbxtest&search_path=myschema&connect_timeout=5&sslmode=prefer"
 	original, err := fbconn.ParseConfig(connString)
 	require.NoError(t, err)
 
@@ -488,7 +488,7 @@ func TestParseConfigEnvLibpq(t *testing.T) {
 		}
 	}
 
-	pgEnvvars := []string{"PGHOST", "PGPORT", "PGDATABASE", "PGUSER", "PGPASSWORD", "PGAPPNAME", "PGSSLMODE", "PGCONNECT_TIMEOUT", "PGSSLSNI", "PGTZ", "PGOPTIONS"}
+	fbEnvvars := []string{"FBHOST", "FBPORT", "FBDATABASE", "FBUSER", "FBPASSWORD", "FBAPPNAME", "FBSSLMODE", "FBCONNECT_TIMEOUT", "FBSSLSNI", "FBTZ", "FBOPTIONS"}
 
 	tests := []struct {
 		name    string
@@ -497,8 +497,8 @@ func TestParseConfigEnvLibpq(t *testing.T) {
 	}{
 		{
 			// not testing no environment at all as that would use default host and that can vary.
-			name:    "PGHOST only",
-			envvars: map[string]string{"PGHOST": "123.123.123.123"},
+			name:    "FBHOST only",
+			envvars: map[string]string{"FBHOST": "123.123.123.123"},
 			config: &fbconn.Config{
 				User: osUserName,
 				Host: "123.123.123.123",
@@ -516,16 +516,16 @@ func TestParseConfigEnvLibpq(t *testing.T) {
 		{
 			name: "All non-TLS environment",
 			envvars: map[string]string{
-				"PGHOST":            "123.123.123.123",
-				"PGPORT":            "7777",
-				"PGDATABASE":        "foo",
-				"PGUSER":            "bar",
-				"PGPASSWORD":        "baz",
-				"PGCONNECT_TIMEOUT": "10",
-				"PGSSLMODE":         "disable",
-				"PGAPPNAME":         "pgxtest",
-				"PGTZ":              "America/New_York",
-				"PGOPTIONS":         "-c search_path=myschema",
+				"FBHOST":            "123.123.123.123",
+				"FBPORT":            "7777",
+				"FBDATABASE":        "foo",
+				"FBUSER":            "bar",
+				"FBPASSWORD":        "baz",
+				"FBCONNECT_TIMEOUT": "10",
+				"FBSSLMODE":         "disable",
+				"FBAPPNAME":         "fbxtest",
+				"FBTZ":              "America/New_York",
+				"FBOPTIONS":         "-c search_path=myschema",
 			},
 			config: &fbconn.Config{
 				Host:           "123.123.123.123",
@@ -534,15 +534,15 @@ func TestParseConfigEnvLibpq(t *testing.T) {
 				User:           "bar",
 				Password:       "baz",
 				ConnectTimeout: 10 * time.Second,
-				RuntimeParams:  map[string]string{"application_name": "pgxtest", "timezone": "America/New_York", "options": "-c search_path=myschema"},
+				RuntimeParams:  map[string]string{"application_name": "fbxtest", "timezone": "America/New_York", "options": "-c search_path=myschema"},
 			},
 		},
 		{
 			name: "SNI can be disabled via environment variable",
 			envvars: map[string]string{
-				"PGHOST":    "test.foo",
-				"PGSSLMODE": "require",
-				"PGSSLSNI":  "0",
+				"FBHOST":    "test.foo",
+				"FBSSLMODE": "require",
+				"FBSSLSNI":  "0",
 			},
 			config: &fbconn.Config{
 				User:          osUserName,
@@ -555,7 +555,7 @@ func TestParseConfigEnvLibpq(t *testing.T) {
 
 	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			for _, env := range pgEnvvars {
+			for _, env := range fbEnvvars {
 				t.Setenv(env, tt.envvars[env])
 			}
 

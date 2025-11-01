@@ -16,7 +16,7 @@ type ExtendedQueryBuilder struct {
 	ResultFormats   []int16
 }
 
-// Build sets ParamValues, ParamFormats, and ResultFormats for use with *PgConn.ExecParams or *PgConn.ExecPrepared. If
+// Build sets ParamValues, ParamFormats, and ResultFormats for use with *FbConn.ExecParams or *FbConn.ExecPrepared. If
 // sd is nil then QueryExecModeExec behavior will be used.
 func (eqb *ExtendedQueryBuilder) Build(m *fbtype.Map, sd *fbconn.StatementDescription, args []any) error {
 	eqb.reset()

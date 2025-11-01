@@ -18,8 +18,8 @@ import (
 	"github.com/red-soft/fbx/fbproto/auth"
 )
 
-type AfterConnectFunc func(ctx context.Context, pgconn *PgConn) error
-type ValidateConnectFunc func(ctx context.Context, pgconn *PgConn) error
+type AfterConnectFunc func(ctx context.Context, fbconn *FbConn) error
+type ValidateConnectFunc func(ctx context.Context, fbconn *FbConn) error
 type GetSSLPasswordFunc func(ctx context.Context) string
 
 // Config is the settings used to establish a connection to a PostgreSQL server. It must be created by [ParseConfig]. A
@@ -41,8 +41,8 @@ type Config struct {
 	Encoding       string
 
 	// BuildContextWatcherHandler is called to create a ContextWatcherHandler for a connection. The handler is called
-	// when a context passed to a PgConn method is canceled.
-	BuildContextWatcherHandler func(*PgConn) ctxwatch.Handler
+	// when a context passed to a FbConn method is canceled.
+	BuildContextWatcherHandler func(*FbConn) ctxwatch.Handler
 
 	RuntimeParams map[string]string // Run-time parameters to set on connection as session default values (e.g. search_path or application_name)
 
@@ -175,24 +175,24 @@ func NetworkAddress(host string, port uint16) (network, address string) {
 // ParseConfig currently recognizes the following environment variable and their parameter key word equivalents passed
 // via database URL or keyword/value:
 //
-//	PGHOST
-//	PGPORT
-//	PGDATABASE
-//	PGUSER
-//	PGPASSWORD
-//	PGPASSFILE
-//	PGSERVICE
-//	PGSERVICEFILE
-//	PGSSLMODE
-//	PGSSLCERT
-//	PGSSLKEY
-//	PGSSLROOTCERT
-//	PGSSLPASSWORD
-//	PGOPTIONS
-//	PGAPPNAME
-//	PGCONNECT_TIMEOUT
-//	PGTARGETSESSIONATTRS
-//	PGTZ
+//	FBHOST
+//	FBPORT
+//	FBDATABASE
+//	FBUSER
+//	FBPASSWORD
+//	FBPASSFILE
+//	FBSERVICE
+//	FBSERVICEFILE
+//	FBSSLMODE
+//	FBSSLCERT
+//	FBSSLKEY
+//	FBSSLROOTCERT
+//	FBSSLPASSWORD
+//	FBOPTIONS
+//	FBAPPNAME
+//	FBCONNECT_TIMEOUT
+//	FBTARGETSESSIONATTRS
+//	FBTZ
 //
 // See http://www.postgresql.org/docs/11/static/libpq-envars.html for details on the meaning of environment variables.
 //
@@ -216,7 +216,7 @@ func NetworkAddress(host string, port uint16) (network, address string) {
 //
 // Other known differences with libpq:
 //
-// When multiple hosts are specified, libpq allows them to have different passwords set via the .pgpass file. pgconn
+// When multiple hosts are specified, libpq allows them to have different passwords set via the .pgpass file. fbconn
 // does not.
 //
 // In addition, ParseConfig accepts the following options:
@@ -275,10 +275,10 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		BuildFrontend: func(r io.Reader, w io.Writer) *fbproto.Client {
 			return fbproto.NewClient(r, w, encoding)
 		},
-		BuildContextWatcherHandler: func(pgConn *PgConn) ctxwatch.Handler {
-			return &DeadlineContextWatcherHandler{Conn: pgConn.conn}
+		BuildContextWatcherHandler: func(fbConn *FbConn) ctxwatch.Handler {
+			return &DeadlineContextWatcherHandler{Conn: fbConn.conn}
 		},
-		OnPgError: func(_ *PgConn, pgErr *FbError) bool {
+		OnPgError: func(_ *FbConn, pgErr *FbError) bool {
 			// we want to automatically close any fatal errors
 			// FIXME: fbx how to check check if server error is fatal?
 			//if strings.EqualFold(pgErr.Severity, "FATAL") {
@@ -361,26 +361,26 @@ func parseEnvSettings() map[string]string {
 	settings := make(map[string]string)
 
 	nameMap := map[string]string{
-		"PGHOST":               "host",
-		"PGPORT":               "port",
-		"PGDATABASE":           "database",
-		"PGUSER":               "user",
-		"PGPASSWORD":           "password",
-		"PGPASSFILE":           "passfile",
-		"PGAPPNAME":            "application_name",
-		"PGCONNECT_TIMEOUT":    "connect_timeout",
-		"PGSSLMODE":            "sslmode",
-		"PGSSLKEY":             "sslkey",
-		"PGSSLCERT":            "sslcert",
-		"PGSSLSNI":             "sslsni",
-		"PGSSLROOTCERT":        "sslrootcert",
-		"PGSSLPASSWORD":        "sslpassword",
-		"PGSSLNEGOTIATION":     "sslnegotiation",
-		"PGTARGETSESSIONATTRS": "target_session_attrs",
-		"PGSERVICE":            "service",
-		"PGSERVICEFILE":        "servicefile",
-		"PGTZ":                 "timezone",
-		"PGOPTIONS":            "options",
+		"FBHOST":               "host",
+		"FBPORT":               "port",
+		"FBDATABASE":           "database",
+		"FBUSER":               "user",
+		"FBPASSWORD":           "password",
+		"FBPASSFILE":           "passfile",
+		"FBAPPNAME":            "application_name",
+		"FBCONNECT_TIMEOUT":    "connect_timeout",
+		"FBSSLMODE":            "sslmode",
+		"FBSSLKEY":             "sslkey",
+		"FBSSLCERT":            "sslcert",
+		"FBSSLSNI":             "sslsni",
+		"FBSSLROOTCERT":        "sslrootcert",
+		"FBSSLPASSWORD":        "sslpassword",
+		"FBSSLNEGOTIATION":     "sslnegotiation",
+		"FBTARGETSESSIONATTRS": "target_session_attrs",
+		"FBSERVICE":            "service",
+		"FBSERVICEFILE":        "servicefile",
+		"FBTZ":                 "timezone",
+		"FBOPTIONS":            "options",
 	}
 
 	for envname, realname := range nameMap {
@@ -638,8 +638,8 @@ func makeConnectTimeoutDialFunc(timeout time.Duration) DialFunc {
 
 // ValidateConnectTargetSessionAttrsReadWrite is a ValidateConnectFunc that implements libpq compatible
 // target_session_attrs=read-write.
-func ValidateConnectTargetSessionAttrsReadWrite(ctx context.Context, pgConn *PgConn) error {
-	res := pgConn.Exec(ctx, "select mon$read_only from mon$transactions where mon$transaction_id = current_transaction").Read()
+func ValidateConnectTargetSessionAttrsReadWrite(ctx context.Context, fbConn *FbConn) error {
+	res := fbConn.Exec(ctx, "select mon$read_only from mon$transactions where mon$transaction_id = current_transaction").Read()
 	if res.Err != nil {
 		return res.Err
 	}
@@ -653,8 +653,8 @@ func ValidateConnectTargetSessionAttrsReadWrite(ctx context.Context, pgConn *PgC
 
 // ValidateConnectTargetSessionAttrsReadOnly is a ValidateConnectFunc that implements libpq compatible
 // target_session_attrs=read-only.
-func ValidateConnectTargetSessionAttrsReadOnly(ctx context.Context, pgConn *PgConn) error {
-	res := pgConn.Exec(ctx, "select mon$read_only from mon$transactions where mon$transaction_id = current_transaction").Read()
+func ValidateConnectTargetSessionAttrsReadOnly(ctx context.Context, fbConn *FbConn) error {
+	res := fbConn.Exec(ctx, "select mon$read_only from mon$transactions where mon$transaction_id = current_transaction").Read()
 	if res.Err != nil {
 		return res.Err
 	}
@@ -668,8 +668,8 @@ func ValidateConnectTargetSessionAttrsReadOnly(ctx context.Context, pgConn *PgCo
 
 // ValidateConnectTargetSessionAttrsStandby is a ValidateConnectFunc that implements libpq compatible
 // target_session_attrs=standby.
-//func ValidateConnectTargetSessionAttrsStandby(ctx context.Context, pgConn *PgConn) error {
-//	result, err := pgConn.Exec(ctx, "select pg_is_in_recovery()").ReadAll()
+//func ValidateConnectTargetSessionAttrsStandby(ctx context.Context, fbConn *FbConn) error {
+//	result, err := fbConn.Exec(ctx, "select pg_is_in_recovery()").ReadAll()
 //	if err != nil {
 //		return err
 //	}
@@ -683,8 +683,8 @@ func ValidateConnectTargetSessionAttrsReadOnly(ctx context.Context, pgConn *PgCo
 
 // ValidateConnectTargetSessionAttrsPrimary is a ValidateConnectFunc that implements libpq compatible
 // target_session_attrs=primary.
-//func ValidateConnectTargetSessionAttrsPrimary(ctx context.Context, pgConn *PgConn) error {
-//	result, err := pgConn.Exec(ctx, "select pg_is_in_recovery()").ReadAll()
+//func ValidateConnectTargetSessionAttrsPrimary(ctx context.Context, fbConn *FbConn) error {
+//	result, err := fbConn.Exec(ctx, "select pg_is_in_recovery()").ReadAll()
 //	if err != nil {
 //		return err
 //	}
@@ -698,8 +698,8 @@ func ValidateConnectTargetSessionAttrsReadOnly(ctx context.Context, pgConn *PgCo
 
 // ValidateConnectTargetSessionAttrsPreferStandby is a ValidateConnectFunc that implements libpq compatible
 // target_session_attrs=prefer-standby.
-//func ValidateConnectTargetSessionAttrsPreferStandby(ctx context.Context, pgConn *PgConn) error {
-//	result, err := pgConn.Exec(ctx, "select pg_is_in_recovery()").ReadAll()
+//func ValidateConnectTargetSessionAttrsPreferStandby(ctx context.Context, fbConn *FbConn) error {
+//	result, err := fbConn.Exec(ctx, "select pg_is_in_recovery()").ReadAll()
 //	if err != nil {
 //		return err
 //	}

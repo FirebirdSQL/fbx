@@ -1,7 +1,7 @@
-// Package pgconn is a low-level PostgreSQL database driver.
+// Package fbconn is a low-level Firebird/RedDatabase database driver.
 /*
-pgconn provides lower level access to a PostgreSQL connection than a database/sql or pgx connection. It operates at
-nearly the same level is the C library libpq.
+fbconn provides lower level access to a Firebird connection than a database/sql or fbx connection. It operates at
+nearly the same level is the C library libfbclient.
 
 Establishing a Connection
 

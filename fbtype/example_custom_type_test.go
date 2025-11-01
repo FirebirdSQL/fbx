@@ -47,7 +47,7 @@ func Example_customType() {
 	}
 	defer conn.Close(context.Background())
 
-	if conn.PgConn().ParameterStatus("crdb_version") != "" {
+	if conn.FbConn().ParameterStatus("crdb_version") != "" {
 		// Skip test / example when running on CockroachDB which doesn't support the point type. Since an example can't be
 		// skipped fake success instead.
 		fmt.Println("null point")

@@ -217,7 +217,7 @@ func testJSONInt16ArrayFailureDueToOverflow(t *testing.T, conn *fbx.Conn, typena
 	var output []int16
 	err := conn.QueryRow(context.Background(), "select $1::"+typename, input).Scan(&output)
 	fieldName := typename
-	if conn.PgConn().ParameterStatus("crdb_version") != "" && typename == "json" {
+	if conn.FbConn().ParameterStatus("crdb_version") != "" && typename == "json" {
 		fieldName = "jsonb" // Seems like CockroachDB treats json as jsonb.
 	}
 	expectedMessage := fmt.Sprintf("can't scan into dest[0] (col: %s): json: cannot unmarshal number 234432 into Go value of type int16", fieldName)
@@ -292,7 +292,7 @@ func TestInetCIDRTranscodeIPNet(t *testing.T) {
 		}
 
 		for i, tt := range tests {
-			if conn.PgConn().ParameterStatus("crdb_version") != "" && strings.Contains(tt.sql, "cidr") {
+			if conn.FbConn().ParameterStatus("crdb_version") != "" && strings.Contains(tt.sql, "cidr") {
 				t.Log("Server does not support cidr type (https://github.com/cockroachdb/cockroach/issues/18846)")
 				continue
 			}
@@ -338,7 +338,7 @@ func TestInetCIDRTranscodeIP(t *testing.T) {
 		}
 
 		for i, tt := range tests {
-			if conn.PgConn().ParameterStatus("crdb_version") != "" && strings.Contains(tt.sql, "cidr") {
+			if conn.FbConn().ParameterStatus("crdb_version") != "" && strings.Contains(tt.sql, "cidr") {
 				t.Log("Server does not support cidr type (https://github.com/cockroachdb/cockroach/issues/18846)")
 				continue
 			}
@@ -423,7 +423,7 @@ func TestInetCIDRArrayTranscodeIPNet(t *testing.T) {
 		}
 
 		for i, tt := range tests {
-			if conn.PgConn().ParameterStatus("crdb_version") != "" && strings.Contains(tt.sql, "cidr") {
+			if conn.FbConn().ParameterStatus("crdb_version") != "" && strings.Contains(tt.sql, "cidr") {
 				t.Log("Server does not support cidr type (https://github.com/cockroachdb/cockroach/issues/18846)")
 				continue
 			}
@@ -479,7 +479,7 @@ func TestInetCIDRArrayTranscodeIP(t *testing.T) {
 		}
 
 		for i, tt := range tests {
-			if conn.PgConn().ParameterStatus("crdb_version") != "" && strings.Contains(tt.sql, "cidr") {
+			if conn.FbConn().ParameterStatus("crdb_version") != "" && strings.Contains(tt.sql, "cidr") {
 				t.Log("Server does not support cidr type (https://github.com/cockroachdb/cockroach/issues/18846)")
 				continue
 			}
@@ -560,7 +560,7 @@ func TestInetCIDRTranscodeWithJustIP(t *testing.T) {
 		}
 
 		for i, tt := range tests {
-			if conn.PgConn().ParameterStatus("crdb_version") != "" && strings.Contains(tt.sql, "cidr") {
+			if conn.FbConn().ParameterStatus("crdb_version") != "" && strings.Contains(tt.sql, "cidr") {
 				t.Log("Server does not support cidr type (https://github.com/cockroachdb/cockroach/issues/18846)")
 				continue
 			}

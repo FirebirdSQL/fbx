@@ -129,7 +129,7 @@ func (ct *copyFrom) run(ctx context.Context) (int64, error) {
 	//}
 	//quotedColumnNames := cbuf.String()
 	//
-	//var sd *pgconn.StatementDescription
+	//var sd *fbconn.StatementDescription
 	//switch ct.mode {
 	//case QueryExecModeExec, QueryExecModeSimpleProtocol:
 	//	// These modes don't support the binary format. Before the inclusion of the
@@ -195,7 +195,7 @@ func (ct *copyFrom) run(ctx context.Context) (int64, error) {
 	//	w.Close()
 	//}()
 	//
-	//commandTag, err := ct.conn.pgConn.CopyFrom(ctx, r, fmt.Sprintf("copy %s ( %s ) from stdin binary;", quotedTableName, quotedColumnNames))
+	//commandTag, err := ct.conn.fbConn.CopyFrom(ctx, r, fmt.Sprintf("copy %s ( %s ) from stdin binary;", quotedTableName, quotedColumnNames))
 	//
 	//r.Close()
 	//<-doneChan
@@ -240,7 +240,7 @@ func (ct *copyFrom) buildCopyBuf(buf []byte, sd *fbconn.StatementDescription) (b
 	//		largestRowLen = rowLen
 	//	}
 	//
-	//	// Try not to overflow size of the buffer PgConn.CopyFrom will be reading into. If that happens then the nature of
+	//	// Try not to overflow size of the buffer FbConn.CopyFrom will be reading into. If that happens then the nature of
 	//	// io.Pipe means that the next Read will be short. This can lead to pathological send sizes such as 65531, 13, 65531
 	//	// 13, 65531, 13, 65531, 13.
 	//	if len(buf) > sendBufSize-largestRowLen {

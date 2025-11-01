@@ -22,7 +22,7 @@ func SafeToRetry(err error) bool {
 	return false
 }
 
-// Timeout checks if err was caused by a timeout. To be specific, it is true if err was caused within pgconn by a
+// Timeout checks if err was caused by a timeout. To be specific, it is true if err was caused within fbconn by a
 // context.DeadlineExceeded or an implementer of net.Error where Timeout() is true.
 func Timeout(err error) bool {
 	var timeoutErr *errTimeout
@@ -173,13 +173,13 @@ func normalizeTimeoutError(ctx context.Context, err error) error {
 	return err
 }
 
-type pgconnError struct {
+type fbconnError struct {
 	msg         string
 	err         error
 	safeToRetry bool
 }
 
-func (e *pgconnError) Error() string {
+func (e *fbconnError) Error() string {
 	if e.msg == "" {
 		return e.err.Error()
 	}
@@ -189,11 +189,11 @@ func (e *pgconnError) Error() string {
 	return fmt.Sprintf("%s: %s", e.msg, e.err.Error())
 }
 
-func (e *pgconnError) SafeToRetry() bool {
+func (e *fbconnError) SafeToRetry() bool {
 	return e.safeToRetry
 }
 
-func (e *pgconnError) Unwrap() error {
+func (e *fbconnError) Unwrap() error {
 	return e.err
 }
 

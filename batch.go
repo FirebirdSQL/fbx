@@ -120,10 +120,10 @@ type batchResults struct {
 // Exec reads the results from the next query in the batch as if the query has been sent with Exec.
 func (br *batchResults) Exec() (fbconn.QueryStatus, error) {
 	//if br.err != nil {
-	//	return pgconn.QueryStatus{}, br.err
+	//	return fbconn.QueryStatus{}, br.err
 	//}
 	//if br.closed {
-	//	return pgconn.QueryStatus{}, fmt.Errorf("batch already closed")
+	//	return fbconn.QueryStatus{}, fmt.Errorf("batch already closed")
 	//}
 	//
 	//query, arguments, _ := br.nextQueryAndArgs()
@@ -140,7 +140,7 @@ func (br *batchResults) Exec() (fbconn.QueryStatus, error) {
 	//			Err:  err,
 	//		})
 	//	}
-	//	return pgconn.QueryStatus{}, err
+	//	return fbconn.QueryStatus{}, err
 	//}
 	//
 	//commandTag, err := br.mrr.ResultReader().Close()
@@ -284,31 +284,31 @@ type pipelineBatchResults struct {
 // Exec reads the results from the next query in the batch as if the query has been sent with Exec.
 func (br *pipelineBatchResults) Exec() (fbconn.QueryStatus, error) {
 	//if br.err != nil {
-	//	return pgconn.QueryStatus{}, br.err
+	//	return fbconn.QueryStatus{}, br.err
 	//}
 	//if br.closed {
-	//	return pgconn.QueryStatus{}, fmt.Errorf("batch already closed")
+	//	return fbconn.QueryStatus{}, fmt.Errorf("batch already closed")
 	//}
 	//if br.lastRows != nil && br.lastRows.err != nil {
-	//	return pgconn.QueryStatus{}, br.err
+	//	return fbconn.QueryStatus{}, br.err
 	//}
 	//
 	//query, arguments, err := br.nextQueryAndArgs()
 	//if err != nil {
-	//	return pgconn.QueryStatus{}, err
+	//	return fbconn.QueryStatus{}, err
 	//}
 	//
 	//results, err := br.pipeline.GetResults()
 	//if err != nil {
 	//	br.err = err
-	//	return pgconn.QueryStatus{}, br.err
+	//	return fbconn.QueryStatus{}, br.err
 	//}
-	//var commandTag pgconn.QueryStatus
+	//var commandTag fbconn.QueryStatus
 	//switch results := results.(type) {
-	//case *pgconn.ResultReader:
+	//case *fbconn.ResultReader:
 	//	commandTag, br.err = results.Close()
 	//default:
-	//	return pgconn.QueryStatus{}, fmt.Errorf("unexpected pipeline result: %T", results)
+	//	return fbconn.QueryStatus{}, fmt.Errorf("unexpected pipeline result: %T", results)
 	//}
 	//
 	//if br.conn.batchTracer != nil {
@@ -364,7 +364,7 @@ func (br *pipelineBatchResults) Query() (Rows, error) {
 	//	}
 	//} else {
 	//	switch results := results.(type) {
-	//	case *pgconn.ResultReader:
+	//	case *fbconn.ResultReader:
 	//		rows.resultReader = results
 	//	default:
 	//		err = fmt.Errorf("unexpected pipeline result: %T", results)

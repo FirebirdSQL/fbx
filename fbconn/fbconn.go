@@ -63,26 +63,26 @@ type LookupFunc func(ctx context.Context, host string) (addrs []string, err erro
 // BuildFrontendFunc is a function that can be used to create Client implementation for connection.
 type BuildFrontendFunc func(r io.Reader, w io.Writer) *fbproto.Client
 
-// PgErrorHandler is a function that handles errors returned from Postgres. This function must return true to keep
+// FbErrorHandler is a function that handles errors returned from Postgres. This function must return true to keep
 // the connection open. Returning false will cause the connection to be closed immediately. You should return
-// false on any FATAL-severity errors. This will not receive network errors. The *PgConn is provided so the handler is
+// false on any FATAL-severity errors. This will not receive network errors. The *FbConn is provided so the handler is
 // aware of the origin of the error, but it must not invoke any query method.
-type PgErrorHandler func(*PgConn, *FbError) bool
+type PgErrorHandler func(*FbConn, *FbError) bool
 
 // NoticeHandler is a function that can handle notices received from the PostgreSQL server. Notices can be received at
-// any time, usually during handling of a query response. The *PgConn is provided so the handler is aware of the origin
+// any time, usually during handling of a query response. The *FbConn is provided so the handler is aware of the origin
 // of the notice, but it must not invoke any query method. Be aware that this is distinct from LISTEN/NOTIFY
 // notification.
-type NoticeHandler func(*PgConn, *Notice)
+type NoticeHandler func(*FbConn, *Notice)
 
 // NotificationHandler is a function that can handle notifications received from the PostgreSQL server. Notifications
-// can be received at any time, usually during handling of a query response. The *PgConn is provided so the handler is
+// can be received at any time, usually during handling of a query response. The *FbConn is provided so the handler is
 // aware of the origin of the notice, but it must not invoke any query method. Be aware that this is distinct from a
 // notice event.
-type NotificationHandler func(*PgConn, *Notification)
+type NotificationHandler func(*FbConn, *Notification)
 
-// PgConn is a low-level PostgreSQL connection handle. It is not safe for concurrent usage.
-type PgConn struct {
+// FbConn is a low-level PostgreSQL connection handle. It is not safe for concurrent usage.
+type FbConn struct {
 	conn              net.Conn
 	pid               uint32            // backend pid
 	secretKey         uint32            // key to use to send a cancel query message to the server
@@ -130,7 +130,7 @@ type PgConn struct {
 // Connect establishes a connection to a PostgreSQL server using the environment and connString (in URL or keyword/value
 // format) to provide configuration. See documentation for [ParseConfig] for details. ctx can be used to cancel a
 // connect attempt.
-func Connect(ctx context.Context, connString string) (*PgConn, error) {
+func Connect(ctx context.Context, connString string) (*FbConn, error) {
 	config, err := ParseConfig(connString)
 	if err != nil {
 		return nil, err
@@ -142,7 +142,7 @@ func Connect(ctx context.Context, connString string) (*PgConn, error) {
 // Connect establishes a connection to a PostgreSQL server using the environment and connString (in URL or keyword/value
 // format) and ParseConfigOptions to provide additional configuration. See documentation for [ParseConfig] for details.
 // ctx can be used to cancel a connect attempt.
-func ConnectWithOptions(ctx context.Context, connString string, parseConfigOptions ParseConfigOptions) (*PgConn, error) {
+func ConnectWithOptions(ctx context.Context, connString string, parseConfigOptions ParseConfigOptions) (*FbConn, error) {
 	config, err := ParseConfigWithOptions(connString, parseConfigOptions)
 	if err != nil {
 		return nil, err
@@ -157,7 +157,7 @@ func ConnectWithOptions(ctx context.Context, connString string, parseConfigOptio
 // If config.Fallbacks are present they will sequentially be tried in case of error establishing network connection. An
 // authentication error will terminate the chain of attempts (like libpq:
 // https://www.postgresql.org/docs/11/libpq-connect.html#LIBPQ-MULTIPLE-HOSTS) and be returned as the error.
-func ConnectConfig(ctx context.Context, config *Config) (*PgConn, error) {
+func ConnectConfig(ctx context.Context, config *Config) (*FbConn, error) {
 	// Default values are set in ParseConfig. Enforce initial creation by ParseConfig rather than setting defaults from
 	// zero values.
 	if !config.createdByParseConfig {
@@ -175,29 +175,29 @@ func ConnectConfig(ctx context.Context, config *Config) (*PgConn, error) {
 		return nil, &ConnectError{Config: config, err: fmt.Errorf("hostname resolving error: %w", errors.Join(allErrors...))}
 	}
 
-	pgConn, errs := connectPreferred(ctx, config, connectConfigs)
+	fbConn, errs := connectPreferred(ctx, config, connectConfigs)
 	if len(errs) > 0 {
 		allErrors = append(allErrors, errs...)
 		return nil, &ConnectError{Config: config, err: errors.Join(allErrors...)}
 	}
 
 	if config.AfterConnect != nil {
-		err := config.AfterConnect(ctx, pgConn)
+		err := config.AfterConnect(ctx, fbConn)
 		if err != nil {
-			pgConn.conn.Close()
+			fbConn.conn.Close()
 			return nil, &ConnectError{Config: config, err: fmt.Errorf("AfterConnect error: %w", err)}
 		}
 	}
 
-	return pgConn, nil
+	return fbConn, nil
 }
 
-func (pgConn *PgConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *auth.AuthManager, respond bool) error {
+func (fbConn *FbConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *auth.AuthManager, respond bool) error {
 	authPrintf("[AUTHDBG] cond_accept: plugin=%s data_len=%d\n", msg.PluginName, len(msg.Data))
 	authPrintf("%#v\n", msg)
 
-	if pgConn.wireCrypt != nil {
-		if err := pgConn.wireCrypt.AddServerKeys(msg.ServerKeys); err != nil {
+	if fbConn.wireCrypt != nil {
+		if err := fbConn.wireCrypt.AddServerKeys(msg.ServerKeys); err != nil {
 			return err
 		}
 	}
@@ -208,16 +208,16 @@ func (pgConn *PgConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *a
 	}
 	if respond && step != nil {
 		pluginList := ""
-		if !pgConn.authContFirstSent {
+		if !fbConn.authContFirstSent {
 			pluginList = authManager.BuildList()
-			pgConn.authContFirstSent = true
+			fbConn.authContFirstSent = true
 		}
-		return pgConn.sendContAuth(step.Reply, msg.PluginName, pluginList, nil)
+		return fbConn.sendContAuth(step.Reply, msg.PluginName, pluginList, nil)
 	}
 	return nil
 }
 
-func (pgConn *PgConn) handleAuthResponse(msg *fbproto.OpResponse, config *Config, authManager *auth.AuthManager) (bool, error) {
+func (fbConn *FbConn) handleAuthResponse(msg *fbproto.OpResponse, config *Config, authManager *auth.AuthManager) (bool, error) {
 	if msg.Failure {
 		return false, fmt.Errorf("authentication failed: %s", msg.Message)
 	}
@@ -226,8 +226,8 @@ func (pgConn *PgConn) handleAuthResponse(msg *fbproto.OpResponse, config *Config
 		return false, err
 	}
 
-	if pgConn.wireCrypt != nil {
-		if err := pgConn.wireCrypt.AddServerKeys(msg.Data); err != nil {
+	if fbConn.wireCrypt != nil {
+		if err := fbConn.wireCrypt.AddServerKeys(msg.Data); err != nil {
 			return false, err
 		}
 	}
@@ -239,7 +239,7 @@ func (pgConn *PgConn) handleAuthResponse(msg *fbproto.OpResponse, config *Config
 		return false, nil
 	}
 
-	initInfo, err := pgConn.enableWireCrypt(sessionKey)
+	initInfo, err := fbConn.enableWireCrypt(sessionKey)
 	if err != nil {
 		if errors.Is(err, wirecrypt.ErrNoCommonPlugin) {
 			authPrintf("[AUTHDBG] wire encryption negotiation failed: %v\n", err)
@@ -256,31 +256,31 @@ func (pgConn *PgConn) handleAuthResponse(msg *fbproto.OpResponse, config *Config
 	return false, nil
 }
 
-func (pgConn *PgConn) enableWireCrypt(sessionKey []byte) (*wirecrypt.InitResult, error) {
-	if pgConn.wireCrypt == nil || len(sessionKey) == 0 {
+func (fbConn *FbConn) enableWireCrypt(sessionKey []byte) (*wirecrypt.InitResult, error) {
+	if fbConn.wireCrypt == nil || len(sessionKey) == 0 {
 		return nil, nil
 	}
 
-	initInfo, err := pgConn.wireCrypt.TryInitialize(sessionKey)
+	initInfo, err := fbConn.wireCrypt.TryInitialize(sessionKey)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := pgConn.client.WriteMessage(&fbproto.OpCrypt{Plugin: initInfo.Identifier.Plugin, Encoding: pgConn.Encoding}); err != nil {
+	if err := fbConn.client.WriteMessage(&fbproto.OpCrypt{Plugin: initInfo.Identifier.Plugin, Encoding: fbConn.Encoding}); err != nil {
 		return nil, err
 	}
 	codec, err := wirecrypt.NewSymmetricCodec(initInfo.Identifier.Plugin, sessionKey, initInfo.Nonce)
 	if err != nil {
 		return nil, err
 	}
-	pgConn.client.SetCodec(initInfo.Identifier.Plugin, codec)
+	fbConn.client.SetCodec(initInfo.Identifier.Plugin, codec)
 
-	pgConn.wireCrypt.ClearServerKeys()
+	fbConn.wireCrypt.ClearServerKeys()
 
 	return initInfo, nil
 }
 
-func (pgConn *PgConn) sendContAuth(authData []byte, pluginName string, pluginList string, keys []byte) error {
+func (fbConn *FbConn) sendContAuth(authData []byte, pluginName string, pluginList string, keys []byte) error {
 	dataCopy := make([]byte, len(authData))
 	copy(dataCopy, authData)
 	// Debug: show what we are about to send in op_cont_auth
@@ -292,13 +292,13 @@ func (pgConn *PgConn) sendContAuth(authData []byte, pluginName string, pluginLis
 	authPrintf("[AUTHDBG] send op_cont_auth: plugin=%s list=%s proof_len=%d proof_prefix=%x\n",
 		pluginName, pluginList, len(dataCopy), dataCopy[:prefixLen])
 	msg := &fbproto.OpContAuth{
-		Encoding:   pgConn.Encoding,
+		Encoding:   fbConn.Encoding,
 		AuthData:   dataCopy,
 		PluginName: pluginName,
 		PluginList: pluginList,
 		Keys:       keys,
 	}
-	return pgConn.client.WriteMessage(msg)
+	return fbConn.client.WriteMessage(msg)
 }
 
 // buildConnectOneConfigs resolves hostnames and builds a list of connectOneConfigs to try connecting to. It returns a
@@ -367,7 +367,7 @@ func buildConnectOneConfigs(ctx context.Context, config *Config) ([]*connectOneC
 // connectPreferred attempts to connect to the preferred host from connectOneConfigs. The connections are attempted in
 // order. If a connection is successful it is returned. If no connection is successful then all errors are returned. If
 // a connection attempt returns a [NotPreferredError], then that host will be used if no other hosts are successful.
-func connectPreferred(ctx context.Context, config *Config, connectOneConfigs []*connectOneConfig) (*PgConn, []error) {
+func connectPreferred(ctx context.Context, config *Config, connectOneConfigs []*connectOneConfig) (*FbConn, []error) {
 	octx := ctx
 	var allErrors []error
 
@@ -385,9 +385,9 @@ func connectPreferred(ctx context.Context, config *Config, connectOneConfigs []*
 			ctx = octx
 		}
 
-		pgConn, err := connectOne(ctx, config, c, false)
-		if pgConn != nil {
-			return pgConn, nil
+		fbConn, err := connectOne(ctx, config, c, false)
+		if fbConn != nil {
+			return fbConn, nil
 		}
 
 		allErrors = append(allErrors, err)
@@ -416,9 +416,9 @@ func connectPreferred(ctx context.Context, config *Config, connectOneConfigs []*
 	}
 
 	if fallbackConnectOneConfig != nil {
-		pgConn, err := connectOne(ctx, config, fallbackConnectOneConfig, true)
+		fbConn, err := connectOne(ctx, config, fallbackConnectOneConfig, true)
 		if err == nil {
-			return pgConn, nil
+			return fbConn, nil
 		}
 		allErrors = append(allErrors, err)
 	}
@@ -429,12 +429,12 @@ func connectPreferred(ctx context.Context, config *Config, connectOneConfigs []*
 // connectOne makes one connection attempt to a single host.
 func connectOne(ctx context.Context, config *Config, connectConfig *connectOneConfig,
 	ignoreNotPreferredErr bool,
-) (*PgConn, error) {
-	pgConn := new(PgConn)
-	pgConn.config = config
-	pgConn.cleanupDone = make(chan struct{})
-	pgConn.customData = make(map[string]any)
-	pgConn.activeTransactions = make(map[*FBTransaction]struct{})
+) (*FbConn, error) {
+	fbConn := new(FbConn)
+	fbConn.config = config
+	fbConn.cleanupDone = make(chan struct{})
+	fbConn.customData = make(map[string]any)
+	fbConn.activeTransactions = make(map[*FBTransaction]struct{})
 
 	var err error
 
@@ -444,43 +444,43 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 		return e
 	}
 
-	pgConn.conn, err = config.DialFunc(ctx, connectConfig.network, connectConfig.address)
+	fbConn.conn, err = config.DialFunc(ctx, connectConfig.network, connectConfig.address)
 	if err != nil {
 		return nil, newPerDialConnectError("dial error", err)
 	}
 
-	pgConn.contextWatcher = ctxwatch.NewContextWatcher(config.BuildContextWatcherHandler(pgConn))
-	pgConn.contextWatcher.Watch(ctx)
-	defer pgConn.contextWatcher.Unwatch()
+	fbConn.contextWatcher = ctxwatch.NewContextWatcher(config.BuildContextWatcherHandler(fbConn))
+	fbConn.contextWatcher.Watch(ctx)
+	defer fbConn.contextWatcher.Unwatch()
 
-	pgConn.parameterStatuses = make(map[string]string)
-	pgConn.status = connStatusConnecting
+	fbConn.parameterStatuses = make(map[string]string)
+	fbConn.status = connStatusConnecting
 
-	pgConn.Encoding, err = fbproto.NewEncoding("UTF8")
+	fbConn.Encoding, err = fbproto.NewEncoding("UTF8")
 	if err != nil {
 		return nil, err
 	}
-	pgConn.bgReader = bgreader.New(pgConn.conn)
-	pgConn.slowWriteTimer = time.AfterFunc(time.Duration(math.MaxInt64),
+	fbConn.bgReader = bgreader.New(fbConn.conn)
+	fbConn.slowWriteTimer = time.AfterFunc(time.Duration(math.MaxInt64),
 		func() {
-			pgConn.bgReader.Start()
-			pgConn.bgReaderStarted <- struct{}{}
+			fbConn.bgReader.Start()
+			fbConn.bgReaderStarted <- struct{}{}
 		},
 	)
-	pgConn.slowWriteTimer.Stop()
-	pgConn.bgReaderStarted = make(chan struct{})
-	pgConn.writer = bufio.NewWriter(pgConn.conn)
-	pgConn.client = fbproto.NewClient(pgConn.bgReader, pgConn.writer, pgConn.Encoding)
-	pgConn.wireCrypt = wirecrypt.NewDefaultManager()
+	fbConn.slowWriteTimer.Stop()
+	fbConn.bgReaderStarted = make(chan struct{})
+	fbConn.writer = bufio.NewWriter(fbConn.conn)
+	fbConn.client = fbproto.NewClient(fbConn.bgReader, fbConn.writer, fbConn.Encoding)
+	fbConn.wireCrypt = wirecrypt.NewDefaultManager()
 
 	authManager, err := auth.NewAuthManager(config.User, config.Password, config.AuthPluginList)
 	if err != nil {
-		pgConn.conn.Close()
+		fbConn.conn.Close()
 		return nil, newPerDialConnectError("authentication setup failed", err)
 	}
 	initialHandshake := authManager.BeginHandshake()
 	if initialHandshake == nil {
-		pgConn.conn.Close()
+		fbConn.conn.Close()
 		return nil, newPerDialConnectError("authentication setup failed", fmt.Errorf("no authentication plugins available"))
 	}
 
@@ -495,11 +495,11 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 		AuthSpecificData: initialHandshake.SpecificData,
 		Options:          nil,
 		WireCrypt:        config.WireCrypt,
-		Encoding:         pgConn.Encoding,
+		Encoding:         fbConn.Encoding,
 	}
 
-	if err = pgConn.client.WriteMessage(&opConnect); err != nil {
-		pgConn.conn.Close()
+	if err = fbConn.client.WriteMessage(&opConnect); err != nil {
+		fbConn.conn.Close()
 		return nil, newPerDialConnectError("failed to send opConnect", err)
 	}
 
@@ -509,31 +509,31 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 
 connectLoop:
 	for {
-		if err = pgConn.writer.Flush(); err != nil {
-			pgConn.conn.Close()
+		if err = fbConn.writer.Flush(); err != nil {
+			fbConn.conn.Close()
 			return nil, newPerDialConnectError("failed to flush opConnect", err)
 		}
 
-		msg, err := pgConn.receiveMessage()
+		msg, err := fbConn.receiveMessage()
 		if err != nil {
-			pgConn.conn.Close()
+			fbConn.conn.Close()
 			return nil, newPerDialConnectError("authentication failed", err)
 		}
 
 		authPrintf("[AUTHDBG] received %T\n", msg)
 		switch msg := msg.(type) {
 		case *fbproto.OpContAuth:
-			fake := &fbproto.OpCondAccept{Encoding: pgConn.Encoding}
+			fake := &fbproto.OpCondAccept{Encoding: fbConn.Encoding}
 			fake.PluginName = msg.PluginName
 			fake.Data = msg.AuthData
-			if err := pgConn.handleCondAccept(fake, authManager, true); err != nil {
-				pgConn.conn.Close()
+			if err := fbConn.handleCondAccept(fake, authManager, true); err != nil {
+				fbConn.conn.Close()
 				return nil, newPerDialConnectError("authentication failed", err)
 			}
 			continue connectLoop
 		case *fbproto.OpCondAccept:
-			if err := pgConn.handleCondAccept(msg, authManager, true); err != nil {
-				pgConn.conn.Close()
+			if err := fbConn.handleCondAccept(msg, authManager, true); err != nil {
+				fbConn.conn.Close()
 				return nil, newPerDialConnectError("authentication failed", err)
 			}
 			continue connectLoop
@@ -543,9 +543,9 @@ connectLoop:
 				pendingCryptAck = false
 				break connectLoop
 			}
-			continueLoop, err := pgConn.handleAuthResponse(msg, config, authManager)
+			continueLoop, err := fbConn.handleAuthResponse(msg, config, authManager)
 			if err != nil {
-				pgConn.conn.Close()
+				fbConn.conn.Close()
 				return nil, newPerDialConnectError("authentication failed", err)
 			}
 			if continueLoop {
@@ -555,8 +555,8 @@ connectLoop:
 			}
 			break connectLoop
 		case *fbproto.OpDataAccept:
-			if err := pgConn.handleCondAccept(&msg.OpCondAccept, authManager, !msg.AuthComplete); err != nil {
-				pgConn.conn.Close()
+			if err := fbConn.handleCondAccept(&msg.OpCondAccept, authManager, !msg.AuthComplete); err != nil {
+				fbConn.conn.Close()
 				return nil, newPerDialConnectError("authentication failed", err)
 			}
 			if msg.AuthComplete {
@@ -564,16 +564,16 @@ connectLoop:
 			}
 			continue connectLoop
 		case *fbproto.ErrorResponse:
-			pgConn.conn.Close()
+			fbConn.conn.Close()
 			return nil, newPerDialConnectError("authentication failed", ErrorResponseToFbError(msg))
 		default:
-			pgConn.conn.Close()
+			fbConn.conn.Close()
 			return nil, newPerDialConnectError("authentication failed", fmt.Errorf("unexpected message type %T", msg))
 		}
 	}
 
-	if pgConn.wireCrypt != nil {
-		pgConn.wireCrypt.ClearServerKeys()
+	if fbConn.wireCrypt != nil {
+		fbConn.wireCrypt.ClearServerKeys()
 	}
 
 	dpb := fbproto.NewDPBWriterV2()
@@ -608,52 +608,52 @@ connectLoop:
 		DPB:  dpb.Bytes(),
 	}
 
-	if err = pgConn.client.WriteMessage(&opAttach); err != nil {
-		pgConn.conn.Close()
+	if err = fbConn.client.WriteMessage(&opAttach); err != nil {
+		fbConn.conn.Close()
 		return nil, newPerDialConnectError("failed to send opAttach", err)
 	}
-	if err = pgConn.writer.Flush(); err != nil {
-		pgConn.conn.Close()
+	if err = fbConn.writer.Flush(); err != nil {
+		fbConn.conn.Close()
 		return nil, newPerDialConnectError("failed to flush opAttach", err)
 	}
 
-	msg, err := pgConn.receiveMessage()
+	msg, err := fbConn.receiveMessage()
 	if err != nil {
-		pgConn.conn.Close()
+		fbConn.conn.Close()
 		return nil, newPerDialConnectError("attachment failed", err)
 	}
 	switch m := msg.(type) {
 	case *fbproto.OpResponse:
-		pgConn.dbHandle = m.Object
+		fbConn.dbHandle = m.Object
 	case *fbproto.ErrorResponse:
-		pgConn.conn.Close()
+		fbConn.conn.Close()
 		return nil, ErrorResponseToFbError(m)
 	}
 
-	pgConn.status = connStatusIdle
-	return pgConn, nil
+	fbConn.status = connStatusIdle
+	return fbConn, nil
 }
 
-func (pgConn *PgConn) getStatementInfo(statementHandle int) (*fbproto.StatementInfo, error) {
+func (fbConn *FbConn) getStatementInfo(statementHandle int) (*fbproto.StatementInfo, error) {
 	var err error
 	var continueIndex int
 	infoSize := 10240
 	info := fbproto.StatementInfo{}
 	for {
-		if err = pgConn.client.WriteMessage(&fbproto.OpInfoSQL{
+		if err = fbConn.client.WriteMessage(&fbproto.OpInfoSQL{
 			StatementHandle:           statementHandle,
 			StatementInformationItems: fbproto.GetSelectDescribeInfoItemsContinue(continueIndex),
 			MaxBufferLength:           infoSize,
 		}); err != nil {
 			return nil, err
 		}
-		if err = pgConn.writer.Flush(); err != nil {
+		if err = fbConn.writer.Flush(); err != nil {
 			return nil, err
 		}
 
-		msg, err := pgConn.receiveMessage()
+		msg, err := fbConn.receiveMessage()
 		if err != nil {
-			pgConn.asyncClose()
+			fbConn.asyncClose()
 			return nil, err
 		}
 		var respData []byte
@@ -701,9 +701,9 @@ func startTLS(conn net.Conn, tlsConfig *tls.Config) (net.Conn, error) {
 	return tls.Client(conn, tlsConfig), nil
 }
 
-func (pgConn *PgConn) txPasswordMessage(password string) (err error) {
-	//pgConn.frontend.WriteMessage(&pgproto3.PasswordMessage{Password: password})
-	//return pgConn.flushWithPotentialWriteReadDeadlock()
+func (fbConn *FbConn) txPasswordMessage(password string) (err error) {
+	//fbConn.frontend.WriteMessage(&pgproto3.PasswordMessage{Password: password})
+	//return fbConn.flushWithPotentialWriteReadDeadlock()
 	panic("implement me")
 }
 
@@ -713,18 +713,18 @@ func hexMD5(s string) string {
 	return hex.EncodeToString(hash.Sum(nil))
 }
 
-func (pgConn *PgConn) signalMessage() chan struct{} {
-	//if pgConn.bufferingReceive {
+func (fbConn *FbConn) signalMessage() chan struct{} {
+	//if fbConn.bufferingReceive {
 	//	panic("BUG: signalMessage when already in progress")
 	//}
 	//
-	//pgConn.bufferingReceive = true
-	//pgConn.bufferingReceiveMux.Lock()
+	//fbConn.bufferingReceive = true
+	//fbConn.bufferingReceiveMux.Lock()
 	//
 	//ch := make(chan struct{})
 	//go func() {
-	//	pgConn.bufferingReceiveMsg, pgConn.bufferingReceiveErr = pgConn.frontend.Receive()
-	//	pgConn.bufferingReceiveMux.Unlock()
+	//	fbConn.bufferingReceiveMsg, fbConn.bufferingReceiveErr = fbConn.frontend.Receive()
+	//	fbConn.bufferingReceiveMux.Unlock()
 	//	close(ch)
 	//}()
 	//
@@ -734,16 +734,16 @@ func (pgConn *PgConn) signalMessage() chan struct{} {
 
 // ReceiveMessage receives one wire protocol message from the PostgreSQL server. It must only be used when the
 // connection is not busy. e.g. It is an error to call ReceiveMessage while reading the result of a query. The messages
-// are still handled by the core pgconn message handling system so receiving a NotificationResponse will still trigger
+// are still handled by the core fbconn message handling system so receiving a NotificationResponse will still trigger
 // the OnNotification callback.
 //
 // This is a very low level method that requires deep understanding of the PostgreSQL wire protocol to use correctly.
 // See https://www.postgresql.org/docs/current/protocol.html.
-func (pgConn *PgConn) ReceiveMessage(ctx context.Context) (fbproto.ServerMessage, error) {
-	if err := pgConn.lock(); err != nil {
+func (fbConn *FbConn) ReceiveMessage(ctx context.Context) (fbproto.ServerMessage, error) {
+	if err := fbConn.lock(); err != nil {
 		return nil, err
 	}
-	defer pgConn.unlock()
+	defer fbConn.unlock()
 
 	if ctx != context.Background() {
 		select {
@@ -751,13 +751,13 @@ func (pgConn *PgConn) ReceiveMessage(ctx context.Context) (fbproto.ServerMessage
 			return nil, newContextAlreadyDoneError(ctx)
 		default:
 		}
-		pgConn.contextWatcher.Watch(ctx)
-		defer pgConn.contextWatcher.Unwatch()
+		fbConn.contextWatcher.Watch(ctx)
+		defer fbConn.contextWatcher.Unwatch()
 	}
 
-	msg, err := pgConn.receiveMessage()
+	msg, err := fbConn.receiveMessage()
 	if err != nil {
-		err = &pgconnError{
+		err = &fbconnError{
 			msg:         "receive message failed",
 			err:         normalizeTimeoutError(ctx, err),
 			safeToRetry: true,
@@ -767,28 +767,28 @@ func (pgConn *PgConn) ReceiveMessage(ctx context.Context) (fbproto.ServerMessage
 }
 
 // peekMessage peeks at the next message without setting up context cancellation.
-func (pgConn *PgConn) peekMessage() (fbproto.ServerMessage, error) {
-	if pgConn.peekedMsg != nil {
-		return pgConn.peekedMsg, nil
+func (fbConn *FbConn) peekMessage() (fbproto.ServerMessage, error) {
+	if fbConn.peekedMsg != nil {
+		return fbConn.peekedMsg, nil
 	}
 
 	var msg fbproto.ServerMessage
 	var err error
 
-	if pgConn.bufferingReceive {
-		pgConn.bufferingReceiveMux.Lock()
-		msg = pgConn.bufferingReceiveMsg
-		err = pgConn.bufferingReceiveErr
-		pgConn.bufferingReceiveMux.Unlock()
-		pgConn.bufferingReceive = false
+	if fbConn.bufferingReceive {
+		fbConn.bufferingReceiveMux.Lock()
+		msg = fbConn.bufferingReceiveMsg
+		err = fbConn.bufferingReceiveErr
+		fbConn.bufferingReceiveMux.Unlock()
+		fbConn.bufferingReceive = false
 
 		// If a timeout error happened in the background try the read again.
 		var netErr net.Error
 		if errors.As(err, &netErr) && netErr.Timeout() {
-			msg, err = pgConn.client.ReceiveMessage()
+			msg, err = fbConn.client.ReceiveMessage()
 		}
 	} else {
-		msg, err = pgConn.client.ReceiveMessage()
+		msg, err = fbConn.client.ReceiveMessage()
 	}
 
 	if err != nil {
@@ -796,31 +796,31 @@ func (pgConn *PgConn) peekMessage() (fbproto.ServerMessage, error) {
 		var netErr net.Error
 		isNetErr := errors.As(err, &netErr)
 		if !(isNetErr && netErr.Timeout()) {
-			pgConn.asyncClose()
+			fbConn.asyncClose()
 		}
 
 		return nil, err
 	}
 
-	pgConn.peekedMsg = msg
+	fbConn.peekedMsg = msg
 	return msg, nil
 }
 
 // receiveMessage receives a message without setting up context cancellation
-func (pgConn *PgConn) receiveMessage() (fbproto.ServerMessage, error) {
-	msg, err := pgConn.peekMessage()
+func (fbConn *FbConn) receiveMessage() (fbproto.ServerMessage, error) {
+	msg, err := fbConn.peekMessage()
 	if err != nil {
 		return nil, err
 	}
-	pgConn.peekedMsg = nil
+	fbConn.peekedMsg = nil
 
 	switch msg := msg.(type) {
 	case *fbproto.ErrorResponse:
 		err := ErrorResponseToFbError(msg)
-		if pgConn.config.OnPgError != nil && !pgConn.config.OnPgError(pgConn, err) {
-			pgConn.status = connStatusClosed
-			pgConn.conn.Close() // Ignore error as the connection is already broken and there is already an error to return.
-			close(pgConn.cleanupDone)
+		if fbConn.config.OnPgError != nil && !fbConn.config.OnPgError(fbConn, err) {
+			fbConn.status = connStatusClosed
+			fbConn.conn.Close() // Ignore error as the connection is already broken and there is already an error to return.
+			close(fbConn.cleanupDone)
 			return nil, err
 		}
 	}
@@ -830,54 +830,54 @@ func (pgConn *PgConn) receiveMessage() (fbproto.ServerMessage, error) {
 
 // Conn returns the underlying net.Conn. This rarely necessary. If the connection will be directly used for reading or
 // writing then SyncConn should usually be called before Conn.
-func (pgConn *PgConn) Conn() net.Conn {
-	return pgConn.conn
+func (fbConn *FbConn) Conn() net.Conn {
+	return fbConn.conn
 }
 
 // PID returns the backend PID.
 // FIXME: fbx we can obtain PID from MON$ATTACHMENTS, but we really need it
-func (pgConn *PgConn) PID() uint32 {
-	return pgConn.pid
+func (fbConn *FbConn) PID() uint32 {
+	return fbConn.pid
 }
 
 // ActiveTx returns true if connection have active transactions
-func (pgConn *PgConn) ActiveTx() bool {
-	return len(pgConn.activeTransactions) > 0
+func (fbConn *FbConn) ActiveTx() bool {
+	return len(fbConn.activeTransactions) > 0
 }
 
 // SecretKey returns the backend secret key used to send a cancel query message to the server.
-func (pgConn *PgConn) SecretKey() uint32 {
-	//return pgConn.secretKey
+func (fbConn *FbConn) SecretKey() uint32 {
+	//return fbConn.secretKey
 	panic("implement me")
 }
 
 // Client returns the underlying *fbproto.Client
-func (pgConn *PgConn) Client() *fbproto.Client {
-	return pgConn.client
+func (fbConn *FbConn) Client() *fbproto.Client {
+	return fbConn.client
 }
 
 // Close closes a connection. It is safe to call Close on an already closed connection. Close attempts a clean close by
 // sending the exit message to PostgreSQL. However, this could block so ctx is available to limit the time to wait. The
 // underlying net.Conn.Close() will always be called regardless of any other errors.
-func (pgConn *PgConn) Close(ctx context.Context) error {
-	if pgConn.status == connStatusClosed {
+func (fbConn *FbConn) Close(ctx context.Context) error {
+	if fbConn.status == connStatusClosed {
 		return nil
 	}
-	pgConn.status = connStatusClosed
+	fbConn.status = connStatusClosed
 
-	defer close(pgConn.cleanupDone)
-	defer pgConn.conn.Close()
+	defer close(fbConn.cleanupDone)
+	defer fbConn.conn.Close()
 
 	if ctx != context.Background() {
 		// Close may be called while a cancellable query is in progress. This will most often be triggered by panic when
 		// a defer closes the connection (possibly indirectly via a transaction or a connection pool). Unwatch to end any
 		// previous watch. It is safe to Unwatch regardless of whether a watch is already is progress.
 		//
-		// See https://github.com/jackc/pgconn/issues/29
-		pgConn.contextWatcher.Unwatch()
+		// See https://github.com/jackc/fbconn/issues/29
+		fbConn.contextWatcher.Unwatch()
 
-		pgConn.contextWatcher.Watch(ctx)
-		defer pgConn.contextWatcher.Unwatch()
+		fbConn.contextWatcher.Watch(ctx)
+		defer fbConn.contextWatcher.Unwatch()
 	}
 
 	// Ignore any errors sending Terminate message and waiting for server to close connection.
@@ -885,23 +885,23 @@ func (pgConn *PgConn) Close(ctx context.Context) error {
 	// ignores errors.
 	//
 	// See https://github.com/jackc/pgx/issues/637
-	//pgConn.frontend.WriteMessage(&pgproto3.Terminate{})
-	//pgConn.flushWithPotentialWriteReadDeadlock()
+	//fbConn.frontend.WriteMessage(&pgproto3.Terminate{})
+	//fbConn.flushWithPotentialWriteReadDeadlock()
 	//
-	return pgConn.conn.Close()
+	return fbConn.conn.Close()
 }
 
 // asyncClose marks the connection as closed and asynchronously sends a cancel query message and closes the underlying
 // connection.
-func (pgConn *PgConn) asyncClose() {
-	if pgConn.status == connStatusClosed {
+func (fbConn *FbConn) asyncClose() {
+	if fbConn.status == connStatusClosed {
 		return
 	}
-	pgConn.status = connStatusClosed
+	fbConn.status = connStatusClosed
 
 	go func() {
-		defer close(pgConn.cleanupDone)
-		defer pgConn.conn.Close()
+		defer close(fbConn.cleanupDone)
+		defer fbConn.conn.Close()
 
 		//FIXME: fbx
 		//deadline := time.Now().Add(time.Second * 15)
@@ -909,12 +909,12 @@ func (pgConn *PgConn) asyncClose() {
 		//ctx, cancel := context.WithDeadline(context.Background(), deadline)
 		//defer cancel()
 		//
-		//pgConn.CancelRequest(ctx)
+		//fbConn.CancelRequest(ctx)
 
-		//pgConn.conn.SetDeadline(deadline)
+		//fbConn.conn.SetDeadline(deadline)
 		//
-		//pgConn.frontend.WriteMessage(&pgproto3.Terminate{})
-		//pgConn.flushWithPotentialWriteReadDeadlock()
+		//fbConn.frontend.WriteMessage(&pgproto3.Terminate{})
+		//fbConn.flushWithPotentialWriteReadDeadlock()
 	}()
 }
 
@@ -926,25 +926,25 @@ func (pgConn *PgConn) asyncClose() {
 //
 // This is only likely to be useful to connection pools. It gives them a way avoid establishing a new connection while
 // an old connection is still being cleaned up and thereby exceeding the maximum pool size.
-func (pgConn *PgConn) CleanupDone() chan (struct{}) {
-	return pgConn.cleanupDone
+func (fbConn *FbConn) CleanupDone() chan (struct{}) {
+	return fbConn.cleanupDone
 }
 
 // IsClosed reports if the connection has been closed.
 //
 // CleanupDone() can be used to determine if all cleanup has been completed.
-func (pgConn *PgConn) IsClosed() bool {
-	return pgConn.status < connStatusIdle
+func (fbConn *FbConn) IsClosed() bool {
+	return fbConn.status < connStatusIdle
 }
 
 // IsBusy reports if the connection is busy.
-func (pgConn *PgConn) IsBusy() bool {
-	return pgConn.status == connStatusBusy
+func (fbConn *FbConn) IsBusy() bool {
+	return fbConn.status == connStatusBusy
 }
 
 // lock locks the connection.
-func (pgConn *PgConn) lock() error {
-	switch pgConn.status {
+func (fbConn *FbConn) lock() error {
+	switch fbConn.status {
 	case connStatusBusy:
 		return &connLockError{status: "conn busy"} // This only should be possible in case of an application bug.
 	case connStatusClosed:
@@ -952,14 +952,14 @@ func (pgConn *PgConn) lock() error {
 	case connStatusUninitialized:
 		return &connLockError{status: "conn uninitialized"}
 	}
-	pgConn.status = connStatusBusy
+	fbConn.status = connStatusBusy
 	return nil
 }
 
-func (pgConn *PgConn) unlock() {
-	switch pgConn.status {
+func (fbConn *FbConn) unlock() {
+	switch fbConn.status {
 	case connStatusBusy:
-		pgConn.status = connStatusIdle
+		fbConn.status = connStatusIdle
 	case connStatusClosed:
 	default:
 		panic("BUG: cannot unlock unlocked connection") // This should only be possible if there is a bug in this package.
@@ -968,8 +968,8 @@ func (pgConn *PgConn) unlock() {
 
 // ParameterStatus returns the value of a parameter reported by the server (e.g.
 // server_version). Returns an empty string for unknown parameters.
-func (pgConn *PgConn) ParameterStatus(key string) string {
-	return pgConn.parameterStatuses[key]
+func (fbConn *FbConn) ParameterStatus(key string) string {
+	return fbConn.parameterStatuses[key]
 }
 
 // QueryStatus simple query info
@@ -1052,7 +1052,7 @@ type FieldDescription struct {
 	Nullable          bool
 }
 
-func (pgConn *PgConn) convertRowDescription(src []fbproto.FieldDescriptor) []FieldDescription {
+func (fbConn *FbConn) convertRowDescription(src []fbproto.FieldDescriptor) []FieldDescription {
 	res := make([]FieldDescription, len(src))
 
 	for i := range src {
@@ -1076,12 +1076,12 @@ func (pgConn *PgConn) convertRowDescription(src []fbproto.FieldDescriptor) []Fie
 }
 
 // Prepare creates a prepared statement inside current internal transaction
-func (pgConn *PgConn) Prepare(ctx context.Context, sql string) (*Statement, error) {
-	tx, err := pgConn.ensureInternalTransaction(ctx, nil)
+func (fbConn *FbConn) Prepare(ctx context.Context, sql string) (*Statement, error) {
+	tx, err := fbConn.ensureInternalTransaction(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
-	st, err := pgConn.PrepareTx(ctx, tx, sql)
+	st, err := fbConn.PrepareTx(ctx, tx, sql)
 	if err != nil {
 		return nil, err
 	}
@@ -1089,12 +1089,12 @@ func (pgConn *PgConn) Prepare(ctx context.Context, sql string) (*Statement, erro
 }
 
 // PrepareTx creates a prepared statement
-func (pgConn *PgConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql string) (*Statement, error) {
+func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql string) (*Statement, error) {
 	var err error
-	if err := pgConn.lock(); err != nil {
+	if err := fbConn.lock(); err != nil {
 		return nil, err
 	}
-	defer pgConn.unlock()
+	defer fbConn.unlock()
 
 	if ctx != context.Background() {
 		select {
@@ -1102,32 +1102,32 @@ func (pgConn *PgConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 			return nil, newContextAlreadyDoneError(ctx)
 		default:
 		}
-		pgConn.contextWatcher.Watch(ctx)
-		defer pgConn.contextWatcher.Unwatch()
+		fbConn.contextWatcher.Watch(ctx)
+		defer fbConn.contextWatcher.Unwatch()
 	}
 
-	if err = pgConn.client.WriteMessage(&fbproto.OpAllocateStatement{}); err != nil {
-		pgConn.asyncClose()
+	if err = fbConn.client.WriteMessage(&fbproto.OpAllocateStatement{}); err != nil {
+		fbConn.asyncClose()
 		return nil, err
 	}
-	if err = pgConn.client.WriteMessage(&fbproto.OpPrepareStatement{
-		Encoding:          pgConn.Encoding,
+	if err = fbConn.client.WriteMessage(&fbproto.OpPrepareStatement{
+		Encoding:          fbConn.Encoding,
 		TransactionHandle: tx.Handle,
 		StatementHandle:   0xFFFF,
 		Dialect:           3,
 		Query:             sql,
 	}); err != nil {
-		pgConn.asyncClose()
+		fbConn.asyncClose()
 		return nil, err
 	}
-	if err = pgConn.writer.Flush(); err != nil {
-		pgConn.asyncClose()
+	if err = fbConn.writer.Flush(); err != nil {
+		fbConn.asyncClose()
 		return nil, err
 	}
 
-	msg, err := pgConn.receiveMessage()
+	msg, err := fbConn.receiveMessage()
 	if err != nil {
-		pgConn.asyncClose()
+		fbConn.asyncClose()
 		return nil, err
 	}
 
@@ -1139,9 +1139,9 @@ func (pgConn *PgConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 		return nil, ErrorResponseToFbError(m)
 	}
 
-	msg, err = pgConn.receiveMessage()
+	msg, err = fbConn.receiveMessage()
 	if err != nil {
-		pgConn.asyncClose()
+		fbConn.asyncClose()
 		return nil, err
 	}
 	switch m := msg.(type) {
@@ -1149,30 +1149,30 @@ func (pgConn *PgConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 		return nil, ErrorResponseToFbError(m)
 	}
 
-	statementInfo, err := pgConn.getStatementInfo(statementHandle)
+	statementInfo, err := fbConn.getStatementInfo(statementHandle)
 	if err != nil {
 		var fbError *FbError
 		switch {
 		case errors.As(err, &fbError):
 			return nil, err
 		default:
-			pgConn.asyncClose()
+			fbConn.asyncClose()
 			return nil, err
 		}
 	}
 
 	desc := &StatementDescription{
 		SQL:             sql,
-		Fields:          pgConn.convertRowDescription(statementInfo.FieldDescriptors),
-		Parameters:      pgConn.convertRowDescription(statementInfo.ParametersDescriptors),
+		Fields:          fbConn.convertRowDescription(statementInfo.FieldDescriptors),
+		Parameters:      fbConn.convertRowDescription(statementInfo.ParametersDescriptors),
 		StatementHandle: statementHandle,
 		StatementInfo:   statementInfo,
 	}
 
-	if tx == pgConn.internalTransaction {
-		return &Statement{conn: pgConn, Description: desc}, nil
+	if tx == fbConn.internalTransaction {
+		return &Statement{conn: fbConn, Description: desc}, nil
 	} else {
-		return &Statement{conn: pgConn, transaction: tx, Description: desc}, nil
+		return &Statement{conn: fbConn, transaction: tx, Description: desc}, nil
 	}
 }
 
@@ -1185,30 +1185,30 @@ func (pgConn *PgConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 // CancelRequest sends a cancel request to the PostgreSQL server. It returns an error if unable to deliver the cancel
 // request, but lack of an error does not ensure that the query was canceled. As specified in the documentation, there
 // is no way to be sure a query was canceled. See https://www.postgresql.org/docs/11/protocol-flow.html#id-1.10.5.7.9
-func (pgConn *PgConn) CancelRequest(ctx context.Context) error {
+func (fbConn *FbConn) CancelRequest(ctx context.Context) error {
 	//// Open a cancellation request to the same server. The address is taken from the net.Conn directly instead of reusing
 	//// the connection config. This is important in high availability configurations where fallback connections may be
 	//// specified or DNS may be used to load balance.
-	//serverAddr := pgConn.conn.RemoteAddr()
+	//serverAddr := fbConn.conn.RemoteAddr()
 	//var serverNetwork string
 	//var serverAddress string
 	//if serverAddr.Network() == "unix" {
 	//	// for unix sockets, RemoteAddr() calls getpeername() which returns the name the
 	//	// server passed to bind(). For Postgres, this is always a relative path "./.s.PGSQL.5432"
 	//	// so connecting to it will fail. Fall back to the config's value
-	//	serverNetwork, serverAddress = NetworkAddress(pgConn.config.Host, pgConn.config.Port)
+	//	serverNetwork, serverAddress = NetworkAddress(fbConn.config.Host, fbConn.config.Port)
 	//} else {
 	//	serverNetwork, serverAddress = serverAddr.Network(), serverAddr.String()
 	//}
-	//cancelConn, err := pgConn.config.DialFunc(ctx, serverNetwork, serverAddress)
+	//cancelConn, err := fbConn.config.DialFunc(ctx, serverNetwork, serverAddress)
 	//if err != nil {
 	//	// In case of unix sockets, RemoteAddr() returns only the file part of the path. If the
 	//	// first connect failed, try the config.
 	//	if serverAddr.Network() != "unix" {
 	//		return err
 	//	}
-	//	serverNetwork, serverAddr := NetworkAddress(pgConn.config.Host, pgConn.config.Port)
-	//	cancelConn, err = pgConn.config.DialFunc(ctx, serverNetwork, serverAddr)
+	//	serverNetwork, serverAddr := NetworkAddress(fbConn.config.Host, fbConn.config.Port)
+	//	cancelConn, err = fbConn.config.DialFunc(ctx, serverNetwork, serverAddr)
 	//	if err != nil {
 	//		return err
 	//	}
@@ -1224,8 +1224,8 @@ func (pgConn *PgConn) CancelRequest(ctx context.Context) error {
 	//buf := make([]byte, 16)
 	//binary.BigEndian.PutUint32(buf[0:4], 16)
 	//binary.BigEndian.PutUint32(buf[4:8], 80877102)
-	//binary.BigEndian.PutUint32(buf[8:12], pgConn.pid)
-	//binary.BigEndian.PutUint32(buf[12:16], pgConn.secretKey)
+	//binary.BigEndian.PutUint32(buf[8:12], fbConn.pid)
+	//binary.BigEndian.PutUint32(buf[12:16], fbConn.secretKey)
 	//
 	//if _, err := cancelConn.Write(buf); err != nil {
 	//	return fmt.Errorf("write to connection for cancellation: %w", err)
@@ -1241,11 +1241,11 @@ func (pgConn *PgConn) CancelRequest(ctx context.Context) error {
 
 // WaitForNotification waits for a LISTEN/NOTIFY message to be received. It returns an error if a notification was not
 // received.
-func (pgConn *PgConn) WaitForNotification(ctx context.Context) error {
-	//if err := pgConn.lock(); err != nil {
+func (fbConn *FbConn) WaitForNotification(ctx context.Context) error {
+	//if err := fbConn.lock(); err != nil {
 	//	return err
 	//}
-	//defer pgConn.unlock()
+	//defer fbConn.unlock()
 	//
 	//if ctx != context.Background() {
 	//	select {
@@ -1254,12 +1254,12 @@ func (pgConn *PgConn) WaitForNotification(ctx context.Context) error {
 	//	default:
 	//	}
 	//
-	//	pgConn.contextWatcher.Watch(ctx)
-	//	defer pgConn.contextWatcher.Unwatch()
+	//	fbConn.contextWatcher.Watch(ctx)
+	//	defer fbConn.contextWatcher.Unwatch()
 	//}
 	//
 	//for {
-	//	msg, err := pgConn.receiveMessage()
+	//	msg, err := fbConn.receiveMessage()
 	//	if err != nil {
 	//		return normalizeTimeoutError(ctx, err)
 	//	}
@@ -1273,23 +1273,23 @@ func (pgConn *PgConn) WaitForNotification(ctx context.Context) error {
 }
 
 // ExecImmediate executes statement immediate inside internal transaction
-func (pgConn *PgConn) ExecImmediate(ctx context.Context, sql string) error {
-	tx, err := pgConn.ensureInternalTransaction(ctx, nil)
+func (fbConn *FbConn) ExecImmediate(ctx context.Context, sql string) error {
+	tx, err := fbConn.ensureInternalTransaction(ctx, nil)
 	if err != nil {
-		pgConn.asyncClose()
+		fbConn.asyncClose()
 		return err
 	}
-	return pgConn.ExecImmediateTx(ctx, tx, sql)
+	return fbConn.ExecImmediateTx(ctx, tx, sql)
 }
 
 // ExecImmediateTx executes statement immediate inside specified transaction
-func (pgConn *PgConn) ExecImmediateTx(ctx context.Context, tx *FBTransaction, sql string) error {
+func (fbConn *FbConn) ExecImmediateTx(ctx context.Context, tx *FBTransaction, sql string) error {
 	var err error
 
-	if err = pgConn.lock(); err != nil {
+	if err = fbConn.lock(); err != nil {
 		return err
 	}
-	defer pgConn.unlock()
+	defer fbConn.unlock()
 
 	if ctx != context.Background() {
 		select {
@@ -1297,32 +1297,32 @@ func (pgConn *PgConn) ExecImmediateTx(ctx context.Context, tx *FBTransaction, sq
 			return newContextAlreadyDoneError(ctx)
 		default:
 		}
-		pgConn.contextWatcher.Watch(ctx)
-		defer pgConn.contextWatcher.Unwatch()
+		fbConn.contextWatcher.Watch(ctx)
+		defer fbConn.contextWatcher.Unwatch()
 	}
 
 	txHandle := 0
 	if tx != nil {
 		txHandle = tx.Handle
 	}
-	if err = pgConn.client.WriteMessage(&fbproto.OpExecuteImmediate{
-		Encoding:          pgConn.Encoding,
+	if err = fbConn.client.WriteMessage(&fbproto.OpExecuteImmediate{
+		Encoding:          fbConn.Encoding,
 		TransactionHandle: txHandle,
 		Dialect:           3,
 		Query:             sql,
 	}); err != nil {
-		pgConn.asyncClose()
+		fbConn.asyncClose()
 		return err
 	}
 
-	if err = pgConn.writer.Flush(); err != nil {
-		pgConn.asyncClose()
+	if err = fbConn.writer.Flush(); err != nil {
+		fbConn.asyncClose()
 		return err
 	}
 
-	msg, err := pgConn.receiveMessage()
+	msg, err := fbConn.receiveMessage()
 	if err != nil {
-		pgConn.asyncClose()
+		fbConn.asyncClose()
 		return err
 	}
 
@@ -1341,12 +1341,12 @@ func (pgConn *PgConn) ExecImmediateTx(ctx context.Context, tx *FBTransaction, sq
 // statements.
 //
 // Prefer ExecParams unless executing arbitrary SQL that may contain multiple queries.
-func (pgConn *PgConn) Exec(ctx context.Context, sql string) *ResultReader {
-	return pgConn.ExecParams(ctx, sql, nil)
+func (fbConn *FbConn) Exec(ctx context.Context, sql string) *ResultReader {
+	return fbConn.ExecParams(ctx, sql, nil)
 }
 
-func (pgConn *PgConn) ExecTx(ctx context.Context, tx *FBTransaction, sql string) *ResultReader {
-	return pgConn.ExecParamsTx(ctx, tx, sql, nil)
+func (fbConn *FbConn) ExecTx(ctx context.Context, tx *FBTransaction, sql string) *ResultReader {
+	return fbConn.ExecParamsTx(ctx, tx, sql, nil)
 }
 
 // ExecParams executes a command via the PostgreSQL extended query protocol.
@@ -1367,9 +1367,9 @@ func (pgConn *PgConn) ExecTx(ctx context.Context, tx *FBTransaction, sql string)
 // resultFormats is a slice of format codes determining for each result column whether it is encoded in text or
 // binary format. If resultFormats is nil all results will be in text format.
 //
-// ResultReader must be closed before PgConn can be used again.
-func (pgConn *PgConn) ExecParams(ctx context.Context, sql string, paramValues [][]byte) *ResultReader {
-	tx, err := pgConn.ensureInternalTransaction(ctx, nil)
+// ResultReader must be closed before FbConn can be used again.
+func (fbConn *FbConn) ExecParams(ctx context.Context, sql string, paramValues [][]byte) *ResultReader {
+	tx, err := fbConn.ensureInternalTransaction(ctx, nil)
 	if err != nil {
 		// early check lock state and do not close connection
 		closeConn := true
@@ -1378,21 +1378,21 @@ func (pgConn *PgConn) ExecParams(ctx context.Context, sql string, paramValues []
 			closeConn = false
 		}
 		res := ResultReader{
-			pgConn: pgConn,
+			fbConn: fbConn,
 			ctx:    ctx,
 			closed: true,
 		}
 		if closeConn {
-			pgConn.asyncClose()
+			fbConn.asyncClose()
 		}
 		res.concludeCommand(QueryStatus{}, err)
 		return &res
 	}
-	return pgConn.ExecParamsTx(ctx, tx, sql, paramValues)
+	return fbConn.ExecParamsTx(ctx, tx, sql, paramValues)
 }
 
-func (pgConn *PgConn) ExecParamsTx(ctx context.Context, tx *FBTransaction, sql string, paramValues [][]byte) *ResultReader {
-	st, err := pgConn.PrepareTx(ctx, tx, sql)
+func (fbConn *FbConn) ExecParamsTx(ctx context.Context, tx *FBTransaction, sql string, paramValues [][]byte) *ResultReader {
+	st, err := fbConn.PrepareTx(ctx, tx, sql)
 	if err != nil {
 		// early check lock state and do not close connection
 		closeConn := true
@@ -1404,12 +1404,12 @@ func (pgConn *PgConn) ExecParamsTx(ctx context.Context, tx *FBTransaction, sql s
 			_ = tx.Rollback(ctx)
 		}
 		res := ResultReader{
-			pgConn: pgConn,
+			fbConn: fbConn,
 			ctx:    ctx,
 			closed: true,
 		}
 		if closeConn {
-			pgConn.asyncClose()
+			fbConn.asyncClose()
 		}
 		res.concludeCommand(QueryStatus{}, err)
 		return &res
@@ -1419,58 +1419,58 @@ func (pgConn *PgConn) ExecParamsTx(ctx context.Context, tx *FBTransaction, sql s
 	if rr.err != nil {
 		_ = tx.Rollback(ctx)
 		res := ResultReader{
-			pgConn: pgConn,
+			fbConn: fbConn,
 			ctx:    ctx,
 			closed: true,
 		}
-		pgConn.asyncClose()
+		fbConn.asyncClose()
 		res.concludeCommand(QueryStatus{}, rr.err)
 		return rr
 	}
 	return rr
 }
 
-//func (pgConn *PgConn) execExtendedPrefix(ctx context.Context, paramValues [][]byte) *ResultReader {
+//func (fbConn *FbConn) execExtendedPrefix(ctx context.Context, paramValues [][]byte) *ResultReader {
 //
 //	//if len(paramValues) > math.MaxUint16 {
 //	//	result.concludeCommand(QueryStatus{}, fmt.Errorf("extended protocol limited to %v parameters", math.MaxUint16))
 //	//	result.closed = true
-//	//	pgConn.unlock()
+//	//	fbConn.unlock()
 //	//	return result
 //	//}
 //
 //	return result
 //}
 
-//func (pgConn *PgConn) execExtendedSuffix(statement *StatementDescription, result *ResultReader) {
+//func (fbConn *FbConn) execExtendedSuffix(statement *StatementDescription, result *ResultReader) {
 //
 //	//result.readUntilRowDescription()
 //}
 
 // CopyTo executes the copy command sql and copies the results to w.
-func (pgConn *PgConn) CopyTo(ctx context.Context, w io.Writer, sql string) (QueryStatus, error) {
-	//if err := pgConn.lock(); err != nil {
+func (fbConn *FbConn) CopyTo(ctx context.Context, w io.Writer, sql string) (QueryStatus, error) {
+	//if err := fbConn.lock(); err != nil {
 	//	return QueryStatus{}, err
 	//}
 	//
 	//if ctx != context.Background() {
 	//	select {
 	//	case <-ctx.Done():
-	//		pgConn.unlock()
+	//		fbConn.unlock()
 	//		return QueryStatus{}, newContextAlreadyDoneError(ctx)
 	//	default:
 	//	}
-	//	pgConn.contextWatcher.Watch(ctx)
-	//	defer pgConn.contextWatcher.Unwatch()
+	//	fbConn.contextWatcher.Watch(ctx)
+	//	defer fbConn.contextWatcher.Unwatch()
 	//}
 	//
 	//// WriteMessage copy to command
-	//pgConn.frontend.SendQuery(&pgproto3.Query{String: sql})
+	//fbConn.frontend.SendQuery(&pgproto3.Query{String: sql})
 	//
-	//err := pgConn.flushWithPotentialWriteReadDeadlock()
+	//err := fbConn.flushWithPotentialWriteReadDeadlock()
 	//if err != nil {
-	//	pgConn.asyncClose()
-	//	pgConn.unlock()
+	//	fbConn.asyncClose()
+	//	fbConn.unlock()
 	//	return QueryStatus{}, err
 	//}
 	//
@@ -1478,9 +1478,9 @@ func (pgConn *PgConn) CopyTo(ctx context.Context, w io.Writer, sql string) (Quer
 	//var commandTag QueryStatus
 	//var pgErr error
 	//for {
-	//	msg, err := pgConn.receiveMessage()
+	//	msg, err := fbConn.receiveMessage()
 	//	if err != nil {
-	//		pgConn.asyncClose()
+	//		fbConn.asyncClose()
 	//		return QueryStatus{}, normalizeTimeoutError(ctx, err)
 	//	}
 	//
@@ -1489,14 +1489,14 @@ func (pgConn *PgConn) CopyTo(ctx context.Context, w io.Writer, sql string) (Quer
 	//	case *pgproto3.CopyData:
 	//		_, err := w.Write(msg.Data)
 	//		if err != nil {
-	//			pgConn.asyncClose()
+	//			fbConn.asyncClose()
 	//			return QueryStatus{}, err
 	//		}
 	//	case *pgproto3.ReadyForQuery:
-	//		pgConn.unlock()
+	//		fbConn.unlock()
 	//		return commandTag, pgErr
 	//	case *pgproto3.CommandComplete:
-	//		commandTag = pgConn.makeCommandTag(msg.QueryStatus)
+	//		commandTag = fbConn.makeCommandTag(msg.QueryStatus)
 	//	case *pgproto3.ErrorResponse:
 	//		pgErr = ErrorResponseToPgError(msg)
 	//	}
@@ -1508,11 +1508,11 @@ func (pgConn *PgConn) CopyTo(ctx context.Context, w io.Writer, sql string) (Quer
 //
 // Note: context cancellation will only interrupt operations on the underlying PostgreSQL network connection. Reads on r
 // could still block.
-func (pgConn *PgConn) CopyFrom(ctx context.Context, r io.Reader, sql string) (QueryStatus, error) {
-	//if err := pgConn.lock(); err != nil {
+func (fbConn *FbConn) CopyFrom(ctx context.Context, r io.Reader, sql string) (QueryStatus, error) {
+	//if err := fbConn.lock(); err != nil {
 	//	return QueryStatus{}, err
 	//}
-	//defer pgConn.unlock()
+	//defer fbConn.unlock()
 	//
 	//if ctx != context.Background() {
 	//	select {
@@ -1520,22 +1520,22 @@ func (pgConn *PgConn) CopyFrom(ctx context.Context, r io.Reader, sql string) (Qu
 	//		return QueryStatus{}, newContextAlreadyDoneError(ctx)
 	//	default:
 	//	}
-	//	pgConn.contextWatcher.Watch(ctx)
-	//	defer pgConn.contextWatcher.Unwatch()
+	//	fbConn.contextWatcher.Watch(ctx)
+	//	defer fbConn.contextWatcher.Unwatch()
 	//}
 	//
 	//// WriteMessage copy from query
-	//pgConn.frontend.SendQuery(&pgproto3.Query{String: sql})
-	//err := pgConn.flushWithPotentialWriteReadDeadlock()
+	//fbConn.frontend.SendQuery(&pgproto3.Query{String: sql})
+	//err := fbConn.flushWithPotentialWriteReadDeadlock()
 	//if err != nil {
-	//	pgConn.asyncClose()
+	//	fbConn.asyncClose()
 	//	return QueryStatus{}, err
 	//}
 	//
 	//// WriteMessage copy data
 	//abortCopyChan := make(chan struct{})
 	//copyErrChan := make(chan error, 1)
-	//signalMessageChan := pgConn.signalMessage()
+	//signalMessageChan := fbConn.signalMessage()
 	//var wg sync.WaitGroup
 	//wg.Add(1)
 	//
@@ -1551,11 +1551,11 @@ func (pgConn *PgConn) CopyFrom(ctx context.Context, r io.Reader, sql string) (Qu
 	//			*buf = (*buf)[0 : n+5]
 	//			pgio.SetInt32((*buf)[1:], int32(n+4))
 	//
-	//			writeErr := pgConn.frontend.SendUnbufferedEncodedCopyData(*buf)
+	//			writeErr := fbConn.frontend.SendUnbufferedEncodedCopyData(*buf)
 	//			if writeErr != nil {
 	//				// Write errors are always fatal, but we can't use asyncClose because we are in a different goroutine. Not
-	//				// setting pgConn.status or closing pgConn.cleanupDone for the same reason.
-	//				pgConn.conn.Close()
+	//				// setting fbConn.status or closing fbConn.cleanupDone for the same reason.
+	//				fbConn.conn.Close()
 	//
 	//				copyErrChan <- writeErr
 	//				return
@@ -1580,22 +1580,22 @@ func (pgConn *PgConn) CopyFrom(ctx context.Context, r io.Reader, sql string) (Qu
 	//	select {
 	//	case copyErr = <-copyErrChan:
 	//	case <-signalMessageChan:
-	//		// If pgConn.receiveMessage encounters an error it will call pgConn.asyncClose. But that is a race condition with
-	//		// the goroutine. So instead check pgConn.bufferingReceiveErr which will have been set by the signalMessage. If an
+	//		// If fbConn.receiveMessage encounters an error it will call fbConn.asyncClose. But that is a race condition with
+	//		// the goroutine. So instead check fbConn.bufferingReceiveErr which will have been set by the signalMessage. If an
 	//		// error is found then forcibly close the connection without sending the Terminate message.
-	//		if err := pgConn.bufferingReceiveErr; err != nil {
-	//			pgConn.status = connStatusClosed
-	//			pgConn.conn.Close()
-	//			close(pgConn.cleanupDone)
+	//		if err := fbConn.bufferingReceiveErr; err != nil {
+	//			fbConn.status = connStatusClosed
+	//			fbConn.conn.Close()
+	//			close(fbConn.cleanupDone)
 	//			return QueryStatus{}, normalizeTimeoutError(ctx, err)
 	//		}
-	//		msg, _ := pgConn.receiveMessage()
+	//		msg, _ := fbConn.receiveMessage()
 	//
 	//		switch msg := msg.(type) {
 	//		case *pgproto3.ErrorResponse:
 	//			pgErr = ErrorResponseToPgError(msg)
 	//		default:
-	//			signalMessageChan = pgConn.signalMessage()
+	//			signalMessageChan = fbConn.signalMessage()
 	//		}
 	//	}
 	//}
@@ -1604,22 +1604,22 @@ func (pgConn *PgConn) CopyFrom(ctx context.Context, r io.Reader, sql string) (Qu
 	//wg.Wait()
 	//
 	//if copyErr == io.EOF || pgErr != nil {
-	//	pgConn.frontend.WriteMessage(&pgproto3.CopyDone{})
+	//	fbConn.frontend.WriteMessage(&pgproto3.CopyDone{})
 	//} else {
-	//	pgConn.frontend.WriteMessage(&pgproto3.CopyFail{Response: copyErr.Error()})
+	//	fbConn.frontend.WriteMessage(&pgproto3.CopyFail{Response: copyErr.Error()})
 	//}
-	//err = pgConn.flushWithPotentialWriteReadDeadlock()
+	//err = fbConn.flushWithPotentialWriteReadDeadlock()
 	//if err != nil {
-	//	pgConn.asyncClose()
+	//	fbConn.asyncClose()
 	//	return QueryStatus{}, err
 	//}
 	//
 	//// Read results
 	//var commandTag QueryStatus
 	//for {
-	//	msg, err := pgConn.receiveMessage()
+	//	msg, err := fbConn.receiveMessage()
 	//	if err != nil {
-	//		pgConn.asyncClose()
+	//		fbConn.asyncClose()
 	//		return QueryStatus{}, normalizeTimeoutError(ctx, err)
 	//	}
 	//
@@ -1627,7 +1627,7 @@ func (pgConn *PgConn) CopyFrom(ctx context.Context, r io.Reader, sql string) (Qu
 	//	case *pgproto3.ReadyForQuery:
 	//		return commandTag, pgErr
 	//	case *pgproto3.CommandComplete:
-	//		commandTag = pgConn.makeCommandTag(msg.QueryStatus)
+	//		commandTag = fbConn.makeCommandTag(msg.QueryStatus)
 	//	case *pgproto3.ErrorResponse:
 	//		pgErr = ErrorResponseToPgError(msg)
 	//	}
@@ -1636,24 +1636,24 @@ func (pgConn *PgConn) CopyFrom(ctx context.Context, r io.Reader, sql string) (Qu
 }
 
 // Commit commits internal transaction
-func (pgConn *PgConn) Commit(ctx context.Context) error {
-	if pgConn.internalTransaction == nil || pgConn.internalTransaction.Closed {
+func (fbConn *FbConn) Commit(ctx context.Context) error {
+	if fbConn.internalTransaction == nil || fbConn.internalTransaction.Closed {
 		return ErrTransactionClosed
 	}
-	return pgConn.internalTransaction.Commit(ctx)
+	return fbConn.internalTransaction.Commit(ctx)
 }
 
 // Rollback rollbacks internal transaction
-func (pgConn *PgConn) Rollback(ctx context.Context) error {
-	if pgConn.internalTransaction == nil || pgConn.internalTransaction.Closed {
+func (fbConn *FbConn) Rollback(ctx context.Context) error {
+	if fbConn.internalTransaction == nil || fbConn.internalTransaction.Closed {
 		return ErrTransactionClosed
 	}
-	return pgConn.internalTransaction.Rollback(ctx)
+	return fbConn.internalTransaction.Rollback(ctx)
 }
 
 // MultiResultReader is a reader for a command that could return multiple results such as Exec or ExecBatch.
 type MultiResultReader struct {
-	pgConn *PgConn
+	fbConn *FbConn
 	ctx    context.Context
 
 	rr *ResultReader
@@ -1675,20 +1675,20 @@ func (mrr *MultiResultReader) ReadAll() ([]*Result, error) {
 }
 
 func (mrr *MultiResultReader) receiveMessage() (fbproto.ServerMessage, error) {
-	//msg, err := mrr.pgConn.receiveMessage()
+	//msg, err := mrr.fbConn.receiveMessage()
 	//if err != nil {
-	//	mrr.pgConn.contextWatcher.Unwatch()
+	//	mrr.fbConn.contextWatcher.Unwatch()
 	//	mrr.err = normalizeTimeoutError(mrr.ctx, err)
 	//	mrr.closed = true
-	//	mrr.pgConn.asyncClose()
+	//	mrr.fbConn.asyncClose()
 	//	return nil, mrr.err
 	//}
 	//
 	//switch msg := msg.(type) {
 	//case *pgproto3.ReadyForQuery:
 	//	mrr.closed = true
-	//	mrr.pgConn.contextWatcher.Unwatch()
-	//	mrr.pgConn.unlock()
+	//	mrr.fbConn.contextWatcher.Unwatch()
+	//	mrr.fbConn.unlock()
 	//case *pgproto3.ErrorResponse:
 	//	mrr.err = ErrorResponseToPgError(msg)
 	//}
@@ -1707,22 +1707,22 @@ func (mrr *MultiResultReader) NextResult() bool {
 	//
 	//	switch msg := msg.(type) {
 	//	case *pgproto3.RowDescription:
-	//		mrr.pgConn.resultReader = ResultReader{
-	//			pgConn:            mrr.pgConn,
+	//		mrr.fbConn.resultReader = ResultReader{
+	//			fbConn:            mrr.fbConn,
 	//			multiResultReader: mrr,
 	//			ctx:               mrr.ctx,
-	//			fieldDescriptions: mrr.pgConn.convertRowDescription(mrr.pgConn.fieldDescriptions[:], msg),
+	//			fieldDescriptions: mrr.fbConn.convertRowDescription(mrr.fbConn.fieldDescriptions[:], msg),
 	//		}
 	//
-	//		mrr.rr = &mrr.pgConn.resultReader
+	//		mrr.rr = &mrr.fbConn.resultReader
 	//		return true
 	//	case *pgproto3.CommandComplete:
-	//		mrr.pgConn.resultReader = ResultReader{
-	//			commandTag:       mrr.pgConn.makeCommandTag(msg.QueryStatus),
+	//		mrr.fbConn.resultReader = ResultReader{
+	//			commandTag:       mrr.fbConn.makeCommandTag(msg.QueryStatus),
 	//			commandConcluded: true,
 	//			closed:           true,
 	//		}
-	//		mrr.rr = &mrr.pgConn.resultReader
+	//		mrr.rr = &mrr.fbConn.resultReader
 	//		return true
 	//	case *pgproto3.EmptyQueryResponse:
 	//		return false
@@ -1752,7 +1752,7 @@ func (mrr *MultiResultReader) Close() error {
 
 // ResultReader is a reader for the result of a single query.
 type ResultReader struct {
-	pgConn *PgConn
+	fbConn *FbConn
 	ctx    context.Context
 
 	fieldDescriptions []FieldDescription
@@ -1838,22 +1838,22 @@ func (rr *ResultReader) NextRow() bool {
 	if !rr.fetchExecuted {
 		rowBlr = rr.statementDescription.StatementInfo.GetRowBlr()
 	}
-	if err = rr.pgConn.client.WriteMessage(&fbproto.OpFetch{
+	if err = rr.fbConn.client.WriteMessage(&fbproto.OpFetch{
 		StatementHandle: rr.statementDescription.StatementHandle,
 		RowBlr:          rowBlr,
 		Messages:        400,
 	}); err != nil {
 		return false
 	}
-	if err = rr.pgConn.writer.Flush(); err != nil {
+	if err = rr.fbConn.writer.Flush(); err != nil {
 		return false
 	}
 	rr.fetchExecuted = true
 
 	var fetchResp *fbproto.OpFetchResponse
-	msg, err := rr.pgConn.receiveMessage()
+	msg, err := rr.fbConn.receiveMessage()
 	if err != nil {
-		rr.pgConn.asyncClose()
+		rr.fbConn.asyncClose()
 		rr.err = err
 		return false
 	}
@@ -1875,9 +1875,9 @@ func (rr *ResultReader) NextRow() bool {
 	}
 
 	for fetchResp.MoreRows() {
-		row, msg, err := rr.pgConn.client.ReceiveSQLData(rr.statementDescription.StatementInfo.FieldDescriptors)
+		row, msg, err := rr.fbConn.client.ReceiveSQLData(rr.statementDescription.StatementInfo.FieldDescriptors)
 		if err != nil {
-			rr.pgConn.asyncClose()
+			rr.fbConn.asyncClose()
 			rr.concludeCommand(QueryStatus{}, err)
 			return false
 		}
@@ -1916,8 +1916,8 @@ func (rr *ResultReader) Values() [][]byte {
 // error.
 func (rr *ResultReader) Close() (QueryStatus, error) {
 	if !rr.closed {
-		rr.pgConn.unlock()
-		rr.pgConn.contextWatcher.Unwatch()
+		rr.fbConn.unlock()
+		rr.fbConn.contextWatcher.Unwatch()
 	}
 	return rr.queryStatus, rr.err
 }
@@ -1944,7 +1944,7 @@ type Batch struct {
 	err error
 }
 
-// ExecParams appends an ExecParams command to the batch. See PgConn.ExecParams for parameter descriptions.
+// ExecParams appends an ExecParams command to the batch. See FbConn.ExecParams for parameter descriptions.
 func (batch *Batch) ExecParams(sql string, paramValues [][]byte, paramOIDs []uint32, paramFormats []int16, resultFormats []int16) {
 	//if batch.err != nil {
 	//	return
@@ -1957,7 +1957,7 @@ func (batch *Batch) ExecParams(sql string, paramValues [][]byte, paramOIDs []uin
 	//batch.ExecPrepared("", paramValues, paramFormats, resultFormats)
 }
 
-// ExecPrepared appends an ExecPrepared e command to the batch. See PgConn.ExecPrepared for parameter descriptions.
+// ExecPrepared appends an ExecPrepared e command to the batch. See FbConn.ExecPrepared for parameter descriptions.
 func (batch *Batch) ExecPrepared(stmtName string, paramValues [][]byte, paramFormats []int16, resultFormats []int16) {
 	//if batch.err != nil {
 	//	return
@@ -1982,7 +1982,7 @@ func (batch *Batch) ExecPrepared(stmtName string, paramValues [][]byte, paramFor
 // ExecBatch executes all the queries in batch in a single round-trip. Execution is implicitly transactional unless a
 // transaction is already in progress or SQL contains transaction control statements. This is a simpler way of executing
 // multiple queries in a single round trip than using pipeline mode.
-func (pgConn *PgConn) ExecBatch(ctx context.Context, batch *Batch) *MultiResultReader {
+func (fbConn *FbConn) ExecBatch(ctx context.Context, batch *Batch) *MultiResultReader {
 	//if batch.err != nil {
 	//	return &MultiResultReader{
 	//		closed: true,
@@ -1990,48 +1990,48 @@ func (pgConn *PgConn) ExecBatch(ctx context.Context, batch *Batch) *MultiResultR
 	//	}
 	//}
 	//
-	//if err := pgConn.lock(); err != nil {
+	//if err := fbConn.lock(); err != nil {
 	//	return &MultiResultReader{
 	//		closed: true,
 	//		err:    err,
 	//	}
 	//}
 	//
-	//pgConn.multiResultReader = MultiResultReader{
-	//	pgConn: pgConn,
+	//fbConn.multiResultReader = MultiResultReader{
+	//	fbConn: fbConn,
 	//	ctx:    ctx,
 	//}
-	//multiResult := &pgConn.multiResultReader
+	//multiResult := &fbConn.multiResultReader
 	//
 	//if ctx != context.Background() {
 	//	select {
 	//	case <-ctx.Done():
 	//		multiResult.closed = true
 	//		multiResult.err = newContextAlreadyDoneError(ctx)
-	//		pgConn.unlock()
+	//		fbConn.unlock()
 	//		return multiResult
 	//	default:
 	//	}
-	//	pgConn.contextWatcher.Watch(ctx)
+	//	fbConn.contextWatcher.Watch(ctx)
 	//}
 	//
 	//batch.buf, batch.err = (&pgproto3.Sync{}).Encode(batch.buf)
 	//if batch.err != nil {
-	//	pgConn.contextWatcher.Unwatch()
+	//	fbConn.contextWatcher.Unwatch()
 	//	multiResult.err = normalizeTimeoutError(multiResult.ctx, batch.err)
 	//	multiResult.closed = true
-	//	pgConn.asyncClose()
+	//	fbConn.asyncClose()
 	//	return multiResult
 	//}
 	//
-	//pgConn.enterPotentialWriteReadDeadlock()
-	//defer pgConn.exitPotentialWriteReadDeadlock()
-	//_, err := pgConn.conn.Write(batch.buf)
+	//fbConn.enterPotentialWriteReadDeadlock()
+	//defer fbConn.exitPotentialWriteReadDeadlock()
+	//_, err := fbConn.conn.Write(batch.buf)
 	//if err != nil {
-	//	pgConn.contextWatcher.Unwatch()
+	//	fbConn.contextWatcher.Unwatch()
 	//	multiResult.err = normalizeTimeoutError(multiResult.ctx, err)
 	//	multiResult.closed = true
-	//	pgConn.asyncClose()
+	//	fbConn.asyncClose()
 	//	return multiResult
 	//}
 	//
@@ -2044,9 +2044,9 @@ func (pgConn *PgConn) ExecBatch(ctx context.Context, batch *Batch) *MultiResultR
 //
 // The current implementation requires that standard_conforming_strings=on and client_encoding="UTF8". If these
 // conditions are not met an error will be returned. It is possible these restrictions will be lifted in the future.
-func (pgConn *PgConn) EscapeString(s string) (string, error) {
+func (fbConn *FbConn) EscapeString(s string) (string, error) {
 	//FIXME: need to check anything for RDB?
-	//if pgConn.ParameterStatus("client_encoding") != "UTF8" {
+	//if fbConn.ParameterStatus("client_encoding") != "UTF8" {
 	//	return "", errors.New("EscapeString must be run with client_encoding=UTF8")
 	//}
 
@@ -2061,11 +2061,11 @@ func (pgConn *PgConn) EscapeString(s string) (string, error) {
 //
 // Deprecated: CheckConn is deprecated in favor of Ping. CheckConn cannot detect all types of broken connections where
 // the write would still appear to succeed. Prefer Ping unless on a high latency connection.
-func (pgConn *PgConn) CheckConn() error {
+func (fbConn *FbConn) CheckConn() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
 	defer cancel()
 
-	_, err := pgConn.ReceiveMessage(ctx)
+	_, err := fbConn.ReceiveMessage(ctx)
 	if err != nil {
 		if !Timeout(err) {
 			return err
@@ -2078,66 +2078,66 @@ func (pgConn *PgConn) CheckConn() error {
 // Ping pings the server. This can be useful because a TCP connection can be broken such that a write will appear to
 // succeed even though it will never actually reach the server. Pinging immediately before sending a query reduces the
 // chances a query will be sent that fails without the client knowing whether the server received it or not.
-func (pgConn *PgConn) Ping(ctx context.Context) error {
+func (fbConn *FbConn) Ping(ctx context.Context) error {
 	//FIXME: fbx how to "ping RDB?"
-	_, err := pgConn.Exec(ctx, "-- ping").Close()
+	_, err := fbConn.Exec(ctx, "-- ping").Close()
 	return err
 }
 
 // makeQueryStatus makes a QueryStatus. It does not retain a reference to buf or buf's underlying memory.
-func (pgConn *PgConn) makeQueryStatus(statementType int) QueryStatus {
+func (fbConn *FbConn) makeQueryStatus(statementType int) QueryStatus {
 	return QueryStatus{statementType: statementType}
 }
 
 // enterPotentialWriteReadDeadlock must be called before a write that could deadlock if the server is simultaneously
 // blocked writing to us.
-func (pgConn *PgConn) enterPotentialWriteReadDeadlock() {
+func (fbConn *FbConn) enterPotentialWriteReadDeadlock() {
 	// The time to wait is somewhat arbitrary. A Write should only take as long as the syscall and memcpy to the OS
 	// outbound network buffer unless the buffer is full (which potentially is a block). It needs to be long enough for
 	// the normal case, but short enough not to kill performance if a block occurs.
 	//
 	// In addition, on Windows the default timer resolution is 15.6ms. So setting the timer to less than that is
 	// ineffective.
-	if pgConn.slowWriteTimer.Reset(15 * time.Millisecond) {
+	if fbConn.slowWriteTimer.Reset(15 * time.Millisecond) {
 		panic("BUG: slow write timer already active")
 	}
 }
 
 // exitPotentialWriteReadDeadlock must be called after a call to enterPotentialWriteReadDeadlock.
-func (pgConn *PgConn) exitPotentialWriteReadDeadlock() {
-	//if !pgConn.slowWriteTimer.Stop() {
+func (fbConn *FbConn) exitPotentialWriteReadDeadlock() {
+	//if !fbConn.slowWriteTimer.Stop() {
 	//	// The timer starts its function in a separate goroutine. It is necessary to ensure the background reader has
 	//	// started before calling Stop. Otherwise, the background reader may not be stopped. That on its own is not a
 	//	// serious problem. But what is a serious problem is that the background reader may start at an inopportune time in
 	//	// a subsequent query. For example, if a subsequent query was canceled then a deadline may be set on the net.Conn to
 	//	// interrupt an in-progress read. After the read is interrupted, but before the deadline is cleared, the background
 	//	// reader could start and read a deadline error. Then the next query would receive the an unexpected deadline error.
-	//	<-pgConn.bgReaderStarted
-	//	pgConn.bgReader.Stop()
+	//	<-fbConn.bgReaderStarted
+	//	fbConn.bgReader.Stop()
 	//}
 }
 
-func (pgConn *PgConn) flushWithPotentialWriteReadDeadlock() error {
-	pgConn.enterPotentialWriteReadDeadlock()
-	defer pgConn.exitPotentialWriteReadDeadlock()
-	err := pgConn.writer.Flush()
+func (fbConn *FbConn) flushWithPotentialWriteReadDeadlock() error {
+	fbConn.enterPotentialWriteReadDeadlock()
+	defer fbConn.exitPotentialWriteReadDeadlock()
+	err := fbConn.writer.Flush()
 	return err
 }
 
-// SyncConn prepares the underlying net.Conn for direct use. PgConn may internally buffer reads or use goroutines for
+// SyncConn prepares the underlying net.Conn for direct use. FbConn may internally buffer reads or use goroutines for
 // background IO. This means that any direct use of the underlying net.Conn may be corrupted if a read is already
 // buffered or a read is in progress. SyncConn drains read buffers and stops background IO. In some cases this may
 // require sending a ping to the server. ctx can be used to cancel this operation. This should be called before any
 // operation that will use the underlying net.Conn directly. e.g. Before Conn() or Hijack().
 //
 // This should not be confused with the PostgreSQL protocol Sync message.
-func (pgConn *PgConn) SyncConn(ctx context.Context) error {
+func (fbConn *FbConn) SyncConn(ctx context.Context) error {
 	//for i := 0; i < 10; i++ {
-	//	if pgConn.bgReader.Status() == bgreader.StatusStopped && pgConn.frontend.ReadBufferLen() == 0 {
+	//	if fbConn.bgReader.Status() == bgreader.StatusStopped && fbConn.frontend.ReadBufferLen() == 0 {
 	//		return nil
 	//	}
 	//
-	//	err := pgConn.Ping(ctx)
+	//	err := fbConn.Ping(ctx)
 	//	if err != nil {
 	//		return fmt.Errorf("SyncConn: Ping failed while syncing conn: %w", err)
 	//	}
@@ -2150,8 +2150,8 @@ func (pgConn *PgConn) SyncConn(ctx context.Context) error {
 }
 
 // CustomData returns a map that can be used to associate custom data with the connection.
-func (pgConn *PgConn) CustomData() map[string]any {
-	return pgConn.customData
+func (fbConn *FbConn) CustomData() map[string]any {
+	return fbConn.customData
 }
 
 // HijackedConn is the result of hijacking a connection.
@@ -2169,40 +2169,40 @@ type HijackedConn struct {
 	//CustomData        map[string]any
 }
 
-// Hijack extracts the internal connection data. pgConn must be in an idle state. SyncConn should be called immediately
-// before Hijack. pgConn is unusable after hijacking. Hijacking is typically only useful when using pgconn to establish
+// Hijack extracts the internal connection data. fbConn must be in an idle state. SyncConn should be called immediately
+// before Hijack. fbConn is unusable after hijacking. Hijacking is typically only useful when using fbconn to establish
 // a connection, but taking complete control of the raw connection after that (e.g. a load balancer or proxy).
 //
 // Due to the necessary exposure of internal implementation details, it is not covered by the semantic versioning
 // compatibility.
-func (pgConn *PgConn) Hijack() (*HijackedConn, error) {
-	//if err := pgConn.lock(); err != nil {
+func (fbConn *FbConn) Hijack() (*HijackedConn, error) {
+	//if err := fbConn.lock(); err != nil {
 	//	return nil, err
 	//}
-	//pgConn.status = connStatusClosed
+	//fbConn.status = connStatusClosed
 	//
 	//return &HijackedConn{
-	//	Conn:              pgConn.conn,
-	//	PID:               pgConn.pid,
-	//	SecretKey:         pgConn.secretKey,
-	//	ParameterStatuses: pgConn.parameterStatuses,
-	//	TxStatus:          pgConn.txStatus,
-	//	Client:          pgConn.frontend,
-	//	Config:            pgConn.config,
-	//	CustomData:        pgConn.customData,
+	//	Conn:              fbConn.conn,
+	//	PID:               fbConn.pid,
+	//	SecretKey:         fbConn.secretKey,
+	//	ParameterStatuses: fbConn.parameterStatuses,
+	//	TxStatus:          fbConn.txStatus,
+	//	Client:          fbConn.frontend,
+	//	Config:            fbConn.config,
+	//	CustomData:        fbConn.customData,
 	//}, nil
 	panic("implement me")
 }
 
-// Construct created a PgConn from an already established connection to a PostgreSQL server. This is the inverse of
-// PgConn.Hijack. The connection must be in an idle state.
+// Construct created a FbConn from an already established connection to a PostgreSQL server. This is the inverse of
+// FbConn.Hijack. The connection must be in an idle state.
 //
 // hc.Client is replaced by a new pgproto3.Client built by hc.Config.BuildFrontend.
 //
 // Due to the necessary exposure of internal implementation details, it is not covered by the semantic versioning
 // compatibility.
-func Construct(hc *HijackedConn) (*PgConn, error) {
-	//pgConn := &PgConn{
+func Construct(hc *HijackedConn) (*FbConn, error) {
+	//fbConn := &FbConn{
 	//	conn:              hc.Conn,
 	//	pid:               hc.PID,
 	//	secretKey:         hc.SecretKey,
@@ -2217,19 +2217,19 @@ func Construct(hc *HijackedConn) (*PgConn, error) {
 	//	cleanupDone: make(chan struct{}),
 	//}
 	//
-	//pgConn.contextWatcher = ctxwatch.NewContextWatcher(hc.Config.BuildContextWatcherHandler(pgConn))
-	//pgConn.bgReader = bgreader.New(pgConn.conn)
-	//pgConn.slowWriteTimer = time.AfterFunc(time.Duration(math.MaxInt64),
+	//fbConn.contextWatcher = ctxwatch.NewContextWatcher(hc.Config.BuildContextWatcherHandler(fbConn))
+	//fbConn.bgReader = bgreader.New(fbConn.conn)
+	//fbConn.slowWriteTimer = time.AfterFunc(time.Duration(math.MaxInt64),
 	//	func() {
-	//		pgConn.bgReader.Start()
-	//		pgConn.bgReaderStarted <- struct{}{}
+	//		fbConn.bgReader.Start()
+	//		fbConn.bgReaderStarted <- struct{}{}
 	//	},
 	//)
-	//pgConn.slowWriteTimer.Stop()
-	//pgConn.bgReaderStarted = make(chan struct{})
-	//pgConn.frontend = hc.Config.BuildFrontend(pgConn.bgReader, pgConn.conn)
+	//fbConn.slowWriteTimer.Stop()
+	//fbConn.bgReaderStarted = make(chan struct{})
+	//fbConn.frontend = hc.Config.BuildFrontend(fbConn.bgReader, fbConn.conn)
 	//
-	//return pgConn, nil
+	//return fbConn, nil
 	panic("implement me")
 }
 
@@ -2245,7 +2245,7 @@ func Construct(hc *HijackedConn) (*PgConn, error) {
 // (https://www.postgresql.org/docs/current/protocol-flow.html#PROTOCOL-FLOW-EXT-QUERY) and the libpq pipeline mode
 // (https://www.postgresql.org/docs/current/libpq-pipeline-mode.html).
 type Pipeline struct {
-	conn *PgConn
+	conn *FbConn
 	ctx  context.Context
 
 	state  pipelineState
@@ -2376,30 +2376,30 @@ func (s *pipelineState) ExpectedReadyForQuery() int {
 }
 
 // ensureInternalTransaction starts internal transaction if not started yet and bind it to connection
-func (pgConn *PgConn) ensureInternalTransaction(ctx context.Context, tpb []byte) (*FBTransaction, error) {
-	if pgConn.internalTransaction == nil || pgConn.internalTransaction.Closed {
-		tx, err := pgConn.StartTransactionTPB(ctx, tpb)
+func (fbConn *FbConn) ensureInternalTransaction(ctx context.Context, tpb []byte) (*FBTransaction, error) {
+	if fbConn.internalTransaction == nil || fbConn.internalTransaction.Closed {
+		tx, err := fbConn.StartTransactionTPB(ctx, tpb)
 		if err != nil {
 			return nil, err
 		}
-		pgConn.internalTransaction = tx
+		fbConn.internalTransaction = tx
 	}
-	return pgConn.internalTransaction, nil
+	return fbConn.internalTransaction, nil
 }
 
 // StartTransaction starts new transaction not bound to connection
-func (pgConn *PgConn) StartTransaction(ctx context.Context) (*FBTransaction, error) {
-	return pgConn.StartTransactionTPB(ctx, nil)
+func (fbConn *FbConn) StartTransaction(ctx context.Context) (*FBTransaction, error) {
+	return fbConn.StartTransactionTPB(ctx, nil)
 }
 
 // StartTransaction starts new transaction not bound to connection with TPB block
-func (pgConn *PgConn) StartTransactionTPB(ctx context.Context, tpb []byte) (*FBTransaction, error) {
+func (fbConn *FbConn) StartTransactionTPB(ctx context.Context, tpb []byte) (*FBTransaction, error) {
 	var err error
 
-	if err = pgConn.lock(); err != nil {
+	if err = fbConn.lock(); err != nil {
 		return nil, err
 	}
-	defer pgConn.unlock()
+	defer fbConn.unlock()
 
 	if ctx != context.Background() {
 		select {
@@ -2407,31 +2407,31 @@ func (pgConn *PgConn) StartTransactionTPB(ctx context.Context, tpb []byte) (*FBT
 			return nil, newContextAlreadyDoneError(ctx)
 		default:
 		}
-		pgConn.contextWatcher.Watch(ctx)
-		defer pgConn.contextWatcher.Unwatch()
+		fbConn.contextWatcher.Watch(ctx)
+		defer fbConn.contextWatcher.Unwatch()
 	}
 
 	opTransaction := fbproto.OpTransaction{
 		TPB: tpb,
 	}
-	if err = pgConn.client.WriteMessage(&opTransaction); err != nil {
+	if err = fbConn.client.WriteMessage(&opTransaction); err != nil {
 		return nil, err
 	}
 
-	if err = pgConn.writer.Flush(); err != nil {
+	if err = fbConn.writer.Flush(); err != nil {
 		return nil, err
 	}
 
-	msg, err := pgConn.receiveMessage()
+	msg, err := fbConn.receiveMessage()
 	if err != nil {
-		pgConn.asyncClose()
+		fbConn.asyncClose()
 		return nil, err
 	}
 
 	switch m := msg.(type) {
 	case *fbproto.OpResponse:
-		tx := &FBTransaction{Connection: pgConn, Handle: m.Object, Closed: false}
-		pgConn.activeTransactions[tx] = struct{}{}
+		tx := &FBTransaction{Connection: fbConn, Handle: m.Object, Closed: false}
+		fbConn.activeTransactions[tx] = struct{}{}
 		return tx, nil
 	case *fbproto.ErrorResponse:
 		return nil, ErrorResponseToFbError(m)
@@ -2446,8 +2446,8 @@ func (pgConn *PgConn) StartTransactionTPB(ctx context.Context, tpb []byte) (*FBT
 // CancelRequest and Close. ctx is in effect for entire life of the *Pipeline.
 //
 // Prefer ExecBatch when only sending one group of queries at once.
-func (pgConn *PgConn) StartPipeline(ctx context.Context) *Pipeline {
-	//if err := pgConn.lock(); err != nil {
+func (fbConn *FbConn) StartPipeline(ctx context.Context) *Pipeline {
+	//if err := fbConn.lock(); err != nil {
 	//	pipeline := &Pipeline{
 	//		closed: true,
 	//		err:    err,
@@ -2457,31 +2457,31 @@ func (pgConn *PgConn) StartPipeline(ctx context.Context) *Pipeline {
 	//	return pipeline
 	//}
 	//
-	//pgConn.pipeline = Pipeline{
-	//	conn: pgConn,
+	//fbConn.pipeline = Pipeline{
+	//	conn: fbConn,
 	//	ctx:  ctx,
 	//}
-	//pgConn.pipeline.state.Init()
+	//fbConn.pipeline.state.Init()
 	//
-	//pipeline := &pgConn.pipeline
+	//pipeline := &fbConn.pipeline
 	//
 	//if ctx != context.Background() {
 	//	select {
 	//	case <-ctx.Done():
 	//		pipeline.closed = true
 	//		pipeline.err = newContextAlreadyDoneError(ctx)
-	//		pgConn.unlock()
+	//		fbConn.unlock()
 	//		return pipeline
 	//	default:
 	//	}
-	//	pgConn.contextWatcher.Watch(ctx)
+	//	fbConn.contextWatcher.Watch(ctx)
 	//}
 	//
 	//return pipeline
 	panic("implement me")
 }
 
-// SendPrepare is the pipeline version of *PgConn.Prepare.
+// SendPrepare is the pipeline version of *FbConn.Prepare.
 func (p *Pipeline) SendPrepare(name, sql string, paramOIDs []uint32) {
 	//if p.closed {
 	//	return
@@ -2502,7 +2502,7 @@ func (p *Pipeline) SendDeallocate(name string) {
 	//p.state.PushBackRequestType(pipelineDeallocate)
 }
 
-// SendQueryParams is the pipeline version of *PgConn.QueryParams.
+// SendQueryParams is the pipeline version of *FbConn.QueryParams.
 func (p *Pipeline) SendQueryParams(sql string, paramValues [][]byte, paramOIDs []uint32, paramFormats []int16, resultFormats []int16) {
 	//if p.closed {
 	//	return
@@ -2515,7 +2515,7 @@ func (p *Pipeline) SendQueryParams(sql string, paramValues [][]byte, paramOIDs [
 	//p.state.PushBackRequestType(pipelineQueryParams)
 }
 
-// SendQueryPrepared is the pipeline version of *PgConn.QueryPrepared.
+// SendQueryPrepared is the pipeline version of *FbConn.QueryPrepared.
 func (p *Pipeline) SendQueryPrepared(stmtName string, paramValues [][]byte, paramFormats []int16, resultFormats []int16) {
 	//if p.closed {
 	//	return
@@ -2622,7 +2622,7 @@ func (p *Pipeline) getResults() (results any, err error) {
 	//	switch msg := msg.(type) {
 	//	case *pgproto3.RowDescription:
 	//		p.conn.resultReader = ResultReader{
-	//			pgConn:            p.conn,
+	//			fbConn:            p.conn,
 	//			pipeline:          p,
 	//			ctx:               p.ctx,
 	//			fieldDescriptions: p.conn.convertRowDescription(p.conn.fieldDescriptions[:], msg),
@@ -2752,7 +2752,7 @@ func (h *DeadlineContextWatcherHandler) HandleUnwatchAfterCancel() {
 // CancelRequestContextWatcherHandler handles canceled contexts by sending a cancel request to the server. It also sets
 // a deadline on a net.Conn as a fallback.
 type CancelRequestContextWatcherHandler struct {
-	Conn *PgConn
+	Conn *FbConn
 
 	// CancelRequestDelay is the delay before sending the cancel request to the server.
 	CancelRequestDelay time.Duration

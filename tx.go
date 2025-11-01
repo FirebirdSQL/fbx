@@ -87,7 +87,7 @@ func (c *Conn) BeginTx(ctx context.Context, txOptions TxOptions) (Tx, error) {
 		}
 	}
 
-	fbTx, err := c.pgConn.StartTransactionTPB(ctx, tpb.Bytes())
+	fbTx, err := c.fbConn.StartTransactionTPB(ctx, tpb.Bytes())
 	if err != nil {
 		// begin should never fail unless there is an underlying connection issue or
 		// a context timeout. In either case, the connection is possibly broken.

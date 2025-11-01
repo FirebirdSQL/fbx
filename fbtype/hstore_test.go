@@ -320,7 +320,7 @@ func BenchmarkHstoreScan(b *testing.B) {
 		}
 	})
 
-	// benchmark the []byte scan API used by pgconn
+	// benchmark the []byte scan API used by fbconn
 	scanConfigs := []struct {
 		name       string
 		scanPlan   fbtype.ScanPlan

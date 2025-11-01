@@ -193,7 +193,7 @@ func TestJSONCodecUnmarshalSQLNull(t *testing.T) {
 		str := "foobar"
 		err = conn.QueryRow(ctx, "select null::json").Scan(&str)
 		fieldName := "json"
-		if conn.PgConn().ParameterStatus("crdb_version") != "" {
+		if conn.FbConn().ParameterStatus("crdb_version") != "" {
 			fieldName = "jsonb" // Seems like CockroachDB treats json as jsonb.
 		}
 		require.EqualError(t, err, fmt.Sprintf("can't scan into dest[0] (col: %s): cannot scan NULL into *string", fieldName))
