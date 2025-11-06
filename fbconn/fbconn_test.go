@@ -985,9 +985,9 @@ func TestConnExecPrepared(t *testing.T) {
 		assert.Equal(t, "Hello, world", string(result.Values()[0]))
 	}
 	assert.Equal(t, 1, rowCount)
-	commandTag, err := result.Close()
+	st, err := result.Close()
 	//SELECT 1
-	assert.Equal(t, "", commandTag.String())
+	assert.Equal(t, "SELECT", st.String())
 	assert.NoError(t, err)
 
 	err = ps.Deallocate(ctx)
