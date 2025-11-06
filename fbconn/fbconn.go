@@ -585,7 +585,11 @@ connectLoop:
 		dpb.PutString(fbproto.Isc_dpb_sql_role_name, config.Role)
 	}
 	dpb.PutInt32(fbproto.Isc_dpb_process_id, int32(os.Getpid()))
-	dpb.PutString(fbproto.Isc_dpb_process_name, "fbx")
+	app, ok := config.RuntimeParams["application_name"]
+	if !ok {
+		app = "fbx"
+	}
+	dpb.PutString(fbproto.Isc_dpb_process_name, app)
 	//FIXME: fbx is timezone need? where get timezone?
 	//dpb.AppendTag(fbproto.Isc_dpb_session_time_zone)
 	dpb.PutString(fbproto.Isc_dpb_auth_plugin_list, authManager.BuildList())

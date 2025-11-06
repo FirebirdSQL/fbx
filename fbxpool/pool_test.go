@@ -243,7 +243,6 @@ func TestPoolAcquireFuncReturnsFnError(t *testing.T) {
 }
 
 func TestPoolBeforeConnect(t *testing.T) {
-	t.Skip("what we can do before connect?")
 	t.Parallel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -253,7 +252,7 @@ func TestPoolBeforeConnect(t *testing.T) {
 	require.NoError(t, err)
 
 	config.BeforeConnect = func(ctx context.Context, cfg *fbx.ConnConfig) error {
-		cfg.Config.RuntimeParams["application_name"] = "pgx"
+		cfg.Config.RuntimeParams["application_name"] = "app_before_connect"
 		return nil
 	}
 
@@ -262,9 +261,10 @@ func TestPoolBeforeConnect(t *testing.T) {
 	defer db.Close()
 
 	var str string
-	err = db.QueryRow(ctx, "SHOW application_name").Scan(&str)
+	err = db.QueryRow(ctx, `select mon$remote_process from mon$attachments`).Scan(&str)
+
 	require.NoError(t, err)
-	assert.EqualValues(t, "pgx", str)
+	assert.EqualValues(t, "app_before_connect", str)
 }
 
 func TestPoolAfterConnect(t *testing.T) {
