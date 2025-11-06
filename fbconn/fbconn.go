@@ -1834,6 +1834,14 @@ func (rr *ResultReader) Read() *Result {
 	return br
 }
 
+// ReadAll for compatibility with pgx code
+// It will always return single result from ResultReader and its error
+func (rr *ResultReader) ReadAll() ([]*Result, error) {
+	var results []*Result
+	results = append(results, rr.Read())
+	return results, results[0].Err
+}
+
 // NextRow advances the ResultReader to the next row and returns true if a row is available.
 func (rr *ResultReader) NextRow() bool {
 	var err error

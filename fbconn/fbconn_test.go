@@ -646,6 +646,12 @@ func TestConnExec(t *testing.T) {
 	assert.Len(t, res.Rows, 1)
 	assert.Equal(t, "Hello, world", string(res.Rows[0][0]))
 
+	results, err := fbConn.Exec(ctx, "select 'Hello, world' from rdb$database").ReadAll()
+	assert.NoError(t, err)
+	assert.Len(t, results, 1)
+	assert.Len(t, results[0].Rows, 1)
+	assert.Equal(t, "Hello, world", string(results[0].Rows[0][0]))
+
 	ensureConnValid(t, fbConn)
 }
 
