@@ -84,7 +84,6 @@ type NotificationHandler func(*FbConn, *Notification)
 // FbConn is a low-level PostgreSQL connection handle. It is not safe for concurrent usage.
 type FbConn struct {
 	conn              net.Conn
-	pid               uint32            // backend pid
 	secretKey         uint32            // key to use to send a cancel query message to the server
 	parameterStatuses map[string]string // parameters that have been reported by the server
 	txStatus          byte
@@ -832,12 +831,6 @@ func (fbConn *FbConn) receiveMessage() (fbproto.ServerMessage, error) {
 // writing then SyncConn should usually be called before Conn.
 func (fbConn *FbConn) Conn() net.Conn {
 	return fbConn.conn
-}
-
-// PID returns the backend PID.
-// FIXME: fbx we can obtain PID from MON$ATTACHMENTS, but we really need it
-func (fbConn *FbConn) PID() uint32 {
-	return fbConn.pid
 }
 
 // ActiveTx returns true if connection have active transactions
@@ -1651,6 +1644,37 @@ func (fbConn *FbConn) Rollback(ctx context.Context) error {
 	return fbConn.internalTransaction.Rollback(ctx)
 }
 
+// Disconnect ask server to close remote port
+func (fbConn *FbConn) Disconnect(ctx context.Context) error {
+	var err error
+	if err = fbConn.lock(); err != nil {
+		return err
+	}
+	defer fbConn.unlock()
+
+	if ctx != context.Background() {
+		select {
+		case <-ctx.Done():
+			return newContextAlreadyDoneError(ctx)
+		default:
+		}
+		fbConn.contextWatcher.Watch(ctx)
+		defer fbConn.contextWatcher.Unwatch()
+	}
+
+	if err = fbConn.client.WriteMessage(&fbproto.OpDisconnect{}); err != nil {
+		fbConn.asyncClose()
+		return err
+	}
+
+	if err = fbConn.writer.Flush(); err != nil {
+		fbConn.conn.Close()
+		return err
+	}
+
+	return nil
+}
+
 // MultiResultReader is a reader for a command that could return multiple results such as Exec or ExecBatch.
 type MultiResultReader struct {
 	fbConn *FbConn
@@ -2075,13 +2099,41 @@ func (fbConn *FbConn) CheckConn() error {
 	return nil
 }
 
-// Ping pings the server. This can be useful because a TCP connection can be broken such that a write will appear to
-// succeed even though it will never actually reach the server. Pinging immediately before sending a query reduces the
-// chances a query will be sent that fails without the client knowing whether the server received it or not.
+// Ping pings the server
 func (fbConn *FbConn) Ping(ctx context.Context) error {
-	//FIXME: fbx how to "ping RDB?"
-	_, err := fbConn.Exec(ctx, "-- ping").Close()
-	return err
+	var err error
+	if err = fbConn.lock(); err != nil {
+		return err
+	}
+	defer fbConn.unlock()
+
+	if ctx != context.Background() {
+		select {
+		case <-ctx.Done():
+			return newContextAlreadyDoneError(ctx)
+		default:
+		}
+		fbConn.contextWatcher.Watch(ctx)
+		defer fbConn.contextWatcher.Unwatch()
+	}
+
+	if err = fbConn.client.WriteMessage(&fbproto.OpPing{}); err != nil {
+		fbConn.asyncClose()
+		return err
+	}
+
+	if err = fbConn.writer.Flush(); err != nil {
+		fbConn.conn.Close()
+		return err
+	}
+
+	_, err = fbConn.receiveMessage()
+	if err != nil {
+		fbConn.asyncClose()
+		return err
+	}
+
+	return nil
 }
 
 // makeQueryStatus makes a QueryStatus. It does not retain a reference to buf or buf's underlying memory.

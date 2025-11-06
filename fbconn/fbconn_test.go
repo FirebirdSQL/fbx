@@ -1907,22 +1907,12 @@ func TestConnCheckConn(t *testing.T) {
 	require.NoError(t, err)
 	defer c1.Close(ctx)
 
-	if c1.ParameterStatus("crdb_version") != "" {
-		t.Skip("Server does not support pg_terminate_backend() (https://github.com/cockroachdb/cockroach/issues/35897)")
-	}
-
 	err = c1.CheckConn()
 	require.NoError(t, err)
 
-	c2, err := fbconn.Connect(ctx, connString)
+	err = c1.Disconnect(ctx)
 	require.NoError(t, err)
-	defer c2.Close(ctx)
 
-	res := c2.Exec(ctx, fmt.Sprintf("select pg_terminate_backend(%d)", c1.PID())).Read()
-	require.NoError(t, res.Err)
-
-	// It may take a while for the server to kill the backend. Retry until the error is detected or the test context is
-	// canceled.
 	for err == nil && ctx.Err() == nil {
 		time.Sleep(50 * time.Millisecond)
 		err = c1.CheckConn()
@@ -1951,18 +1941,14 @@ func TestConnPing(t *testing.T) {
 		t.Skip("Server does not support pg_terminate_backend() (https://github.com/cockroachdb/cockroach/issues/35897)")
 	}
 
-	_, err = c1.Exec(ctx, "set log_statement = 'all'").Close()
+	_, err = c1.Exec(ctx, "select * from rdb$database").Close()
 	require.NoError(t, err)
 
 	err = c1.Ping(ctx)
 	require.NoError(t, err)
 
-	c2, err := fbconn.Connect(ctx, connString)
+	err = c1.Disconnect(ctx)
 	require.NoError(t, err)
-	defer c2.Close(ctx)
-
-	res := c2.Exec(ctx, fmt.Sprintf("select pg_terminate_backend(%d)", c1.PID())).Read()
-	require.NoError(t, res.Err)
 
 	// Give a little time for the signal to actually kill the backend.
 	time.Sleep(500 * time.Millisecond)

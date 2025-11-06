@@ -151,7 +151,6 @@ func TestPoolAcquireAndConnHijack(t *testing.T) {
 }
 
 func TestPoolAcquireChecksIdleConns(t *testing.T) {
-	t.Skip("")
 	t.Parallel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -175,14 +174,16 @@ func TestPoolAcquireChecksIdleConns(t *testing.T) {
 
 	require.EqualValues(t, 3, pool.Stat().TotalConns())
 
-	var pids []uint32
+	var connIds []int32
 	for _, c := range conns {
-		//pids = append(pids, c.Conn().FbConn().PID())
+		var id int32
+		err = c.QueryRow(ctx, `select current_connection from rdb$database`).Scan(&id)
+		require.NoError(t, err)
+		connIds = append(connIds, id)
+		err = c.Conn().FbConn().Disconnect(ctx)
+		require.NoError(t, err)
 		c.Release()
 	}
-
-	_, err = controllerConn.Exec(ctx, `select pg_terminate_backend(n) from unnest($1::int[]) n`, pids)
-	require.NoError(t, err)
 
 	// All conns are dead they don't know it and neither does the pool.
 	require.EqualValues(t, 3, pool.Stat().TotalConns())
@@ -199,10 +200,12 @@ func TestPoolAcquireChecksIdleConns(t *testing.T) {
 	c, err := pool.Acquire(ctx)
 	require.NoError(t, err)
 
-	cPID := c.Conn().FbConn().PID()
+	var id int32
+	err = c.QueryRow(ctx, `select current_connection from rdb$database`).Scan(&id)
+	require.NoError(t, err)
 	c.Release()
 
-	require.NotContains(t, pids, cPID)
+	require.NotContains(t, connIds, id)
 }
 
 func TestPoolAcquireFunc(t *testing.T) {
@@ -393,27 +396,34 @@ func TestPoolBeforeClose(t *testing.T) {
 	config, err := fbxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 
-	connPIDs := make(chan uint32, 5)
+	connIDs := make(chan int32, 5)
 	config.BeforeClose = func(c *fbx.Conn) {
-		connPIDs <- c.FbConn().PID()
+		var id int32
+		err = c.QueryRow(ctx, `select current_connection from rdb$database`).Scan(&id)
+		connIDs <- id
+		require.NoError(t, err)
 	}
 
 	db, err := fbxpool.NewWithConfig(ctx, config)
 	require.NoError(t, err)
 	defer db.Close()
 
-	acquiredPIDs := make([]uint32, 0, 5)
-	closedPIDs := make([]uint32, 0, 5)
+	acquiredIDs := make([]int32, 0, 5)
+	closedIDs := make([]int32, 0, 5)
 	for i := 0; i < 5; i++ {
 		conn, err := db.Acquire(ctx)
 		assert.NoError(t, err)
-		acquiredPIDs = append(acquiredPIDs, conn.Conn().FbConn().PID())
+		var id int32
+		err = conn.QueryRow(ctx, `select current_connection from rdb$database`).Scan(&id)
+		require.NoError(t, err)
+		acquiredIDs = append(acquiredIDs, id)
+
 		conn.Release()
 		db.Reset()
-		closedPIDs = append(closedPIDs, <-connPIDs)
+		closedIDs = append(closedIDs, <-connIDs)
 	}
 
-	assert.ElementsMatch(t, acquiredPIDs, closedPIDs)
+	assert.ElementsMatch(t, acquiredIDs, closedIDs)
 }
 
 func TestPoolAcquireAllIdle(t *testing.T) {
@@ -820,7 +830,9 @@ func TestConnReleaseClosesConnInFailedTransaction(t *testing.T) {
 	c, err := pool.Acquire(ctx)
 	require.NoError(t, err)
 
-	//pid := c.Conn().FbConn().PID()
+	var id int32
+	err = c.QueryRow(ctx, `select current_connection from rdb$database`).Scan(&id)
+	require.NoError(t, err)
 
 	assert.False(t, c.Conn().FbConn().ActiveTx())
 
@@ -840,7 +852,11 @@ func TestConnReleaseClosesConnInFailedTransaction(t *testing.T) {
 	c, err = pool.Acquire(ctx)
 	require.NoError(t, err)
 
-	//assert.NotEqual(t, pid, c.Conn().FbConn().PID())
+	var id2 int32
+	err = c.QueryRow(ctx, `select current_connection from rdb$database`).Scan(&id2)
+	require.NoError(t, err)
+
+	assert.NotEqual(t, id, id2)
 	assert.False(t, c.Conn().FbConn().ActiveTx())
 
 	c.Release()
@@ -859,7 +875,9 @@ func TestConnReleaseClosesConnInTransaction(t *testing.T) {
 	c, err := pool.Acquire(ctx)
 	require.NoError(t, err)
 
-	pid := c.Conn().FbConn().PID()
+	var id int32
+	err = c.QueryRow(ctx, `select current_connection from rdb$database`).Scan(&id)
+	require.NoError(t, err)
 
 	assert.False(t, c.Conn().FbConn().ActiveTx())
 
@@ -874,7 +892,11 @@ func TestConnReleaseClosesConnInTransaction(t *testing.T) {
 	c, err = pool.Acquire(ctx)
 	require.NoError(t, err)
 
-	assert.NotEqual(t, pid, c.Conn().FbConn().PID())
+	var id2 int32
+	err = c.QueryRow(ctx, `select current_connection from rdb$database`).Scan(&id2)
+	require.NoError(t, err)
+
+	assert.NotEqual(t, id, id2)
 	assert.False(t, c.Conn().FbConn().ActiveTx())
 
 	c.Release()

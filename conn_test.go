@@ -738,11 +738,8 @@ func TestFatalRxError(t *testing.T) {
 		}
 	}()
 
-	otherConn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
-	defer otherConn.Close(context.Background())
-
-	if _, err := otherConn.Exec(context.Background(), "select pg_terminate_backend($1)", conn.FbConn().PID()); err != nil {
-		t.Fatalf("Unable to kill backend PostgreSQL process: %v", err)
+	if err := conn.FbConn().Disconnect(context.Background()); err != nil {
+		t.Fatalf("Unable to disconnect: %v", err)
 	}
 
 	wg.Wait()
@@ -753,6 +750,7 @@ func TestFatalRxError(t *testing.T) {
 }
 
 func TestFatalTxError(t *testing.T) {
+	var err error
 	t.Parallel()
 
 	// Run timing sensitive test many times
@@ -761,17 +759,14 @@ func TestFatalTxError(t *testing.T) {
 			conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 			defer closeConn(t, conn)
 
-			fbxtest.SkipCockroachDB(t, conn, "Server does not support pg_terminate_backend() (https://github.com/cockroachdb/cockroach/issues/35897)")
-
 			otherConn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 			defer otherConn.Close(context.Background())
 
-			_, err := otherConn.Exec(context.Background(), "select pg_terminate_backend($1)", conn.FbConn().PID())
-			if err != nil {
-				t.Fatalf("Unable to kill backend PostgreSQL process: %v", err)
+			if err = conn.FbConn().Disconnect(context.Background()); err != nil {
+				t.Fatalf("Unable to disconnect: %v", err)
 			}
 
-			err = conn.QueryRow(context.Background(), "select 1").Scan(nil)
+			err = conn.QueryRow(context.Background(), "select 1 from rdb$database").Scan(nil)
 			if err == nil {
 				t.Fatal("Expected error but none occurred")
 			}
