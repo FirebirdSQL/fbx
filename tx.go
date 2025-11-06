@@ -3,6 +3,7 @@ package fbx
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 
 	"github.com/red-soft/fbx/fbconn"
@@ -62,22 +63,28 @@ func (c *Conn) Begin(ctx context.Context) (Tx, error) {
 // affects the begin command. i.e. there is no auto-rollback on context cancellation.
 func (c *Conn) BeginTx(ctx context.Context, txOptions TxOptions) (Tx, error) {
 	tpb := fbproto.NewTPBWriterV3()
-	switch txOptions.AccessMode {
+	mode := txOptions.AccessMode
+	level := txOptions.IsoLevel
+	if mode == "" {
+		mode = ReadWrite
+	}
+	if level == "" {
+		level = ReadCommitted
+	}
+	switch mode {
 	case ReadOnly:
 		tpb.PutTag(fbproto.Isc_tpb_read)
-	default:
-		fallthrough
 	case ReadWrite:
 		tpb.PutTag(fbproto.Isc_tpb_write)
+	default:
+		return nil, fmt.Errorf("unknown transaction access mode: %s", mode)
 	}
 	tpb.PutTag(fbproto.Isc_tpb_wait)
-	switch txOptions.IsoLevel {
+	switch level {
 	case Serializable:
 		tpb.PutTag(fbproto.Isc_tpb_consistency)
 	case RepeatableRead:
 		tpb.PutTag(fbproto.Isc_tpb_concurrency)
-	default:
-		fallthrough
 	case ReadCommitted:
 		tpb.PutTag(fbproto.Isc_tpb_read_committed)
 		if txOptions.AccessMode == ReadWrite {
@@ -85,6 +92,8 @@ func (c *Conn) BeginTx(ctx context.Context, txOptions TxOptions) (Tx, error) {
 		} else {
 			tpb.PutTag(fbproto.Isc_tpb_rec_version)
 		}
+	default:
+		return nil, fmt.Errorf("unknown transaction iso level: %s", level)
 	}
 
 	fbTx, err := c.fbConn.StartTransactionTPB(ctx, tpb.Bytes())
