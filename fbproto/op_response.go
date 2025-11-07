@@ -15,8 +15,8 @@ type OpResponse struct {
 	Object       int
 	SqlCode      int
 	Data         []byte
-	GdsCodes     list.List
-	WarningCodes list.List
+	GdsCodes     []int
+	WarningCodes []int
 	SqlState     string
 	Message      string
 	WarnMessage  string
@@ -74,8 +74,9 @@ func (op *OpResponse) Read(x *XDRReader) error {
 				currentMsgPtr = &op.Message
 				currentIsError = true
 				numArg = 0
-
-				op.GdsCodes.PushBack(gdsCode)
+				if gdsCode != Isc_random && gdsCode != Isc_sqlerr {
+					op.GdsCodes = append(op.GdsCodes, gdsCode)
+				}
 				if msg, ok := errmsgs[gdsCode]; ok {
 					*currentMsgPtr += msg
 				} else {
@@ -99,7 +100,9 @@ func (op *OpResponse) Read(x *XDRReader) error {
 				currentIsError = false
 				numArg = 0
 
-				op.WarningCodes.PushBack(wCode)
+				if wCode != Isc_random {
+					op.WarningCodes = append(op.WarningCodes, wCode)
+				}
 				if msg, ok := errmsgs[wCode]; ok {
 					*currentMsgPtr += msg
 				} else {
@@ -108,7 +111,7 @@ func (op *OpResponse) Read(x *XDRReader) error {
 			}
 		case Isc_arg_number:
 			if num, err := x.ReadInt32(); err == nil {
-				if currentIsError && gdsCode == 335544436 { //isc_sqlerr
+				if currentIsError && gdsCode == Isc_sqlerr {
 					op.SqlCode = num
 				}
 				numArg++
@@ -147,7 +150,7 @@ type ErrorResponse struct {
 	ServerMessage
 	Object   int
 	BlobId   int64
-	GdsCodes list.List
+	GdsCodes []int
 	SqlCode  int
 	SqlState string
 	Message  string
