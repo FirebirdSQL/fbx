@@ -44,7 +44,7 @@ func (e *FbError) SQLState() string {
 }
 
 func (e *FbError) Error() string {
-	return e.Message + " (SQLSTATE " + e.Code + ")"
+	return e.Message + "SQLSTATE " + e.Code + ""
 }
 
 func ErrorResponseToFbError(errorResponse *fbproto.ErrorResponse) *FbError {
