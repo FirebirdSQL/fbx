@@ -155,7 +155,7 @@ func (tx *dbTx) Begin(ctx context.Context) (Tx, error) {
 	}
 
 	tx.savepointNum++
-	_, err := tx.conn.Exec(ctx, "savepoint sp_"+strconv.FormatInt(tx.savepointNum, 10))
+	_, err := tx.Exec(ctx, "savepoint sp_"+strconv.FormatInt(tx.savepointNum, 10))
 	if err != nil {
 		return nil, err
 	}

@@ -405,7 +405,7 @@ func TestTxNestedTransactionCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = tx.Exec(context.Background(), "insert into foo(id) values (1)")
+	_, err = tx.Exec(context.Background(), "insert into "+t.Name()+"(id) values (1)")
 	if err != nil {
 		t.Fatalf("tx.Exec failed: %v", err)
 	}
@@ -415,7 +415,7 @@ func TestTxNestedTransactionCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = nestedTx.Exec(context.Background(), "insert into foo(id) values (2)")
+	_, err = nestedTx.Exec(context.Background(), "insert into "+t.Name()+"(id) values (2)")
 	if err != nil {
 		t.Fatalf("nestedTx.Exec failed: %v", err)
 	}
@@ -425,7 +425,7 @@ func TestTxNestedTransactionCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = doubleNestedTx.Exec(context.Background(), "insert into foo(id) values (3)")
+	_, err = doubleNestedTx.Exec(context.Background(), "insert into "+t.Name()+"(id) values (3)")
 	if err != nil {
 		t.Fatalf("doubleNestedTx.Exec failed: %v", err)
 	}
@@ -446,7 +446,7 @@ func TestTxNestedTransactionCommit(t *testing.T) {
 	}
 
 	var n int64
-	err = conn.QueryRow(context.Background(), "select count(*) from foo").Scan(&n)
+	err = conn.QueryRow(context.Background(), "select count(*) from "+t.Name()).Scan(&n)
 	if err != nil {
 		t.Fatalf("QueryRow Scan failed: %v", err)
 	}
@@ -477,7 +477,7 @@ func TestTxNestedTransactionRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = tx.Exec(context.Background(), "insert into foo(id) values (1)")
+	_, err = tx.Exec(context.Background(), "insert into  "+t.Name()+"(id) values (1)")
 	if err != nil {
 		t.Fatalf("tx.Exec failed: %v", err)
 	}
@@ -487,7 +487,7 @@ func TestTxNestedTransactionRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = nestedTx.Exec(context.Background(), "insert into foo(id) values (2)")
+	_, err = nestedTx.Exec(context.Background(), "insert into "+t.Name()+"(id) values (2)")
 	if err != nil {
 		t.Fatalf("nestedTx.Exec failed: %v", err)
 	}
@@ -497,7 +497,7 @@ func TestTxNestedTransactionRollback(t *testing.T) {
 		t.Fatalf("nestedTx.Rollback failed: %v", err)
 	}
 
-	_, err = tx.Exec(context.Background(), "insert into foo(id) values (3)")
+	_, err = tx.Exec(context.Background(), "insert into "+t.Name()+"(id) values (3)")
 	if err != nil {
 		t.Fatalf("tx.Exec failed: %v", err)
 	}
@@ -508,7 +508,7 @@ func TestTxNestedTransactionRollback(t *testing.T) {
 	}
 
 	var n int64
-	err = conn.QueryRow(context.Background(), "select count(*) from foo").Scan(&n)
+	err = conn.QueryRow(context.Background(), "select count(*) from "+t.Name()).Scan(&n)
 	if err != nil {
 		t.Fatalf("QueryRow Scan failed: %v", err)
 	}
@@ -534,15 +534,15 @@ func TestTxBeginFuncNestedTransactionCommit(t *testing.T) {
 	require.NoError(t, err)
 
 	err = fbx.BeginFunc(context.Background(), db, func(db fbx.Tx) error {
-		_, err := db.Exec(context.Background(), "insert into foo(id) values (1)")
+		_, err := db.Exec(context.Background(), "insert into "+t.Name()+"(id) values (1)")
 		require.NoError(t, err)
 
 		err = fbx.BeginFunc(context.Background(), db, func(db fbx.Tx) error {
-			_, err := db.Exec(context.Background(), "insert into foo(id) values (2)")
+			_, err := db.Exec(context.Background(), "insert into "+t.Name()+"(id) values (2)")
 			require.NoError(t, err)
 
 			err = fbx.BeginFunc(context.Background(), db, func(db fbx.Tx) error {
-				_, err := db.Exec(context.Background(), "insert into foo(id) values (3)")
+				_, err := db.Exec(context.Background(), "insert into "+t.Name()+"(id) values (3)")
 				require.NoError(t, err)
 				return nil
 			})
@@ -556,7 +556,7 @@ func TestTxBeginFuncNestedTransactionCommit(t *testing.T) {
 	require.NoError(t, err)
 
 	var n int64
-	err = db.QueryRow(context.Background(), "select count(*) from foo").Scan(&n)
+	err = db.QueryRow(context.Background(), "select count(*) from "+t.Name()).Scan(&n)
 	require.NoError(t, err)
 	require.EqualValues(t, 3, n)
 }
@@ -578,17 +578,17 @@ func TestTxBeginFuncNestedTransactionRollback(t *testing.T) {
 	require.NoError(t, err)
 
 	err = fbx.BeginFunc(context.Background(), db, func(db fbx.Tx) error {
-		_, err := db.Exec(context.Background(), "insert into foo(id) values (1)")
+		_, err := db.Exec(context.Background(), "insert into "+t.Name()+"(id) values (1)")
 		require.NoError(t, err)
 
 		err = fbx.BeginFunc(context.Background(), db, func(db fbx.Tx) error {
-			_, err := db.Exec(context.Background(), "insert into foo(id) values (2)")
+			_, err := db.Exec(context.Background(), "insert into "+t.Name()+"(id) values (2)")
 			require.NoError(t, err)
 			return errors.New("do a rollback")
 		})
 		require.EqualError(t, err, "do a rollback")
 
-		_, err = db.Exec(context.Background(), "insert into foo(id) values (3)")
+		_, err = db.Exec(context.Background(), "insert into "+t.Name()+"(id) values (3)")
 		require.NoError(t, err)
 
 		return nil
@@ -596,7 +596,7 @@ func TestTxBeginFuncNestedTransactionRollback(t *testing.T) {
 	require.NoError(t, err)
 
 	var n int64
-	err = db.QueryRow(context.Background(), "select count(*) from foo").Scan(&n)
+	err = db.QueryRow(context.Background(), "select count(*) from "+t.Name()).Scan(&n)
 	require.NoError(t, err)
 	require.EqualValues(t, 2, n)
 }

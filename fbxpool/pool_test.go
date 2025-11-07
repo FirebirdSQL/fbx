@@ -998,8 +998,7 @@ func TestTxBeginFuncNestedTransactionCommit(t *testing.T) {
 	defer db.Close()
 
 	createSql := `
-		drop table if exists pgxpooltx;
-    create temporary table pgxpooltx(
+		recreate table pgxpooltx(
       id integer,
       unique (id)
     );
@@ -1048,8 +1047,7 @@ func TestTxBeginFuncNestedTransactionRollback(t *testing.T) {
 	defer db.Close()
 
 	createSql := `
-		drop table if exists pgxpooltx;
-    create temporary table pgxpooltx(
+		recreate table pgxpooltx(
       id integer,
       unique (id)
     );
