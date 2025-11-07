@@ -131,7 +131,8 @@ func (t *tracer) traceCommitRetainingMessage(sender byte, msg *OpCommitRetaining
 
 func (t *tracer) traceResponseMessage(sender byte, msg *OpResponse) {
 	writeDetails := func() {
-		fmt.Fprintf(t.buf, " failure=%t warnings=%t sqlCode=%d", msg.Failure, msg.Warnings, msg.SqlErr)
+		fmt.Fprintf(t.buf, " failure=%t warnings=%t sqlErr=%d sqlState=%s", msg.Failure, msg.Warnings, msg.SqlErr, msg.SqlState)
+		fmt.Fprintf(t.buf, " sqlErr=%d", msg.SqlErr)
 		fmt.Fprintf(t.buf, " sqlState=%s", traceDoubleQuotedString([]byte(msg.SqlState)))
 		fmt.Fprintf(t.buf, " message=%s", traceDoubleQuotedString([]byte(msg.Message)))
 		fmt.Fprintf(t.buf, " warn=%s", traceDoubleQuotedString([]byte(msg.WarnMessage)))
