@@ -63,11 +63,15 @@ type LookupFunc func(ctx context.Context, host string) (addrs []string, err erro
 // BuildFrontendFunc is a function that can be used to create Client implementation for connection.
 type BuildFrontendFunc func(r io.Reader, w io.Writer) *fbproto.Client
 
-// FbErrorHandler is a function that handles errors returned from Postgres. This function must return true to keep
+// FbErrorHandler is a function that handles errors returned from Firebird. This function must return true to keep
 // the connection open. Returning false will cause the connection to be closed immediately. You should return
 // false on any FATAL-severity errors. This will not receive network errors. The *FbConn is provided so the handler is
 // aware of the origin of the error, but it must not invoke any query method.
 type FbErrorHandler func(*FbConn, *FbError) bool
+
+// FbWarningHandler is a function that handles warnings returned from Firebird.
+// The *FbConn is provided so the handler is aware of the origin of the warning, but it must not invoke any query method.
+type FbWarningHandler func(*FbConn, *FbWarning)
 
 // NoticeHandler is a function that can handle notices received from the PostgreSQL server. Notices can be received at
 // any time, usually during handling of a query response. The *FbConn is provided so the handler is aware of the origin
@@ -575,7 +579,12 @@ connectLoop:
 		fbConn.wireCrypt.ClearServerKeys()
 	}
 
-	dpb := fbproto.NewDPBWriterV2()
+	var dpb *fbproto.DPBWriterV2
+	if config.DPB == nil {
+		dpb = fbproto.NewDPBWriterV2()
+	} else {
+		dpb = fbproto.NewDPBWriterV2FromBytes(config.DPB)
+	}
 	dpb.PutInt32(fbproto.Isc_dpb_sql_dialect, 3)
 	dpb.PutString(fbproto.Isc_dpb_lc_ctype, config.Encoding)
 	if config.User != "" {
@@ -825,6 +834,10 @@ func (fbConn *FbConn) receiveMessage() (fbproto.ServerMessage, error) {
 			fbConn.conn.Close() // Ignore error as the connection is already broken and there is already an error to return.
 			close(fbConn.cleanupDone)
 			return nil, err
+		}
+	case *fbproto.OpResponse:
+		if msg.Warnings && fbConn.config.OnFbWarning != nil {
+			fbConn.config.OnFbWarning(fbConn, OpResponseToFbWarning(msg))
 		}
 	}
 

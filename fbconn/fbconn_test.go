@@ -16,6 +16,7 @@ import (
 
 	"github.com/red-soft/fbx/fbconn"
 	"github.com/red-soft/fbx/fbconn/ctxwatch"
+	"github.com/red-soft/fbx/fbproto"
 	"github.com/red-soft/fbx/fbtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -3560,4 +3561,36 @@ func TestConnExecImmediateNoTx(t *testing.T) {
 	require.NoError(t, err)
 
 	ensureConnValid(t, fbConn)
+}
+
+func TestConnWithWarning(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	var warnings string
+	// Assume default database dialect is 3, but connect with dialect 1 to get warning
+	config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	require.NoError(t, err)
+	dpb := fbproto.NewDPBWriterV2()
+	dpb.PutInt32(fbproto.Isc_dpb_set_db_sql_dialect, 1)
+	config.DPB = dpb.Bytes()
+	config.OnFbWarning = func(c *fbconn.FbConn, warn *fbconn.FbWarning) {
+		warnings += warn.Message + "SQLSTATE: " + warn.Code
+	}
+
+	fbConn, err := fbconn.ConnectConfig(ctx, config)
+	assert.NoError(t, err)
+	closeConn(t, fbConn)
+
+	dpb = fbproto.NewDPBWriterV2()
+	dpb.PutInt32(fbproto.Isc_dpb_set_db_sql_dialect, 3)
+	config.DPB = dpb.Bytes()
+
+	fbConn, err = fbconn.ConnectConfig(ctx, config)
+	assert.NoError(t, err)
+	closeConn(t, fbConn)
+
+	assert.Equal(t, "Database dialect being changed from 3 to 1\nSQLSTATE: 01000", warnings)
 }

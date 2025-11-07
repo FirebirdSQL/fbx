@@ -230,6 +230,7 @@ const (
 	Isc_dpb_sql_role_name         = 60
 	Isc_dpb_set_page_buffers      = 61
 	Isc_dpb_sql_dialect           = 63
+	Isc_dpb_set_db_sql_dialect    = 65
 	Isc_dpb_set_db_charset        = 68
 	Isc_dpb_process_id            = 71
 	Isc_dpb_no_db_triggers        = 72

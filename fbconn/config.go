@@ -39,6 +39,7 @@ type Config struct {
 	AuthPluginList []string
 	WireCrypt      bool
 	Encoding       string
+	DPB            []byte
 
 	// BuildContextWatcherHandler is called to create a ContextWatcherHandler for a connection. The handler is called
 	// when a context passed to a FbConn method is canceled.
@@ -66,8 +67,11 @@ type Config struct {
 	// OnNotification is a callback function called when a notification from the LISTEN/NOTIFY system is received.
 	OnNotification NotificationHandler
 
-	// OnFbError is a callback function called when a Firebird error is received by the server
+	// OnFbError is a callback function called when a Firebird error happened on server
 	OnFbError FbErrorHandler
+
+	// OnFbWarning is a callback function called when a Firebird warning obtained by client with success response
+	OnFbWarning FbWarningHandler
 
 	createdByParseConfig bool // Used to enforce created by ParseConfig rule.
 }

@@ -142,7 +142,7 @@ func (t *tracer) traceResponseMessage(sender byte, msg *OpResponse) {
 		if t.FullLogMode {
 			fmt.Fprintf(t.buf, " data=%s", traceSingleQuotedString(msg.Data))
 		}
-		fmt.Fprintf(t.buf, " gdsCodes=%d warnCodes=%d", len(msg.GdsCodes), len(msg.WarningCodes))
+		fmt.Fprintf(t.buf, " gdsCodes=%d", len(msg.GdsCodes))
 	}
 
 	t.writeTrace(sender, "Response", writeDetails)

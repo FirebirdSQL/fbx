@@ -143,6 +143,10 @@ func NewDPBWriterV2() *DPBWriterV2 {
 	return &DPBWriterV2{w: NewXPBWriterFromTag(Isc_dpb_version2)}
 }
 
+func NewDPBWriterV2FromBytes(dpb []byte) *DPBWriterV2 {
+	return &DPBWriterV2{w: NewXPBWriterFromBytes(dpb)}
+}
+
 func (pb *DPBWriterV2) PutTag(tag byte) {
 	pb.w.AppendByte(tag)
 }

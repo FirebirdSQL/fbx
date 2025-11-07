@@ -9,20 +9,19 @@ import (
 // https://firebirdsql.org/file/documentation/html/en/firebirddocs/wireprotocol/firebird-wire-protocol.html#wireprotocol-responses-generic
 
 type OpResponse struct {
-	Encoding     *Encoding
-	BlobId       int64
-	Object       int
-	SqlErr       int
-	Data         []byte
-	GdsCodes     []int
-	WarningCodes []int
-	SqlState     string
-	Message      string
-	WarnMessage  string
-	Failure      bool
-	Warnings     bool
-	Line         int
-	Position     int
+	Encoding    *Encoding
+	BlobId      int64
+	Object      int
+	SqlErr      int
+	Data        []byte
+	GdsCodes    []int
+	SqlState    string
+	Message     string
+	WarnMessage string
+	Failure     bool
+	Warnings    bool
+	Line        int
+	Position    int
 }
 
 func (op *OpResponse) Read(x *XDRReader) error {
@@ -107,7 +106,7 @@ func (op *OpResponse) Read(x *XDRReader) error {
 				numArg = 0
 
 				if wCode != Isc_random {
-					op.WarningCodes = append(op.WarningCodes, wCode)
+					op.GdsCodes = append(op.GdsCodes, wCode)
 				}
 				if msg, ok := errmsgs[wCode]; ok {
 					*currentMsgPtr += msg.message
@@ -161,7 +160,7 @@ func (op *OpResponse) Read(x *XDRReader) error {
 	// Skip any informational 00000 values.
 	// Accept 22000, 42000 values, but keep search more for exact sqlstate if possible
 	if op.SqlState == "" {
-		if op.Failure {
+		if op.Failure || op.Warnings {
 			op.SqlState = "HY000"
 			for _, gdsCode := range op.GdsCodes {
 				if msg, ok := errmsgs[gdsCode]; ok {
