@@ -1,7 +1,6 @@
 package fbconn
 
 import (
-	"container/list"
 	"context"
 	"errors"
 	"fmt"
@@ -32,18 +31,18 @@ func Timeout(err error) bool {
 type FbError struct {
 	Object   int
 	BlobId   int64
-	GdsCodes list.List
-	SqlCode  int
-	SqlState string
+	GdsCodes []int
+	SqlErr   int
+	Code     string
 	Message  string
 }
 
 func (e *FbError) SQLState() string {
-	return e.SqlState
+	return e.Code
 }
 
 func (e *FbError) Error() string {
-	return e.Message + " (SQLSTATE " + e.SqlState + ")"
+	return e.Message + " (SQLSTATE " + e.Code + ")"
 }
 
 func ErrorResponseToFbError(errorResponse *fbproto.ErrorResponse) *FbError {
@@ -51,8 +50,8 @@ func ErrorResponseToFbError(errorResponse *fbproto.ErrorResponse) *FbError {
 		Object:   errorResponse.Object,
 		BlobId:   errorResponse.BlobId,
 		GdsCodes: errorResponse.GdsCodes,
-		SqlCode:  errorResponse.SqlCode,
-		SqlState: errorResponse.SqlState,
+		SqlErr:   errorResponse.SqlErr,
+		Code:     errorResponse.SqlState,
 		Message:  errorResponse.Message,
 	}
 }

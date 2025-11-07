@@ -198,7 +198,7 @@ func TestTxCommitSerializationFailure(t *testing.T) {
 	}
 
 	err = tx2.Commit(ctx)
-	if fbErr, ok := err.(*fbconn.FbError); !ok || fbErr.SqlState != "40001" {
+	if fbErr, ok := err.(*fbconn.FbError); !ok || fbErr.Code != "40001" {
 		t.Fatalf("Expected serialization error 40001, got %#v", err)
 	}
 
@@ -370,7 +370,7 @@ func TestBeginReadOnly(t *testing.T) {
 		t.Fatalf("conn.Exec failed: %v", err)
 	}
 	err = tx.Commit(context.Background())
-	if fbErr, ok := err.(*fbconn.FbError); !ok || fbErr.SqlCode != 25006 {
+	if fbErr, ok := err.(*fbconn.FbError); !ok || fbErr.Code != "25006" {
 		t.Errorf("Expected error SQLSTATE 25006, but got %#v", err)
 	}
 }

@@ -1,8 +1,8 @@
 #include <stdint.h>
 
-#include "firebird/impl/msg_helper.h"
+#include "./include/firebird/impl/msg_helper.h"
 
-extern void addMessage(int code, const char* message);
+extern void addMessage(int code, const char* message, const char* sqlClass, const char* sqlSubClass);
 
 typedef unsigned short USHORT;
 typedef USHORT ISC_USHORT;
@@ -16,7 +16,7 @@ typedef long SLONG;
 #define FB_IMPL_MSG_SYMBOL(facility, number, symbol, text)
 
 #define FB_IMPL_MSG(facility, number, symbol, sqlCode, sqlClass, sqlSubClass, text) \
-    addMessage(make_isc_code(FB_IMPL_MSG_FACILITY_##facility, number), stringify_literal(text));
+    addMessage(make_isc_code(FB_IMPL_MSG_FACILITY_##facility, number), stringify_literal(text), sqlClass, sqlSubClass);
 
 #define ISC_CODE 0x14000000
 
@@ -25,5 +25,5 @@ int make_isc_code(int facility, int code) {
 }
 
 void process_messages() {
-    #include "firebird/impl/msg/all.h"
+    #include "./include/firebird/impl/msg/all.h"
 }

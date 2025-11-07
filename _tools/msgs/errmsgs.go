@@ -5,8 +5,7 @@ import (
 	"os"
 )
 
-// 1. Get copy of Firebird 5 sources or at least src/include from Firebird 5 sources
-// 2. Run CGO_CFLAGS=-I/path/to/firebird/src/include go run ./_tools fbproto/errmsgs.go
+// To rebuild messages: go run ./_tools/msgs fbproto/errmsgs.go
 
 //#include "msgs.h"
 import "C"
@@ -33,6 +32,7 @@ func main() {
 	}
 	if outFile, err = os.OpenFile(os.Args[1], os.O_CREATE|os.O_RDWR, 0644); err != nil {
 		fmt.Printf("Unable to open file: %v\n", err)
+		os.Exit(1)
 	}
 	defer outFile.Close()
 
@@ -51,7 +51,12 @@ rights and limitations under the License.
 
 package fbproto
 
-var errmsgs = map[int]string{
+type fberror struct {
+	message  string
+	sqlstate string
+}
+
+var errmsgs = map[int]fberror{
 `)
 
 	C.process_messages()
@@ -59,11 +64,13 @@ var errmsgs = map[int]string{
 }
 
 //export addMessage
-func addMessage(code C.int, message *C.char) {
+func addMessage(code C.int, message *C.char, class *C.char, subClass *C.char) {
 	var msg string = C.GoString(message)
+	var cl string = C.GoString(class)
+	var sub string = C.GoString(subClass)
 	if !strings.HasSuffix(msg, `\n"`) {
 		msg = msg[:len(msg)-1]
 		msg += `\n"`
 	}
-	writeOut(fmt.Sprintf("\t%d: %s,\n", int(code), msg))
+	writeOut(fmt.Sprintf("\t%d: {%s, \"%s%s\"},\n", int(code), msg, cl, sub))
 }

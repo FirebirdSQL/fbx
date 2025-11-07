@@ -1,7 +1,6 @@
 package fbproto
 
 import (
-	"container/list"
 	"fmt"
 	"strconv"
 	"strings"
@@ -13,7 +12,7 @@ type OpResponse struct {
 	Encoding     *Encoding
 	BlobId       int64
 	Object       int
-	SqlCode      int
+	SqlErr       int
 	Data         []byte
 	GdsCodes     []int
 	WarningCodes []int
@@ -78,7 +77,7 @@ func (op *OpResponse) Read(x *XDRReader) error {
 					op.GdsCodes = append(op.GdsCodes, gdsCode)
 				}
 				if msg, ok := errmsgs[gdsCode]; ok {
-					*currentMsgPtr += msg
+					*currentMsgPtr += msg.message
 				} else {
 					*currentMsgPtr += fmt.Sprintf("unknown gds_code: %d", gdsCode)
 				}
@@ -104,7 +103,7 @@ func (op *OpResponse) Read(x *XDRReader) error {
 					op.WarningCodes = append(op.WarningCodes, wCode)
 				}
 				if msg, ok := errmsgs[wCode]; ok {
-					*currentMsgPtr += msg
+					*currentMsgPtr += msg.message
 				} else {
 					*currentMsgPtr += fmt.Sprintf("unknown warning code %d", wCode)
 				}
@@ -112,7 +111,7 @@ func (op *OpResponse) Read(x *XDRReader) error {
 		case Isc_arg_number:
 			if num, err := x.ReadInt32(); err == nil {
 				if currentIsError && gdsCode == Isc_sqlerr {
-					op.SqlCode = num
+					op.SqlErr = num
 				}
 				numArg++
 				*currentMsgPtr = strings.Replace(*currentMsgPtr, "@"+strconv.Itoa(numArg), strconv.Itoa(num), 1)
@@ -143,6 +142,29 @@ func (op *OpResponse) Read(x *XDRReader) error {
 		}
 	}
 
+	// Try to find sqlstate from collected gds codes, simulate fb_sqlstate from gds.cpp behavior
+	// For errors HY000 is fallback value.
+	// Skip any informational 00000 values.
+	// Accept 22000, 42000 values, but keep search more for exact sqlstate if possible
+	if op.SqlState == "" {
+		if op.Failure {
+			op.SqlState = "HY000"
+			for _, gdsCode := range op.GdsCodes {
+				if msg, ok := errmsgs[gdsCode]; ok {
+					if msg.sqlstate == "00000" {
+						continue
+					}
+					op.SqlState = msg.sqlstate
+					if op.SqlState != "22000" && op.SqlState != "42000" && op.SqlState != "HY000" {
+						break
+					}
+				}
+			}
+		} else {
+			op.SqlState = "00000"
+		}
+	}
+
 	return nil
 }
 
@@ -151,7 +173,7 @@ type ErrorResponse struct {
 	Object   int
 	BlobId   int64
 	GdsCodes []int
-	SqlCode  int
+	SqlErr   int
 	SqlState string
 	Message  string
 }

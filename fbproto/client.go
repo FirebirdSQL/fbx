@@ -169,7 +169,7 @@ func (c *Client) ReceiveMessage() (ServerMessage, error) {
 		case *OpResponse:
 			if c.lazyCounter == 0 {
 				if m.Failure {
-					return &ErrorResponse{Object: m.Object, BlobId: m.BlobId, GdsCodes: m.GdsCodes, SqlCode: m.SqlCode, SqlState: m.SqlState, Message: m.Message}, nil
+					return &ErrorResponse{Object: m.Object, BlobId: m.BlobId, GdsCodes: m.GdsCodes, SqlErr: m.SqlErr, SqlState: m.SqlState, Message: m.Message}, nil
 				}
 			} else {
 				if m.Failure {

@@ -2815,12 +2815,11 @@ func TestConnOnPgError(t *testing.T) {
 
 	config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
-	config.OnPgError = func(c *fbconn.FbConn, pgErr *fbconn.FbError) bool {
+	config.OnPgError = func(c *fbconn.FbConn, fbErr *fbconn.FbError) bool {
 		require.NotNil(t, c)
-		require.NotNil(t, pgErr)
+		require.NotNil(t, fbErr)
 		// close connection on undefined tables only
-		//FIXME: fbx set proper code
-		if pgErr.SqlCode == 12345 {
+		if fbErr.Code == "42S02" {
 			return false
 		}
 		return true
