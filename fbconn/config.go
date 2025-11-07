@@ -664,6 +664,7 @@ func ValidateConnectTargetSessionAttrsReadOnly(ctx context.Context, fbConn *FbCo
 	return nil
 }
 
+//FIXME: fbx, possible to implement it by scanning MON$REPLICATION or obtaining status from context variables https://tracker.red-soft.ru/issues/261350
 // ValidateConnectTargetSessionAttrsStandby is a ValidateConnectFunc that implements libpq compatible
 // target_session_attrs=standby.
 //func ValidateConnectTargetSessionAttrsStandby(ctx context.Context, fbConn *FbConn) error {
