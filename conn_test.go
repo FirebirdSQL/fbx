@@ -717,6 +717,7 @@ func TestListenNotifySelfNotification(t *testing.T) {
 }
 
 func TestFatalRxError(t *testing.T) {
+	t.Skip("FB do not have severity in error status")
 	t.Parallel()
 
 	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
@@ -727,15 +728,15 @@ func TestFatalRxError(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		defer wg.Done()
-		var n int32
-		var s string
-		err := conn.QueryRow(context.Background(), "select 1::int4, pg_sleep(10)::varchar").Scan(&n, &s)
-		if pgErr, ok := err.(*fbconn.PgError); ok && pgErr.Severity == "FATAL" {
-		} else {
-			t.Errorf("Expected QueryRow Scan to return fatal PgError, but instead received %v", err)
-			return
-		}
+		//defer wg.Done()
+		//var n int32
+		//var s string
+		//err := conn.QueryRow(context.Background(), "select 1::int4, pg_sleep(10)::varchar").Scan(&n, &s)
+		//if fbErr, ok := err.(*fbconn.FbError); ok && fbErr.Severity == "FATAL" {
+		//} else {
+		//	t.Errorf("Expected QueryRow Scan to return fatal FbError, but instead received %v", err)
+		//	return
+		//}
 	}()
 
 	if err := conn.FbConn().Disconnect(context.Background()); err != nil {

@@ -579,12 +579,12 @@ func TestConnSendBatchQueryError(t *testing.T) {
 			}
 		}
 
-		if pgErr, ok := rows.Err().(*fbconn.PgError); !(ok && pgErr.Code == "22012") {
+		if fbErr, ok := rows.Err().(*fbconn.FbError); !(ok && fbErr.Code == "22012") {
 			t.Errorf("rows.Err() => %v, want error code %v", rows.Err(), 22012)
 		}
 
 		err = br.Close()
-		if pgErr, ok := err.(*fbconn.PgError); !(ok && pgErr.Code == "22012") {
+		if fbErr, ok := err.(*fbconn.FbError); !(ok && fbErr.Code == "22012") {
 			t.Errorf("br.Close() => %v, want error code %v", err, 22012)
 		}
 
@@ -607,7 +607,7 @@ func TestConnSendBatchQuerySyntaxError(t *testing.T) {
 
 		var n int32
 		err := br.QueryRow().Scan(&n)
-		if pgErr, ok := err.(*fbconn.PgError); !(ok && pgErr.Code == "42601") {
+		if fbErr, ok := err.(*fbconn.FbError); !(ok && fbErr.Code == "42601") {
 			t.Errorf("rows.Err() => %v, want error code %v", err, 42601)
 		}
 
@@ -906,7 +906,7 @@ func TestConnBeginBatchDeferredError(t *testing.T) {
 			t.Fatal("expected error 23505 but got none")
 		}
 
-		if err, ok := err.(*fbconn.PgError); !ok || err.Code != "23505" {
+		if err, ok := err.(*fbconn.FbError); !ok || err.Code != "23505" {
 			t.Fatalf("expected error 23505, got %v", err)
 		}
 

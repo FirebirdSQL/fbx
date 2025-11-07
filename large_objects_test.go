@@ -127,7 +127,7 @@ func testLargeObjects(t *testing.T, ctx context.Context, tx fbx.Tx) {
 	}
 
 	_, err = lo.Open(ctx, id, fbx.LargeObjectModeRead)
-	if e, ok := err.(*fbconn.PgError); !ok || e.Code != "42704" {
+	if e, ok := err.(*fbconn.FbError); !ok || e.Code != "42704" {
 		t.Errorf("Expected undefined_object error (42704), got %#v", err)
 	}
 }
@@ -271,7 +271,7 @@ func TestLargeObjectsMultipleTransactions(t *testing.T) {
 	}
 
 	_, err = lo2.Open(ctx, id, fbx.LargeObjectModeRead)
-	if e, ok := err.(*fbconn.PgError); !ok || e.Code != "42704" {
+	if e, ok := err.(*fbconn.FbError); !ok || e.Code != "42704" {
 		t.Errorf("Expected undefined_object error (42704), got %#v", err)
 	}
 }

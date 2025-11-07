@@ -66,10 +66,8 @@ type Config struct {
 	// OnNotification is a callback function called when a notification from the LISTEN/NOTIFY system is received.
 	OnNotification NotificationHandler
 
-	// OnPgError is a callback function called when a Postgres error is received by the server. The default handler will close
-	// the connection on any FATAL errors. If you override this handler you should call the previously set handler or ensure
-	// that you close on FATAL errors by returning false.
-	OnPgError PgErrorHandler
+	// OnFbError is a callback function called when a Firebird error is received by the server
+	OnFbError FbErrorHandler
 
 	createdByParseConfig bool // Used to enforce created by ParseConfig rule.
 }
@@ -278,9 +276,9 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		BuildContextWatcherHandler: func(fbConn *FbConn) ctxwatch.Handler {
 			return &DeadlineContextWatcherHandler{Conn: fbConn.conn}
 		},
-		OnPgError: func(_ *FbConn, pgErr *FbError) bool {
+		OnFbError: func(_ *FbConn, fbErr *FbError) bool {
 			// we want to automatically close any fatal errors
-			// FIXME: fbx how to check check if server error is fatal?
+			// FIXME: fbx how to check if server error is fatal?
 			//if strings.EqualFold(pgErr.Severity, "FATAL") {
 			//	return false
 			//}

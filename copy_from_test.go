@@ -499,8 +499,8 @@ func TestConnCopyFromFailServerSideMidway(t *testing.T) {
 	if err == nil {
 		t.Errorf("Expected CopyFrom return error, but it did not")
 	}
-	if _, ok := err.(*fbconn.PgError); !ok {
-		t.Errorf("Expected CopyFrom return fbx.PgError, but instead it returned: %v", err)
+	if _, ok := err.(*fbconn.FbError); !ok {
+		t.Errorf("Expected CopyFrom return fbx.FbError, but instead it returned: %v", err)
 	}
 	if copyCount != 0 {
 		t.Errorf("Expected CopyFrom to return 0 copied rows, but got %d", copyCount)
@@ -575,8 +575,8 @@ func TestConnCopyFromFailServerSideMidwayAbortsWithoutWaiting(t *testing.T) {
 	if err == nil {
 		t.Errorf("Expected CopyFrom return error, but it did not")
 	}
-	if _, ok := err.(*fbconn.PgError); !ok {
-		t.Errorf("Expected CopyFrom return fbx.PgError, but instead it returned: %v", err)
+	if _, ok := err.(*fbconn.FbError); !ok {
+		t.Errorf("Expected CopyFrom return fbx.FbError, but instead it returned: %v", err)
 	}
 	if copyCount != 0 {
 		t.Errorf("Expected CopyFrom to return 0 copied rows, but got %d", copyCount)
@@ -652,8 +652,8 @@ func TestConnCopyFromSlowFailRace(t *testing.T) {
 	if err == nil {
 		t.Errorf("Expected CopyFrom return error, but it did not")
 	}
-	if _, ok := err.(*fbconn.PgError); !ok {
-		t.Errorf("Expected CopyFrom return fbx.PgError, but instead it returned: %v", err)
+	if _, ok := err.(*fbconn.FbError); !ok {
+		t.Errorf("Expected CopyFrom return fbx.FbError, but instead it returned: %v", err)
 	}
 	if copyCount != 0 {
 		t.Errorf("Expected CopyFrom to return 0 copied rows, but got %d", copyCount)

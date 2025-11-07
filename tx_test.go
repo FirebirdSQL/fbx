@@ -134,7 +134,7 @@ func TestTxCommitWhenDeferredConstraintFailure(t *testing.T) {
 	}
 
 	err = tx.Commit(context.Background())
-	if pgErr, ok := err.(*fbconn.PgError); !ok || pgErr.Code != "23505" {
+	if fbErr, ok := err.(*fbconn.FbError); !ok || fbErr.Code != "23505" {
 		t.Fatalf("Expected unique constraint violation 23505, got %#v", err)
 	}
 

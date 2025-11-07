@@ -44,7 +44,7 @@ const (
 
 // Notice represents a notice response message reported by the PostgreSQL server. Be aware that this is distinct from
 // LISTEN/NOTIFY notification.
-type Notice PgError
+type Notice FbError
 
 // Notification is a message received from the PostgreSQL LISTEN/NOTIFY system
 type Notification struct {
@@ -67,7 +67,7 @@ type BuildFrontendFunc func(r io.Reader, w io.Writer) *fbproto.Client
 // the connection open. Returning false will cause the connection to be closed immediately. You should return
 // false on any FATAL-severity errors. This will not receive network errors. The *FbConn is provided so the handler is
 // aware of the origin of the error, but it must not invoke any query method.
-type PgErrorHandler func(*FbConn, *FbError) bool
+type FbErrorHandler func(*FbConn, *FbError) bool
 
 // NoticeHandler is a function that can handle notices received from the PostgreSQL server. Notices can be received at
 // any time, usually during handling of a query response. The *FbConn is provided so the handler is aware of the origin
@@ -391,8 +391,8 @@ func connectPreferred(ctx context.Context, config *Config, connectOneConfigs []*
 
 		allErrors = append(allErrors, err)
 
-		var pgErr *PgError
-		if errors.As(err, &pgErr) {
+		var fbErr *FbError
+		if errors.As(err, &fbErr) {
 			// pgx will try next host even if libpq does not in certain cases (see #2246)
 			// consider change for the next major version
 
@@ -401,9 +401,9 @@ func connectPreferred(ctx context.Context, config *Config, connectOneConfigs []*
 			const ERRCODE_INSUFFICIENT_PRIVILEGE = "42501" // missing connect privilege
 
 			// auth failed due to invalid password, db does not exist or user has no permission
-			if pgErr.Code == ERRCODE_INVALID_PASSWORD ||
-				pgErr.Code == ERRCODE_INVALID_CATALOG_NAME ||
-				pgErr.Code == ERRCODE_INSUFFICIENT_PRIVILEGE {
+			if fbErr.Code == ERRCODE_INVALID_PASSWORD ||
+				fbErr.Code == ERRCODE_INVALID_CATALOG_NAME ||
+				fbErr.Code == ERRCODE_INSUFFICIENT_PRIVILEGE {
 				return nil, allErrors
 			}
 		}
@@ -820,7 +820,7 @@ func (fbConn *FbConn) receiveMessage() (fbproto.ServerMessage, error) {
 	switch msg := msg.(type) {
 	case *fbproto.ErrorResponse:
 		err := ErrorResponseToFbError(msg)
-		if fbConn.config.OnPgError != nil && !fbConn.config.OnPgError(fbConn, err) {
+		if fbConn.config.OnFbError != nil && !fbConn.config.OnFbError(fbConn, err) {
 			fbConn.status = connStatusClosed
 			fbConn.conn.Close() // Ignore error as the connection is already broken and there is already an error to return.
 			close(fbConn.cleanupDone)
@@ -1473,7 +1473,7 @@ func (fbConn *FbConn) CopyTo(ctx context.Context, w io.Writer, sql string) (Quer
 	//
 	//// Read results
 	//var commandTag QueryStatus
-	//var pgErr error
+	//var fbErr error
 	//for {
 	//	msg, err := fbConn.receiveMessage()
 	//	if err != nil {
@@ -1491,11 +1491,11 @@ func (fbConn *FbConn) CopyTo(ctx context.Context, w io.Writer, sql string) (Quer
 	//		}
 	//	case *pgproto3.ReadyForQuery:
 	//		fbConn.unlock()
-	//		return commandTag, pgErr
+	//		return commandTag, fbErr
 	//	case *pgproto3.CommandComplete:
 	//		commandTag = fbConn.makeCommandTag(msg.QueryStatus)
 	//	case *pgproto3.ErrorResponse:
-	//		pgErr = ErrorResponseToPgError(msg)
+	//		fbErr = ErrorResponseToPgError(msg)
 	//	}
 	//}
 	panic("implement me")
@@ -1571,9 +1571,9 @@ func (fbConn *FbConn) CopyFrom(ctx context.Context, r io.Reader, sql string) (Qu
 	//	}
 	//}()
 	//
-	//var pgErr error
+	//var fbErr error
 	//var copyErr error
-	//for copyErr == nil && pgErr == nil {
+	//for copyErr == nil && fbErr == nil {
 	//	select {
 	//	case copyErr = <-copyErrChan:
 	//	case <-signalMessageChan:
@@ -1590,7 +1590,7 @@ func (fbConn *FbConn) CopyFrom(ctx context.Context, r io.Reader, sql string) (Qu
 	//
 	//		switch msg := msg.(type) {
 	//		case *pgproto3.ErrorResponse:
-	//			pgErr = ErrorResponseToPgError(msg)
+	//			fbErr = ErrorResponseToPgError(msg)
 	//		default:
 	//			signalMessageChan = fbConn.signalMessage()
 	//		}
@@ -1600,7 +1600,7 @@ func (fbConn *FbConn) CopyFrom(ctx context.Context, r io.Reader, sql string) (Qu
 	//// Make sure io goroutine finishes before writing.
 	//wg.Wait()
 	//
-	//if copyErr == io.EOF || pgErr != nil {
+	//if copyErr == io.EOF || fbErr != nil {
 	//	fbConn.frontend.WriteMessage(&pgproto3.CopyDone{})
 	//} else {
 	//	fbConn.frontend.WriteMessage(&pgproto3.CopyFail{Response: copyErr.Error()})
@@ -1622,11 +1622,11 @@ func (fbConn *FbConn) CopyFrom(ctx context.Context, r io.Reader, sql string) (Qu
 	//
 	//	switch msg := msg.(type) {
 	//	case *pgproto3.ReadyForQuery:
-	//		return commandTag, pgErr
+	//		return commandTag, fbErr
 	//	case *pgproto3.CommandComplete:
 	//		commandTag = fbConn.makeCommandTag(msg.QueryStatus)
 	//	case *pgproto3.ErrorResponse:
-	//		pgErr = ErrorResponseToPgError(msg)
+	//		fbErr = ErrorResponseToPgError(msg)
 	//	}
 	//}
 	panic("implement me")
@@ -2344,7 +2344,7 @@ type pipelineRequestEvent struct {
 type pipelineState struct {
 	requestEventQueue          list.List
 	lastRequestType            pipelineRequestType
-	pgErr                      *PgError
+	fbErr                      *FbError
 	expectedReadyForQueryCount int
 }
 
@@ -2406,16 +2406,16 @@ func (s *pipelineState) ExtractFrontRequestType() pipelineRequestType {
 
 		s.requestEventQueue.Remove(elem)
 		if val.RequestType == pipelineSyncRequest {
-			s.pgErr = nil
+			s.fbErr = nil
 		}
-		if s.pgErr == nil {
+		if s.fbErr == nil {
 			return val.RequestType
 		}
 	}
 }
 
-func (s *pipelineState) HandleError(err *PgError) {
-	s.pgErr = err
+func (s *pipelineState) HandleError(err *FbError) {
+	s.fbErr = err
 }
 
 func (s *pipelineState) HandleReadyForQuery() {
@@ -2656,7 +2656,7 @@ func (p *Pipeline) Sync() error {
 }
 
 // GetResults gets the next results. If results are present, results may be a *ResultReader, *StatementDescription, or
-// *PipelineSync. If an ErrorResponse is received from the server, results will be nil and err will be a *PgError. If no
+// *PipelineSync. If an ErrorResponse is received from the server, results will be nil and err will be a *FbError. If no
 // results are available, results and err will both be nil.
 func (p *Pipeline) GetResults() (results any, err error) {
 	if p.closed {
@@ -2714,9 +2714,9 @@ func (p *Pipeline) getResults() (results any, err error) {
 	//		p.state.HandleReadyForQuery()
 	//		return &PipelineSync{}, nil
 	//	case *pgproto3.ErrorResponse:
-	//		pgErr := ErrorResponseToPgError(msg)
-	//		p.state.HandleError(pgErr)
-	//		return nil, pgErr
+	//		fbErr := ErrorResponseToPgError(msg)
+	//		p.state.HandleError(fbErr)
+	//		return nil, fbErr
 	//	}
 	//}
 	panic("implement me")
@@ -2747,9 +2747,9 @@ func (p *Pipeline) getResultsPrepare() (*StatementDescription, error) {
 	//
 	//	// These should never happen here. But don't take chances that could lead to a deadlock.
 	//	case *pgproto3.ErrorResponse:
-	//		pgErr := ErrorResponseToPgError(msg)
-	//		p.state.HandleError(pgErr)
-	//		return nil, pgErr
+	//		fbErr := ErrorResponseToPgError(msg)
+	//		p.state.HandleError(fbErr)
+	//		return nil, fbErr
 	//	case *pgproto3.CommandComplete:
 	//		p.conn.asyncClose()
 	//		return nil, errors.New("BUG: received CommandComplete while handling Describe")
@@ -2782,8 +2782,8 @@ func (p *Pipeline) Close() error {
 	//	_, err := p.getResults()
 	//	if err != nil {
 	//		p.err = err
-	//		var pgErr *PgError
-	//		if !errors.As(err, &pgErr) {
+	//		var fbErr *FbError
+	//		if !errors.As(err, &fbErr) {
 	//			p.conn.asyncClose()
 	//			break
 	//		}

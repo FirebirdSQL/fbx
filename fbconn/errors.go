@@ -60,39 +60,6 @@ func ErrorResponseToFbError(errorResponse *fbproto.ErrorResponse) *FbError {
 	}
 }
 
-// PgError represents an error reported by the PostgreSQL server. See
-// http://www.postgresql.org/docs/11/static/protocol-error-fields.html for
-// detailed field description.
-type PgError struct {
-	Severity            string
-	SeverityUnlocalized string
-	Code                string
-	Message             string
-	Detail              string
-	Hint                string
-	Position            int32
-	InternalPosition    int32
-	InternalQuery       string
-	Where               string
-	SchemaName          string
-	TableName           string
-	ColumnName          string
-	DataTypeName        string
-	ConstraintName      string
-	File                string
-	Line                int32
-	Routine             string
-}
-
-func (pe *PgError) Error() string {
-	return pe.Severity + ": " + pe.Message + " (SQLSTATE " + pe.Code + ")"
-}
-
-// SQLState returns the SQLState of the error.
-func (pe *PgError) SQLState() string {
-	return pe.Code
-}
-
 // ConnectError is the error returned when a connection attempt fails.
 type ConnectError struct {
 	Config *Config // The configuration that was used in the connection attempt.
