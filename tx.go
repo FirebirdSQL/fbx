@@ -15,10 +15,9 @@ type TxIsoLevel string
 
 // Transaction isolation levels
 const (
-	Serializable    TxIsoLevel = "serializable"
-	RepeatableRead  TxIsoLevel = "repeatable read"
-	ReadCommitted   TxIsoLevel = "read committed"
-	ReadUncommitted TxIsoLevel = "read uncommitted"
+	Serializable   TxIsoLevel = "serializable"
+	RepeatableRead TxIsoLevel = "repeatable read"
+	ReadCommitted  TxIsoLevel = "read committed"
 )
 
 // TxAccessMode is the transaction access mode (read write or read only)
@@ -30,20 +29,10 @@ const (
 	ReadOnly  TxAccessMode = "read only"
 )
 
-// TxDeferrableMode is the transaction deferrable mode (deferrable or not deferrable)
-type TxDeferrableMode string
-
-// Transaction deferrable modes
-const (
-	Deferrable    TxDeferrableMode = "deferrable"
-	NotDeferrable TxDeferrableMode = "not deferrable"
-)
-
 // TxOptions are transaction modes within a transaction block
 type TxOptions struct {
-	IsoLevel       TxIsoLevel
-	AccessMode     TxAccessMode
-	DeferrableMode TxDeferrableMode
+	IsoLevel   TxIsoLevel
+	AccessMode TxAccessMode
 }
 
 var ErrTxClosed = errors.New("tx is closed")
