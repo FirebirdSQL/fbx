@@ -35,6 +35,8 @@ type FbError struct {
 	SqlErr   int
 	Code     string
 	Message  string
+	Line     int
+	Position int
 }
 
 func (e *FbError) SQLState() string {
@@ -53,6 +55,8 @@ func ErrorResponseToFbError(errorResponse *fbproto.ErrorResponse) *FbError {
 		SqlErr:   errorResponse.SqlErr,
 		Code:     errorResponse.SqlState,
 		Message:  errorResponse.Message,
+		Line:     errorResponse.Line,
+		Position: errorResponse.Position,
 	}
 }
 

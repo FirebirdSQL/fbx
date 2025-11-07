@@ -21,6 +21,8 @@ type OpResponse struct {
 	WarnMessage  string
 	Failure      bool
 	Warnings     bool
+	Line         int
+	Position     int
 }
 
 func (op *OpResponse) Read(x *XDRReader) error {
@@ -49,6 +51,7 @@ func (op *OpResponse) Read(x *XDRReader) error {
 		currentIsError         = false
 	)
 
+	readLineColState := 0
 	for {
 		var tag int
 		if tag, err = x.ReadInt32(); err != nil {
@@ -80,6 +83,10 @@ func (op *OpResponse) Read(x *XDRReader) error {
 					*currentMsgPtr += msg.message
 				} else {
 					*currentMsgPtr += fmt.Sprintf("unknown gds_code: %d", gdsCode)
+				}
+				// next two arguments will be line and column
+				if gdsCode == Isc_dsql_line_col_error {
+					readLineColState = 1
 				}
 			}
 		case Isc_arg_warning:
@@ -115,6 +122,13 @@ func (op *OpResponse) Read(x *XDRReader) error {
 				}
 				numArg++
 				*currentMsgPtr = strings.Replace(*currentMsgPtr, "@"+strconv.Itoa(numArg), strconv.Itoa(num), 1)
+				if readLineColState == 1 {
+					op.Line = num
+					readLineColState = 2
+				} else if readLineColState == 2 {
+					op.Position = num
+					readLineColState = 0
+				}
 			} else {
 				return err
 			}
@@ -176,4 +190,6 @@ type ErrorResponse struct {
 	SqlErr   int
 	SqlState string
 	Message  string
+	Line     int
+	Position int
 }

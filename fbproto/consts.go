@@ -636,6 +636,7 @@ const (
 )
 
 const (
-	Isc_random = 335544382
-	Isc_sqlerr = 335544436
+	Isc_random              = 335544382
+	Isc_sqlerr              = 335544436
+	Isc_dsql_line_col_error = 336397208
 )
