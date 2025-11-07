@@ -10,11 +10,12 @@ import (
 	"github.com/red-soft/fbx"
 	"github.com/red-soft/fbx/fbconn"
 	"github.com/red-soft/fbx/fbxtest"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestTransactionSuccessfulCommit(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 
 	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	defer closeConn(t, conn)
@@ -56,8 +57,9 @@ func TestTransactionSuccessfulCommit(t *testing.T) {
 	}
 }
 
-func TestTxCommitWhenTxBroken(t *testing.T) {
-	t.Parallel()
+// Original test TestTxCommitWhenTxBroken. Firebird do not broke transaction after unsuccessful query
+func TestTxCommitAfterQueryError(t *testing.T) {
+	//t.Parallel()
 
 	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	defer closeConn(t, conn)
@@ -81,27 +83,28 @@ func TestTxCommitWhenTxBroken(t *testing.T) {
 		t.Fatalf("tx.Exec failed: %v", err)
 	}
 
-	// Purposely break transaction
 	if _, err := tx.Exec(context.Background(), "syntax error"); err == nil {
 		t.Fatal("Unexpected success")
 	}
 
 	err = tx.Commit(context.Background())
-	if err != fbx.ErrTxCommitRollback {
-		t.Fatalf("Expected error %v, got %v", fbx.ErrTxCommitRollback, err)
-	}
+	assert.NoError(t, err)
+	//if err != fbx.ErrTxCommitRollback {
+	//	t.Fatalf("Expected error %v, got %v", fbx.ErrTxCommitRollback, err)
+	//}
 
 	var n int64
 	err = conn.QueryRow(context.Background(), "select count(*) from "+t.Name()).Scan(&n)
 	if err != nil {
 		t.Fatalf("QueryRow Scan failed: %v", err)
 	}
-	if n != 0 {
+	if n != 1 {
 		t.Fatalf("Did not receive correct number of rows: %v", n)
 	}
 }
 
 func TestTxCommitWhenDeferredConstraintFailure(t *testing.T) {
+	t.Skipf("not supported by server")
 	t.Parallel()
 
 	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
@@ -149,7 +152,8 @@ func TestTxCommitWhenDeferredConstraintFailure(t *testing.T) {
 }
 
 func TestTxCommitSerializationFailure(t *testing.T) {
-	t.Parallel()
+	t.Skip("transaction will wait indefinitely")
+	//t.Parallel()
 
 	c1 := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	defer closeConn(t, c1)
@@ -182,12 +186,12 @@ func TestTxCommitSerializationFailure(t *testing.T) {
 	}
 	defer tx2.Rollback(ctx)
 
-	_, err = tx1.Exec(ctx, `insert into tx_serializable_sums(num) select cast(sum(num) as int) from `+t.Name())
+	_, err = tx1.Exec(ctx, `insert into `+t.Name()+`(num) select cast(sum(num) as int) from `+t.Name())
 	if err != nil {
 		t.Fatalf("Exec failed: %v", err)
 	}
 
-	_, err = tx2.Exec(ctx, `insert into tx_serializable_sums(num) select cast(sum(num) as int) from `+t.Name())
+	_, err = tx2.Exec(ctx, `insert into `+t.Name()+`(num) select cast(sum(num) as int) from `+t.Name())
 	if err != nil {
 		t.Fatalf("Exec failed: %v", err)
 	}
@@ -207,13 +211,13 @@ func TestTxCommitSerializationFailure(t *testing.T) {
 }
 
 func TestTransactionSuccessfulRollback(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 
 	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 
 	createSql := `
-    recreate ` + t.Name() + ` foo(
+    recreate table ` + t.Name() + `(
       id integer,
       unique (id)
     );
@@ -275,17 +279,25 @@ func TestBeginIsoLevels(t *testing.T) {
 
 	fbxtest.SkipCockroachDB(t, conn, "Server always uses SERIALIZABLE isolation (https://www.cockroachlabs.com/docs/stable/demo-serializable.html)")
 
-	isoLevels := []fbx.TxIsoLevel{fbx.Serializable, fbx.RepeatableRead, fbx.ReadCommitted, fbx.ReadUncommitted}
+	isoLevels := []fbx.TxIsoLevel{fbx.Serializable, fbx.RepeatableRead, fbx.ReadCommitted}
 	for _, iso := range isoLevels {
 		tx, err := conn.BeginTx(context.Background(), fbx.TxOptions{IsoLevel: iso})
 		if err != nil {
 			t.Fatalf("conn.Begin failed: %v", err)
 		}
 
-		var level fbx.TxIsoLevel
-		conn.QueryRow(context.Background(), "select current_setting('transaction_isolation')").Scan(&level)
-		if level != iso {
-			t.Errorf("Expected to be in isolation level %v but was %v", iso, level)
+		var level int
+		err = tx.QueryRow(context.Background(), "select mon$isolation_mode from mon$transactions where mon$transaction_id = current_transaction").Scan(&level)
+		assert.NoError(t, err)
+
+		levels := map[fbx.TxIsoLevel]int{
+			fbx.Serializable:   0,
+			fbx.RepeatableRead: 1,
+			fbx.ReadCommitted:  4,
+		}
+
+		if level != levels[iso] {
+			t.Errorf("Expected to be in isolation level %v but was %v", levels[iso], level)
 		}
 
 		err = tx.Rollback(context.Background())
@@ -296,7 +308,7 @@ func TestBeginIsoLevels(t *testing.T) {
 }
 
 func TestBeginFunc(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 
 	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	defer closeConn(t, conn)
@@ -325,7 +337,7 @@ func TestBeginFunc(t *testing.T) {
 }
 
 func TestBeginFuncRollbackOnError(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 
 	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	defer closeConn(t, conn)
@@ -354,7 +366,7 @@ func TestBeginFuncRollbackOnError(t *testing.T) {
 }
 
 func TestBeginReadOnly(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 
 	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	defer closeConn(t, conn)
@@ -366,17 +378,13 @@ func TestBeginReadOnly(t *testing.T) {
 	defer tx.Rollback(context.Background())
 
 	_, err = tx.Exec(context.Background(), "recreate table "+t.Name()+"(id int primary key)")
-	if err != nil {
-		t.Fatalf("conn.Exec failed: %v", err)
-	}
-	err = tx.Commit(context.Background())
 	if fbErr, ok := err.(*fbconn.FbError); !ok || fbErr.Code != "25006" {
 		t.Errorf("Expected error SQLSTATE 25006, but got %#v", err)
 	}
 }
 
 func TestTxNestedTransactionCommit(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 
 	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	defer closeConn(t, conn)
@@ -448,7 +456,7 @@ func TestTxNestedTransactionCommit(t *testing.T) {
 }
 
 func TestTxNestedTransactionRollback(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 
 	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	defer closeConn(t, conn)
@@ -510,7 +518,7 @@ func TestTxNestedTransactionRollback(t *testing.T) {
 }
 
 func TestTxBeginFuncNestedTransactionCommit(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 
 	db := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	defer closeConn(t, db)
@@ -554,7 +562,7 @@ func TestTxBeginFuncNestedTransactionCommit(t *testing.T) {
 }
 
 func TestTxBeginFuncNestedTransactionRollback(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 
 	db := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	defer closeConn(t, db)
