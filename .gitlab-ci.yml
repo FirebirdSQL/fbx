@@ -31,7 +31,7 @@ test:
   tags: [docker, linux, x86_64]
   extends: .go-cache
   before_script:
-    - wget http://builds.red-soft.biz/release_hub/rdb50/${RDB5_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB5_VERSION}:bin -O installer
+    - wget -q http://builds.red-soft.biz/release_hub/rdb50/${RDB5_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB5_VERSION}:bin -O installer
     - chmod +x ./installer
     - ./installer --mode unattended --sysdba_password masterkey
     - cp ci/firebird.conf /opt/RedDatabase
