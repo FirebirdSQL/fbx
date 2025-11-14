@@ -103,7 +103,10 @@ func TestForEachRowScanError(t *testing.T) {
 			actualResults = append(actualResults, []any{a, b})
 			return nil
 		})
-		require.EqualError(t, err, "can't scan into dest[0]: cannot scan text (OID 25) in text format into *int")
+		require.Contains(t, err.Error(), "can't scan into dest[0]")
+		require.Contains(t, err.Error(), "CONSTANT")
+		require.Contains(t, err.Error(), "strconv.ParseInt")
+		require.Contains(t, err.Error(), "invalid syntax")
 		require.Equal(t, fbconn.QueryStatus{}, ct)
 	})
 }

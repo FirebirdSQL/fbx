@@ -261,7 +261,9 @@ func TestPoolBeforeConnect(t *testing.T) {
 	defer db.Close()
 
 	var str string
-	err = db.QueryRow(ctx, `select mon$remote_process from mon$attachments`).Scan(&str)
+	// Limit the request to the current connection to avoid interference from
+	// other concurrent test attachments running in parallel.
+	err = db.QueryRow(ctx, `select mon$remote_process from mon$attachments where mon$attachment_id = current_connection`).Scan(&str)
 
 	require.NoError(t, err)
 	assert.EqualValues(t, "app_before_connect", str)
