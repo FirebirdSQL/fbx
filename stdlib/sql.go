@@ -74,7 +74,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/rand"
+	"math/rand/v2"
 	"reflect"
 	"slices"
 	"strconv"
