@@ -12,14 +12,16 @@ type LRUCache struct {
 	m            map[string]*list.Element
 	l            *list.List
 	invalidStmts []*fbconn.Statement
+	invalidSet   map[string]struct{}
 }
 
 // NewLRUCache creates a new LRUCache. cap is the maximum size of the cache.
 func NewLRUCache(cap int) *LRUCache {
 	return &LRUCache{
-		cap: cap,
-		m:   make(map[string]*list.Element),
-		l:   list.New(),
+		cap:        cap,
+		m:          make(map[string]*list.Element),
+		l:          list.New(),
+		invalidSet: make(map[string]struct{}),
 	}
 }
 
@@ -46,10 +48,8 @@ func (c *LRUCache) Put(st *fbconn.Statement) {
 	}
 
 	// The statement may have been invalidated but not yet handled. Do not readd it to the cache.
-	for _, invalidST := range c.invalidStmts {
-		if invalidST.Description.SQL == st.Description.SQL {
-			return
-		}
+	if _, invalidated := c.invalidSet[st.Description.SQL]; invalidated {
+		return
 	}
 
 	if c.l.Len() == c.cap {
@@ -64,7 +64,9 @@ func (c *LRUCache) Put(st *fbconn.Statement) {
 func (c *LRUCache) Invalidate(sql string) {
 	if el, ok := c.m[sql]; ok {
 		delete(c.m, sql)
-		c.invalidStmts = append(c.invalidStmts, el.Value.(*fbconn.Statement))
+		st := el.Value.(*fbconn.Statement)
+		c.invalidStmts = append(c.invalidStmts, st)
+		c.invalidSet[sql] = struct{}{}
 		c.l.Remove(el)
 	}
 }
@@ -73,7 +75,9 @@ func (c *LRUCache) Invalidate(sql string) {
 func (c *LRUCache) InvalidateAll() {
 	el := c.l.Front()
 	for el != nil {
-		c.invalidStmts = append(c.invalidStmts, el.Value.(*fbconn.Statement))
+		st := el.Value.(*fbconn.Statement)
+		c.invalidStmts = append(c.invalidStmts, st)
+		c.invalidSet[st.Description.SQL] = struct{}{}
 		el = el.Next()
 	}
 
@@ -91,6 +95,7 @@ func (c *LRUCache) GetInvalidated() []*fbconn.Statement {
 // never seen by the call to GetInvalidated.
 func (c *LRUCache) RemoveInvalidated() {
 	c.invalidStmts = nil
+	c.invalidSet = make(map[string]struct{})
 }
 
 // Len returns the number of cached prepared statement descriptions.
@@ -107,6 +112,7 @@ func (c *LRUCache) invalidateOldest() {
 	oldest := c.l.Back()
 	st := oldest.Value.(*fbconn.Statement)
 	c.invalidStmts = append(c.invalidStmts, st)
+	c.invalidSet[st.Description.SQL] = struct{}{}
 	delete(c.m, st.Description.SQL)
 	c.l.Remove(oldest)
 }
