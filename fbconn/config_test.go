@@ -131,7 +131,7 @@ func TestParseConfig(t *testing.T) {
 			name:       "database url missing user and password",
 			connString: "firebird://localhost:5432/mydb",
 			config: &fbconn.Config{
-				User:          defaultUser,
+				SystemUser:    defaultUser,
 				Host:          "localhost",
 				Port:          5432,
 				Database:      "mydb",
@@ -154,7 +154,7 @@ func TestParseConfig(t *testing.T) {
 			name:       "database url unix domain socket host",
 			connString: "firebird:///foo?host=/tmp",
 			config: &fbconn.Config{
-				User:          defaultUser,
+				SystemUser:    defaultUser,
 				Host:          "/tmp",
 				Port:          defaultPort,
 				Database:      "foo",
@@ -165,7 +165,7 @@ func TestParseConfig(t *testing.T) {
 			name:       "database url unix domain socket host on windows",
 			connString: "firebird:///foo?host=C:\\tmp",
 			config: &fbconn.Config{
-				User:          defaultUser,
+				SystemUser:    defaultUser,
 				Host:          "C:\\tmp",
 				Port:          defaultPort,
 				Database:      "foo",
@@ -176,7 +176,7 @@ func TestParseConfig(t *testing.T) {
 			name:       "database url dbname",
 			connString: "firebird://localhost/?dbname=foo",
 			config: &fbconn.Config{
-				User:          defaultUser,
+				SystemUser:    defaultUser,
 				Host:          "localhost",
 				Port:          defaultPort,
 				Database:      "foo",
@@ -326,7 +326,7 @@ func TestParseConfig(t *testing.T) {
 		},
 		{
 			name:       "database url with unix path to database",
-			connString: "firebird://user:secret@localhost:3050//db/mydb.fdb",
+			connString: "firebird://user:secret@localhost:3050//db/mydb.fdb?connect_timeout=5&application_name=fbxtest",
 			config: &fbconn.Config{
 				User:           "user",
 				Password:       "secret",
@@ -341,7 +341,7 @@ func TestParseConfig(t *testing.T) {
 		},
 		{
 			name:       "database url with windows path to database",
-			connString: "firebird://user:secret@localhost:3050/c:\\db\\mydb.fdb",
+			connString: "firebird://user:secret@localhost:3050/c:\\db\\mydb.fdb?connect_timeout=5&application_name=fbxtest",
 			config: &fbconn.Config{
 				User:           "user",
 				Password:       "secret",
@@ -488,7 +488,7 @@ func TestParseConfigEnvLibpq(t *testing.T) {
 		}
 	}
 
-	fbEnvvars := []string{"FBHOST", "FBPORT", "FBDATABASE", "FBUSER", "FBPASSWORD", "FBAPPNAME", "FBSSLMODE", "FBCONNECT_TIMEOUT", "FBSSLSNI", "FBTZ", "FBOPTIONS"}
+	fbEnvvars := []string{"FBHOST", "FBPORT", "FBDATABASE", "FBUSER", "FBPASSWORD", "FBAPPNAME", "FBSSLMODE", "FBCONNECT_TIMEOUT", "FBSSLSNI", "FBTZ"}
 
 	tests := []struct {
 		name    string
@@ -500,9 +500,9 @@ func TestParseConfigEnvLibpq(t *testing.T) {
 			name:    "FBHOST only",
 			envvars: map[string]string{"FBHOST": "123.123.123.123"},
 			config: &fbconn.Config{
-				User: osUserName,
-				Host: "123.123.123.123",
-				Port: 3050,
+				SystemUser: osUserName,
+				Host:       "123.123.123.123",
+				Port:       3050,
 
 				RuntimeParams: map[string]string{},
 				Fallbacks: []*fbconn.FallbackConfig{
@@ -514,7 +514,7 @@ func TestParseConfigEnvLibpq(t *testing.T) {
 			},
 		},
 		{
-			name: "All non-TLS environment",
+			name: "All environment",
 			envvars: map[string]string{
 				"FBHOST":            "123.123.123.123",
 				"FBPORT":            "7777",
@@ -522,10 +522,8 @@ func TestParseConfigEnvLibpq(t *testing.T) {
 				"FBUSER":            "bar",
 				"FBPASSWORD":        "baz",
 				"FBCONNECT_TIMEOUT": "10",
-				"FBSSLMODE":         "disable",
 				"FBAPPNAME":         "fbxtest",
 				"FBTZ":              "America/New_York",
-				"FBOPTIONS":         "-c search_path=myschema",
 			},
 			config: &fbconn.Config{
 				Host:           "123.123.123.123",
@@ -534,21 +532,7 @@ func TestParseConfigEnvLibpq(t *testing.T) {
 				User:           "bar",
 				Password:       "baz",
 				ConnectTimeout: 10 * time.Second,
-				RuntimeParams:  map[string]string{"application_name": "fbxtest", "timezone": "America/New_York", "options": "-c search_path=myschema"},
-			},
-		},
-		{
-			name: "SNI can be disabled via environment variable",
-			envvars: map[string]string{
-				"FBHOST":    "test.foo",
-				"FBSSLMODE": "require",
-				"FBSSLSNI":  "0",
-			},
-			config: &fbconn.Config{
-				User:          osUserName,
-				Host:          "test.foo",
-				Port:          3050,
-				RuntimeParams: map[string]string{},
+				RuntimeParams:  map[string]string{"application_name": "fbxtest", "timezone": "America/New_York"},
 			},
 		},
 	}
