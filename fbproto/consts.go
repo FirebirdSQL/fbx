@@ -237,6 +237,8 @@ const (
 	Isc_dpb_trusted_auth          = 73
 	Isc_dpb_process_name          = 74
 	Isc_dpb_utf8_filename         = 77
+	Isc_dpb_host_name             = 82
+	Isc_dpb_os_user               = 83
 	Isc_dpb_specific_auth_data    = 84
 	Isc_dpb_auth_plugin_list      = 85
 	Isc_dpb_auth_plugin_name      = 86

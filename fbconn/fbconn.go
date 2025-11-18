@@ -492,7 +492,7 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 		Database:         config.Database,
 		User:             config.User,
 		SystemUser:       config.SystemUser,
-		Hostname:         config.Host,
+		SystemHost:       config.SystemHost,
 		Password:         config.Password,
 		AuthPluginName:   initialHandshake.PluginName,
 		AuthPluginsList:  initialHandshake.PluginList,
@@ -593,6 +593,12 @@ connectLoop:
 	}
 	if config.Role != "" {
 		dpb.PutString(fbproto.Isc_dpb_sql_role_name, config.Role)
+	}
+	if config.SystemUser != "" {
+		dpb.PutString(fbproto.Isc_dpb_os_user, config.SystemUser)
+	}
+	if config.SystemHost != "" {
+		dpb.PutString(fbproto.Isc_dpb_host_name, config.SystemHost)
 	}
 	dpb.PutInt32(fbproto.Isc_dpb_process_id, int32(os.Getpid()))
 	app, ok := config.RuntimeParams["application_name"]

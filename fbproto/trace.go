@@ -184,7 +184,7 @@ func (t *tracer) traceConnectMessage(sender byte, op *OpConnect) {
 		fmt.Fprintf(t.buf, " db=%s", traceDoubleQuotedString([]byte(op.Database)))
 		fmt.Fprintf(t.buf, " user=%s", traceDoubleQuotedString([]byte(op.User)))
 		fmt.Fprintf(t.buf, " systemUser=%s", traceDoubleQuotedString([]byte(op.SystemUser)))
-		fmt.Fprintf(t.buf, " host=%s", traceDoubleQuotedString([]byte(op.Hostname)))
+		fmt.Fprintf(t.buf, " systemHost=%s", traceDoubleQuotedString([]byte(op.SystemHost)))
 		fmt.Fprintf(t.buf, " pass=%s", traceDoubleQuotedString([]byte(op.Password)))
 		fmt.Fprintf(t.buf, " plugin=%s", traceDoubleQuotedString([]byte(op.AuthPluginName)))
 

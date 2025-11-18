@@ -31,6 +31,7 @@ type Config struct {
 	User           string
 	Role           string
 	SystemUser     string
+	SystemHost     string
 	Password       string
 	ConnectTimeout time.Duration
 	DialFunc       DialFunc   // e.g. net.Dialer.DialContext
@@ -290,6 +291,8 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		},
 		AuthPluginList: pluginList,
 		WireCrypt:      convertToBool(settings["wire_crypt"], true),
+		SystemUser:     settings["system_user"],
+		SystemHost:     settings["system_host"],
 	}
 
 	if connectTimeoutSetting, present := settings["connect_timeout"]; present {

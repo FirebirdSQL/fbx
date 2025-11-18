@@ -25,6 +25,11 @@ func defaultSettings() map[string]string {
 		settings["system_user"] = username
 	}
 
+	hostname, err := os.Hostname()
+	if err == nil {
+		settings["system_host"] = hostname
+	}
+
 	return settings
 }
 

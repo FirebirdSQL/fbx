@@ -3,6 +3,7 @@
 package fbconn
 
 import (
+	"os"
 	"os/user"
 
 	"github.com/red-soft/fbx/fbproto/auth"
@@ -20,6 +21,12 @@ func defaultSettings() map[string]string {
 	if err == nil {
 		settings["system_user"] = user.Username
 	}
+
+	hostname, err := os.Hostname()
+	if err == nil {
+		settings["system_host"] = hostname
+	}
+
 	return settings
 }
 

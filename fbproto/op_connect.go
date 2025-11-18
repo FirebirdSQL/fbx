@@ -13,7 +13,7 @@ type OpConnect struct {
 	Database         string
 	User             string
 	SystemUser       string
-	Hostname         string
+	SystemHost       string
 	Password         string
 	AuthPluginName   string
 	AuthPluginsList  []string
@@ -58,7 +58,7 @@ func (op *OpConnect) Write(x *XDRWriter) error {
 	}
 
 	sysUserBytes := bytes.NewBufferString(op.SystemUser).Bytes()
-	hostnameBytes := bytes.NewBufferString(op.Hostname).Bytes()
+	hostnameBytes := bytes.NewBufferString(op.SystemHost).Bytes()
 	pluginList := strings.Join(op.AuthPluginsList, ",")
 	pluginListNameBytes := bytes.NewBufferString(pluginList).Bytes()
 	pluginNameBytes := bytes.NewBufferString(op.AuthPluginName).Bytes()
