@@ -2173,8 +2173,6 @@ func (fbConn *FbConn) Ping(ctx context.Context) error {
 	default:
 		return fmt.Errorf("received unexpected message: %v", m)
 	}
-
-	return nil
 }
 
 // makeQueryStatus makes a QueryStatus. It does not retain a reference to buf or buf's underlying memory.
