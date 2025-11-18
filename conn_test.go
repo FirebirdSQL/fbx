@@ -199,7 +199,7 @@ func TestParseConfigErrors(t *testing.T) {
 }
 
 func TestExec(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
@@ -281,7 +281,7 @@ func TestExecFailureWithArguments(t *testing.T) {
 }
 
 func TestExecContextWithoutCancelation(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
