@@ -377,7 +377,7 @@ func TestBeginReadOnly(t *testing.T) {
 	}
 	defer tx.Rollback(context.Background())
 
-	_, err = tx.Exec(context.Background(), "recreate table "+t.Name()+"(id int primary key)")
+	_, err = conn.Exec(context.Background(), "recreate table "+t.Name()+"(id int primary key)")
 	if fbErr, ok := err.(*fbconn.FbError); !ok || fbErr.Code != "25006" {
 		t.Errorf("Expected error SQLSTATE 25006, but got %#v", err)
 	}

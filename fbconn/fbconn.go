@@ -120,6 +120,7 @@ type FbConn struct {
 	cleanupDone         chan struct{}
 	Encoding            *fbproto.Encoding
 	internalTransaction *FBTransaction
+	explicitTransaction bool
 	activeTransactions  map[*FBTransaction]struct{}
 
 	preparedMap map[string]*StatementDescription
@@ -1645,16 +1646,24 @@ func (fbConn *FbConn) CopyFrom(ctx context.Context, r io.Reader, sql string) (Qu
 	panic("implement me")
 }
 
-// Commit commits internal transaction
+// Commit commits internal implicit transaction
 func (fbConn *FbConn) Commit(ctx context.Context) error {
+	if fbConn.explicitTransaction {
+		return nil
+	}
+
 	if fbConn.internalTransaction == nil || fbConn.internalTransaction.Closed {
 		return ErrTransactionClosed
 	}
 	return fbConn.internalTransaction.Commit(ctx)
 }
 
-// Rollback rollbacks internal transaction
+// Rollback rollbacks internal implicit transaction
 func (fbConn *FbConn) Rollback(ctx context.Context) error {
+	if fbConn.explicitTransaction {
+		return nil
+	}
+
 	if fbConn.internalTransaction == nil || fbConn.internalTransaction.Closed {
 		return ErrTransactionClosed
 	}
@@ -2460,6 +2469,7 @@ func (fbConn *FbConn) ensureInternalTransaction(ctx context.Context, tpb []byte)
 			return nil, err
 		}
 		fbConn.internalTransaction = tx
+		fbConn.explicitTransaction = false
 	}
 	return fbConn.internalTransaction, nil
 }
@@ -2509,6 +2519,8 @@ func (fbConn *FbConn) StartTransactionTPB(ctx context.Context, tpb []byte) (*FBT
 	case *fbproto.OpResponse:
 		tx := &FBTransaction{Connection: fbConn, Handle: m.Object, Closed: false}
 		fbConn.activeTransactions[tx] = struct{}{}
+		fbConn.internalTransaction = tx
+		fbConn.explicitTransaction = true
 		return tx, nil
 	case *fbproto.ErrorResponse:
 		return nil, ErrorResponseToFbError(m)
