@@ -892,13 +892,11 @@ func (fbConn *FbConn) Close(ctx context.Context) error {
 	}
 
 	// Ignore any errors sending Terminate message and waiting for server to close connection.
-	// This mimics the behavior of libpq PQfinish. It calls closePGconn which calls sendTerminateConn which purposefully
-	// ignores errors.
-	//
-	// See https://github.com/jackc/pgx/issues/637
-	//fbConn.frontend.WriteMessage(&pgproto3.Terminate{})
-	//fbConn.flushWithPotentialWriteReadDeadlock()
-	//
+	fbConn.client.WriteMessage(&fbproto.OpDetach{})
+	fbConn.client.WriteMessage(&fbproto.OpDisconnect{})
+	fbConn.flushWithPotentialWriteReadDeadlock()
+	//FIXME: should we wait or not response from server?
+	//fbConn.receiveMessage()
 	return fbConn.conn.Close()
 }
 
