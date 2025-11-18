@@ -319,6 +319,9 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		"krbspn":           {},
 		"krbsrvname":       {},
 		"auth_plugin_list": {},
+		"system_user":      {},
+		"wire_crypt":       {},
+		"system_host":      {},
 	}
 
 	// Adding kerberos configuration
