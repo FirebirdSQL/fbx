@@ -41,6 +41,7 @@ type Config struct {
 	WireCrypt      bool
 	Encoding       string
 	DPB            []byte
+	ClientVersion  string
 
 	// BuildContextWatcherHandler is called to create a ContextWatcherHandler for a connection. The handler is called
 	// when a context passed to a FbConn method is canceled.
@@ -293,6 +294,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		WireCrypt:      convertToBool(settings["wire_crypt"], true),
 		SystemUser:     settings["system_user"],
 		SystemHost:     settings["system_host"],
+		ClientVersion:  settings["client_version"],
 	}
 
 	if connectTimeoutSetting, present := settings["connect_timeout"]; present {
@@ -322,6 +324,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		"system_user":      {},
 		"wire_crypt":       {},
 		"system_host":      {},
+		"client_version":   {},
 	}
 
 	// Adding kerberos configuration

@@ -5,6 +5,7 @@ package fbconn
 import (
 	"os"
 	"os/user"
+	"runtime/debug"
 
 	"github.com/red-soft/fbx/fbproto/auth"
 )
@@ -25,6 +26,10 @@ func defaultSettings() map[string]string {
 	hostname, err := os.Hostname()
 	if err == nil {
 		settings["system_host"] = hostname
+	}
+
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		settings["client_version"] = bi.Main.Version
 	}
 
 	return settings

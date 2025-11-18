@@ -600,6 +600,9 @@ connectLoop:
 	if config.SystemHost != "" {
 		dpb.PutString(fbproto.Isc_dpb_host_name, config.SystemHost)
 	}
+	if config.ClientVersion != "" {
+		dpb.PutString(fbproto.Isc_dpb_client_version, config.ClientVersion)
+	}
 	dpb.PutInt32(fbproto.Isc_dpb_process_id, int32(os.Getpid()))
 	app, ok := config.RuntimeParams["application_name"]
 	if !ok {

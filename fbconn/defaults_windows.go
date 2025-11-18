@@ -30,6 +30,10 @@ func defaultSettings() map[string]string {
 		settings["system_host"] = hostname
 	}
 
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		settings["client_version"] = bi.Main.Version
+	}
+
 	return settings
 }
 
