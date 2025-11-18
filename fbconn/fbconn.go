@@ -2159,10 +2159,19 @@ func (fbConn *FbConn) Ping(ctx context.Context) error {
 		return err
 	}
 
-	_, err = fbConn.receiveMessage()
+	msg, err := fbConn.receiveMessage()
 	if err != nil {
 		fbConn.asyncClose()
 		return err
+	}
+
+	switch m := msg.(type) {
+	case *fbproto.OpResponse:
+		return nil
+	case *fbproto.ErrorResponse:
+		return ErrorResponseToFbError(m)
+	default:
+		return fmt.Errorf("received unexpected message: %v", m)
 	}
 
 	return nil
