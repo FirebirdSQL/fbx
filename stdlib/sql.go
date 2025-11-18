@@ -484,10 +484,7 @@ func (c *Conn) QueryContext(ctx context.Context, query string, argsV []driver.Na
 		return nil, driver.ErrBadConn
 	}
 
-	args := []any{databaseSQLResultFormats}
-	args = append(args, namedValueToInterface(argsV)...)
-
-	rows, err := c.conn.Query(ctx, query, args...)
+	rows, err := c.conn.Query(ctx, query, namedValueToInterface(argsV)...)
 	if err != nil {
 		if fbconn.SafeToRetry(err) {
 			return nil, driver.ErrBadConn
