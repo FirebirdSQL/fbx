@@ -179,6 +179,7 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 		st.conn.asyncClose()
 		rr.concludeCommand(QueryStatus{}, err)
 		st.conn.contextWatcher.Unwatch()
+		st.conn.unlock()
 		rr.closed = true
 		return rr
 	}
@@ -187,6 +188,7 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 		st.conn.asyncClose()
 		rr.concludeCommand(QueryStatus{}, err)
 		st.conn.contextWatcher.Unwatch()
+		st.conn.unlock()
 		rr.closed = true
 		return rr
 	}
@@ -196,6 +198,7 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 		st.conn.asyncClose()
 		rr.concludeCommand(QueryStatus{}, err)
 		st.conn.contextWatcher.Unwatch()
+		st.conn.unlock()
 		rr.closed = true
 		return rr
 	}
@@ -208,6 +211,7 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 				st.conn.asyncClose()
 				rr.concludeCommand(QueryStatus{}, err)
 				st.conn.contextWatcher.Unwatch()
+				st.conn.unlock()
 				rr.closed = true
 				return rr
 			}
@@ -217,12 +221,14 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 			case *fbproto.ErrorResponse:
 				rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(d))
 				st.conn.contextWatcher.Unwatch()
+				st.conn.unlock()
 				rr.closed = true
 				return rr
 			}
 		case *fbproto.ErrorResponse:
 			rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(r))
 			st.conn.contextWatcher.Unwatch()
+			st.conn.unlock()
 			rr.closed = true
 			return rr
 		default:
@@ -234,6 +240,7 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 		case *fbproto.ErrorResponse:
 			rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(r))
 			st.conn.contextWatcher.Unwatch()
+			st.conn.unlock()
 			rr.closed = true
 			return rr
 		default:
