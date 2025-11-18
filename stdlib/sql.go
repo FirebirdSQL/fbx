@@ -1,15 +1,15 @@
-// Package stdlib is the compatibility layer from pgx to database/sql.
+// Package stdlib is the compatibility layer from fbx to database/sql.
 //
 // A database/sql connection can be established through sql.Open.
 //
-//	db, err := sql.Open("pgx", "postgres://pgx_md5:secret@localhost:5432/pgx_test?sslmode=disable")
+//	db, err := sql.Open("fbx", "firebird://user:secret@localhost:3050/fbx_test")
 //	if err != nil {
 //	  return err
 //	}
 //
 // Or from a keyword/value string.
 //
-//	db, err := sql.Open("pgx", "user=postgres password=secret host=localhost port=5432 database=pgx_test sslmode=disable")
+//	db, err := sql.Open("fbx", "user=user password=secret host=localhost port=3050 database=fbx_test")
 //	if err != nil {
 //	  return err
 //	}
@@ -30,14 +30,14 @@
 //	connConfig, _ := fbx.ParseConfig(os.Getenv("DATABASE_URL"))
 //	connConfig.Tracer = &tracelog.TraceLog{Logger: myLogger, LogLevel: tracelog.LogLevelInfo}
 //	connStr := stdlib.RegisterConnConfig(connConfig)
-//	db, _ := sql.Open("pgx", connStr)
+//	db, _ := sql.Open("fbx", connStr)
 //
-// pgx uses standard PostgreSQL positional parameters in queries. e.g. $1, $2. It does not support named parameters.
+// fbx uses standard Firebird positional parameters in queries. e.g. ?, ?. It does not support named parameters.
 //
-//	db.QueryRow("select * from users where id=$1", userID)
+//	db.QueryRow("select * from users where id=?", userID)
 //
 // (*sql.Conn) Raw() can be used to get a *fbx.Conn from the standard database/sql.DB connection pool. This allows
-// operations that use pgx specific functionality.
+// operations that use fbx specific functionality.
 //
 //	// Given db is a *sql.DB
 //	conn, err := db.Conn(context.Background())
@@ -47,7 +47,7 @@
 //
 //	err = conn.Raw(func(driverConn any) error {
 //	  conn := driverConn.(*stdlib.Conn).Conn() // conn is a *fbx.Conn
-//	  // Do pgx specific stuff with conn
+//	  // Do fbx specific stuff with conn
 //	  conn.CopyFrom(...)
 //	  return nil
 //	})
@@ -55,10 +55,12 @@
 //	  // handle error that occurred while using *fbx.Conn
 //	}
 //
-// # PostgreSQL Specific Data Types
+// # Firebird Specific Data Types
 //
-// The fbtype package provides support for PostgreSQL specific types. *fbtype.Map.SQLScanner is an adapter that makes
+// The fbtype package provides support for Firebird specific types. *fbtype.Map.SQLScanner is an adapter that makes
 // these types usable as a sql.Scanner.
+//
+// FIXME: make proper example
 //
 //	m := fbtype.NewMap()
 //	var a []int64
@@ -97,7 +99,7 @@ func init() {
 		configs: make(map[string]*fbx.ConnConfig),
 	}
 
-	// if pgx driver was already registered by different pgx major version then we
+	// if fbx driver was already registered by different fbx major version then we
 	// skip registration under the default name.
 	if !slices.Contains(sql.Drivers(), "fbx") {
 		sql.Register("fbx", fbxDriver)
@@ -289,7 +291,7 @@ func (c connector) Driver() driver.Driver {
 }
 
 // GetDefaultDriver returns the driver initialized in the init function
-// and used when the pgx driver is registered.
+// and used when the fbx driver is registered.
 func GetDefaultDriver() driver.Driver {
 	return fbxDriver
 }
@@ -389,7 +391,7 @@ type Conn struct {
 	resetSessionFunc     func(context.Context, *fbx.Conn) error // Function is called before a connection is reused
 	lastResetSessionTime time.Time
 
-	// psRefCounts contains reference counts for prepared statements. Prepare uses the underlying pgx logic to generate
+	// psRefCounts contains reference counts for prepared statements. Prepare uses the underlying fbx logic to generate
 	// deterministic statement names from the statement text. If this query has already been prepared then the existing
 	// *fbconn.StatementDescription will be returned. However, this means that if Close is called on the returned Stmt
 	// then the underlying prepared statement will be closed even when the underlying prepared statement is still in use
@@ -436,25 +438,25 @@ func (c *Conn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, e
 		return nil, driver.ErrBadConn
 	}
 
-	var pgxOpts fbx.TxOptions
+	var fbxOpts fbx.TxOptions
 	switch sql.IsolationLevel(opts.Isolation) {
 	case sql.LevelDefault:
 		fallthrough
 	case sql.LevelReadCommitted:
-		pgxOpts.IsoLevel = fbx.ReadCommitted
+		fbxOpts.IsoLevel = fbx.ReadCommitted
 	case sql.LevelRepeatableRead, sql.LevelSnapshot:
-		pgxOpts.IsoLevel = fbx.RepeatableRead
+		fbxOpts.IsoLevel = fbx.RepeatableRead
 	case sql.LevelSerializable:
-		pgxOpts.IsoLevel = fbx.Serializable
+		fbxOpts.IsoLevel = fbx.Serializable
 	default:
 		return nil, fmt.Errorf("unsupported isolation: %v", opts.Isolation)
 	}
 
 	if opts.ReadOnly {
-		pgxOpts.AccessMode = fbx.ReadOnly
+		fbxOpts.AccessMode = fbx.ReadOnly
 	}
 
-	tx, err := c.conn.BeginTx(ctx, pgxOpts)
+	tx, err := c.conn.BeginTx(ctx, fbxOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -518,7 +520,7 @@ func (c *Conn) Ping(ctx context.Context) error {
 }
 
 func (c *Conn) CheckNamedValue(*driver.NamedValue) error {
-	// Underlying pgx supports sql.Scanner and driver.Valuer interfaces natively. So everything can be passed through directly.
+	// Underlying fbx supports sql.Scanner and driver.Valuer interfaces natively. So everything can be passed through directly.
 	return nil
 }
 
