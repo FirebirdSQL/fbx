@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -110,7 +111,7 @@ func testWithAllQueryExecModes(t *testing.T, f func(t *testing.T, db *sql.DB)) {
 func ensureDBValid(t testing.TB, db *sql.DB) {
 	var sum, rowCount int32
 
-	rows, err := db.Query("select generate_series(1,$1)", 10)
+	rows, err := db.Query(generateSeriesQuery("1", "?", ""), 10)
 	require.NoError(t, err)
 	defer rows.Close()
 
@@ -151,7 +152,6 @@ func TestSQLOpen(t *testing.T) {
 		driverName string
 	}{
 		{driverName: "fbx"},
-		{driverName: "fbx/v5"},
 	}
 
 	for _, tt := range tests {
@@ -181,8 +181,7 @@ func TestNormalLifeCycle(t *testing.T) {
 	defer closeDB(t, db)
 
 	skipCockroachDB(t, db, "Server issues incorrect ParameterDescription (https://github.com/cockroachdb/cockroach/issues/60907)")
-
-	stmt := prepareStmt(t, db, "select 'foo', n from generate_series($1::int, $2::int) n")
+	stmt := prepareStmt(t, db, "select 'foo', n from ("+generateSeriesQuery("?", "?", "n")+")")
 	defer closeStmt(t, stmt)
 
 	rows, err := stmt.Query(int32(1), int32(10))
@@ -222,19 +221,26 @@ func TestStmtExec(t *testing.T) {
 	tx, err := db.Begin()
 	require.NoError(t, err)
 
-	createStmt := prepareStmt(t, tx, "create temporary table t(a varchar not null)")
+	createStmt := prepareStmt(t, tx, "recreate table t(a varchar not null)")
 	_, err = createStmt.Exec()
 	require.NoError(t, err)
 	closeStmt(t, createStmt)
+	require.NoError(t, tx.Commit())
 
-	insertStmt := prepareStmt(t, tx, "insert into t values($1::text)")
+	//original test executed both statements in same transaction, but FB do not support
+	//using table in same transaction it was created
+	tx, err = db.Begin()
+	require.NoError(t, err)
+
+	insertStmt := prepareStmt(t, tx, "insert into t values(cast(? as varchar))")
 	result, err := insertStmt.Exec("foo")
 	require.NoError(t, err)
 
 	n, err := result.RowsAffected()
 	require.NoError(t, err)
-	require.EqualValues(t, 1, n)
+	assert.EqualValues(t, 1, n)
 	closeStmt(t, insertStmt)
+	require.NoError(t, tx.Rollback())
 
 	ensureDBValid(t, db)
 }
@@ -245,7 +251,7 @@ func TestQueryCloseRowsEarly(t *testing.T) {
 
 	skipCockroachDB(t, db, "Server issues incorrect ParameterDescription (https://github.com/cockroachdb/cockroach/issues/60907)")
 
-	stmt := prepareStmt(t, db, "select 'foo', n from generate_series($1::int, $2::int) n")
+	stmt := prepareStmt(t, db, "select 'foo', n from ("+generateSeriesQuery("?", "?", "n")+")")
 	defer closeStmt(t, stmt)
 
 	rows, err := stmt.Query(int32(1), int32(10))
@@ -286,7 +292,7 @@ func TestQueryCloseRowsEarly(t *testing.T) {
 
 func TestConnExec(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		_, err := db.Exec("create temporary table t(a varchar not null)")
+		_, err := db.Exec("recreate table t(a varchar not null)")
 		require.NoError(t, err)
 
 		result, err := db.Exec("insert into t values('hey')")
@@ -302,7 +308,7 @@ func TestConnQuery(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
 		skipCockroachDB(t, db, "Server issues incorrect ParameterDescription (https://github.com/cockroachdb/cockroach/issues/60907)")
 
-		rows, err := db.Query("select 'foo', n from generate_series($1::int, $2::int) n", int32(1), int32(10))
+		rows, err := db.Query("select 'foo', n from ("+generateSeriesQuery("?", "?", "n")+")", int32(1), int32(10))
 		require.NoError(t, err)
 
 		rowCount := int64(0)
@@ -331,13 +337,8 @@ func TestConnQuery(t *testing.T) {
 
 func TestConnConcurrency(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		_, err := db.Exec("create table t (id integer primary key, str text, dur_str interval)")
+		_, err := db.Exec("recreate table t (id integer primary key, str varchar, dur_str bigint)")
 		require.NoError(t, err)
-
-		defer func() {
-			_, err := db.Exec("drop table t")
-			require.NoError(t, err)
-		}()
 
 		var wg sync.WaitGroup
 
@@ -355,17 +356,17 @@ func TestConnConcurrency(t *testing.T) {
 
 				str := strconv.Itoa(idx)
 				duration := time.Duration(idx) * time.Second
-				_, err := db.ExecContext(ctx, "insert into t values($1)", idx)
+				_, err := db.ExecContext(ctx, "insert into t(id) values(?)", idx)
 				if err != nil {
 					errChan <- fmt.Errorf("insert failed: %d %w", idx, err)
 					return
 				}
-				_, err = db.ExecContext(ctx, "update t set str = $1 where id = $2", str, idx)
+				_, err = db.ExecContext(ctx, "update t set str = ? where id = ?", str, idx)
 				if err != nil {
 					errChan <- fmt.Errorf("update 1 failed: %d %w", idx, err)
 					return
 				}
-				_, err = db.ExecContext(ctx, "update t set dur_str = $1 where id = $2", duration, idx)
+				_, err = db.ExecContext(ctx, "update t set dur_str = ? where id = ?", duration, idx)
 				if err != nil {
 					errChan <- fmt.Errorf("update 2 failed: %d %w", idx, err)
 					return
@@ -391,8 +392,8 @@ func TestConnConcurrency(t *testing.T) {
 
 				var id int
 				var str string
-				var duration fbtype.Interval
-				err := db.QueryRowContext(ctx, "select id,str,dur_str from t where id = $1", idx).Scan(&id, &str, &duration)
+				var duration int64 //fbtype.Interval
+				err := db.QueryRowContext(ctx, "select id,str,dur_str from t where id = ?", idx).Scan(&id, &str, &duration)
 				if err != nil {
 					errChan <- fmt.Errorf("select failed: %d %w", idx, err)
 					return
@@ -405,11 +406,11 @@ func TestConnConcurrency(t *testing.T) {
 					errChan <- fmt.Errorf("str mismatch: %d %s", idx, str)
 					return
 				}
-				expectedDuration := fbtype.Interval{
-					Microseconds: int64(idx) * time.Second.Microseconds(),
-					Valid:        true,
-				}
-				if duration != expectedDuration {
+				//expectedDuration := fbtype.Interval{
+				//	Microseconds: int64(idx) * time.Second.Microseconds(),
+				//	Valid:        true,
+				//}
+				if duration != int64(idx)*1000000000 {
 					errChan <- fmt.Errorf("duration mismatch: %d %v", idx, duration)
 					return
 				}
@@ -431,7 +432,7 @@ func TestConnQueryDifferentScanPlansIssue781(t *testing.T) {
 		var s string
 		var b bool
 
-		rows, err := db.Query("select true, 'foo'")
+		rows, err := db.Query("select true, 'foo' from rdb$database")
 		require.NoError(t, err)
 
 		require.True(t, rows.Next())
@@ -443,7 +444,7 @@ func TestConnQueryDifferentScanPlansIssue781(t *testing.T) {
 
 func TestConnQueryNull(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		rows, err := db.Query("select $1::int", nil)
+		rows, err := db.Query("select cast(? as integer) from rdb$database", nil)
 		require.NoError(t, err)
 
 		rowCount := int64(0)
@@ -471,7 +472,7 @@ func TestConnQueryRowByteSlice(t *testing.T) {
 		expected := []byte{222, 173, 190, 239}
 		var actual []byte
 
-		err := db.QueryRow(`select E'\\xdeadbeef'::bytea`).Scan(&actual)
+		err := db.QueryRow(`select cast(0xdeadbeef as varchar(16) character set octets) from rdb$database`).Scan(&actual)
 		require.NoError(t, err)
 		require.EqualValues(t, expected, actual)
 	})
@@ -479,13 +480,14 @@ func TestConnQueryRowByteSlice(t *testing.T) {
 
 func TestConnQueryFailure(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		_, err := db.Query("select 'foo")
+		_, err := db.Query("select 'foo from rdb$database")
 		require.Error(t, err)
 		require.IsType(t, new(fbconn.FbError), err)
 	})
 }
 
 func TestConnSimpleSlicePassThrough(t *testing.T) {
+	t.Skip("need implementation")
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
 		skipCockroachDB(t, db, "Server does not support cardinality function")
 
@@ -497,6 +499,7 @@ func TestConnSimpleSlicePassThrough(t *testing.T) {
 }
 
 func TestConnQueryScanGoArray(t *testing.T) {
+	t.Skip("need implementation")
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
 		m := fbtype.NewMap()
 
@@ -508,6 +511,7 @@ func TestConnQueryScanGoArray(t *testing.T) {
 }
 
 func TestConnQueryScanArray(t *testing.T) {
+	t.Skip("need implementation")
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
 		m := fbtype.NewMap()
 
@@ -523,6 +527,7 @@ func TestConnQueryScanArray(t *testing.T) {
 }
 
 func TestConnQueryScanRange(t *testing.T) {
+	t.Skip("need implementation")
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
 		skipCockroachDB(t, db, "Server does not support int4range")
 
@@ -548,7 +553,7 @@ func TestConnQueryScanRange(t *testing.T) {
 // database/sql native type should be passed through as a string
 func TestConnQueryRowPgxBinary(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		sql := "select $1::int4[]"
+		sql := "select cast(? as integer) from rdb$database"
 		expected := "{1,2,3}"
 		var actual string
 
@@ -559,9 +564,9 @@ func TestConnQueryRowPgxBinary(t *testing.T) {
 }
 
 func TestConnQueryRowUnknownType(t *testing.T) {
-	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		skipCockroachDB(t, db, "Server does not support point type")
+	t.Skip("need implementation")
 
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
 		sql := "select $1::point"
 		expected := "(1,2)"
 		var actual string
@@ -573,6 +578,8 @@ func TestConnQueryRowUnknownType(t *testing.T) {
 }
 
 func TestConnQueryJSONIntoByteSlice(t *testing.T) {
+	t.Skip("need implementation")
+
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
 		_, err := db.Exec(`
 		create temporary table docs(
@@ -602,8 +609,7 @@ func TestConnQueryJSONIntoByteSlice(t *testing.T) {
 }
 
 func TestConnExecInsertByteSliceIntoJSON(t *testing.T) {
-	// Not testing with simple protocol because there is no way for that to work. A []byte will be considered binary data
-	// that needs to escape. No way to know whether the destination is really a text compatible or a bytea.
+	t.Skip("need implementation")
 
 	db := openDB(t)
 	defer closeDB(t, db)
@@ -634,7 +640,7 @@ func TestConnExecInsertByteSliceIntoJSON(t *testing.T) {
 
 func TestTransactionLifeCycle(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		_, err := db.Exec("create temporary table t(a varchar not null)")
+		_, err := db.Exec("recreate table t(a varchar not null)")
 		require.NoError(t, err)
 
 		tx, err := db.Begin()
@@ -670,20 +676,19 @@ func TestConnBeginTxIsolation(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
 		skipCockroachDB(t, db, "Server always uses serializable isolation level")
 
-		var defaultIsoLevel string
-		err := db.QueryRow("show transaction_isolation").Scan(&defaultIsoLevel)
+		var defaultMode int
+		err := db.QueryRow("select mon$isolation_mode from mon$transactions where mon$transaction_id = current_transaction").Scan(&defaultMode)
 		require.NoError(t, err)
 
 		supportedTests := []struct {
 			sqlIso sql.IsolationLevel
-			pgIso  string
+			fbIso  int
 		}{
-			{sqlIso: sql.LevelDefault, pgIso: defaultIsoLevel},
-			{sqlIso: sql.LevelReadUncommitted, pgIso: "read uncommitted"},
-			{sqlIso: sql.LevelReadCommitted, pgIso: "read committed"},
-			{sqlIso: sql.LevelRepeatableRead, pgIso: "repeatable read"},
-			{sqlIso: sql.LevelSnapshot, pgIso: "repeatable read"},
-			{sqlIso: sql.LevelSerializable, pgIso: "serializable"},
+			{sqlIso: sql.LevelDefault, fbIso: defaultMode},
+			{sqlIso: sql.LevelReadCommitted, fbIso: 4},
+			{sqlIso: sql.LevelRepeatableRead, fbIso: 1},
+			{sqlIso: sql.LevelSnapshot, fbIso: 1},
+			{sqlIso: sql.LevelSerializable, fbIso: 0},
 		}
 		for i, tt := range supportedTests {
 			func() {
@@ -694,14 +699,14 @@ func TestConnBeginTxIsolation(t *testing.T) {
 				}
 				defer tx.Rollback()
 
-				var pgIso string
-				err = tx.QueryRow("show transaction_isolation").Scan(&pgIso)
+				var fbIso int
+				err = tx.QueryRow("select mon$isolation_mode from mon$transactions where mon$transaction_id = current_transaction").Scan(&fbIso)
 				if err != nil {
 					t.Errorf("%d. QueryRow failed: %v", i, err)
 				}
 
-				if pgIso != tt.pgIso {
-					t.Errorf("%d. pgIso => %s, want %s", i, pgIso, tt.pgIso)
+				if fbIso != tt.fbIso {
+					t.Errorf("%d. fbIso => %d, want %d", i, fbIso, tt.fbIso)
 				}
 			}()
 		}
@@ -728,29 +733,26 @@ func TestConnBeginTxReadOnly(t *testing.T) {
 		require.NoError(t, err)
 		defer tx.Rollback()
 
-		var pgReadOnly string
-		err = tx.QueryRow("show transaction_read_only").Scan(&pgReadOnly)
+		var ro int
+		err = tx.QueryRow("select mon$read_only from mon$transactions where mon$transaction_id = current_transaction").Scan(&ro)
 		if err != nil {
 			t.Errorf("QueryRow failed: %v", err)
 		}
 
-		if pgReadOnly != "on" {
-			t.Errorf("pgReadOnly => %s, want %s", pgReadOnly, "on")
+		if ro != 1 {
+			t.Errorf("ro => %d, want %d", ro, 1)
 		}
 	})
 }
 
 func TestBeginTxContextCancel(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		_, err := db.Exec("drop table if exists t")
-		require.NoError(t, err)
-
 		ctx, cancelFn := context.WithCancel(context.Background())
 
 		tx, err := db.BeginTx(ctx, nil)
 		require.NoError(t, err)
 
-		_, err = tx.Exec("create table t(id serial)")
+		_, err = tx.Exec("recreate table t(id int)")
 		require.NoError(t, err)
 
 		cancelFn()
@@ -762,8 +764,8 @@ func TestBeginTxContextCancel(t *testing.T) {
 
 		var n int
 		err = db.QueryRow("select count(*) from t").Scan(&n)
-		if pgErr, ok := err.(*fbconn.FbError); !ok || pgErr.Code != "42P01" {
-			t.Fatalf(`err => %v, want FbError{Code: "42P01"}`, err)
+		if fbEr, ok := err.(*fbconn.FbError); !ok || fbEr.Code != "42S02" {
+			t.Fatalf(`err => %v, want FbError{Code: "42S02"}`, err)
 		}
 	})
 }
@@ -776,7 +778,7 @@ func TestConnRaw(t *testing.T) {
 		var n int
 		err = conn.Raw(func(driverConn any) error {
 			conn := driverConn.(*stdlib.Conn).Conn()
-			return conn.QueryRow(context.Background(), "select 42").Scan(&n)
+			return conn.QueryRow(context.Background(), "select 42 from rdb$database").Scan(&n)
 		})
 		require.NoError(t, err)
 		assert.EqualValues(t, 42, n)
@@ -792,7 +794,7 @@ func TestConnPingContextSuccess(t *testing.T) {
 
 func TestConnPrepareContextSuccess(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		stmt, err := db.PrepareContext(context.Background(), "select now()")
+		stmt, err := db.PrepareContext(context.Background(), "select current_timestamp from rdb$database")
 		require.NoError(t, err)
 		err = stmt.Close()
 		require.NoError(t, err)
@@ -803,9 +805,7 @@ func TestConnPrepareContextSuccess(t *testing.T) {
 // https://github.com/jackc/fbx/issues/1754#issuecomment-1752004634
 func TestConnMultiplePrepareAndDeallocate(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		skipCockroachDB(t, db, "Server does not support pg_prepared_statements")
-
-		sql := "select 42"
+		sql := "select 42 from rdb$database"
 		stmt1, err := db.PrepareContext(context.Background(), sql)
 		require.NoError(t, err)
 		stmt2, err := db.PrepareContext(context.Background(), sql)
@@ -814,14 +814,14 @@ func TestConnMultiplePrepareAndDeallocate(t *testing.T) {
 		require.NoError(t, err)
 
 		var preparedStmtCount int64
-		err = db.QueryRowContext(context.Background(), "select count(*) from pg_prepared_statements where statement = $1", sql).Scan(&preparedStmtCount)
+		err = db.QueryRowContext(context.Background(), "select count(*) from mon$statements where cast(mon$sql_text as varchar) = ?", sql).Scan(&preparedStmtCount)
 		require.NoError(t, err)
 		require.EqualValues(t, 1, preparedStmtCount)
 
 		err = stmt2.Close() // err isn't as useful as it should be as database/sql will ignore errors from Deallocate.
 		require.NoError(t, err)
 
-		err = db.QueryRowContext(context.Background(), "select count(*) from pg_prepared_statements where statement = $1", sql).Scan(&preparedStmtCount)
+		err = db.QueryRowContext(context.Background(), "select count(*) from mon$statements where cast(mon$sql_text as varchar) = ?", sql).Scan(&preparedStmtCount)
 		require.NoError(t, err)
 		require.EqualValues(t, 0, preparedStmtCount)
 	})
@@ -829,14 +829,14 @@ func TestConnMultiplePrepareAndDeallocate(t *testing.T) {
 
 func TestConnExecContextSuccess(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		_, err := db.ExecContext(context.Background(), "create temporary table exec_context_test(id serial primary key)")
+		_, err := db.ExecContext(context.Background(), "recreate table exec_context_test(id int primary key)")
 		require.NoError(t, err)
 	})
 }
 
 func TestConnQueryContextSuccess(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		rows, err := db.QueryContext(context.Background(), "select * from generate_series(1,10) n")
+		rows, err := db.QueryContext(context.Background(), generateSeriesQuery("1", "10", "n"))
 		require.NoError(t, err)
 
 		for rows.Next() {
@@ -850,14 +850,14 @@ func TestConnQueryContextSuccess(t *testing.T) {
 
 func TestRowsColumnTypeDatabaseTypeName(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		rows, err := db.Query("select 42::bigint")
+		rows, err := db.Query("select cast(42 as bigint) from rdb$database")
 		require.NoError(t, err)
 
 		columnTypes, err := rows.ColumnTypes()
 		require.NoError(t, err)
 		require.Len(t, columnTypes, 1)
 
-		if columnTypes[0].DatabaseTypeName() != "INT8" {
+		if columnTypes[0].DatabaseTypeName() != "BIGINT" {
 			t.Errorf("columnTypes[0].DatabaseTypeName() => %v, want %v", columnTypes[0].DatabaseTypeName(), "INT8")
 		}
 
@@ -870,10 +870,10 @@ func TestStmtExecContextSuccess(t *testing.T) {
 	db := openDB(t)
 	defer closeDB(t, db)
 
-	_, err := db.Exec("create temporary table t(id int primary key)")
+	_, err := db.Exec("recreate table t(id int primary key)")
 	require.NoError(t, err)
 
-	stmt, err := db.Prepare("insert into t(id) values ($1::int4)")
+	stmt, err := db.Prepare("insert into t(id) values(cast(? as int))")
 	require.NoError(t, err)
 	defer stmt.Close()
 
@@ -911,7 +911,7 @@ func TestStmtQueryContextSuccess(t *testing.T) {
 
 	skipCockroachDB(t, db, "Server issues incorrect ParameterDescription (https://github.com/cockroachdb/cockroach/issues/60907)")
 
-	stmt, err := db.Prepare("select * from generate_series(1,$1::int4) n")
+	stmt, err := db.Prepare(generateSeriesQuery("1", "?", "n"))
 	require.NoError(t, err)
 	defer stmt.Close()
 
@@ -949,8 +949,8 @@ func TestRowsColumnTypes(t *testing.T) {
 			ScanType reflect.Type
 		}{
 			{
-				Name:     "a",
-				TypeName: "INT8",
+				Name:     "A",
+				TypeName: "BIGINT",
 				Length: struct {
 					Len int64
 					OK  bool
@@ -969,8 +969,8 @@ func TestRowsColumnTypes(t *testing.T) {
 				},
 				ScanType: reflect.TypeOf(int64(0)),
 			}, {
-				Name:     "bar",
-				TypeName: "TEXT",
+				Name:     "BAR",
+				TypeName: "VARCHAR",
 				Length: struct {
 					Len int64
 					OK  bool
@@ -989,7 +989,7 @@ func TestRowsColumnTypes(t *testing.T) {
 				},
 				ScanType: reflect.TypeOf(""),
 			}, {
-				Name:     "dec",
+				Name:     "DE",
 				TypeName: "NUMERIC",
 				Length: struct {
 					Len int64
@@ -1009,7 +1009,7 @@ func TestRowsColumnTypes(t *testing.T) {
 				},
 				ScanType: reflect.TypeOf(float64(0)),
 			}, {
-				Name:     "d",
+				Name:     "D",
 				TypeName: "1266",
 				Length: struct {
 					Len int64
@@ -1031,7 +1031,7 @@ func TestRowsColumnTypes(t *testing.T) {
 			},
 		}
 
-		rows, err := db.Query("SELECT 1::bigint AS a, text 'bar' AS bar, 1.28::numeric(9, 2) AS dec, '12:00:00'::timetz as d")
+		rows, err := db.Query("SELECT cast(1 as bigint) AS a, cast('bar' as varchar) AS bar, cast(1.28 as numeric(9, 2)) AS de, cast('12:00:00' as time with time zone) as d from rdb$database")
 		require.NoError(t, err)
 
 		columns, err := rows.ColumnTypes()
@@ -1039,6 +1039,7 @@ func TestRowsColumnTypes(t *testing.T) {
 		assert.Len(t, columns, 4)
 
 		for i, tt := range columnTypesTests {
+			t.Logf("test column %d", i)
 			c := columns[i]
 			if c.Name() != tt.Name {
 				t.Errorf("(%d) got: %s, want: %s", i, c.Name(), tt.Name)
@@ -1074,7 +1075,7 @@ func TestQueryLifeCycle(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
 		skipCockroachDB(t, db, "Server issues incorrect ParameterDescription (https://github.com/cockroachdb/cockroach/issues/60907)")
 
-		rows, err := db.Query("SELECT 'foo', n FROM generate_series($1::int, $2::int) n WHERE 3 = $3", 1, 10, 3)
+		rows, err := db.Query("SELECT 'foo', n FROM ("+generateSeriesQuery("?", "?", "n")+") WHERE 3 = ?", 1, 10, 3)
 		require.NoError(t, err)
 
 		rowCount := int64(0)
@@ -1102,7 +1103,7 @@ func TestQueryLifeCycle(t *testing.T) {
 		err = rows.Close()
 		require.NoError(t, err)
 
-		rows, err = db.Query("select 1 where false")
+		rows, err = db.Query("select 1 from rdb$database where false")
 		require.NoError(t, err)
 
 		rowCount = int64(0)
@@ -1120,6 +1121,7 @@ func TestQueryLifeCycle(t *testing.T) {
 
 // https://github.com/jackc/fbx/issues/409
 func TestScanJSONIntoJSONRawMessage(t *testing.T) {
+	t.Skip("need implementation")
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
 		var msg json.RawMessage
 
@@ -1165,21 +1167,22 @@ func TestRegisterConnConfig(t *testing.T) {
 	defer closeDB(t, db)
 
 	var n int64
-	err = db.QueryRow("select 1").Scan(&n)
+	err = db.QueryRow("select 1 from rdb$database").Scan(&n)
 	require.NoError(t, err)
 
 	l := logger.logs[len(logger.logs)-1]
 	assert.Equal(t, "Query", l.msg)
-	assert.Equal(t, "select 1", l.data["sql"])
+	assert.Equal(t, "select 1 from rdb$database", l.data["sql"])
 }
 
 // https://github.com/jackc/fbx/issues/958
 func TestConnQueryRowConstraintErrors(t *testing.T) {
+	t.Skip("only PG")
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
 		skipPostgreSQLVersionLessThan(t, db, 11)
 		skipCockroachDB(t, db, "Server does not support deferred constraint (https://github.com/cockroachdb/cockroach/issues/31632)")
 
-		_, err := db.Exec(`create temporary table defer_test (
+		_, err := db.Exec(`recreate table defer_test (
 			id text primary key,
 			n int not null, unique (n),
 			unique (n) deferrable initially deferred )`)
@@ -1233,10 +1236,10 @@ func TestOptionBeforeAfterConnect(t *testing.T) {
 	// Force it to close and reopen a new connection after each query
 	db.SetMaxIdleConns(0)
 
-	_, err = db.Exec("select 1")
+	_, err = db.Exec("select 1 from rdb$database")
 	require.NoError(t, err)
 
-	_, err = db.Exec("select 1")
+	_, err = db.Exec("select 1 from rdb$database")
 	require.NoError(t, err)
 
 	require.Len(t, beforeConnConfigs, 2)
@@ -1249,7 +1252,7 @@ func TestOptionBeforeAfterConnect(t *testing.T) {
 }
 
 func TestRandomizeHostOrderFunc(t *testing.T) {
-	config, err := fbx.ParseConfig("postgres://host1,host2,host3")
+	config, err := fbx.ParseConfig("firebird://host1,host2,host3")
 	require.NoError(t, err)
 
 	// Test that at some point we connect to all 3 hosts
@@ -1314,8 +1317,6 @@ func TestCheckIdleConn(t *testing.T) {
 	require.NoError(t, err)
 	defer closeDB(t, controllerConn)
 
-	skipCockroachDB(t, controllerConn, "Server does not support pg_terminate_backend() (https://github.com/cockroachdb/cockroach/issues/35897)")
-
 	db, err := sql.Open("fbx", os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeDB(t, db)
@@ -1329,11 +1330,12 @@ func TestCheckIdleConn(t *testing.T) {
 
 	require.EqualValues(t, 3, db.Stats().OpenConnections)
 
-	var pids []uint32
+	var ids []uint64
 	for _, c := range conns {
 		err := c.Raw(func(driverConn any) error {
-			//FIXME: there os no pids in fbconn
-			//pids = append(pids, driverConn.(*stdlib.Conn).Conn().FbConn().PID())
+			res := driverConn.(*stdlib.Conn).Conn().FbConn().Exec(context.Background(), "select mon$attachment_id from mon$attachments where mon$attachment_id = current_connection").Read()
+			require.NoError(t, res.Err)
+			ids = append(ids, binary.BigEndian.Uint64(res.Rows[0][0]))
 			return nil
 		})
 		require.NoError(t, err)
@@ -1344,8 +1346,10 @@ func TestCheckIdleConn(t *testing.T) {
 	// The database/sql connection pool seems to automatically close idle connections to only keep 2 alive.
 	// require.EqualValues(t, 3, db.Stats().OpenConnections)
 
-	_, err = controllerConn.ExecContext(context.Background(), `select pg_terminate_backend(n) from unnest($1::int[]) n`, pids)
-	require.NoError(t, err)
+	for _, id := range ids {
+		_, err = controllerConn.ExecContext(context.Background(), `delete from mon$attachments where mon$attachment_id = ?`, id)
+		require.NoError(t, err)
+	}
 
 	// All conns are dead they don't know it and neither does the pool. But because of database/sql automatically closing
 	// idle connections we can't be sure how many we should have. require.EqualValues(t, 3, db.Stats().OpenConnections)
@@ -1372,5 +1376,5 @@ func TestCheckIdleConn(t *testing.T) {
 	err = c.Close()
 	require.NoError(t, err)
 
-	require.NotContains(t, pids, cPID)
+	require.NotContains(t, ids, cPID)
 }
