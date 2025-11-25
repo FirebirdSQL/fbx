@@ -656,7 +656,7 @@ connectLoop:
 	return fbConn, nil
 }
 
-func (fbConn *FbConn) getStatementInfo(statementHandle int) (*fbproto.StatementInfo, error) {
+func (fbConn *FbConn) getStatementInfo(statementHandle int, itemsBuilder func(int) []byte) (*fbproto.StatementInfo, error) {
 	var err error
 	var continueIndex int
 	infoSize := 10240
@@ -664,7 +664,7 @@ func (fbConn *FbConn) getStatementInfo(statementHandle int) (*fbproto.StatementI
 	for {
 		if err = fbConn.client.WriteMessage(&fbproto.OpInfoSQL{
 			StatementHandle:           statementHandle,
-			StatementInformationItems: fbproto.GetSelectDescribeInfoItemsContinue(continueIndex),
+			StatementInformationItems: itemsBuilder(continueIndex),
 			MaxBufferLength:           infoSize,
 		}); err != nil {
 			return nil, err
@@ -993,11 +993,12 @@ func (fbConn *FbConn) ParameterStatus(key string) string {
 // QueryStatus simple query info
 type QueryStatus struct {
 	statementType int
+	rowsAffected  int64
 }
 
 // RowsAffected returns the number of rows affected
 func (ct QueryStatus) RowsAffected() int64 {
-	return 0
+	return ct.rowsAffected
 }
 
 func (ct QueryStatus) String() string {
@@ -1167,7 +1168,7 @@ func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 		return nil, ErrorResponseToFbError(m)
 	}
 
-	statementInfo, err := fbConn.getStatementInfo(statementHandle)
+	statementInfo, err := fbConn.getStatementInfo(statementHandle, fbproto.GetSelectDescribeInfoItemsContinue)
 	if err != nil {
 		var fbError *FbError
 		switch {
@@ -1827,6 +1828,7 @@ type ResultReader struct {
 	currentFetch         [][][]byte
 	currentFetchPos      int
 	eoc                  bool
+	rowsInfoPopulated    bool
 }
 
 // Result is the saved query response that is returned by calling Read on a ResultReader.
@@ -1981,10 +1983,37 @@ func (rr *ResultReader) Values() [][]byte {
 // error.
 func (rr *ResultReader) Close() (QueryStatus, error) {
 	if !rr.closed {
+		if err := rr.populateRowsAffected(); err != nil && rr.err == nil {
+			rr.err = err
+		}
+		rr.closed = true
 		rr.fbConn.unlock()
 		rr.fbConn.contextWatcher.Unwatch()
 	}
 	return rr.queryStatus, rr.err
+}
+
+func (rr *ResultReader) populateRowsAffected() error {
+	if rr.rowsInfoPopulated || rr.statementDescription == nil || rr.fbConn == nil || rr.err != nil {
+		rr.rowsInfoPopulated = true
+		return nil
+	}
+
+	info, err := rr.fbConn.getStatementInfo(
+		rr.statementDescription.StatementHandle,
+		func(int) []byte { return []byte{fbproto.Isc_info_sql_records} },
+	)
+	if err != nil {
+		rr.rowsInfoPopulated = true
+		return err
+	}
+
+	rows := rr.statementDescription.affectedRowsFromCounts(info.Counts)
+
+	rr.queryStatus.rowsAffected = rows
+	rr.rowsInfoPopulated = true
+
+	return nil
 }
 
 func (rr *ResultReader) concludeCommand(queryStatus QueryStatus, err error) {

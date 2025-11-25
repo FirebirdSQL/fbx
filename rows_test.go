@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -81,6 +82,31 @@ func TestForEachRow(t *testing.T) {
 		}
 		require.Equal(t, expectedResults, actualResults)
 		require.EqualValues(t, 3, ct.RowsAffected())
+	})
+}
+
+func TestRowsAffectedAggregatesSqlCounts(t *testing.T) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		tableName := fmt.Sprintf("counts_%s", strings.ToLower(t.Name()))
+		_, err := conn.Exec(ctx, fmt.Sprintf(`recreate table %s (id int)`, tableName))
+		require.NoError(t, err)
+		defer conn.Exec(ctx, fmt.Sprintf(`drop table %s`, tableName))
+
+		_, err = conn.Exec(ctx, fmt.Sprintf(`insert into %s (id) values (1)`, tableName))
+		require.NoError(t, err)
+
+		ct, err := conn.Exec(ctx, fmt.Sprintf(`
+execute block as
+begin
+	insert into %s (id) values (2);
+	update %s set id = id + 10 where id = 1;
+	delete from %s where id = 2;
+end`, tableName, tableName, tableName))
+		require.NoError(t, err)
+
+		// Firebird reports counts for all operations inside the block (including internal reads),
+		// so the aggregated RowsAffected should reflect the sum returned by isc_info_sql_records.
+		require.EqualValues(t, 5, ct.RowsAffected())
 	})
 }
 

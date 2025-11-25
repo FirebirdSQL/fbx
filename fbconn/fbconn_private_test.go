@@ -17,11 +17,11 @@ func TestCommandTag(t *testing.T) {
 		isSelect    bool
 		isDDL       bool
 	}{
-		{queryStatus: QueryStatus{StatementInsert}, isInsert: true},
-		{queryStatus: QueryStatus{StatementSelect}, isSelect: true},
-		{queryStatus: QueryStatus{StatementUpdate}, isUpdate: true},
-		{queryStatus: QueryStatus{StatementDelete}, isDelete: true},
-		{queryStatus: QueryStatus{StatementDDL}, isDDL: true},
+		{queryStatus: QueryStatus{statementType: StatementInsert}, isInsert: true},
+		{queryStatus: QueryStatus{statementType: StatementSelect}, isSelect: true},
+		{queryStatus: QueryStatus{statementType: StatementUpdate}, isUpdate: true},
+		{queryStatus: QueryStatus{statementType: StatementDelete}, isDelete: true},
+		{queryStatus: QueryStatus{statementType: StatementDDL}, isDDL: true},
 	}
 
 	for i, tt := range tests {
