@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/red-soft/fbx"
+	"github.com/red-soft/fbx/fbconn"
 	"github.com/red-soft/fbx/fbxpool"
 	"github.com/red-soft/fbx/fbxtest"
 	"github.com/stretchr/testify/assert"
@@ -962,24 +963,31 @@ func TestConnPoolQueryConcurrentLoad(t *testing.T) {
 	}
 }
 
-func TestConnReleaseWhenBeginFail(t *testing.T) {
+func TestPoolConnCleanupOnExecFailure(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	db, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	require.NoError(t, err)
+	config.ConnConfig.OnFbError = func(c *fbconn.FbConn, fbErr *fbconn.FbError) bool {
+		// close the connection on server-side error
+		return false
+	}
+
+	db, err := fbxpool.NewWithConfig(ctx, config)
 	require.NoError(t, err)
 	defer db.Close()
 
-	tx, err := db.BeginTx(ctx, fbx.TxOptions{
-		IsoLevel: fbx.TxIsoLevel("foo"),
-	})
+	conn, err := db.Acquire(ctx)
+	require.NoError(t, err)
+
+	// Execute intentionally invalid query to force server-side error and trigger OnFbError-driven close.
+	_, err = conn.Exec(ctx, "select * from non_existing_table")
 	assert.Error(t, err)
-	if !assert.Zero(t, tx) {
-		err := tx.Rollback(ctx)
-		assert.NoError(t, err)
-	}
+
+	conn.Release()
 
 	for i := 0; i < 1000; i++ {
 		if db.Stat().TotalConns() == 0 {
