@@ -75,6 +75,15 @@ func (sd *StatementDescription) HaveSingletonResult() bool {
 	return sd.GetQueryType() == StatementProcedure && len(sd.Fields) > 0
 }
 
+func (sd *StatementDescription) affectedRowsFromCounts(counts fbproto.SQLCounts) int64 {
+	total := counts.SelectCount + counts.InsertCount + counts.UpdateCount + counts.DeleteCount
+	if total != 0 {
+		return total
+	}
+
+	return 0
+}
+
 type Statement struct {
 	conn         *FbConn
 	Description  *StatementDescription

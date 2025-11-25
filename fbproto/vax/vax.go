@@ -20,3 +20,21 @@ func Integer(buf []byte, off int, len int) int {
 	}
 	return value
 }
+
+func Long(buf []byte, off int, length int) int64 {
+	if length > 8 {
+		return 0
+	}
+
+	var value int64
+	shift := 0
+	offset := off
+
+	for ; length > 0; length-- {
+		value |= int64(buf[offset]&0xFF) << shift
+		shift += 8
+		offset++
+	}
+
+	return value
+}

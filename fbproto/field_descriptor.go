@@ -5,6 +5,7 @@ package fbproto
 import (
 	"bytes"
 	"fmt"
+	"io"
 
 	"github.com/red-soft/fbx/fbproto/vax"
 )
@@ -30,7 +31,15 @@ type StatementInfo struct {
 	FieldDescriptors      []FieldDescriptor
 	ParametersDescriptors []FieldDescriptor
 	StatementType         int
+	Counts                SQLCounts
 	currentDescriptor     *[]FieldDescriptor
+}
+
+type SQLCounts struct {
+	SelectCount int64
+	InsertCount int64
+	UpdateCount int64
+	DeleteCount int64
 }
 
 func (p *StatementInfo) Parse(buf []byte) error {
@@ -45,7 +54,7 @@ func (p *StatementInfo) Parse(buf []byte) error {
 		case Isc_info_end:
 			return nil
 		case Isc_info_sql_stmt_type:
-			p.StatementType = p.readIntValue(reader)
+			p.StatementType = p.readInt32Value(reader)
 		case Isc_info_sql_bind:
 			p.currentDescriptor = &p.ParametersDescriptors
 			if err = p.feedDescriptors(reader); err != nil {
@@ -56,6 +65,10 @@ func (p *StatementInfo) Parse(buf []byte) error {
 			if err = p.feedDescriptors(reader); err != nil {
 				return err
 			}
+		case Isc_info_sql_records:
+			if err = p.parseSQLCounts(reader); err != nil {
+				return err
+			}
 		case Isc_info_truncated:
 			return StatementInfoTruncationError{0}
 		default:
@@ -64,7 +77,7 @@ func (p *StatementInfo) Parse(buf []byte) error {
 	}
 }
 
-func (p *StatementInfo) readIntValue(reader *bytes.Buffer) int {
+func (p *StatementInfo) readInt32Value(reader *bytes.Buffer) int {
 	l := vax.Integer2(reader.Bytes(), 0)
 	reader.Next(2)
 	val := vax.Integer(reader.Bytes(), 0, l)
@@ -93,7 +106,7 @@ func (p *StatementInfo) feedDescriptors(reader *bytes.Buffer) error {
 	if _, err := reader.ReadByte(); err != nil {
 		return err
 	}
-	descriptorCount := p.readIntValue(reader)
+	descriptorCount := p.readInt32Value(reader)
 	if descriptorCount == 0 {
 		return nil
 	}
@@ -108,17 +121,17 @@ func (p *StatementInfo) feedDescriptors(reader *bytes.Buffer) error {
 		}
 		switch item {
 		case Isc_info_sql_sqlda_seq:
-			field.Index = p.readIntValue(reader)
+			field.Index = p.readInt32Value(reader)
 		case Isc_info_sql_type:
-			field.Type = p.readIntValue(reader)
+			field.Type = p.readInt32Value(reader)
 			field.Nullable = (field.Type & 1) != 0
 			field.Type &= ^1
 		case Isc_info_sql_sub_type:
-			field.Subtype = p.readIntValue(reader)
+			field.Subtype = p.readInt32Value(reader)
 		case Isc_info_sql_scale:
-			field.Scale = p.readIntValue(reader)
+			field.Scale = p.readInt32Value(reader)
 		case Isc_info_sql_length:
-			field.Length = p.readIntValue(reader)
+			field.Length = p.readInt32Value(reader)
 		case Isc_info_sql_field:
 			field.OriginalName = p.readStringValue(reader)
 		case Isc_info_sql_alias:
@@ -133,13 +146,96 @@ func (p *StatementInfo) feedDescriptors(reader *bytes.Buffer) error {
 			field.Format = FbTypeIntoFormat(field.Type, field.Subtype)
 			*p.currentDescriptor = append(*p.currentDescriptor, field)
 		case Isc_info_sql_null_ind:
-			field.NullOk = p.readIntValue(reader) == 1
+			field.NullOk = p.readInt32Value(reader) == 1
 		case Isc_info_truncated:
 			return StatementInfoTruncationError{Index: field.Index}
 		default:
 			return fmt.Errorf("unknown descriptor info item: %d", item)
 		}
 	}
+}
+
+func (p *StatementInfo) parseSQLCounts(reader *bytes.Buffer) error {
+	if reader.Len() < 2 {
+		return io.ErrUnexpectedEOF
+	}
+
+	length := vax.Integer2(reader.Bytes(), 0)
+	reader.Next(2)
+
+	if length == 0 {
+		return nil
+	}
+	if reader.Len() < length {
+		return io.ErrUnexpectedEOF
+	}
+
+	for length > 0 {
+		item, err := reader.ReadByte()
+		if err != nil {
+			return err
+		}
+		length--
+
+		switch item {
+		case Isc_info_end:
+			return nil
+		case Isc_info_truncated:
+			return StatementInfoTruncationError{}
+		case Isc_info_error:
+			return fmt.Errorf("sql counts info unavailable")
+		case Isc_info_req_select_count, Isc_info_req_insert_count, Isc_info_req_update_count, Isc_info_req_delete_count:
+			before := reader.Len()
+			val, err := p.readInt64Value(reader)
+			if err != nil {
+				return err
+			}
+			consumed := before - reader.Len()
+			if consumed > length {
+				return io.ErrUnexpectedEOF
+			}
+			length -= consumed
+
+			switch item {
+			case Isc_info_req_select_count:
+				p.Counts.SelectCount = val
+			case Isc_info_req_insert_count:
+				p.Counts.InsertCount = val
+			case Isc_info_req_update_count:
+				p.Counts.UpdateCount = val
+			case Isc_info_req_delete_count:
+				p.Counts.DeleteCount = val
+			}
+		default:
+			return fmt.Errorf("unsupported sql counts info item: %d", item)
+		}
+	}
+
+	return nil
+}
+
+func (p *StatementInfo) readInt64Value(reader *bytes.Buffer) (int64, error) {
+	if reader.Len() < 2 {
+		return 0, io.ErrUnexpectedEOF
+	}
+
+	length := vax.Integer2(reader.Bytes(), 0)
+	reader.Next(2)
+
+	if length == 0 {
+		return 0, nil
+	}
+	if length > 8 {
+		return 0, fmt.Errorf("invalid int64 length: %d", length)
+	}
+	if reader.Len() < length {
+		return 0, io.ErrUnexpectedEOF
+	}
+
+	value := vax.Long(reader.Bytes(), 0, length)
+	reader.Next(length)
+
+	return value, nil
 }
 
 func FbTypeIntoFormat(fbtype int, subtype int) int16 {
