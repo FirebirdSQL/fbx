@@ -460,7 +460,7 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 	fbConn.parameterStatuses = make(map[string]string)
 	fbConn.status = connStatusConnecting
 
-	fbConn.Encoding, err = fbproto.NewEncoding("UTF8")
+	fbConn.Encoding, err = fbproto.NewEncoding(config.Encoding)
 	if err != nil {
 		return nil, err
 	}

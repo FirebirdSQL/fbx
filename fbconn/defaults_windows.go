@@ -14,6 +14,7 @@ func defaultSettings() map[string]string {
 	settings["port"] = "3050"
 	settings["auth_plugin_list"] = auth.DefaultPluginListString()
 	settings["wire_crypt"] = "true"
+	settings["encoding"] = "UTF8"
 
 	user, err := user.Current()
 	if err == nil {

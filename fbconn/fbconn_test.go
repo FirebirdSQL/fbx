@@ -641,13 +641,13 @@ func TestConnExec(t *testing.T) {
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
-	res := fbConn.Exec(ctx, "select 'Hello, world' from rdb$database").Read()
+	res := fbConn.Exec(ctx, "select cast('Hello, world' as varchar) from rdb$database").Read()
 	assert.NoError(t, res.Err)
 
 	assert.Len(t, res.Rows, 1)
 	assert.Equal(t, "Hello, world", string(res.Rows[0][0]))
 
-	results, err := fbConn.Exec(ctx, "select 'Hello, world' from rdb$database").ReadAll()
+	results, err := fbConn.Exec(ctx, "select cast('Hello, world' as varchar) from rdb$database").ReadAll()
 	assert.NoError(t, err)
 	assert.Len(t, results, 1)
 	assert.Len(t, results[0].Rows, 1)

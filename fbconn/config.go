@@ -258,7 +258,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 	}
 
 	settings := mergeSettings(defaultSettings, envSettings, connStringSettings)
-	encoding, err := fbproto.NewEncoding("UTF8")
+	encoding, err := fbproto.NewEncoding(settings["encoding"])
 	if err != nil {
 		return nil, err
 	}
@@ -295,6 +295,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		SystemUser:     settings["system_user"],
 		SystemHost:     settings["system_host"],
 		ClientVersion:  settings["client_version"],
+		Encoding:       settings["encoding"],
 	}
 
 	if connectTimeoutSetting, present := settings["connect_timeout"]; present {
@@ -325,6 +326,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		"wire_crypt":       {},
 		"system_host":      {},
 		"client_version":   {},
+		"encoding":         {},
 	}
 
 	// Adding kerberos configuration
