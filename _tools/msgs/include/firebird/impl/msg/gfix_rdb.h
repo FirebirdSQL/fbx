@@ -1,0 +1,5 @@
+FB_IMPL_MSG_SYMBOL(GFIX, 1000, gfix_opt_guid, "   -g(uid)              change a guid to the new one")
+//FB_IMPL_MSG_SYMBOL(GFIX, 1001, gfix_opt_parallel, "   -par(allel)          parallel workers <n> (-sweep)")
+FB_IMPL_MSG_NO_SYMBOL(GFIX, 1002, "number of threads required")
+FB_IMPL_MSG_SYMBOL(GFIX, 1003, gfix_opt_config_val, "   -conf(ig_validate)   validate configuration file <file_name>")
+FB_IMPL_MSG_NO_SYMBOL(GFIX, 1004, "Configuration file name required.")

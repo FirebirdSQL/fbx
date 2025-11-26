@@ -1,0 +1,1 @@
+/workspace/rdb/master/src/include/gen/autoconfig.auto
