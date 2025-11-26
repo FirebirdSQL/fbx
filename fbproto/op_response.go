@@ -81,7 +81,7 @@ func (op *OpResponse) Read(x *XDRReader) error {
 				if msg, ok := errmsgs[gdsCode]; ok {
 					*currentMsgPtr += msg.message
 				} else {
-					*currentMsgPtr += fmt.Sprintf("unknown gds_code: %d", gdsCode)
+					*currentMsgPtr += fmt.Sprintf("unknown gds_code: %d\n", gdsCode)
 				}
 				// next two arguments will be line and column
 				if gdsCode == Isc_dsql_line_col_error {
