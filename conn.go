@@ -530,12 +530,12 @@ optionLoop:
 		}
 	}
 
-	if sd, ok := c.preparedStatements[sql]; ok {
-		return c.execPrepared(ctx, tx, sd, arguments)
-	}
-
 	switch mode {
 	case QueryExecModeCacheStatement:
+		if sd, ok := c.preparedStatements[sql]; ok {
+			return c.execPrepared(ctx, tx, sd, arguments)
+		}
+
 		if c.statementCache == nil {
 			return fbconn.QueryStatus{}, errDisabledStatementCache
 		}
@@ -550,7 +550,7 @@ optionLoop:
 
 		return c.execPrepared(ctx, tx, st, arguments)
 	case QueryExecModeExec:
-		st, err := c.internalPrepare(ctx, tx, stmtcache.StatementName(sql), sql)
+		st, err := c.internalPrepare(ctx, tx, "", sql)
 		if err != nil {
 			return fbconn.QueryStatus{}, err
 		}
