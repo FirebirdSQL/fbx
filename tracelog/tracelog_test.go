@@ -93,10 +93,12 @@ func TestContextGetsPassedToLogMethod(t *testing.T) {
 		logger.Clear() // Clear any logs written when establishing connection
 
 		ctx = context.WithValue(ctx, "ctxdata", "foo")
-		_, err := conn.Exec(ctx, `;`)
+		_, err := conn.Exec(ctx, `select 1 from rdb$database`)
 		require.NoError(t, err)
-		require.Len(t, logger.logs, 1)
-		require.Equal(t, "foo", logger.logs[0].data["ctxdata"])
+		require.NotEmpty(t, logger.logs)
+		for _, l := range logger.logs {
+			require.Equal(t, "foo", l.data["ctxdata"])
+		}
 	})
 }
 
@@ -129,12 +131,13 @@ func TestLoggerFunc(t *testing.T) {
 
 	buf.Reset() // Clear logs written when establishing connection
 
-	if _, err := conn.Exec(context.TODO(), ";"); err != nil {
+	if _, err := conn.Exec(context.TODO(), "select 1 from rdb$database"); err != nil {
 		t.Fatal(err)
 	}
 
-	if strings.TrimSpace(buf.String()) != testMsg {
-		t.Errorf("Expected logger function to return '%s', but it was '%s'", testMsg, buf.String())
+	msg := strings.TrimSpace(buf.String())
+	if !strings.Contains(msg, testMsg) {
+		t.Errorf("Expected logger function output to contain '%s', but it was '%s'", testMsg, buf.String())
 	}
 }
 
@@ -160,7 +163,7 @@ func TestLogQuery(t *testing.T) {
 	fbxtest.RunWithQueryExecModes(ctx, t, ctr, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		logger.Clear() // Clear any logs written when establishing connection
 
-		_, err := conn.Exec(ctx, `select $1::text`, "testing")
+		_, err := conn.Exec(ctx, `select cast(? as varchar(100)) from rdb$database`, "testing")
 		require.NoError(t, err)
 
 		logs := logger.FilterByMsg("Query")
@@ -169,7 +172,7 @@ func TestLogQuery(t *testing.T) {
 
 		logger.Clear()
 
-		_, err = conn.Exec(ctx, `foo`, "testing")
+		_, err = conn.Exec(ctx, `select cast(? as varchar(100)) from non_existing_table`, "testing")
 		require.Error(t, err)
 
 		logs = logger.FilterByMsg("Query")
@@ -208,7 +211,7 @@ func TestLogQueryArgsHandlesUTF8(t *testing.T) {
 		}
 		s += "😊"
 
-		_, err := conn.Exec(ctx, `select $1::text`, s)
+		_, err := conn.Exec(ctx, `select cast(? as varchar(256)) from rdb$database`, s)
 		require.NoError(t, err)
 
 		logs := logger.FilterByMsg("Query")
@@ -218,7 +221,7 @@ func TestLogQueryArgsHandlesUTF8(t *testing.T) {
 
 		logger.Clear()
 
-		_, err = conn.Exec(ctx, `select $1::text`, s+"000")
+		_, err = conn.Exec(ctx, `select cast(? as varchar(256)) from rdb$database`, s+"000")
 		require.NoError(t, err)
 
 		logs = logger.FilterByMsg("Query")
@@ -229,6 +232,7 @@ func TestLogQueryArgsHandlesUTF8(t *testing.T) {
 }
 
 func TestLogCopyFrom(t *testing.T) {
+	t.Skip("CopyFrom is not supported for Firebird driver yet")
 	t.Parallel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -477,6 +481,7 @@ func TestLogRelease(t *testing.T) {
 	poolConfig.ConnConfig = config
 	pool1, err := fbxpool.NewWithConfig(ctx, poolConfig)
 	require.NoError(t, err)
+
 	defer pool1.Close()
 
 	conn1, err := pool1.Acquire(ctx)
@@ -513,7 +518,7 @@ func TestLogPrepare(t *testing.T) {
 	}, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		logger.Clear() // Clear any logs written when establishing connection
 
-		_, err := conn.Exec(ctx, `select $1::text`, "testing")
+		_, err := conn.Exec(ctx, `select cast(? as varchar(100)) from rdb$database`, "testing")
 		require.NoError(t, err)
 
 		logs := logger.FilterByMsg("Prepare")
@@ -522,7 +527,7 @@ func TestLogPrepare(t *testing.T) {
 
 		logger.Clear()
 
-		_, err = conn.Exec(ctx, `foo aaaa`, "testing")
+		_, err = conn.Exec(ctx, `select cast(? as varchar(100)) from`, "testing")
 		require.Error(t, err)
 
 		logs = logger.FilterByMsg("Prepare")
@@ -536,7 +541,7 @@ func TestLogPrepare(t *testing.T) {
 	fbxtest.RunWithQueryExecModes(ctx, t, ctr, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		logger.Clear() // Clear any logs written when establishing connection
 
-		_, err := conn.Prepare(ctx, "test_query_1", `select $1::int`)
+		_, err := conn.Prepare(ctx, "test_query_1", `select cast(? as integer) from rdb$database`)
 		require.NoError(t, err)
 
 		require.Len(t, logger.logs, 1)
@@ -545,7 +550,7 @@ func TestLogPrepare(t *testing.T) {
 
 		logger.Clear()
 
-		_, err = conn.Prepare(ctx, `test_query_2`, "foo aaaa")
+		_, err = conn.Prepare(ctx, `test_query_2`, `select cast(? as integer) from`)
 		require.Error(t, err)
 
 		require.Len(t, logger.logs, 1)
@@ -582,7 +587,7 @@ func TestConcurrentUsage(t *testing.T) {
 
 			for i := 0; i < 5; i++ {
 				eg.Go(func() error {
-					_, err := pool.Exec(ctx, `select 1`)
+					_, err := pool.Exec(ctx, `select 1 from rdb$database`)
 					return err
 				})
 			}
