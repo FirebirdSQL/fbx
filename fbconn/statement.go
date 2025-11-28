@@ -27,7 +27,7 @@ const (
 type StatementDescription struct {
 	Name            string
 	SQL             string
-	StatementInfo   *fbproto.StatementInfo
+	StatementInfo   *StatementInfo
 	StatementHandle int
 	Fields          []FieldDescription
 	Parameters      []FieldDescription
@@ -75,13 +75,8 @@ func (sd *StatementDescription) HaveSingletonResult() bool {
 	return sd.GetQueryType() == StatementProcedure && len(sd.Fields) > 0
 }
 
-func (sd *StatementDescription) affectedRowsFromCounts(counts fbproto.SQLCounts) int64 {
-	total := counts.SelectCount + counts.InsertCount + counts.UpdateCount + counts.DeleteCount
-	if total != 0 {
-		return total
-	}
-
-	return 0
+func (sd *StatementDescription) GetAffectedCount() int64 {
+	return sd.StatementInfo.Counts.SelectCount + sd.StatementInfo.Counts.InsertCount + sd.StatementInfo.Counts.UpdateCount + sd.StatementInfo.Counts.DeleteCount
 }
 
 type Statement struct {

@@ -656,55 +656,6 @@ connectLoop:
 	return fbConn, nil
 }
 
-func (fbConn *FbConn) getStatementInfo(statementHandle int, itemsBuilder func(int) []byte) (*fbproto.StatementInfo, error) {
-	var err error
-	var continueIndex int
-	infoSize := 10240
-	info := fbproto.StatementInfo{}
-	for {
-		if err = fbConn.client.WriteMessage(&fbproto.OpInfoSQL{
-			StatementHandle:           statementHandle,
-			StatementInformationItems: itemsBuilder(continueIndex),
-			MaxBufferLength:           infoSize,
-		}); err != nil {
-			return nil, err
-		}
-		if err = fbConn.writer.Flush(); err != nil {
-			return nil, err
-		}
-
-		msg, err := fbConn.receiveMessage()
-		if err != nil {
-			fbConn.asyncClose()
-			return nil, err
-		}
-		var respData []byte
-		switch m := msg.(type) {
-		case *fbproto.OpResponse:
-			respData = m.Data
-		case *fbproto.ErrorResponse:
-			return nil, ErrorResponseToFbError(m)
-		default:
-			return nil, fmt.Errorf("received unexpected message: %v", m)
-		}
-
-		err = info.Parse(respData)
-		if err != nil {
-			truncError := fbproto.StatementInfoTruncationError{}
-			if errors.As(err, &truncError) {
-				fmt.Printf("truncation error: %v\n", truncError)
-				continueIndex = truncError.Index
-				infoSize *= 2
-			} else {
-				return nil, fmt.Errorf("failed to parse statement info: %v", err)
-			}
-		} else {
-			break
-		}
-	}
-	return &info, nil
-}
-
 func startTLS(conn net.Conn, tlsConfig *tls.Config) (net.Conn, error) {
 	err := binary.Write(conn, binary.BigEndian, []int32{8, 80877103})
 	if err != nil {
@@ -1168,7 +1119,8 @@ func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 		return nil, ErrorResponseToFbError(m)
 	}
 
-	statementInfo, err := fbConn.getStatementInfo(statementHandle, fbproto.GetSelectDescribeInfoItemsContinue)
+	statementInfo := StatementInfo{}
+	err = fbConn.getServerInfo(statementHandle, fbproto.GetSelectDescribeInfoItemsContinue, statementInfo.parseInfo)
 	if err != nil {
 		var fbError *FbError
 		switch {
@@ -1185,7 +1137,7 @@ func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 		Fields:          fbConn.convertRowDescription(statementInfo.FieldDescriptors),
 		Parameters:      fbConn.convertRowDescription(statementInfo.ParametersDescriptors),
 		StatementHandle: statementHandle,
-		StatementInfo:   statementInfo,
+		StatementInfo:   &statementInfo,
 	}
 
 	if tx == fbConn.internalTransaction {
@@ -1999,16 +1951,17 @@ func (rr *ResultReader) populateRowsAffected() error {
 		return nil
 	}
 
-	info, err := rr.fbConn.getStatementInfo(
+	err := rr.fbConn.getServerInfo(
 		rr.statementDescription.StatementHandle,
 		func(int) []byte { return []byte{fbproto.Isc_info_sql_records} },
+		rr.statementDescription.StatementInfo.Counts.parseInfo,
 	)
 	if err != nil {
 		rr.rowsInfoPopulated = true
 		return err
 	}
 
-	rows := rr.statementDescription.affectedRowsFromCounts(info.Counts)
+	rows := rr.statementDescription.GetAffectedCount()
 
 	rr.queryStatus.rowsAffected = rows
 	rr.rowsInfoPopulated = true
