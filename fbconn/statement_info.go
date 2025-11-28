@@ -55,14 +55,6 @@ func (p *StatementInfo) parseInfo(buf []byte) error {
 	}
 }
 
-type InfoTruncationError struct {
-	Index int
-}
-
-func (s InfoTruncationError) Error() string {
-	return fmt.Sprintf("info truncated at field with index %d", s.Index)
-}
-
 func (p *StatementInfo) feedDescriptors(r *ServerInfoBufferReader) error {
 	var item byte
 	var err error

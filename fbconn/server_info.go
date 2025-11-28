@@ -15,6 +15,17 @@ type ServerInfoBufferReader struct {
 	buf *bytes.Buffer
 }
 
+type InfoTruncationError struct {
+	Index int
+}
+
+func (s InfoTruncationError) Error() string {
+	if s.Index > 0 {
+		return fmt.Sprintf("info truncated at field with index %d", s.Index)
+	}
+	return fmt.Sprintf("info truncated")
+}
+
 func NewServerInfoBufferReader(buf []byte) *ServerInfoBufferReader {
 	return &ServerInfoBufferReader{bytes.NewBuffer(buf)}
 }
