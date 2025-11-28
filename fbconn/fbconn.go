@@ -1120,7 +1120,7 @@ func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 	}
 
 	statementInfo := StatementInfo{}
-	err = fbConn.getServerInfo(statementHandle, fbproto.GetSelectDescribeInfoItemsContinue, statementInfo.parseInfo)
+	err = fbConn.getServerInfo(statementHandle, GetSelectDescribeInfoItemsContinue, statementInfo.parseInfo)
 	if err != nil {
 		var fbError *FbError
 		switch {
