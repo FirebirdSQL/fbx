@@ -3,16 +3,11 @@ package fbproto
 // https://firebirdsql.org/file/documentation/html/en/firebirddocs/wireprotocol/firebird-wire-protocol.html#wireprotocol-op-cont-auth
 
 type OpContAuth struct {
-	// Encoding used for XDR strings in this packet
-	Encoding *Encoding
-	// p_data: authentication data (spec: Buffer)
-	AuthData []byte
-	// p_name: name of the current authentication plugin
+	Encoding   *Encoding
+	AuthData   []byte
 	PluginName string
-	// p_list: remaining plugins (client->server first auth), otherwise empty
 	PluginList string
-	// p_keys: known server keys / plugin-specific data
-	Keys []byte
+	Keys       []byte
 }
 
 func (op *OpContAuth) Write(x *XDRWriter) error {
@@ -43,17 +38,11 @@ func (op *OpContAuth) Write(x *XDRWriter) error {
 //	Int32 p_operation (op_cont_auth = 92)
 //	Buffer p_data, String p_name, String p_list, Buffer p_keys
 func (op *OpContAuth) Read(r *XDRReader) error {
-	if op.Encoding == nil {
-		// fallback: default encoding is UTF8 in our stack
-		enc, _ := NewEncoding("UTF8")
-		op.Encoding = enc
-	}
+	var err error
 	// p_data (Buffer)
-	buf, err := r.ReadBuffer()
-	if err != nil {
+	if op.AuthData, err = r.ReadBuffer(); err != nil {
 		return err
 	}
-	op.AuthData = buf
 	// p_name
 	if op.PluginName, err = r.ReadString(op.Encoding); err != nil {
 		return err
@@ -63,9 +52,7 @@ func (op *OpContAuth) Read(r *XDRReader) error {
 		return err
 	}
 	// p_keys (Buffer)
-	if keys, err := r.ReadBuffer(); err == nil {
-		op.Keys = keys
-	} else {
+	if op.Keys, err = r.ReadBuffer(); err == nil {
 		return err
 	}
 	return nil

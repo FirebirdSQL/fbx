@@ -39,6 +39,7 @@ func (op *OpExecuteImmediate) Write(x *XDRWriter) error {
 	if err = x.WriteBuffer(nil); err != nil {
 		return err
 	}
+
 	// p_sqlst_buffer_length
 	if err = x.WriteInt32(0); err != nil {
 		return err

@@ -88,14 +88,6 @@ func (c *Client) WriteMessage(msg ClientMessage) error {
 		c.tracer.traceRequest('C', msg)
 	}
 	return nil
-
-	//var buf []byte
-	//buf, err := msg.Pack(buf)
-	//if err != nil {
-	//	return err
-	//}
-	//_, err = c.Write(buf)
-	//return err
 }
 
 func (c *Client) ReadPackets(n int) ([]byte, error) {

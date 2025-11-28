@@ -68,18 +68,6 @@ func (op *OpConnect) Write(x *XDRWriter) error {
 		wireCryptByte = 1
 	}
 
-	//var specific_data []byte
-	//if op.AuthPlugin == "Srp" || op.AuthPlugin == "Srp256" {
-	//	specific_data = getSrpClientPublicBytes(op.ClientPublic)
-	//} else if op.AuthPlugin == "Legacy_Auth" {
-	//	b := bytes.NewBufferString(crypt.Crypt(op.Password, "9z")[2:]).Bytes()
-	//	specific_data = bytes.Join([][]byte{
-	//		{CNCT_specific_data, byte(len(b)) + 1, 0}, b,
-	//	}, nil)
-	//} else {
-	//	panic(fmt.Sprintf("Unknown plugin name:%s", op.AuthPlugin))
-	//}
-
 	uid := make([]byte, 0, 256)
 	// Only include CNCT_login if username is non-empty; presence of an empty
 	// login can influence GSS negotiation on some servers/clients.
