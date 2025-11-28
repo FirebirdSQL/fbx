@@ -1120,7 +1120,7 @@ func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 	}
 
 	statementInfo := StatementInfo{}
-	err = fbConn.getServerInfo(statementHandle, GetSelectDescribeInfoItemsContinue, statementInfo.parseInfo)
+	err = fbConn.getInfoStatement(statementHandle, statementInfo.parseInfo)
 	if err != nil {
 		var fbError *FbError
 		switch {
@@ -1951,9 +1951,8 @@ func (rr *ResultReader) populateRowsAffected() error {
 		return nil
 	}
 
-	err := rr.fbConn.getServerInfo(
+	err := rr.fbConn.getInfoSQlRecords(
 		rr.statementDescription.StatementHandle,
-		func(int) []byte { return []byte{fbproto.Isc_info_sql_records} },
 		rr.statementDescription.StatementInfo.Counts.parseInfo,
 	)
 	if err != nil {

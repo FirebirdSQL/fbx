@@ -96,16 +96,42 @@ func (r *ServerInfoBufferReader) ReadInt64Value() (int64, error) {
 	return value, nil
 }
 
-func (fbConn *FbConn) getServerInfo(statementHandle int, itemsBuilder func(int) []byte, itemsParser func([]byte) error) error {
-	var err error
+func (fbConn *FbConn) getInfoStatement(statementHandle int, itemsParser func([]byte) error) error {
 	var continueIndex int
-	infoSize := 10240
-	for {
-		if err = fbConn.client.WriteMessage(&fbproto.OpInfoSQL{
+	infoSize := 512 * 1024
+	msgBuilder := func() fbproto.ClientMessage {
+		return &fbproto.OpInfoSQL{
 			StatementHandle:           statementHandle,
-			StatementInformationItems: itemsBuilder(continueIndex),
+			StatementInformationItems: GetSelectDescribeInfoItemsContinue(continueIndex),
 			MaxBufferLength:           infoSize,
-		}); err != nil {
+		}
+	}
+	truncationHandler := func(truncationError InfoTruncationError) {
+		continueIndex = truncationError.Index
+		infoSize *= 2
+	}
+	return fbConn.getServerInfo(msgBuilder, truncationHandler, itemsParser)
+}
+
+func (fbConn *FbConn) getInfoSQlRecords(statementHandle int, itemsParser func([]byte) error) error {
+	infoSize := 64
+	msgBuilder := func() fbproto.ClientMessage {
+		return &fbproto.OpInfoSQL{
+			StatementHandle:           statementHandle,
+			StatementInformationItems: []byte{fbproto.Isc_info_sql_records},
+			MaxBufferLength:           infoSize,
+		}
+	}
+	truncationHandler := func(truncationError InfoTruncationError) {
+		infoSize *= 2
+	}
+	return fbConn.getServerInfo(msgBuilder, truncationHandler, itemsParser)
+}
+
+func (fbConn *FbConn) getServerInfo(msgBuilder func() fbproto.ClientMessage, truncationHandler func(err InfoTruncationError), itemsParser func([]byte) error) error {
+	var err error
+	for {
+		if err = fbConn.client.WriteMessage(msgBuilder()); err != nil {
 			return err
 		}
 		if err = fbConn.writer.Flush(); err != nil {
@@ -131,9 +157,7 @@ func (fbConn *FbConn) getServerInfo(statementHandle int, itemsBuilder func(int) 
 		if err != nil {
 			truncError := InfoTruncationError{}
 			if errors.As(err, &truncError) {
-				fmt.Printf("truncation error: %v\n", truncError)
-				continueIndex = truncError.Index
-				infoSize *= 2
+				truncationHandler(truncError)
 			} else {
 				return fmt.Errorf("failed to parse server info: %v", err)
 			}
