@@ -118,7 +118,7 @@ func (*TimestamptzCodec) PreferredFormat() int16 {
 	return BinaryFormatCode
 }
 
-func (*TimestamptzCodec) PlanEncode(m *Map, oid uint32, format int16, value any) EncodePlan {
+func (*TimestamptzCodec) PlanEncode(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
 	if _, ok := value.(TimestamptzValuer); !ok {
 		return nil
 	}
@@ -187,7 +187,7 @@ func (encodePlanTimestamptzCodecText) Encode(value any, buf []byte) (newBuf []by
 	return buf, nil
 }
 
-func (c *TimestamptzCodec) PlanScan(m *Map, oid uint32, format int16, target any) ScanPlan {
+func (c *TimestamptzCodec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
 
 	switch format {
 	case BinaryFormatCode:
@@ -279,13 +279,13 @@ func (plan *scanPlanTextTimestamptzToTimestamptzScanner) Scan(src []byte, dst an
 	return scanner.ScanTimestamptz(tstz)
 }
 
-func (c *TimestamptzCodec) DecodeDatabaseSQLValue(m *Map, oid uint32, format int16, src []byte) (driver.Value, error) {
+func (c *TimestamptzCodec) DecodeDatabaseSQLValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var tstz Timestamptz
-	err := codecScan(c, m, oid, format, src, &tstz)
+	err := codecScan(c, m, oid, subType, length, scale, format, src, &tstz)
 	if err != nil {
 		return nil, err
 	}
@@ -293,13 +293,13 @@ func (c *TimestamptzCodec) DecodeDatabaseSQLValue(m *Map, oid uint32, format int
 	return tstz.Time, nil
 }
 
-func (c *TimestamptzCodec) DecodeValue(m *Map, oid uint32, format int16, src []byte) (any, error) {
+func (c *TimestamptzCodec) DecodeValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var tstz Timestamptz
-	err := codecScan(c, m, oid, format, src, &tstz)
+	err := codecScan(c, m, oid, subType, length, scale, format, src, &tstz)
 	if err != nil {
 		return nil, err
 	}

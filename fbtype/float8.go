@@ -107,7 +107,7 @@ func (Float8Codec) PreferredFormat() int16 {
 	return BinaryFormatCode
 }
 
-func (Float8Codec) PlanEncode(m *Map, oid uint32, format int16, value any) EncodePlan {
+func (Float8Codec) PlanEncode(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
 	switch format {
 	case BinaryFormatCode:
 		switch value.(type) {
@@ -229,7 +229,7 @@ func (encodePlanTextInt64Valuer) Encode(value any, buf []byte) (newBuf []byte, e
 	return append(buf, strconv.FormatInt(n.Int64, 10)...), nil
 }
 
-func (Float8Codec) PlanScan(m *Map, oid uint32, format int16, target any) ScanPlan {
+func (Float8Codec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
 
 	switch format {
 	case BinaryFormatCode:
@@ -369,17 +369,17 @@ func (scanPlanTextAnyToFloat64Scanner) Scan(src []byte, dst any) error {
 	return s.ScanFloat64(Float8{Float64: n, Valid: true})
 }
 
-func (c Float8Codec) DecodeDatabaseSQLValue(m *Map, oid uint32, format int16, src []byte) (driver.Value, error) {
-	return c.DecodeValue(m, oid, format, src)
+func (c Float8Codec) DecodeDatabaseSQLValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
+	return c.DecodeValue(m, oid, subType, length, scale, format, src)
 }
 
-func (c Float8Codec) DecodeValue(m *Map, oid uint32, format int16, src []byte) (any, error) {
+func (c Float8Codec) DecodeValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var n float64
-	err := codecScan(c, m, oid, format, src, &n)
+	err := codecScan(c, m, oid, subType, length, scale, format, src, &n)
 	if err != nil {
 		return nil, err
 	}

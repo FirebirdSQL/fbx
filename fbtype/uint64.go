@@ -88,7 +88,7 @@ func (Uint64Codec) PreferredFormat() int16 {
 	return BinaryFormatCode
 }
 
-func (Uint64Codec) PlanEncode(m *Map, oid uint32, format int16, value any) EncodePlan {
+func (Uint64Codec) PlanEncode(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
 	switch format {
 	case BinaryFormatCode:
 		switch value.(type) {
@@ -193,7 +193,7 @@ func (encodePlanUint64CodecTextInt64Valuer) Encode(value any, buf []byte) (newBu
 	return append(buf, strconv.FormatInt(v.Int64, 10)...), nil
 }
 
-func (Uint64Codec) PlanScan(m *Map, oid uint32, format int16, target any) ScanPlan {
+func (Uint64Codec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
 
 	switch format {
 	case BinaryFormatCode:
@@ -217,26 +217,26 @@ func (Uint64Codec) PlanScan(m *Map, oid uint32, format int16, target any) ScanPl
 	return nil
 }
 
-func (c Uint64Codec) DecodeDatabaseSQLValue(m *Map, oid uint32, format int16, src []byte) (driver.Value, error) {
+func (c Uint64Codec) DecodeDatabaseSQLValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var n uint64
-	err := codecScan(c, m, oid, format, src, &n)
+	err := codecScan(c, m, oid, subType, length, scale, format, src, &n)
 	if err != nil {
 		return nil, err
 	}
 	return int64(n), nil
 }
 
-func (c Uint64Codec) DecodeValue(m *Map, oid uint32, format int16, src []byte) (any, error) {
+func (c Uint64Codec) DecodeValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var n uint64
-	err := codecScan(c, m, oid, format, src, &n)
+	err := codecScan(c, m, oid, subType, length, scale, format, src, &n)
 	if err != nil {
 		return nil, err
 	}

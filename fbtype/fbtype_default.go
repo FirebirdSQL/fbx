@@ -14,6 +14,18 @@ var (
 	defaultMapInitOnce = sync.Once{}
 )
 
+func MakeTypeSubtype(t uint32, sub int32) uint32 {
+	return uint32(int32(t) | (sub << 16))
+}
+
+func GetType(t uint32) uint32 {
+	return uint32(int32(t) & 0xFFFF)
+}
+
+func GetSubType(t uint32) int32 {
+	return int32(t) >> 16
+}
+
 func initDefaultMap() {
 	defaultMap = &Map{
 		oidToType:         make(map[uint32]*Type),
@@ -56,6 +68,9 @@ func initDefaultMap() {
 	defaultMap.RegisterType(&Type{Name: "double precision", OID: fbproto.SQL_TYPE_DOUBLE, Codec: Float8Codec{}})
 	defaultMap.RegisterType(&Type{Name: "boolean", OID: fbproto.SQL_TYPE_BOOLEAN, Codec: BoolCodec{}})
 	defaultMap.RegisterType(&Type{Name: "timestamp", OID: fbproto.SQL_TYPE_TIMESTAMP, Codec: &TimestampCodec{}})
+	defaultMap.RegisterType(&Type{Name: "numeric", OID: MakeTypeSubtype(fbproto.SQL_TYPE_SHORT, 1), Codec: &NumericCodec{}})
+	defaultMap.RegisterType(&Type{Name: "numeric", OID: MakeTypeSubtype(fbproto.SQL_TYPE_LONG, 1), Codec: &NumericCodec{}})
+	defaultMap.RegisterType(&Type{Name: "numeric", OID: MakeTypeSubtype(fbproto.SQL_TYPE_INT64, 1), Codec: &NumericCodec{}})
 
 	// Range types
 	//defaultMap.RegisterType(&Type{Name: "daterange", OID: DaterangeOID, Codec: &RangeCodec{ElementType: defaultMap.oidToType[DateOID]}})

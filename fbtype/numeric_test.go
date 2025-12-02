@@ -65,7 +65,7 @@ func isExpectedEqNumeric(a any) func(any) bool {
 
 func mustParseNumeric(t *testing.T, src string) fbtype.Numeric {
 	var n fbtype.Numeric
-	plan := fbtype.NumericCodec{}.PlanScan(nil, fbtype.NumericOID, fbtype.TextFormatCode, &n)
+	plan := fbtype.NumericCodec{}.PlanScan(nil, fbtype.NumericOID, 0, 0, 0, fbtype.TextFormatCode, &n)
 	require.NotNil(t, plan)
 	err := plan.Scan([]byte(src), &n)
 	require.NoError(t, err)
@@ -73,7 +73,7 @@ func mustParseNumeric(t *testing.T, src string) fbtype.Numeric {
 }
 
 func TestNumericCodec(t *testing.T) {
-	t.Skip()
+	skipCockroachDB(t, "server formats numeric text format differently")
 
 	max := new(big.Int).Exp(big.NewInt(10), big.NewInt(147454), nil)
 	max.Add(max, big.NewInt(1))

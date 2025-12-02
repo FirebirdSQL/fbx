@@ -258,7 +258,7 @@ func (rows *baseRows) Scan(dest ...any) error {
 		rows.scanPlans = make([]fbtype.ScanPlan, len(values))
 		rows.scanTypes = make([]reflect.Type, len(values))
 		for i := range dest {
-			rows.scanPlans[i] = m.PlanScan(fieldDescriptions[i].Type, fieldDescriptions[i].Format, dest[i])
+			rows.scanPlans[i] = m.PlanScan(fieldDescriptions[i].Type, fieldDescriptions[i].Subtype, fieldDescriptions[i].Length, fieldDescriptions[i].Scale, fieldDescriptions[i].Format, dest[i])
 			rows.scanTypes[i] = reflect.TypeOf(dest[i])
 		}
 	}
@@ -269,7 +269,7 @@ func (rows *baseRows) Scan(dest ...any) error {
 		}
 
 		if rows.scanTypes[i] != reflect.TypeOf(dst) {
-			rows.scanPlans[i] = m.PlanScan(fieldDescriptions[i].Type, fieldDescriptions[i].Format, dest[i])
+			rows.scanPlans[i] = m.PlanScan(fieldDescriptions[i].Type, fieldDescriptions[i].Subtype, fieldDescriptions[i].Length, fieldDescriptions[i].Scale, fieldDescriptions[i].Format, dest[i])
 			rows.scanTypes[i] = reflect.TypeOf(dest[i])
 		}
 
@@ -300,8 +300,8 @@ func (rows *baseRows) Values() ([]any, error) {
 			continue
 		}
 
-		if dt, ok := rows.typeMap.TypeForOID(fd.Type); ok {
-			value, err := dt.Codec.DecodeValue(rows.typeMap, fd.Type, fd.Format, buf)
+		if dt, ok := rows.typeMap.TypeForOID(fd.Type, fd.Subtype); ok {
+			value, err := dt.Codec.DecodeValue(rows.typeMap, fd.Type, fd.Subtype, fd.Length, fd.Scale, fd.Format, buf)
 			if err != nil {
 				rows.fatal(err)
 			}
@@ -372,7 +372,7 @@ func ScanRow(typeMap *fbtype.Map, fieldDescriptions []fbconn.FieldDescription, v
 			continue
 		}
 
-		err := typeMap.Scan(fieldDescriptions[i].Type, fieldDescriptions[i].Format, values[i], d)
+		err := typeMap.Scan(fieldDescriptions[i].Type, fieldDescriptions[i].Subtype, fieldDescriptions[i].Length, fieldDescriptions[i].Scale, fieldDescriptions[i].Format, values[i], d)
 		if err != nil {
 			return ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: err}
 		}

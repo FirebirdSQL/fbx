@@ -48,7 +48,7 @@ func TestDateTranscode(t *testing.T) {
 		for _, actualDate := range dates {
 			var d time.Time
 
-			err := conn.QueryRow(context.Background(), "select $1::date", actualDate).Scan(&d)
+			err := conn.QueryRow(context.Background(), "select cast(? as date) from rdb$database", actualDate).Scan(&d)
 			if err != nil {
 				t.Fatalf("Unexpected failure on QueryRow Scan: %v", err)
 			}
@@ -70,7 +70,7 @@ func TestTimestampTzTranscode(t *testing.T) {
 
 		var outputTime time.Time
 
-		err := conn.QueryRow(context.Background(), "select $1::timestamptz", inputTime).Scan(&outputTime)
+		err := conn.QueryRow(context.Background(), "select cast(? as timestamp with time zone) from rdb$database", inputTime).Scan(&outputTime)
 		if err != nil {
 			t.Fatalf("QueryRow Scan failed: %v", err)
 		}

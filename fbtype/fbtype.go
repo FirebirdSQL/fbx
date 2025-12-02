@@ -164,17 +164,17 @@ type Codec interface {
 
 	// PlanEncode returns an EncodePlan for encoding value into PostgreSQL format for oid and format. If no plan can be
 	// found then nil is returned.
-	PlanEncode(m *Map, oid uint32, format int16, value any) EncodePlan
+	PlanEncode(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan
 
 	// PlanScan returns a ScanPlan for scanning a PostgreSQL value into a destination with the same type as target. If
 	// no plan can be found then nil is returned.
-	PlanScan(m *Map, oid uint32, format int16, target any) ScanPlan
+	PlanScan(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan
 
 	// DecodeDatabaseSQLValue returns src decoded into a value compatible with the sql.Scanner interface.
-	DecodeDatabaseSQLValue(m *Map, oid uint32, format int16, src []byte) (driver.Value, error)
+	DecodeDatabaseSQLValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error)
 
 	// DecodeValue returns src decoded into its default format.
-	DecodeValue(m *Map, oid uint32, format int16, src []byte) (any, error)
+	DecodeValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error)
 }
 
 type nullAssignmentError struct {
@@ -293,12 +293,13 @@ func (m *Map) RegisterDefaultFbType(value any, name string) {
 }
 
 // TypeForOID returns the Type registered for the given OID. The returned Type must not be mutated.
-func (m *Map) TypeForOID(oid uint32) (*Type, bool) {
-	if dt, ok := m.oidToType[oid]; ok {
+func (m *Map) TypeForOID(oid uint32, subType int32) (*Type, bool) {
+	id := MakeTypeSubtype(oid, subType)
+	if dt, ok := m.oidToType[id]; ok {
 		return dt, true
 	}
 
-	dt, ok := defaultMap.oidToType[oid]
+	dt, ok := defaultMap.oidToType[id]
 	return dt, ok
 }
 
@@ -370,11 +371,14 @@ type scanPlanCodecSQLScanner struct {
 	c          Codec
 	m          *Map
 	oid        uint32
+	subType    int32
+	length     uint32
+	scale      int32
 	formatCode int16
 }
 
 func (plan *scanPlanCodecSQLScanner) Scan(src []byte, dst any) error {
-	value, err := plan.c.DecodeDatabaseSQLValue(plan.m, plan.oid, plan.formatCode, src)
+	value, err := plan.c.DecodeDatabaseSQLValue(plan.m, plan.oid, plan.subType, plan.length, plan.scale, plan.formatCode, src)
 	if err != nil {
 		return err
 	}
@@ -430,6 +434,9 @@ func (scanPlanAnyTextToBytes) Scan(src []byte, dst any) error {
 type scanPlanFail struct {
 	m          *Map
 	oid        uint32
+	subType    int32
+	length     uint32
+	scale      int32
 	formatCode int16
 }
 
@@ -444,14 +451,14 @@ func (plan *scanPlanFail) Scan(src []byte, dst any) error {
 		// As a horrible hack try all types to find anything that can scan into dst.
 		for oid := range plan.m.oidToType {
 			// using planScan instead of Scan or PlanScan to avoid polluting the planned scan cache.
-			plan := plan.m.planScan(oid, plan.formatCode, dst, 0)
+			plan := plan.m.planScan(oid, plan.subType, plan.length, plan.scale, plan.formatCode, dst, 0)
 			if _, ok := plan.(*scanPlanFail); !ok {
 				return plan.Scan(src, dst)
 			}
 		}
 		for oid := range defaultMap.oidToType {
 			if _, ok := plan.m.oidToType[oid]; !ok {
-				plan := plan.m.planScan(oid, plan.formatCode, dst, 0)
+				plan := plan.m.planScan(oid, plan.subType, plan.length, plan.scale, plan.formatCode, dst, 0)
 				if _, ok := plan.(*scanPlanFail); !ok {
 					return plan.Scan(src, dst)
 				}
@@ -470,7 +477,7 @@ func (plan *scanPlanFail) Scan(src []byte, dst any) error {
 	}
 
 	var dataTypeName string
-	if t, ok := plan.m.TypeForOID(plan.oid); ok {
+	if t, ok := plan.m.TypeForOID(plan.oid, plan.subType); ok {
 		dataTypeName = t.Name
 	} else {
 		dataTypeName = "unknown type"
@@ -890,7 +897,7 @@ type pointerEmptyInterfaceScanPlan struct {
 }
 
 func (plan *pointerEmptyInterfaceScanPlan) Scan(src []byte, dst any) error {
-	value, err := plan.codec.DecodeValue(plan.m, plan.oid, plan.formatCode, src)
+	value, err := plan.codec.DecodeValue(plan.m, plan.oid, 0, 0, 0, plan.formatCode, src)
 	if err != nil {
 		return err
 	}
@@ -1058,17 +1065,17 @@ func (plan *wrapPtrArrayReflectScanPlan) Scan(src []byte, target any) error {
 }
 
 // PlanScan prepares a plan to scan a value into target.
-func (m *Map) PlanScan(oid uint32, formatCode int16, target any) ScanPlan {
-	return m.planScan(oid, formatCode, target, 0)
+func (m *Map) PlanScan(typeId uint32, subType int32, length uint32, scale int32, formatCode int16, target any) ScanPlan {
+	return m.planScan(typeId, subType, length, scale, formatCode, target, 0)
 }
 
-func (m *Map) planScan(oid uint32, formatCode int16, target any, depth int) ScanPlan {
+func (m *Map) planScan(oid uint32, subType int32, length uint32, scale int32, formatCode int16, target any, depth int) ScanPlan {
 	if depth > 8 {
-		return &scanPlanFail{m: m, oid: oid, formatCode: formatCode}
+		return &scanPlanFail{m: m, oid: oid, subType: subType, length: length, scale: scale, formatCode: formatCode}
 	}
 
 	if target == nil {
-		return &scanPlanFail{m: m, oid: oid, formatCode: formatCode}
+		return &scanPlanFail{m: m, oid: oid, subType: subType, length: length, scale: scale, formatCode: formatCode}
 	}
 
 	if _, ok := target.(*UndecodedBytes); ok {
@@ -1099,7 +1106,7 @@ func (m *Map) planScan(oid uint32, formatCode int16, target any, depth int) Scan
 
 	var dt *Type
 
-	if dataType, ok := m.TypeForOID(oid); ok {
+	if dataType, ok := m.TypeForOID(oid, subType); ok {
 		dt = dataType
 	} else if dataType, ok := m.TypeForValue(target); ok {
 		dt = dataType
@@ -1107,7 +1114,7 @@ func (m *Map) planScan(oid uint32, formatCode int16, target any, depth int) Scan
 	}
 
 	if dt != nil {
-		if plan := dt.Codec.PlanScan(m, oid, formatCode, target); plan != nil {
+		if plan := dt.Codec.PlanScan(m, oid, subType, length, scale, formatCode, target); plan != nil {
 			return plan
 		}
 	}
@@ -1120,13 +1127,13 @@ func (m *Map) planScan(oid uint32, formatCode int16, target any, depth int) Scan
 		if dt == nil {
 			return &scanPlanSQLScanner{formatCode: formatCode}
 		} else {
-			return &scanPlanCodecSQLScanner{c: dt.Codec, m: m, oid: oid, formatCode: formatCode}
+			return &scanPlanCodecSQLScanner{c: dt.Codec, m: m, oid: oid, subType: subType, length: length, scale: scale, formatCode: formatCode}
 		}
 	}
 
 	for _, f := range m.TryWrapScanPlanFuncs {
 		if wrapperPlan, nextDst, ok := f(target); ok {
-			if nextPlan := m.planScan(oid, formatCode, nextDst, depth+1); nextPlan != nil {
+			if nextPlan := m.planScan(oid, subType, length, scale, formatCode, nextDst, depth+1); nextPlan != nil {
 				if _, failed := nextPlan.(*scanPlanFail); !failed {
 					wrapperPlan.SetNext(nextPlan)
 					return wrapperPlan
@@ -1141,29 +1148,29 @@ func (m *Map) planScan(oid uint32, formatCode int16, target any, depth int) Scan
 		}
 	}
 
-	return &scanPlanFail{m: m, oid: oid, formatCode: formatCode}
+	return &scanPlanFail{m: m, oid: oid, subType: subType, length: length, scale: scale, formatCode: formatCode}
 }
 
-func (m *Map) Scan(oid uint32, formatCode int16, src []byte, dst any) error {
+func (m *Map) Scan(oid uint32, subType int32, length uint32, scale int32, formatCode int16, src []byte, dst any) error {
 	if dst == nil {
 		return nil
 	}
 
-	plan := m.PlanScan(oid, formatCode, dst)
+	plan := m.PlanScan(oid, subType, length, scale, formatCode, dst)
 	return plan.Scan(src, dst)
 }
 
 var ErrScanTargetTypeChanged = errors.New("scan target type changed")
 
-func codecScan(codec Codec, m *Map, oid uint32, format int16, src []byte, dst any) error {
-	scanPlan := codec.PlanScan(m, oid, format, dst)
+func codecScan(codec Codec, m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte, dst any) error {
+	scanPlan := codec.PlanScan(m, oid, subType, length, scale, format, dst)
 	if scanPlan == nil {
 		return fmt.Errorf("PlanScan did not find a plan")
 	}
 	return scanPlan.Scan(src, dst)
 }
 
-func codecDecodeToTextFormat(codec Codec, m *Map, oid uint32, format int16, src []byte) (driver.Value, error) {
+func codecDecodeToTextFormat(codec Codec, m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
 	}
@@ -1171,11 +1178,11 @@ func codecDecodeToTextFormat(codec Codec, m *Map, oid uint32, format int16, src 
 	if format == TextFormatCode {
 		return string(src), nil
 	} else {
-		value, err := codec.DecodeValue(m, oid, format, src)
+		value, err := codec.DecodeValue(m, oid, subType, length, scale, format, src)
 		if err != nil {
 			return nil, err
 		}
-		buf, err := m.Encode(oid, TextFormatCode, value, nil)
+		buf, err := m.Encode(oid, subType, length, scale, TextFormatCode, value, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -1185,26 +1192,28 @@ func codecDecodeToTextFormat(codec Codec, m *Map, oid uint32, format int16, src 
 
 // PlanEncode returns an EncodePlan for encoding value into PostgreSQL format for oid and format. If no plan can be
 // found then nil is returned.
-func (m *Map) PlanEncode(oid uint32, format int16, value any) EncodePlan {
-	return m.planEncodeDepth(oid, format, value, 0)
+func (m *Map) PlanEncode(oid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
+	return m.planEncodeDepth(oid, subType, length, scale, format, value, 0)
 }
 
-func (m *Map) planEncodeDepth(oid uint32, format int16, value any, depth int) EncodePlan {
+func (m *Map) planEncodeDepth(oid uint32, subType int32, length uint32, scale int32, format int16, value any, depth int) EncodePlan {
 	// Guard against infinite recursion.
 	if depth > 8 {
 		return nil
 	}
 
-	oidMemo := m.memoizedEncodePlans[oid]
+	//memoize type id + subtype
+	memoId := MakeTypeSubtype(oid, subType)
+	oidMemo := m.memoizedEncodePlans[memoId]
 	if oidMemo == nil {
 		oidMemo = make(map[reflect.Type][2]EncodePlan)
-		m.memoizedEncodePlans[oid] = oidMemo
+		m.memoizedEncodePlans[memoId] = oidMemo
 	}
 	targetReflectType := reflect.TypeOf(value)
 	typeMemo := oidMemo[targetReflectType]
 	plan := typeMemo[format]
 	if plan == nil {
-		plan = m.planEncode(oid, format, value, depth)
+		plan = m.planEncode(oid, subType, length, scale, format, value, depth)
 		typeMemo[format] = plan
 		oidMemo[targetReflectType] = typeMemo
 	}
@@ -1212,7 +1221,7 @@ func (m *Map) planEncodeDepth(oid uint32, format int16, value any, depth int) En
 	return plan
 }
 
-func (m *Map) planEncode(oid uint32, format int16, value any, depth int) EncodePlan {
+func (m *Map) planEncode(oid uint32, subType int32, length uint32, scale int32, format int16, value any, depth int) EncodePlan {
 	if format == TextFormatCode {
 		switch value.(type) {
 		case string:
@@ -1223,7 +1232,7 @@ func (m *Map) planEncode(oid uint32, format int16, value any, depth int) EncodeP
 	}
 
 	var dt *Type
-	if dataType, ok := m.TypeForOID(oid); ok {
+	if dataType, ok := m.TypeForOID(oid, subType); ok {
 		dt = dataType
 	} else {
 		// If no type for the OID was found, then either it is unknowable (e.g. the simple protocol) or it is an
@@ -1236,14 +1245,14 @@ func (m *Map) planEncode(oid uint32, format int16, value any, depth int) EncodeP
 	}
 
 	if dt != nil {
-		if plan := dt.Codec.PlanEncode(m, oid, format, value); plan != nil {
+		if plan := dt.Codec.PlanEncode(m, oid, subType, length, scale, format, value); plan != nil {
 			return plan
 		}
 	}
 
 	for _, f := range m.TryWrapEncodePlanFuncs {
 		if wrapperPlan, nextValue, ok := f(value); ok {
-			if nextPlan := m.planEncodeDepth(oid, format, nextValue, depth+1); nextPlan != nil {
+			if nextPlan := m.planEncodeDepth(oid, subType, length, scale, format, nextValue, depth+1); nextPlan != nil {
 				wrapperPlan.SetNext(nextPlan)
 				return wrapperPlan
 			}
@@ -1281,6 +1290,9 @@ func (encodePlanTextValuerToAnyTextFormat) Encode(value any, buf []byte) (newBuf
 type encodePlanDriverValuer struct {
 	m          *Map
 	oid        uint32
+	subType    int32
+	length     uint32
+	scale      int32
 	formatCode int16
 }
 
@@ -1297,7 +1309,7 @@ func (plan *encodePlanDriverValuer) Encode(value any, buf []byte) (newBuf []byte
 		return nil, nil
 	}
 
-	newBuf, err = plan.m.Encode(plan.oid, plan.formatCode, v, buf)
+	newBuf, err = plan.m.Encode(plan.oid, plan.subType, plan.length, plan.scale, plan.formatCode, v, buf)
 	if err == nil {
 		return newBuf, nil
 	}
@@ -1308,7 +1320,7 @@ func (plan *encodePlanDriverValuer) Encode(value any, buf []byte) (newBuf []byte
 	}
 
 	var scannedValue any
-	scanErr := plan.m.Scan(plan.oid, TextFormatCode, []byte(s), &scannedValue)
+	scanErr := plan.m.Scan(plan.oid, plan.subType, plan.length, plan.scale, TextFormatCode, []byte(s), &scannedValue)
 	if scanErr != nil {
 		return nil, err
 	}
@@ -1319,7 +1331,7 @@ func (plan *encodePlanDriverValuer) Encode(value any, buf []byte) (newBuf []byte
 	}
 
 	var err2 error
-	newBuf, err2 = plan.m.Encode(plan.oid, BinaryFormatCode, scannedValue, buf)
+	newBuf, err2 = plan.m.Encode(plan.oid, plan.subType, plan.length, plan.scale, BinaryFormatCode, scannedValue, buf)
 	if err2 != nil {
 		return nil, err
 	}
@@ -1491,7 +1503,7 @@ func TryWrapBuiltinTypeEncodePlan(value any) (plan WrappedEncodePlanNextSetter, 
 	// case map[string]*string:
 	// 	return &wrapMapStringToPointerStringEncodePlan{}, mapStringToPointerStringWrapper(value), true
 	// case map[string]string:
-	// 	return &wrapMapStringToStringEncodePlan{}, mapStringToStringWrapper(value), true
+	// return &wrapMapStringToStringEncodePlan{}, mapStringToStringWrapper(value), true
 	// case [16]byte:
 	// 	return &wrapByte16EncodePlan{}, byte16Wrapper(value), true
 	case []byte:
@@ -1915,7 +1927,7 @@ func (plan *wrapArrayEncodeReflectPlan) Encode(value any, buf []byte) (newBuf []
 	return plan.next.Encode(w, buf)
 }
 
-func newEncodeError(value any, m *Map, oid uint32, formatCode int16, err error) error {
+func newEncodeError(value any, m *Map, oid uint32, subType int32, formatCode int16, err error) error {
 	var format string
 	switch formatCode {
 	case TextFormatCode:
@@ -1927,7 +1939,7 @@ func newEncodeError(value any, m *Map, oid uint32, formatCode int16, err error) 
 	}
 
 	var dataTypeName string
-	if t, ok := m.TypeForOID(oid); ok {
+	if t, ok := m.TypeForOID(oid, subType); ok {
 		dataTypeName = t.Name
 	} else {
 		dataTypeName = "unknown type"
@@ -1939,12 +1951,12 @@ func newEncodeError(value any, m *Map, oid uint32, formatCode int16, err error) 
 // Encode appends the encoded bytes of value to buf. If value is the SQL value NULL then append nothing and return
 // (nil, nil). The caller of Encode is responsible for writing the correct NULL value or the length of the data
 // written.
-func (m *Map) Encode(oid uint32, formatCode int16, value any, buf []byte) (newBuf []byte, err error) {
+func (m *Map) Encode(oid uint32, subType int32, length uint32, scale int32, formatCode int16, value any, buf []byte) (newBuf []byte, err error) {
 	if isNil, callNilDriverValuer := isNilDriverValuer(value); isNil {
 		if callNilDriverValuer {
 			newBuf, err = (&encodePlanDriverValuer{m: m, oid: oid, formatCode: formatCode}).Encode(value, buf)
 			if err != nil {
-				return nil, newEncodeError(value, m, oid, formatCode, err)
+				return nil, newEncodeError(value, m, oid, subType, formatCode, err)
 			}
 
 			return newBuf, nil
@@ -1953,14 +1965,14 @@ func (m *Map) Encode(oid uint32, formatCode int16, value any, buf []byte) (newBu
 		}
 	}
 
-	plan := m.PlanEncode(oid, formatCode, value)
+	plan := m.PlanEncode(oid, subType, length, scale, formatCode, value)
 	if plan == nil {
-		return nil, newEncodeError(value, m, oid, formatCode, errors.New("cannot find encode plan"))
+		return nil, newEncodeError(value, m, oid, subType, formatCode, errors.New("cannot find encode plan"))
 	}
 
 	newBuf, err = plan.Encode(value, buf)
 	if err != nil {
-		return nil, newEncodeError(value, m, oid, formatCode, err)
+		return nil, newEncodeError(value, m, oid, subType, formatCode, err)
 	}
 
 	return newBuf, nil
@@ -1986,24 +1998,24 @@ type sqlScannerWrapper struct {
 }
 
 func (w *sqlScannerWrapper) Scan(src any) error {
-	t, ok := w.m.TypeForValue(w.v)
-	if !ok {
-		return fmt.Errorf("cannot convert to sql.Scanner: cannot find registered type for %T", w.v)
-	}
-
-	var bufSrc []byte
-	if src != nil {
-		switch src := src.(type) {
-		case string:
-			bufSrc = []byte(src)
-		case []byte:
-			bufSrc = src
-		default:
-			bufSrc = []byte(fmt.Sprint(bufSrc))
-		}
-	}
-
-	return w.m.Scan(t.OID, TextFormatCode, bufSrc, w.v)
+	//t, ok := w.m.TypeForValue(w.v)
+	//if !ok {
+	//	return fmt.Errorf("cannot convert to sql.Scanner: cannot find registered type for %T", w.v)
+	//}
+	//
+	//var bufSrc []byte
+	//if src != nil {
+	//	switch src := src.(type) {
+	//	case string:
+	//		bufSrc = []byte(src)
+	//	case []byte:
+	//		bufSrc = src
+	//	default:
+	//		bufSrc = []byte(fmt.Sprint(bufSrc))
+	//	}
+	//}
+	//return w.m.Scan(t.OID, TextFormatCode, bufSrc, w.v)
+	panic("not implemented")
 }
 
 var valuerReflectType = reflect.TypeFor[driver.Valuer]()

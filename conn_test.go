@@ -709,7 +709,7 @@ func TestConnInitTypeMap(t *testing.T) {
 		if !ok {
 			t.Fatalf("Expected type named %v to be present", name)
 		}
-		dtByOID, ok := conn.TypeMap().TypeForOID(oid)
+		dtByOID, ok := conn.TypeMap().TypeForOID(oid, 0)
 		if !ok {
 			t.Fatalf("Expected type OID %v to be present", oid)
 		}

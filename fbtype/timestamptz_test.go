@@ -86,7 +86,7 @@ func TestTimestamptzDecodeTextInvalid(t *testing.T) {
 	t.Skip()
 	c := &fbtype.TimestamptzCodec{}
 	var tstz fbtype.Timestamptz
-	plan := c.PlanScan(nil, fbtype.TimestamptzOID, fbtype.TextFormatCode, &tstz)
+	plan := c.PlanScan(nil, fbtype.TimestamptzOID, 0, 0, 0, fbtype.TextFormatCode, &tstz)
 	err := plan.Scan([]byte(`eeeee`), &tstz)
 	require.Error(t, err)
 }

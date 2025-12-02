@@ -224,7 +224,7 @@ func (n Numeric) Value() (driver.Value, error) {
 		return nil, nil
 	}
 
-	buf, err := NumericCodec{}.PlanEncode(nil, 0, TextFormatCode, n).Encode(n, nil)
+	buf, err := NumericCodec{}.PlanEncode(nil, 0, 0, 0, 0, TextFormatCode, n).Encode(n, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -303,7 +303,7 @@ func (NumericCodec) PreferredFormat() int16 {
 	return BinaryFormatCode
 }
 
-func (NumericCodec) PlanEncode(m *Map, oid uint32, format int16, value any) EncodePlan {
+func (NumericCodec) PlanEncode(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
 	switch format {
 	case BinaryFormatCode:
 		switch value.(type) {
@@ -552,7 +552,7 @@ func encodeNumericText(n Numeric, buf []byte) (newBuf []byte, err error) {
 	return buf, nil
 }
 
-func (NumericCodec) PlanScan(m *Map, oid uint32, format int16, target any) ScanPlan {
+func (NumericCodec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
 
 	switch format {
 	case BinaryFormatCode:
@@ -787,7 +787,7 @@ func (scanPlanTextAnyToNumericScanner) Scan(src []byte, dst any) error {
 	return scanner.ScanNumeric(Numeric{Int: num, Exp: exp, Valid: true})
 }
 
-func (c NumericCodec) DecodeDatabaseSQLValue(m *Map, oid uint32, format int16, src []byte) (driver.Value, error) {
+func (c NumericCodec) DecodeDatabaseSQLValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
 	}
@@ -797,25 +797,25 @@ func (c NumericCodec) DecodeDatabaseSQLValue(m *Map, oid uint32, format int16, s
 	}
 
 	var n Numeric
-	err := codecScan(c, m, oid, format, src, &n)
+	err := codecScan(c, m, oid, subType, length, scale, format, src, &n)
 	if err != nil {
 		return nil, err
 	}
 
-	buf, err := m.Encode(oid, TextFormatCode, n, nil)
+	buf, err := m.Encode(oid, subType, length, scale, TextFormatCode, n, nil)
 	if err != nil {
 		return nil, err
 	}
 	return string(buf), nil
 }
 
-func (c NumericCodec) DecodeValue(m *Map, oid uint32, format int16, src []byte) (any, error) {
+func (c NumericCodec) DecodeValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var n Numeric
-	err := codecScan(c, m, oid, format, src, &n)
+	err := codecScan(c, m, oid, subType, length, scale, format, src, &n)
 	if err != nil {
 		return nil, err
 	}

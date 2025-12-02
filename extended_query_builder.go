@@ -23,7 +23,7 @@ func (eqb *ExtendedQueryBuilder) Build(m *fbtype.Map, sd *fbconn.StatementDescri
 
 	if sd == nil {
 		for i := range args {
-			err := eqb.appendParam(m, 0, fbtype.TextFormatCode, args[i])
+			err := eqb.appendParam(m, 0, 0, 0, 0, fbtype.TextFormatCode, args[i])
 			if err != nil {
 				err = fmt.Errorf("failed to encode args[%d]: %w", i, err)
 				return err
@@ -37,15 +37,11 @@ func (eqb *ExtendedQueryBuilder) Build(m *fbtype.Map, sd *fbconn.StatementDescri
 	}
 
 	for i := range args {
-		err := eqb.appendParam(m, sd.Parameters[i].Type, -1, args[i])
+		err := eqb.appendParam(m, sd.Parameters[i].Type, sd.Parameters[i].Subtype, sd.Parameters[i].Length, sd.Parameters[i].Scale, -1, args[i])
 		if err != nil {
 			err = fmt.Errorf("failed to encode args[%d]: %w", i, err)
 			return err
 		}
-	}
-
-	for i := range sd.Fields {
-		eqb.appendResultFormat(m.FormatCodeForOID(sd.Fields[i].Type))
 	}
 
 	return nil
@@ -53,11 +49,11 @@ func (eqb *ExtendedQueryBuilder) Build(m *fbtype.Map, sd *fbconn.StatementDescri
 
 // appendParam appends a parameter to the query. format may be -1 to automatically choose the format. If arg is nil it
 // must be an untyped nil.
-func (eqb *ExtendedQueryBuilder) appendParam(m *fbtype.Map, oid uint32, format int16, arg any) error {
+func (eqb *ExtendedQueryBuilder) appendParam(m *fbtype.Map, typeId uint32, subType int32, length uint32, scale int32, format int16, arg any) error {
 	format = 1
 	if format == -1 {
-		preferredFormat := eqb.chooseParameterFormatCode(m, oid, arg)
-		preferredErr := eqb.appendParam(m, oid, preferredFormat, arg)
+		preferredFormat := eqb.chooseParameterFormatCode(m, typeId, arg)
+		preferredErr := eqb.appendParam(m, typeId, subType, length, scale, preferredFormat, arg)
 		if preferredErr == nil {
 			return nil
 		}
@@ -69,7 +65,7 @@ func (eqb *ExtendedQueryBuilder) appendParam(m *fbtype.Map, oid uint32, format i
 			otherFormat = TextFormatCode
 		}
 
-		otherErr := eqb.appendParam(m, oid, otherFormat, arg)
+		otherErr := eqb.appendParam(m, typeId, subType, length, scale, otherFormat, arg)
 		if otherErr == nil {
 			return nil
 		}
@@ -77,7 +73,7 @@ func (eqb *ExtendedQueryBuilder) appendParam(m *fbtype.Map, oid uint32, format i
 		return preferredErr // return the error from the preferred format
 	}
 
-	v, err := eqb.encodeExtendedParamValue(m, oid, format, arg)
+	v, err := eqb.encodeExtendedParamValue(m, typeId, subType, length, scale, format, arg)
 	if err != nil {
 		return err
 	}
@@ -116,14 +112,14 @@ func (eqb *ExtendedQueryBuilder) reset() {
 	}
 }
 
-func (eqb *ExtendedQueryBuilder) encodeExtendedParamValue(m *fbtype.Map, oid uint32, formatCode int16, arg any) ([]byte, error) {
+func (eqb *ExtendedQueryBuilder) encodeExtendedParamValue(m *fbtype.Map, oid uint32, subType int32, length uint32, scale int32, formatCode int16, arg any) ([]byte, error) {
 	if eqb.paramValueBytes == nil {
 		eqb.paramValueBytes = make([]byte, 0, 128)
 	}
 
 	pos := len(eqb.paramValueBytes)
 
-	buf, err := m.Encode(oid, formatCode, arg, eqb.paramValueBytes)
+	buf, err := m.Encode(oid, subType, length, scale, formatCode, arg, eqb.paramValueBytes)
 	if err != nil {
 		return nil, err
 	}
