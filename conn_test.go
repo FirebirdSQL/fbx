@@ -783,6 +783,46 @@ func TestConnDeallocateInvalidatedCachedStatementsWhenCanceled(t *testing.T) {
 	})
 }
 
+// Adapted from https://github.com/jackc/pgx/issues/2442
+func TestStmtCacheInvalidationExec(t *testing.T) {
+	ctx := context.Background()
+
+	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+	defer closeConn(t, conn)
+
+	_, err := conn.Exec(ctx, `
+		recreate table drop_cols (
+			f1 integer not null,
+			f2 integer not null
+		)
+	`)
+	require.NoError(t, err)
+
+	insertSQL := "insert into drop_cols (f1, f2) values (?, ?)"
+	// Populate statement cache.
+	_, err = conn.Exec(ctx, insertSQL, 1, 2)
+	require.NoError(t, err)
+
+	// Replace table definition so the cached statement becomes stale.
+	_, err = conn.Exec(ctx, `
+		recreate table drop_cols (
+			f1 boolean not null,
+			f2 integer not null
+		)
+	`)
+	require.NoError(t, err)
+
+	// First execution should fail with stale cached statement metadata.
+	_, err = conn.Exec(ctx, insertSQL, true, 2)
+	require.Error(t, err)
+
+	// After invalidation, retry should succeed.
+	_, err = conn.Exec(ctx, insertSQL, true, 2)
+	require.NoError(t, err)
+
+	ensureConnValid(t, conn)
+}
+
 func TestErrNoRows(t *testing.T) {
 	t.Parallel()
 

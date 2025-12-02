@@ -484,6 +484,18 @@ optionLoop:
 		}
 	}
 
+	defer func() {
+		if err != nil {
+			if sc := c.statementCache; sc != nil {
+				sc.Invalidate(sql)
+			}
+
+			if sc := c.descriptionCache; sc != nil {
+				sc.Invalidate(sql)
+			}
+		}
+	}()
+
 	switch mode {
 	case QueryExecModeCacheStatement:
 		if sd, ok := c.preparedStatements[sql]; ok {
