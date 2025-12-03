@@ -19,20 +19,24 @@ type DummyTranscoder struct {
 }
 
 func (*DummyTranscoder) Transform(dst, src []byte, atEOF bool) (nDst, nSrc int, err error) {
-	return 0, 0, nil
+	n := len(src)
+	copy(dst[:], src[:])
+	return n, n, nil
 }
 
 func (*DummyTranscoder) Reset() {}
 
-func (*DummyTranscoder) Bytes([]byte) ([]byte, error) {
-	return nil, nil
+func (*DummyTranscoder) Bytes(src []byte) ([]byte, error) {
+	return src, nil
 }
-func (*DummyTranscoder) String(string) (string, error) {
-	return "", nil
+func (*DummyTranscoder) String(src string) (string, error) {
+	return src, nil
 }
 
 func CharacterSetIdIntoName(id int32) (cs string, err error) {
 	switch id {
+	case 0:
+		cs = "NONE"
 	case 3:
 		cs = "UNICODE_FSS"
 	case 4:
@@ -43,9 +47,22 @@ func CharacterSetIdIntoName(id int32) (cs string, err error) {
 	return
 }
 
+func NewDummyEncoder() *encoding.Encoder {
+	return &encoding.Encoder{Transformer: &DummyTranscoder{}}
+}
+
+func NewDummyDecoder() *encoding.Decoder {
+	return &encoding.Decoder{Transformer: &DummyTranscoder{}}
+}
+
 func NewEncoding(charset string) (*Encoding, error) {
 	e := &Encoding{Charset: charset}
 	switch charset {
+	case "NONE":
+		e.Encoder = NewDummyEncoder()
+		e.Decoder = NewDummyDecoder()
+		e.MaxBytesPerChar = 1
+		e.CharacterSetId = 0
 	case "UNICODE_FSS":
 		e.Encoder = unicode.UTF8.NewEncoder()
 		e.Decoder = unicode.UTF8.NewDecoder()
