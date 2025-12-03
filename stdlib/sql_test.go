@@ -504,27 +504,6 @@ func TestConnQueryScanArray(t *testing.T) {
 	})
 }
 
-func TestConnQueryScanRange(t *testing.T) {
-	t.Skip("need implementation")
-	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		m := fbtype.NewMap()
-
-		var r fbtype.Range[fbtype.Int4]
-		err := db.QueryRow("select int4range(1, 5)").Scan(m.SQLScanner(&r))
-		require.NoError(t, err)
-		assert.Equal(
-			t,
-			fbtype.Range[fbtype.Int4]{
-				Lower:     fbtype.Int4{Int32: 1, Valid: true},
-				Upper:     fbtype.Int4{Int32: 5, Valid: true},
-				LowerType: fbtype.Inclusive,
-				UpperType: fbtype.Exclusive,
-				Valid:     true,
-			},
-			r)
-	})
-}
-
 // Test type that fbx would handle natively in binary, but since it is not a
 // database/sql native type should be passed through as a string
 func TestConnQueryRowPgxBinary(t *testing.T) {
