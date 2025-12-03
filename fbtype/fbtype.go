@@ -299,7 +299,15 @@ func (m *Map) TypeForOID(oid uint32, subType int32) (*Type, bool) {
 		return dt, true
 	}
 
-	dt, ok := defaultMap.oidToType[id]
+	if dt, ok := m.oidToType[oid]; ok {
+		return dt, true
+	}
+
+	if dt, ok := defaultMap.oidToType[id]; ok {
+		return dt, true
+	}
+
+	dt, ok := defaultMap.oidToType[oid]
 	return dt, ok
 }
 
