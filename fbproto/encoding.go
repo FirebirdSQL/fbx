@@ -8,9 +8,11 @@ import (
 )
 
 type Encoding struct {
-	Charset string
-	Encoder *encoding.Encoder
-	Decoder *encoding.Decoder
+	Charset         string
+	Encoder         *encoding.Encoder
+	Decoder         *encoding.Decoder
+	MaxBytesPerChar uint32
+	CharacterSetId  int32
 }
 
 type DummyTranscoder struct {
@@ -29,12 +31,31 @@ func (*DummyTranscoder) String(string) (string, error) {
 	return "", nil
 }
 
+func CharacterSetIdIntoName(id int32) (cs string, err error) {
+	switch id {
+	case 3:
+		cs = "UNICODE_FSS"
+	case 4:
+		cs = "UTF8"
+	default:
+		return "", fmt.Errorf("unknown or unsupported charset id: %d", id)
+	}
+	return
+}
+
 func NewEncoding(charset string) (*Encoding, error) {
-	encoding := &Encoding{Charset: charset}
+	e := &Encoding{Charset: charset}
 	switch charset {
-	case "UNICODE_FSS", "UTF8":
-		encoding.Encoder = unicode.UTF8.NewEncoder()
-		encoding.Decoder = unicode.UTF8.NewDecoder()
+	case "UNICODE_FSS":
+		e.Encoder = unicode.UTF8.NewEncoder()
+		e.Decoder = unicode.UTF8.NewDecoder()
+		e.MaxBytesPerChar = 3
+		e.CharacterSetId = 3
+	case "UTF8":
+		e.Encoder = unicode.UTF8.NewEncoder()
+		e.Decoder = unicode.UTF8.NewDecoder()
+		e.MaxBytesPerChar = 4
+		e.CharacterSetId = 4
 	//case "SJIS_0208":
 	//	encoding.Encoder = japanese.ShiftJIS.NewEncoder()
 	//	encoding.Decoder = japanese.ShiftJIS.NewDecoder()
@@ -139,5 +160,5 @@ func NewEncoding(charset string) (*Encoding, error) {
 	default:
 		return nil, fmt.Errorf("unknown or unsupported charset: %s", charset)
 	}
-	return encoding, nil
+	return e, nil
 }

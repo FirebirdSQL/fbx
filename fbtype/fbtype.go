@@ -9,6 +9,8 @@ import (
 	"net/netip"
 	"reflect"
 	"time"
+
+	"github.com/red-soft/fbx/fbproto"
 )
 
 // PostgreSQL oids for common types
@@ -2057,4 +2059,17 @@ func isNilDriverValuer(value any) (isNil bool, callNilDriverValuer bool) {
 	default:
 		return false, false
 	}
+}
+
+func CharacterSetForType(typeId uint32, subType int32, scale int32) int32 {
+	switch typeId {
+	case fbproto.SQL_TYPE_TEXT, fbproto.SQL_TYPE_VARYING:
+		return subType & 0xFF
+	case fbproto.SQL_TYPE_BLOB:
+		if subType == fbproto.Isc_blob_text {
+			return scale & 0xFF
+		}
+		return fbproto.CS_BINARY
+	}
+	return fbproto.CS_dynamic
 }
