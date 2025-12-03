@@ -85,6 +85,7 @@ import (
 
 	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbconn"
+	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxpool"
 )
@@ -695,7 +696,7 @@ func (r *Rows) Next(dest []driver.Value) error {
 			format := fd.Format
 
 			switch fd.Type {
-			case fbtype.BoolOID:
+			case fbproto.SQL_TYPE_BOOLEAN:
 				var d bool
 				scanPlan := m.PlanScan(dataTypeOID, fd.Subtype, fd.Length, fd.Scale, format, &d)
 				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
@@ -719,7 +720,7 @@ func (r *Rows) Next(dest []driver.Value) error {
 					}
 					return d.Value()
 				}
-			case fbtype.DateOID:
+			case fbproto.SQL_TYPE_DATE:
 				var d fbtype.Date
 				scanPlan := m.PlanScan(dataTypeOID, fd.Subtype, fd.Length, fd.Scale, format, &d)
 				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
@@ -729,35 +730,35 @@ func (r *Rows) Next(dest []driver.Value) error {
 					}
 					return d.Value()
 				}
-			case fbtype.Float4OID:
+			case fbproto.SQL_TYPE_FLOAT:
 				var d float32
 				scanPlan := m.PlanScan(dataTypeOID, fd.Subtype, fd.Length, fd.Scale, format, &d)
 				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
 					err := scanPlan.Scan(src, &d)
 					return float64(d), err
 				}
-			case fbtype.Float8OID:
+			case fbproto.SQL_TYPE_DOUBLE:
 				var d float64
 				scanPlan := m.PlanScan(dataTypeOID, fd.Subtype, fd.Length, fd.Scale, format, &d)
 				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
 					err := scanPlan.Scan(src, &d)
 					return d, err
 				}
-			case fbtype.Int2OID:
+			case fbproto.SQL_TYPE_SHORT:
 				var d int16
 				scanPlan := m.PlanScan(dataTypeOID, fd.Subtype, fd.Length, fd.Scale, format, &d)
 				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
 					err := scanPlan.Scan(src, &d)
 					return int64(d), err
 				}
-			case fbtype.Int4OID:
+			case fbproto.SQL_TYPE_LONG:
 				var d int32
 				scanPlan := m.PlanScan(dataTypeOID, fd.Subtype, fd.Length, fd.Scale, format, &d)
 				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
 					err := scanPlan.Scan(src, &d)
 					return int64(d), err
 				}
-			case fbtype.Int8OID:
+			case fbproto.SQL_TYPE_INT64:
 				var d int64
 				scanPlan := m.PlanScan(dataTypeOID, fd.Subtype, fd.Length, fd.Scale, format, &d)
 				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
@@ -774,7 +775,7 @@ func (r *Rows) Next(dest []driver.Value) error {
 					}
 					return d, nil
 				}
-			case fbtype.TimestampOID:
+			case fbproto.SQL_TYPE_TIMESTAMP:
 				var d fbtype.Timestamp
 				scanPlan := m.PlanScan(dataTypeOID, fd.Subtype, fd.Length, fd.Scale, format, &d)
 				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
@@ -784,7 +785,7 @@ func (r *Rows) Next(dest []driver.Value) error {
 					}
 					return d.Value()
 				}
-			case fbtype.TimestamptzOID:
+			case fbproto.SQL_TYPE_TIMESTAMP_TZ:
 				var d fbtype.Timestamptz
 				scanPlan := m.PlanScan(dataTypeOID, fd.Subtype, fd.Length, fd.Scale, format, &d)
 				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
