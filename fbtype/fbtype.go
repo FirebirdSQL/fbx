@@ -903,11 +903,14 @@ type pointerEmptyInterfaceScanPlan struct {
 	codec      Codec
 	m          *Map
 	oid        uint32
+	subType    int32
+	length     uint32
+	scale      int32
 	formatCode int16
 }
 
 func (plan *pointerEmptyInterfaceScanPlan) Scan(src []byte, dst any) error {
-	value, err := plan.codec.DecodeValue(plan.m, plan.oid, 0, 0, 0, plan.formatCode, src)
+	value, err := plan.codec.DecodeValue(plan.m, plan.oid, plan.subType, plan.length, plan.scale, plan.formatCode, src)
 	if err != nil {
 		return err
 	}
@@ -1154,7 +1157,7 @@ func (m *Map) planScan(oid uint32, subType int32, length uint32, scale int32, fo
 
 	if dt != nil {
 		if _, ok := target.(*any); ok {
-			return &pointerEmptyInterfaceScanPlan{codec: dt.Codec, m: m, oid: oid, formatCode: formatCode}
+			return &pointerEmptyInterfaceScanPlan{codec: dt.Codec, m: m, oid: oid, subType: subType, length: length, scale: scale, formatCode: formatCode}
 		}
 	}
 
