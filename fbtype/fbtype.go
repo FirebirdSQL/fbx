@@ -493,7 +493,7 @@ func (plan *scanPlanFail) Scan(src []byte, dst any) error {
 		dataTypeName = "unknown type"
 	}
 
-	return fmt.Errorf("cannot scan %s (OID %d) in %v format into %T", dataTypeName, plan.oid, format, dst)
+	return fmt.Errorf("cannot scan %s (type id %d) with subtype %d in %v format into %T", dataTypeName, plan.oid, plan.subType, format, dst)
 }
 
 // TryWrapScanPlanFunc is a function that tries to create a wrapper plan for target. If successful it returns a plan
