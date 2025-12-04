@@ -58,7 +58,7 @@ func initDefaultMap() {
 
 	// Base types
 	defaultMap.RegisterType(&Type{Name: "date", OID: fbproto.SQL_TYPE_DATE, Codec: DateCodec{}})
-	defaultMap.RegisterType(&Type{Name: "smallint", OID: fbproto.SQL_TYPE_SHORT, Codec: Int2Codec{}})
+	defaultMap.RegisterType(&Type{Name: "smallint", OID: fbproto.SQL_TYPE_SHORT, Codec: Int4Codec{}})
 	defaultMap.RegisterType(&Type{Name: "int", OID: fbproto.SQL_TYPE_LONG, Codec: Int4Codec{}})
 	defaultMap.RegisterType(&Type{Name: "bigint", OID: fbproto.SQL_TYPE_INT64, Codec: Int8Codec{}})
 	defaultMap.RegisterType(&Type{Name: "text", OID: fbproto.SQL_TYPE_TEXT, Codec: TextCodec{}})

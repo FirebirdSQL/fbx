@@ -11,7 +11,7 @@ import (
 )
 
 func TestInt2Transcode(t *testing.T) {
-	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "int2", []fbxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "smallint", []fbxtest.ValueRoundTripTest{
 		{
 			Param:  (zeronull.Int2)(1),
 			Result: new(zeronull.Int2),
@@ -31,7 +31,7 @@ func TestInt2Transcode(t *testing.T) {
 }
 
 func TestInt4Transcode(t *testing.T) {
-	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "int4", []fbxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "integer", []fbxtest.ValueRoundTripTest{
 		{
 			Param:  (zeronull.Int4)(1),
 			Result: new(zeronull.Int4),
@@ -51,7 +51,7 @@ func TestInt4Transcode(t *testing.T) {
 }
 
 func TestInt8Transcode(t *testing.T) {
-	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "int8", []fbxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "bigint", []fbxtest.ValueRoundTripTest{
 		{
 			Param:  (zeronull.Int8)(1),
 			Result: new(zeronull.Int8),

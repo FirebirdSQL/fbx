@@ -218,13 +218,13 @@ func TestScanPlanBinaryInt32ScanScanner(t *testing.T) {
 	src := []byte{0, 42}
 	var v pgCustomInt
 
-	plan := m.PlanScan(fbproto.SQL_TYPE_SHORT, 0, 2, 0, fbtype.BinaryFormatCode, &v)
+	plan := m.PlanScan(fbproto.SQL_TYPE_SHORT, 0, 4, 0, fbtype.BinaryFormatCode, &v)
 	err := plan.Scan(src, &v)
 	require.NoError(t, err)
 	require.EqualValues(t, 42, v)
 
 	ptr := new(pgCustomInt)
-	plan = m.PlanScan(fbproto.SQL_TYPE_SHORT, 0, 2, 0, fbtype.BinaryFormatCode, &ptr)
+	plan = m.PlanScan(fbproto.SQL_TYPE_SHORT, 0, 4, 0, fbtype.BinaryFormatCode, &ptr)
 	err = plan.Scan(src, &ptr)
 	require.NoError(t, err)
 	require.EqualValues(t, 42, *ptr)
@@ -235,13 +235,13 @@ func TestScanPlanBinaryInt32ScanScanner(t *testing.T) {
 	assert.Nil(t, ptr)
 
 	ptr = nil
-	plan = m.PlanScan(fbproto.SQL_TYPE_SHORT, 0, 2, 0, fbtype.BinaryFormatCode, &ptr)
+	plan = m.PlanScan(fbproto.SQL_TYPE_SHORT, 0, 4, 0, fbtype.BinaryFormatCode, &ptr)
 	err = plan.Scan(src, &ptr)
 	require.NoError(t, err)
 	require.EqualValues(t, 42, *ptr)
 
 	ptr = nil
-	plan = m.PlanScan(fbproto.SQL_TYPE_SHORT, 0, 2, 0, fbtype.BinaryFormatCode, &ptr)
+	plan = m.PlanScan(fbproto.SQL_TYPE_SHORT, 0, 4, 0, fbtype.BinaryFormatCode, &ptr)
 	err = plan.Scan(nil, &ptr)
 	require.NoError(t, err)
 	assert.Nil(t, ptr)
@@ -252,7 +252,7 @@ func TestScanPlanInterface(t *testing.T) {
 	m := fbtype.NewMap()
 	src := []byte{0, 42}
 	var v interface{}
-	plan := m.PlanScan(fbproto.SQL_TYPE_SHORT, 0, 2, 0, fbtype.BinaryFormatCode, v)
+	plan := m.PlanScan(fbproto.SQL_TYPE_SHORT, 0, 4, 0, fbtype.BinaryFormatCode, v)
 	err := plan.Scan(src, v)
 	assert.Error(t, err)
 }
