@@ -7,7 +7,6 @@ import (
 	"math/big"
 	"math/rand"
 	"reflect"
-	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -39,15 +38,6 @@ func isExpectedEqNumeric(a any) func(any) bool {
 			return true
 		}
 
-		if !(aa.NaN == vv.NaN && aa.InfinityModifier == vv.InfinityModifier) {
-			return false
-		}
-
-		// If NaN or InfinityModifier are set then Int and Exp don't matter.
-		if aa.NaN || aa.InfinityModifier != fbtype.Finite {
-			return true
-		}
-
 		aaInt := (&big.Int{}).Set(aa.Int)
 		vvInt := (&big.Int{}).Set(vv.Int)
 
@@ -75,58 +65,145 @@ func mustParseNumeric(t *testing.T, src string) fbtype.Numeric {
 func TestNumericCodec(t *testing.T) {
 	skipCockroachDB(t, "server formats numeric text format differently")
 
-	max := new(big.Int).Exp(big.NewInt(10), big.NewInt(147454), nil)
-	max.Add(max, big.NewInt(1))
-	longestNumeric := fbtype.Numeric{Int: max, Exp: -16383, Valid: true}
+	eqNum := func(s string) func(any) bool {
+		return isExpectedEqNumeric(mustParseNumeric(t, s))
+	}
 
-	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "numeric", []fbxtest.ValueRoundTripTest{
-		{Param: mustParseNumeric(t, "1"), Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(mustParseNumeric(t, "1"))},
-		{Param: mustParseNumeric(t, "3.14159"), Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(mustParseNumeric(t, "3.14159"))},
-		{Param: mustParseNumeric(t, "100010001"), Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(mustParseNumeric(t, "100010001"))},
-		{Param: mustParseNumeric(t, "100010001.0001"), Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(mustParseNumeric(t, "100010001.0001"))},
-		{Param: mustParseNumeric(t, "4237234789234789289347892374324872138321894178943189043890124832108934.43219085471578891547854892438945012347981"), Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(mustParseNumeric(t, "4237234789234789289347892374324872138321894178943189043890124832108934.43219085471578891547854892438945012347981"))},
-		{Param: mustParseNumeric(t, "0.8925092023480223478923478978978937897879595901237890234789243679037419057877231734823098432903527585734549035904590854890345905434578345789347890402348952348905890489054234237489234987723894789234"), Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(mustParseNumeric(t, "0.8925092023480223478923478978978937897879595901237890234789243679037419057877231734823098432903527585734549035904590854890345905434578345789347890402348952348905890489054234237489234987723894789234"))},
-		{Param: mustParseNumeric(t, "0.000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000123"), Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(mustParseNumeric(t, "0.000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000123"))},
-		{Param: fbtype.Numeric{Int: mustParseBigInt(t, "243723409723490243842378942378901237502734019231380123"), Exp: 23790, Valid: true}, Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(fbtype.Numeric{Int: mustParseBigInt(t, "243723409723490243842378942378901237502734019231380123"), Exp: 23790, Valid: true})},
-		{Param: fbtype.Numeric{Int: mustParseBigInt(t, "2437"), Exp: 23790, Valid: true}, Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(fbtype.Numeric{Int: mustParseBigInt(t, "2437"), Exp: 23790, Valid: true})},
-		{Param: fbtype.Numeric{Int: mustParseBigInt(t, "43723409723490243842378942378901237502734019231380123"), Exp: 80, Valid: true}, Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(fbtype.Numeric{Int: mustParseBigInt(t, "43723409723490243842378942378901237502734019231380123"), Exp: 80, Valid: true})},
-		{Param: fbtype.Numeric{Int: mustParseBigInt(t, "43723409723490243842378942378901237502734019231380123"), Exp: 81, Valid: true}, Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(fbtype.Numeric{Int: mustParseBigInt(t, "43723409723490243842378942378901237502734019231380123"), Exp: 81, Valid: true})},
-		{Param: fbtype.Numeric{Int: mustParseBigInt(t, "43723409723490243842378942378901237502734019231380123"), Exp: 82, Valid: true}, Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(fbtype.Numeric{Int: mustParseBigInt(t, "43723409723490243842378942378901237502734019231380123"), Exp: 82, Valid: true})},
-		{Param: fbtype.Numeric{Int: mustParseBigInt(t, "43723409723490243842378942378901237502734019231380123"), Exp: 83, Valid: true}, Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(fbtype.Numeric{Int: mustParseBigInt(t, "43723409723490243842378942378901237502734019231380123"), Exp: 83, Valid: true})},
-		{Param: fbtype.Numeric{Int: mustParseBigInt(t, "43723409723490243842378942378901237502734019231380123"), Exp: 84, Valid: true}, Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(fbtype.Numeric{Int: mustParseBigInt(t, "43723409723490243842378942378901237502734019231380123"), Exp: 84, Valid: true})},
-		{Param: fbtype.Numeric{Int: mustParseBigInt(t, "913423409823409243892349028349023482934092340892390101"), Exp: -14021, Valid: true}, Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(fbtype.Numeric{Int: mustParseBigInt(t, "913423409823409243892349028349023482934092340892390101"), Exp: -14021, Valid: true})},
-		{Param: fbtype.Numeric{Int: mustParseBigInt(t, "13423409823409243892349028349023482934092340892390101"), Exp: -90, Valid: true}, Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(fbtype.Numeric{Int: mustParseBigInt(t, "13423409823409243892349028349023482934092340892390101"), Exp: -90, Valid: true})},
-		{Param: fbtype.Numeric{Int: mustParseBigInt(t, "13423409823409243892349028349023482934092340892390101"), Exp: -91, Valid: true}, Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(fbtype.Numeric{Int: mustParseBigInt(t, "13423409823409243892349028349023482934092340892390101"), Exp: -91, Valid: true})},
-		{Param: fbtype.Numeric{Int: mustParseBigInt(t, "13423409823409243892349028349023482934092340892390101"), Exp: -92, Valid: true}, Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(fbtype.Numeric{Int: mustParseBigInt(t, "13423409823409243892349028349023482934092340892390101"), Exp: -92, Valid: true})},
-		{Param: fbtype.Numeric{Int: mustParseBigInt(t, "13423409823409243892349028349023482934092340892390101"), Exp: -93, Valid: true}, Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(fbtype.Numeric{Int: mustParseBigInt(t, "13423409823409243892349028349023482934092340892390101"), Exp: -93, Valid: true})},
-		{Param: fbtype.Numeric{NaN: true, Valid: true}, Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(fbtype.Numeric{NaN: true, Valid: true})},
-		{Param: longestNumeric, Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(longestNumeric)},
-		{Param: mustParseNumeric(t, "1"), Result: new(int64), Test: isExpectedEq(int64(1))},
-		{Param: math.NaN(), Result: new(float64), Test: func(a any) bool { return math.IsNaN(a.(float64)) }},
-		{Param: float32(math.NaN()), Result: new(float32), Test: func(a any) bool { return math.IsNaN(float64(a.(float32))) }},
-		{Param: int64(-1), Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(mustParseNumeric(t, "-1"))},
-		{Param: int64(0), Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(mustParseNumeric(t, "0"))},
-		{Param: int64(1), Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(mustParseNumeric(t, "1"))},
-		{Param: int64(math.MinInt64), Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(mustParseNumeric(t, strconv.FormatInt(math.MinInt64, 10)))},
-		{Param: int64(math.MinInt64 + 1), Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(mustParseNumeric(t, strconv.FormatInt(math.MinInt64+1, 10)))},
-		{Param: int64(math.MaxInt64), Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(mustParseNumeric(t, strconv.FormatInt(math.MaxInt64, 10)))},
-		{Param: int64(math.MaxInt64 - 1), Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(mustParseNumeric(t, strconv.FormatInt(math.MaxInt64-1, 10)))},
-		{Param: uint64(100), Result: new(uint64), Test: isExpectedEq(uint64(100))},
-		{Param: uint64(math.MaxUint64), Result: new(uint64), Test: isExpectedEq(uint64(math.MaxUint64))},
-		{Param: uint(math.MaxUint), Result: new(uint), Test: isExpectedEq(uint(math.MaxUint))},
-		{Param: uint(100), Result: new(uint), Test: isExpectedEq(uint(100))},
-		{Param: "1.23", Result: new(string), Test: isExpectedEq("1.23")},
-		{Param: fbtype.Numeric{}, Result: new(fbtype.Numeric), Test: isExpectedEq(fbtype.Numeric{})},
-		{Param: nil, Result: new(fbtype.Numeric), Test: isExpectedEq(fbtype.Numeric{})},
-		{Param: mustParseNumeric(t, "1"), Result: new(string), Test: isExpectedEq("1")},
-		{Param: fbtype.Numeric{NaN: true, Valid: true}, Result: new(string), Test: isExpectedEq("NaN")},
-	})
+	type rtCase struct {
+		typeName string
+		tests    []fbxtest.ValueRoundTripTest
+	}
 
-	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "int8", []fbxtest.ValueRoundTripTest{
-		{Param: mustParseNumeric(t, "-1"), Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(mustParseNumeric(t, "-1"))},
-		{Param: mustParseNumeric(t, "0"), Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(mustParseNumeric(t, "0"))},
-		{Param: mustParseNumeric(t, "1"), Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(mustParseNumeric(t, "1"))},
-	})
+	cases := []rtCase{
+		{
+			typeName: "numeric(18,5)",
+			tests: []fbxtest.ValueRoundTripTest{
+				{
+					Param:  mustParseNumeric(t, "0"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("0"),
+				},
+				{
+					Param:  mustParseNumeric(t, "1"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("1"),
+				},
+				{
+					Param:  mustParseNumeric(t, "-1"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("-1"),
+				},
+				{
+					Param:  mustParseNumeric(t, "3.14159"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("3.14159"),
+				},
+				{
+					Param:  mustParseNumeric(t, "-123.45"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("-123.45"),
+				},
+				{
+					Param:  mustParseNumeric(t, "1.23"),
+					Result: new(string),
+					Test:   isExpectedEq("1.23000"),
+				},
+				{
+					Param:  mustParseNumeric(t, "1.23000"),
+					Result: new(string),
+					Test:   isExpectedEq("1.23000"),
+				},
+				{
+					Param:  mustParseNumeric(t, "1234567890.12345"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("1234567890.12345"),
+				},
+				{
+					Param:  mustParseNumeric(t, "-9876543210.00001"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("-9876543210.00001"),
+				},
+				{
+					Param:  fbtype.Numeric{},
+					Result: new(fbtype.Numeric),
+					Test:   isExpectedEq(fbtype.Numeric{}),
+				},
+				{
+					Param:  nil,
+					Result: new(fbtype.Numeric),
+					Test:   isExpectedEq(fbtype.Numeric{}),
+				},
+			},
+		},
+		{
+			typeName: "numeric(18,0)",
+			tests: []fbxtest.ValueRoundTripTest{
+				{
+					Param:  mustParseNumeric(t, "0"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("0"),
+				},
+				{
+					Param:  mustParseNumeric(t, "1"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("1"),
+				},
+				{
+					Param:  mustParseNumeric(t, "-1"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("-1"),
+				},
+				{
+					Param:  mustParseNumeric(t, "9223372036854775807"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("9223372036854775807"),
+				},
+				{
+					Param:  mustParseNumeric(t, "-9223372036854775807"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("-9223372036854775807"),
+				},
+			},
+		},
+		{
+			typeName: "numeric(9,2)",
+			tests: []fbxtest.ValueRoundTripTest{
+				{
+					Param:  mustParseNumeric(t, "0"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("0"),
+				},
+				{
+					Param:  mustParseNumeric(t, "1.23"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("1.23"),
+				},
+				{
+					Param:  mustParseNumeric(t, "-9999999.99"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("-9999999.99"),
+				},
+				{
+					Param:  mustParseNumeric(t, "9999999.99"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("9999999.99"),
+				},
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.typeName, func(t *testing.T) {
+			fbxtest.RunValueRoundTripTests(
+				context.Background(),
+				t,
+				defaultConnTestRunner,
+				nil,
+				c.typeName,
+				c.tests,
+			)
+		})
+	}
 }
 
 func TestNumericCodecInfinity(t *testing.T) {
@@ -138,10 +215,6 @@ func TestNumericCodecInfinity(t *testing.T) {
 		{Param: float32(math.Inf(1)), Result: new(float32), Test: isExpectedEq(float32(math.Inf(1)))},
 		{Param: math.Inf(-1), Result: new(float64), Test: isExpectedEq(math.Inf(-1))},
 		{Param: float32(math.Inf(-1)), Result: new(float32), Test: isExpectedEq(float32(math.Inf(-1)))},
-		{Param: fbtype.Numeric{InfinityModifier: fbtype.Infinity, Valid: true}, Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(fbtype.Numeric{InfinityModifier: fbtype.Infinity, Valid: true})},
-		{Param: fbtype.Numeric{InfinityModifier: fbtype.NegativeInfinity, Valid: true}, Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(fbtype.Numeric{InfinityModifier: fbtype.NegativeInfinity, Valid: true})},
-		{Param: fbtype.Numeric{InfinityModifier: fbtype.Infinity, Valid: true}, Result: new(string), Test: isExpectedEq("Infinity")},
-		{Param: fbtype.Numeric{InfinityModifier: fbtype.NegativeInfinity, Valid: true}, Result: new(string), Test: isExpectedEq("-Infinity")},
 	})
 }
 
@@ -153,8 +226,6 @@ func TestNumericFloat64Valuer(t *testing.T) {
 		{mustParseNumeric(t, "1"), fbtype.Float8{Float64: 1, Valid: true}},
 		{mustParseNumeric(t, "0.0000000000000000001"), fbtype.Float8{Float64: 0.0000000000000000001, Valid: true}},
 		{mustParseNumeric(t, "-99999999999"), fbtype.Float8{Float64: -99999999999, Valid: true}},
-		{fbtype.Numeric{InfinityModifier: fbtype.Infinity, Valid: true}, fbtype.Float8{Float64: math.Inf(1), Valid: true}},
-		{fbtype.Numeric{InfinityModifier: fbtype.NegativeInfinity, Valid: true}, fbtype.Float8{Float64: math.Inf(-1), Valid: true}},
 		{fbtype.Numeric{Valid: true}, fbtype.Float8{Valid: true}},
 		{fbtype.Numeric{}, fbtype.Float8{}},
 	} {
@@ -162,11 +233,6 @@ func TestNumericFloat64Valuer(t *testing.T) {
 		assert.NoErrorf(t, err, "%d", i)
 		assert.Equalf(t, tt.f, f, "%d", i)
 	}
-
-	f, err := fbtype.Numeric{NaN: true, Valid: true}.Float64Value()
-	assert.NoError(t, err)
-	assert.True(t, math.IsNaN(f.Float64))
-	assert.True(t, f.Valid)
 }
 
 func TestNumericCodecFuzz(t *testing.T) {
@@ -202,7 +268,6 @@ func TestNumericMarshalJSON(t *testing.T) {
 		for i, tt := range []struct {
 			decString string
 		}{
-			{"NaN"},
 			{"0"},
 			{"1"},
 			{"-1"},
@@ -245,12 +310,6 @@ func TestNumericUnmarshalJSON(t *testing.T) {
 			name:    "null",
 			want:    &fbtype.Numeric{},
 			src:     []byte(`null`),
-			wantErr: false,
-		},
-		{
-			name:    "NaN",
-			want:    &fbtype.Numeric{Valid: true, NaN: true},
-			src:     []byte(`"NaN"`),
 			wantErr: false,
 		},
 		{
