@@ -303,7 +303,7 @@ func (s scanPlanTextAnyToTextScanner) Scan(src []byte, dst any) error {
 	}
 
 	var res string
-	if err := decodeFBString(src, s.typeId == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, res); err != nil {
+	if err := decodeFBString(src, s.typeId == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, &res); err != nil {
 		return err
 	}
 
