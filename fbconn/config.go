@@ -25,23 +25,24 @@ type GetSSLPasswordFunc func(ctx context.Context) string
 // Config is the settings used to establish a connection to a PostgreSQL server. It must be created by [ParseConfig]. A
 // manually initialized Config will cause ConnectConfig to panic.
 type Config struct {
-	Host           string // host (e.g. localhost) or absolute path to unix domain socket directory (e.g. /private/tmp)
-	Port           uint16
-	Database       string
-	User           string
-	Role           string
-	SystemUser     string
-	SystemHost     string
-	Password       string
-	ConnectTimeout time.Duration
-	DialFunc       DialFunc   // e.g. net.Dialer.DialContext
-	LookupFunc     LookupFunc // e.g. net.Resolver.LookupHost
-	BuildFrontend  BuildFrontendFunc
-	AuthPluginList []string
-	WireCrypt      bool
-	Encoding       string
-	DPB            []byte
-	ClientVersion  string
+	Host                       string // host (e.g. localhost) or absolute path to unix domain socket directory (e.g. /private/tmp)
+	Port                       uint16
+	Database                   string
+	User                       string
+	Role                       string
+	SystemUser                 string
+	SystemHost                 string
+	Password                   string
+	ConnectTimeout             time.Duration
+	DialFunc                   DialFunc   // e.g. net.Dialer.DialContext
+	LookupFunc                 LookupFunc // e.g. net.Resolver.LookupHost
+	BuildFrontend              BuildFrontendFunc
+	AuthPluginList             []string
+	WireCrypt                  bool
+	Encoding                   string
+	DPB                        []byte
+	ClientVersion              string
+	DefaultTransactionReadOnly bool
 
 	// BuildContextWatcherHandler is called to create a ContextWatcherHandler for a connection. The handler is called
 	// when a context passed to a FbConn method is canceled.
@@ -290,12 +291,13 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 			//}
 			return true
 		},
-		AuthPluginList: pluginList,
-		WireCrypt:      convertToBool(settings["wire_crypt"], true),
-		SystemUser:     settings["system_user"],
-		SystemHost:     settings["system_host"],
-		ClientVersion:  settings["client_version"],
-		Encoding:       settings["encoding"],
+		AuthPluginList:             pluginList,
+		WireCrypt:                  convertToBool(settings["wire_crypt"], true),
+		SystemUser:                 settings["system_user"],
+		SystemHost:                 settings["system_host"],
+		ClientVersion:              settings["client_version"],
+		Encoding:                   settings["encoding"],
+		DefaultTransactionReadOnly: convertToBool(settings["default_transaction_read_only"], false),
 	}
 
 	if connectTimeoutSetting, present := settings["connect_timeout"]; present {
@@ -313,20 +315,21 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 	config.LookupFunc = makeDefaultResolver().LookupHost
 
 	notRuntimeParams := map[string]struct{}{
-		"host":             {},
-		"port":             {},
-		"database":         {},
-		"user":             {},
-		"password":         {},
-		"connect_timeout":  {},
-		"krbspn":           {},
-		"krbsrvname":       {},
-		"auth_plugin_list": {},
-		"system_user":      {},
-		"wire_crypt":       {},
-		"system_host":      {},
-		"client_version":   {},
-		"encoding":         {},
+		"host":                          {},
+		"port":                          {},
+		"database":                      {},
+		"user":                          {},
+		"password":                      {},
+		"connect_timeout":               {},
+		"krbspn":                        {},
+		"krbsrvname":                    {},
+		"auth_plugin_list":              {},
+		"system_user":                   {},
+		"wire_crypt":                    {},
+		"system_host":                   {},
+		"client_version":                {},
+		"encoding":                      {},
+		"default_transaction_read_only": {},
 	}
 
 	// Adding kerberos configuration
@@ -657,7 +660,7 @@ func ValidateConnectTargetSessionAttrsReadWrite(ctx context.Context, fbConn *FbC
 		return res.Err
 	}
 
-	if string(res.Rows[0][0]) == "1" {
+	if res.Rows[0][0][3] == 1 {
 		return errors.New("read only connection")
 	}
 
@@ -672,7 +675,7 @@ func ValidateConnectTargetSessionAttrsReadOnly(ctx context.Context, fbConn *FbCo
 		return res.Err
 	}
 
-	if string(res.Rows[0][0]) != "1" {
+	if res.Rows[0][0][3] != 1 {
 		return errors.New("connection is not read only")
 	}
 

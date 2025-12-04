@@ -465,7 +465,7 @@ func TestConnectWithValidateConnectTargetSessionAttrsReadWrite(t *testing.T) {
 	require.NoError(t, err)
 
 	config.ValidateConnect = fbconn.ValidateConnectTargetSessionAttrsReadWrite
-	config.RuntimeParams["default_transaction_read_only"] = "on"
+	config.DefaultTransactionReadOnly = true
 
 	conn, err := fbconn.ConnectConfig(ctx, config)
 	if !assert.NotNil(t, err) {

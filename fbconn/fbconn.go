@@ -653,6 +653,19 @@ connectLoop:
 	}
 
 	fbConn.status = connStatusIdle
+
+	if config.ValidateConnect != nil {
+		fbConn.contextWatcher.Unwatch()
+		err = config.ValidateConnect(ctx, fbConn)
+		if err != nil {
+			if _, ok := err.(*NotPreferredError); ignoreNotPreferredErr && ok {
+				return fbConn, nil
+			}
+			fbConn.conn.Close()
+			return nil, newPerDialConnectError("ValidateConnect failed", err)
+		}
+	}
+
 	return fbConn, nil
 }
 
@@ -2459,7 +2472,18 @@ func (s *pipelineState) ExpectedReadyForQuery() int {
 // ensureInternalTransaction starts internal transaction if not started yet and bind it to connection
 func (fbConn *FbConn) ensureInternalTransaction(ctx context.Context, tpb []byte) (*FBTransaction, error) {
 	if fbConn.internalTransaction == nil || fbConn.internalTransaction.Closed {
-		tx, err := fbConn.StartTransactionTPB(ctx, tpb)
+
+		var txTpb []byte
+		if tpb != nil {
+			txTpb = tpb
+		} else {
+			if fbConn.config.DefaultTransactionReadOnly {
+				w := fbproto.NewTPBWriterV3()
+				w.PutTag(fbproto.Isc_tpb_read)
+				txTpb = w.Bytes()
+			}
+		}
+		tx, err := fbConn.StartTransactionTPB(ctx, txTpb)
 		if err != nil {
 			return nil, err
 		}
