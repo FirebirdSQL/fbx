@@ -929,9 +929,9 @@ func TestResultReaderValuesHaveSameCapacityAsLength(t *testing.T) {
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
-	result := fbConn.ExecParams(ctx, "select $1::text as msg", [][]byte{[]byte("Hello, world")})
+	result := fbConn.ExecParams(ctx, "select cast(? as varchar) as msg from rdb$database", [][]byte{[]byte("Hello, world")})
 	require.Len(t, result.FieldDescriptions(), 1)
-	assert.Equal(t, "msg", result.FieldDescriptions()[0].Name)
+	assert.Equal(t, "MSG", result.FieldDescriptions()[0].Name)
 
 	rowCount := 0
 	for result.NextRow() {
@@ -941,7 +941,7 @@ func TestResultReaderValuesHaveSameCapacityAsLength(t *testing.T) {
 	}
 	assert.Equal(t, 1, rowCount)
 	commandTag, err := result.Close()
-	assert.Equal(t, "SELECT 1", commandTag.String())
+	assert.Equal(t, "SELECT", commandTag.String())
 	assert.NoError(t, err)
 
 	ensureConnValid(t, fbConn)
@@ -1376,8 +1376,8 @@ func TestConnLocking(t *testing.T) {
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
-	rr := fbConn.Exec(ctx, "select 'Hello, world' from rdb$database")
-	res := fbConn.Exec(ctx, "select 'Hello, world' from rdb$database").Read()
+	rr := fbConn.Exec(ctx, "select cast('Hello, world' as varchar) from rdb$database")
+	res := fbConn.Exec(ctx, "select cast('Hello, world' as varchar) from rdb$database").Read()
 	assert.Error(t, res.Err)
 	assert.Equal(t, "conn busy", res.Err.Error())
 	assert.True(t, fbconn.SafeToRetry(res.Err))
