@@ -806,11 +806,20 @@ func (r *Rows) Next(dest []driver.Value) error {
 					return d, nil
 				}
 			default:
-				var d string
-				scanPlan := m.PlanScan(dataTypeOID, fd.Subtype, fd.Length, fd.Scale, format, &d)
-				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
-					err := scanPlan.Scan(src, &d)
-					return d, err
+				if fd.Subtype != fbproto.CS_BINARY {
+					var d string
+					scanPlan := m.PlanScan(dataTypeOID, fd.Subtype, fd.Length, fd.Scale, format, &d)
+					r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
+						err := scanPlan.Scan(src, &d)
+						return d, err
+					}
+				} else {
+					var d []byte
+					scanPlan := m.PlanScan(dataTypeOID, fd.Subtype, fd.Length, fd.Scale, format, &d)
+					r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
+						err := scanPlan.Scan(src, &d)
+						return d, err
+					}
 				}
 			}
 		}
