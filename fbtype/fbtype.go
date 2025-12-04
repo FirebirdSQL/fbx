@@ -1309,7 +1309,7 @@ func (m *Map) planEncode(oid uint32, subType int32, length uint32, scale int32, 
 	}
 
 	if _, ok := value.(driver.Valuer); ok {
-		return &encodePlanDriverValuer{m: m, oid: oid, formatCode: format}
+		return &encodePlanDriverValuer{m: m, oid: oid, subType: subType, length: length, scale: scale, formatCode: format}
 	}
 
 	return nil
@@ -2003,7 +2003,7 @@ func newEncodeError(value any, m *Map, oid uint32, subType int32, formatCode int
 func (m *Map) Encode(oid uint32, subType int32, length uint32, scale int32, formatCode int16, value any, buf []byte) (newBuf []byte, err error) {
 	if isNil, callNilDriverValuer := isNilDriverValuer(value); isNil {
 		if callNilDriverValuer {
-			newBuf, err = (&encodePlanDriverValuer{m: m, oid: oid, formatCode: formatCode}).Encode(value, buf)
+			newBuf, err = (&encodePlanDriverValuer{m: m, oid: oid, subType: subType, length: length, scale: scale, formatCode: formatCode}).Encode(value, buf)
 			if err != nil {
 				return nil, newEncodeError(value, m, oid, subType, formatCode, err)
 			}
