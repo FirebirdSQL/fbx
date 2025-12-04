@@ -37,6 +37,10 @@ func CharacterSetIdIntoName(id int32) (cs string, err error) {
 	switch id {
 	case 0:
 		cs = "NONE"
+	case 1:
+		cs = "OCTETS"
+	case 2:
+		cs = "ASCII"
 	case 3:
 		cs = "UNICODE_FSS"
 	case 4:
@@ -63,6 +67,16 @@ func NewEncoding(charset string) (*Encoding, error) {
 		e.Decoder = NewDummyDecoder()
 		e.MaxBytesPerChar = 1
 		e.CharacterSetId = 0
+	case "OCTETS":
+		e.Encoder = NewDummyEncoder()
+		e.Decoder = NewDummyDecoder()
+		e.MaxBytesPerChar = 1
+		e.CharacterSetId = 1
+	case "ASCII":
+		e.Encoder = NewDummyEncoder()
+		e.Decoder = NewDummyDecoder()
+		e.MaxBytesPerChar = 1
+		e.CharacterSetId = 2
 	case "UNICODE_FSS":
 		e.Encoder = unicode.UTF8.NewEncoder()
 		e.Decoder = unicode.UTF8.NewDecoder()
