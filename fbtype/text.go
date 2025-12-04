@@ -84,11 +84,11 @@ func (dst *Text) UnmarshalJSON(b []byte) error {
 type TextCodec struct{}
 
 func (TextCodec) FormatSupported(format int16) bool {
-	return format == BinaryFormatCode
+	return format == TextFormatCode || format == BinaryFormatCode
 }
 
 func (TextCodec) PreferredFormat() int16 {
-	return BinaryFormatCode
+	return TextFormatCode
 }
 
 func (TextCodec) PlanEncode(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {

@@ -967,7 +967,7 @@ func (fbConn *FbConn) convertRowDescription(src []fbproto.FieldDescriptor) []Fie
 	for i := range src {
 		res[i].Index = src[i].Index
 		res[i].Type = uint32(src[i].Type)
-		res[i].Format = 1
+		res[i].Format = src[i].Format
 		res[i].Scale = int32(src[i].Scale)
 		res[i].Subtype = int32(src[i].Subtype)
 		res[i].Length = uint32(src[i].Length)
