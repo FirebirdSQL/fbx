@@ -15,7 +15,7 @@ func isExpectedEq(a any) func(any) bool {
 }
 
 func TestFloat8Transcode(t *testing.T) {
-	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "float8", []fbxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "float", []fbxtest.ValueRoundTripTest{
 		{
 			Param:  (zeronull.Float8)(1),
 			Result: new(zeronull.Float8),
