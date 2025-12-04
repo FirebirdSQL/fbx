@@ -5,9 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
-	"github.com/stretchr/testify/assert"
 )
 
 func isExpectedEqTime(a any) func(any) bool {
@@ -49,7 +50,7 @@ func TestDateCodecTextEncode(t *testing.T) {
 		{source: fbtype.Date{Time: time.Date(12200, 1, 2, 0, 0, 0, 0, time.UTC), Valid: true}, result: "12200-01-02"},
 	}
 	for i, tt := range successfulTests {
-		buf, err := m.Encode(fbtype.DateOID, fbtype.TextFormatCode, tt.source, nil)
+		buf, err := m.Encode(fbproto.SQL_TIME_TZ_EX, 0, 0, 0, fbtype.BinaryFormatCode, tt.source, nil)
 		assert.NoErrorf(t, err, "%d", i)
 		assert.Equalf(t, tt.result, string(buf), "%d", i)
 	}
