@@ -45,6 +45,8 @@ func CharacterSetIdIntoName(id int32) (cs string, err error) {
 		cs = "UNICODE_FSS"
 	case 4:
 		cs = "UTF8"
+	case 127:
+		cs = "CS_dynamic"
 	default:
 		return "", fmt.Errorf("unknown or unsupported charset id: %d", id)
 	}
@@ -82,7 +84,7 @@ func NewEncoding(charset string) (*Encoding, error) {
 		e.Decoder = unicode.UTF8.NewDecoder()
 		e.MaxBytesPerChar = 3
 		e.CharacterSetId = 3
-	case "UTF8":
+	case "UTF8", "CS_dynamic":
 		e.Encoder = unicode.UTF8.NewEncoder()
 		e.Decoder = unicode.UTF8.NewDecoder()
 		e.MaxBytesPerChar = 4
