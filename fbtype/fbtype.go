@@ -415,21 +415,39 @@ func (plan *scanPlanSQLScanner) Scan(src []byte, dst any) error {
 	}
 }
 
-type scanPlanString struct{}
+type scanPlanString struct {
+	typeId   uint32
+	length   uint32
+	encoding *fbproto.Encoding
+}
 
-func (scanPlanString) Scan(src []byte, dst any) error {
+func (s scanPlanString) Scan(src []byte, dst any) error {
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
+	var res string
+	if err := decodeFBString(src, s.typeId == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, res); err != nil {
+		return err
+	}
+
 	p := (dst).(*string)
-	*p = string(src)
+	*p = res
 	return nil
 }
 
-type scanPlanAnyTextToBytes struct{}
+type scanPlanAnyTextToBytes struct {
+	typeId   uint32
+	length   uint32
+	encoding *fbproto.Encoding
+}
 
-func (scanPlanAnyTextToBytes) Scan(src []byte, dst any) error {
+func (s scanPlanAnyTextToBytes) Scan(src []byte, dst any) error {
+	var res string
+	if err := decodeFBString(src, s.typeId == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, res); err != nil {
+		return err
+	}
+
 	dstBuf := dst.(*[]byte)
 	if src == nil {
 		*dstBuf = nil
@@ -1099,21 +1117,39 @@ func (m *Map) planScan(oid uint32, subType int32, length uint32, scale int32, fo
 	case BinaryFormatCode:
 		switch target.(type) {
 		case *string:
+			charsetId := CharacterSetForType(oid, subType, scale)
+			name, err := fbproto.CharacterSetIdIntoName(charsetId)
+			if err != nil {
+				return nil
+			}
+			encoding, err := fbproto.NewEncoding(name)
+			if err != nil {
+				return nil
+			}
+
 			switch oid {
-			case TextOID, VarcharOID:
-				return scanPlanString{}
+			case fbproto.SQL_TYPE_TEXT, fbproto.SQL_TYPE_VARYING:
+				return scanPlanString{typeId: oid, encoding: encoding, length: length}
 			}
 		}
 	case TextFormatCode:
+		charsetId := CharacterSetForType(oid, subType, scale)
+		name, err := fbproto.CharacterSetIdIntoName(charsetId)
+		if err != nil {
+			return nil
+		}
+		encoding, err := fbproto.NewEncoding(name)
+		if err != nil {
+			return nil
+		}
+
 		switch target.(type) {
 		case *string:
-			return scanPlanString{}
+			return scanPlanString{typeId: oid, encoding: encoding, length: length}
 		case *[]byte:
-			if oid != ByteaOID {
-				return scanPlanAnyTextToBytes{}
-			}
+			return scanPlanAnyTextToBytes{typeId: oid, encoding: encoding, length: length}
 		case TextScanner:
-			return scanPlanTextAnyToTextScanner{}
+			return scanPlanTextAnyToTextScanner{typeId: oid, encoding: encoding, length: length}
 		}
 	}
 
