@@ -3,7 +3,8 @@ package iobufpool_test
 import (
 	"testing"
 
-	"github.com/red-soft/fbx/internal/iobufpool"
+	"rdb.red-soft.ru/fbx/internal/iobufpool"
+
 	"github.com/stretchr/testify/assert"
 )
 

@@ -3,7 +3,7 @@ package fbconn_test
 import (
 	"testing"
 
-	"github.com/red-soft/fbx/fbconn"
+	"rdb.red-soft.ru/fbx/fbconn"
 	"github.com/stretchr/testify/assert"
 )
 

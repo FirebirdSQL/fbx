@@ -5,8 +5,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/red-soft/fbx"
-	"github.com/red-soft/fbx/fbxpool"
+	"rdb.red-soft.ru/fbx"
+	"rdb.red-soft.ru/fbx/fbxpool"
 	"github.com/stretchr/testify/require"
 )
 

@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/red-soft/fbx"
+	"rdb.red-soft.ru/fbx"
 )
 
 func skipCockroachDB(t testing.TB, msg string) {

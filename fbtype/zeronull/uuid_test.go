@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/red-soft/fbx/fbtype/zeronull"
-	"github.com/red-soft/fbx/fbxtest"
+	"rdb.red-soft.ru/fbx/fbtype/zeronull"
+	"rdb.red-soft.ru/fbx/fbxtest"
 )
 
 func TestUUIDTranscode(t *testing.T) {

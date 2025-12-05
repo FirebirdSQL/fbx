@@ -3,7 +3,7 @@ package fbxpool
 import (
 	"context"
 
-	"github.com/red-soft/fbx"
+	"rdb.red-soft.ru/fbx"
 )
 
 // AcquireTracer traces Acquire.

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/red-soft/fbx/internal/pgio"
+	"rdb.red-soft.ru/fbx/internal/pgio"
 )
 
 // Information on the internals of PostgreSQL arrays can be found in

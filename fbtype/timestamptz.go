@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/red-soft/fbx/internal/pgio"
+	"rdb.red-soft.ru/fbx/internal/pgio"
 )
 
 const pgTimestamptzHourFormat = "2006-01-02 15:04:05.999999999Z07"

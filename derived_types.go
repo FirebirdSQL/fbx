@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/red-soft/fbx/fbtype"
+	"rdb.red-soft.ru/fbx/fbtype"
 )
 
 /*

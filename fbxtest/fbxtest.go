@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/red-soft/fbx"
+	"rdb.red-soft.ru/fbx"
 	"github.com/stretchr/testify/require"
 )
 

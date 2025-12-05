@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/red-soft/fbx"
-	"github.com/red-soft/fbx/fbconn"
-	"github.com/red-soft/fbx/fbxpool"
+	"rdb.red-soft.ru/fbx"
+	"rdb.red-soft.ru/fbx/fbconn"
+	"rdb.red-soft.ru/fbx/fbxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

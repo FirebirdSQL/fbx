@@ -3,7 +3,7 @@ package stmtcache
 import (
 	"math"
 
-	"github.com/red-soft/fbx/fbconn"
+	"rdb.red-soft.ru/fbx/fbconn"
 )
 
 // UnlimitedCache implements Cache with no capacity limit.

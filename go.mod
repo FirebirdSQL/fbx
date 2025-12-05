@@ -1,4 +1,4 @@
-module github.com/red-soft/fbx
+module rdb.red-soft.ru/fbx
 
 go 1.24.2
 

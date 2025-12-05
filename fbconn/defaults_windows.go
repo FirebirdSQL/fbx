@@ -4,7 +4,7 @@ import (
 	"os/user"
 	"strings"
 
-	"github.com/red-soft/fbx/fbproto/auth"
+	"rdb.red-soft.ru/fbx/fbproto/auth"
 )
 
 func defaultSettings() map[string]string {

@@ -16,12 +16,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/red-soft/fbx"
-	"github.com/red-soft/fbx/fbconn"
-	"github.com/red-soft/fbx/fbtype"
-	"github.com/red-soft/fbx/fbxpool"
-	"github.com/red-soft/fbx/stdlib"
-	"github.com/red-soft/fbx/tracelog"
+	"rdb.red-soft.ru/fbx"
+	"rdb.red-soft.ru/fbx/fbconn"
+	"rdb.red-soft.ru/fbx/fbtype"
+	"rdb.red-soft.ru/fbx/fbxpool"
+	"rdb.red-soft.ru/fbx/stdlib"
+	"rdb.red-soft.ru/fbx/tracelog"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

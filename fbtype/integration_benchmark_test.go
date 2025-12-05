@@ -6,8 +6,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/red-soft/fbx"
-	"github.com/red-soft/fbx/fbtype"
+	"rdb.red-soft.ru/fbx"
+	"rdb.red-soft.ru/fbx/fbtype"
 )
 
 func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_int16_1_rows_1_columns(b *testing.B) {

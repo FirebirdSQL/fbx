@@ -5,7 +5,7 @@ import (
 	"errors"
 	"io"
 
-	"github.com/red-soft/fbx/fbtype"
+	"rdb.red-soft.ru/fbx/fbtype"
 )
 
 // The PostgreSQL wire protocol has a limit of 1 GB - 1 per message. See definition of

@@ -5,7 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 
-	"github.com/red-soft/fbx/fbconn"
+	"rdb.red-soft.ru/fbx/fbconn"
 )
 
 // StatementName returns a statement name that will be stable for sql across multiple connections and program

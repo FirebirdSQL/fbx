@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/red-soft/fbx/fbconn/ctxwatch"
+	"rdb.red-soft.ru/fbx/fbconn/ctxwatch"
 	"github.com/stretchr/testify/require"
 )
 

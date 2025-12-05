@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/red-soft/fbx/fbconn"
-	"github.com/red-soft/fbx/fbtype"
+	"rdb.red-soft.ru/fbx/fbconn"
+	"rdb.red-soft.ru/fbx/fbtype"
 )
 
 // Rows is the result set returned from *Conn.Query. Rows must be closed before

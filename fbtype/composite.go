@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/red-soft/fbx/internal/pgio"
+	"rdb.red-soft.ru/fbx/internal/pgio"
 )
 
 // CompositeIndexGetter is a type accessed by index that can be converted into a PostgreSQL composite.

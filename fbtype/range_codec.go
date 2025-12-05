@@ -4,7 +4,7 @@ import (
 	"database/sql/driver"
 	"fmt"
 
-	"github.com/red-soft/fbx/internal/pgio"
+	"rdb.red-soft.ru/fbx/internal/pgio"
 )
 
 // RangeValuer is a type that can be converted into a PostgreSQL range.

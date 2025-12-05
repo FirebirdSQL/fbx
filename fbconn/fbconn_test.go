@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/red-soft/fbx/fbconn"
-	"github.com/red-soft/fbx/fbconn/ctxwatch"
-	"github.com/red-soft/fbx/fbproto"
-	"github.com/red-soft/fbx/fbtype"
+	"rdb.red-soft.ru/fbx/fbconn"
+	"rdb.red-soft.ru/fbx/fbconn/ctxwatch"
+	"rdb.red-soft.ru/fbx/fbproto"
+	"rdb.red-soft.ru/fbx/fbtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

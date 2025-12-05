@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/red-soft/fbx/fbproto"
+	"rdb.red-soft.ru/fbx/fbproto"
 )
 
 // SafeToRetry checks if the err is guaranteed to have occurred before sending any data to the server.

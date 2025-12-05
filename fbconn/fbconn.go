@@ -19,11 +19,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/red-soft/fbx/fbconn/ctxwatch"
-	"github.com/red-soft/fbx/fbconn/internal/bgreader"
-	"github.com/red-soft/fbx/fbproto"
-	"github.com/red-soft/fbx/fbproto/auth"
-	"github.com/red-soft/fbx/fbproto/wirecrypt"
+	"rdb.red-soft.ru/fbx/fbconn/ctxwatch"
+	"rdb.red-soft.ru/fbx/fbconn/internal/bgreader"
+	"rdb.red-soft.ru/fbx/fbproto"
+	"rdb.red-soft.ru/fbx/fbproto/auth"
+	"rdb.red-soft.ru/fbx/fbproto/wirecrypt"
 )
 
 // Debug printing for authentication handshake. Enable by setting

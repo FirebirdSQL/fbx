@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/red-soft/fbx/fbconn"
-	"github.com/red-soft/fbx/fbproto/auth"
+	"rdb.red-soft.ru/fbx/fbconn"
+	"rdb.red-soft.ru/fbx/fbproto/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

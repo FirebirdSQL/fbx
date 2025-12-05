@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/red-soft/fbx/fbconn"
-	"github.com/red-soft/fbx/fbtype"
-	"github.com/red-soft/fbx/internal/stmtcache"
+	"rdb.red-soft.ru/fbx/fbconn"
+	"rdb.red-soft.ru/fbx/fbtype"
+	"rdb.red-soft.ru/fbx/internal/stmtcache"
 )
 
 // ConnConfig contains all the options used to establish a connection. It must be created by ParseConfig and

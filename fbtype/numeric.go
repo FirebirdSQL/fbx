@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/red-soft/fbx/internal/pgio"
+	"rdb.red-soft.ru/fbx/internal/pgio"
 )
 
 // PostgreSQL internal numeric storage uses 16-bit "digits" with base of 10,000

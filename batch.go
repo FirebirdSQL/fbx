@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/red-soft/fbx/fbconn"
+	"rdb.red-soft.ru/fbx/fbconn"
 )
 
 // QueuedQuery is a query that has been queued for execution via a Batch.

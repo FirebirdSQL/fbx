@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/red-soft/fbx"
+	"rdb.red-soft.ru/fbx"
 )
 
 type Player struct {

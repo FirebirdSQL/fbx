@@ -3,8 +3,8 @@ package fbx
 import (
 	"fmt"
 
-	"github.com/red-soft/fbx/fbconn"
-	"github.com/red-soft/fbx/fbtype"
+	"rdb.red-soft.ru/fbx/fbconn"
+	"rdb.red-soft.ru/fbx/fbtype"
 )
 
 // ExtendedQueryBuilder is used to choose the parameter formats, to format the parameters and to choose the result

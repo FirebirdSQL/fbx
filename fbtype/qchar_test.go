@@ -5,7 +5,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/red-soft/fbx/fbxtest"
+	"rdb.red-soft.ru/fbx/fbxtest"
 )
 
 func TestQcharTranscode(t *testing.T) {

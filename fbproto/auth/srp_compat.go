@@ -9,7 +9,7 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/red-soft/fbx/fbproto/utils"
+	"rdb.red-soft.ru/fbx/fbproto/utils"
 )
 
 func GetClientSeed() (public, private *big.Int) {

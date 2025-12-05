@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/red-soft/fbx/fbtype"
-	"github.com/red-soft/fbx/fbxtest"
+	"rdb.red-soft.ru/fbx/fbtype"
+	"rdb.red-soft.ru/fbx/fbxtest"
 )
 
 func TestTIDCodec(t *testing.T) {

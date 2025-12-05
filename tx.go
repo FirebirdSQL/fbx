@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/red-soft/fbx/fbconn"
-	"github.com/red-soft/fbx/fbproto"
+	"rdb.red-soft.ru/fbx/fbconn"
+	"rdb.red-soft.ru/fbx/fbproto"
 )
 
 // TxIsoLevel is the transaction isolation level (serializable, repeatable read, read committed or read uncommitted)

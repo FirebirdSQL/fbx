@@ -7,8 +7,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/red-soft/fbx/fbtype"
-	"github.com/red-soft/fbx/fbxtest"
+	"rdb.red-soft.ru/fbx/fbtype"
+	"rdb.red-soft.ru/fbx/fbxtest"
 )
 
 func TestInt2Codec(t *testing.T) {

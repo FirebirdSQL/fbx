@@ -3,7 +3,7 @@ package fbconn
 import (
 	"fmt"
 
-	"github.com/red-soft/fbx/fbproto"
+	"rdb.red-soft.ru/fbx/fbproto"
 )
 
 type StatementInfo struct {

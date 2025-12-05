@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/jackc/puddle/v2"
-	"github.com/red-soft/fbx"
-	"github.com/red-soft/fbx/fbconn"
+	"rdb.red-soft.ru/fbx"
+	"rdb.red-soft.ru/fbx/fbconn"
 )
 
 var defaultMaxConns = int32(4)

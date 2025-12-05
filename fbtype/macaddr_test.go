@@ -6,7 +6,7 @@ import (
 	"net"
 	"testing"
 
-	"github.com/red-soft/fbx/fbxtest"
+	"rdb.red-soft.ru/fbx/fbxtest"
 )
 
 func isExpectedEqHardwareAddr(a any) func(any) bool {

@@ -10,8 +10,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/red-soft/fbx"
-	"github.com/red-soft/fbx/fbxpool"
+	"rdb.red-soft.ru/fbx"
+	"rdb.red-soft.ru/fbx/fbxpool"
 )
 
 // LogLevel represents the fbx logging level. See LogLevel* constants for

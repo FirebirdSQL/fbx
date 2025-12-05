@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/red-soft/fbx"
-	"github.com/red-soft/fbx/fbtype"
+	"rdb.red-soft.ru/fbx"
+	"rdb.red-soft.ru/fbx/fbtype"
 )
 
 // Point represents a point that may be null.

@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/red-soft/fbx/fbproto"
-	"github.com/red-soft/fbx/fbproto/utils"
-	"github.com/red-soft/fbx/fbproto/vax"
+	"rdb.red-soft.ru/fbx/fbproto"
+	"rdb.red-soft.ru/fbx/fbproto/utils"
+	"rdb.red-soft.ru/fbx/fbproto/vax"
 )
 
 type ServerInfoBufferReader struct {

@@ -5,9 +5,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/red-soft/fbx"
-	"github.com/red-soft/fbx/fbtype/zeronull"
-	"github.com/red-soft/fbx/fbxtest"
+	"rdb.red-soft.ru/fbx"
+	"rdb.red-soft.ru/fbx/fbtype/zeronull"
+	"rdb.red-soft.ru/fbx/fbxtest"
 	"github.com/stretchr/testify/require"
 )
 

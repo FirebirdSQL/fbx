@@ -3,8 +3,8 @@ package fbxpool
 import (
 	"context"
 
-	"github.com/red-soft/fbx"
-	"github.com/red-soft/fbx/fbconn"
+	"rdb.red-soft.ru/fbx"
+	"rdb.red-soft.ru/fbx/fbconn"
 )
 
 // Tx represents a database transaction acquired from a Pool.

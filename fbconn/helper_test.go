@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/red-soft/fbx/fbconn"
+	"rdb.red-soft.ru/fbx/fbconn"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

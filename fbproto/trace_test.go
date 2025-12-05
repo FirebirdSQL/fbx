@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/red-soft/fbx/fbconn"
-	"github.com/red-soft/fbx/fbproto"
+	"rdb.red-soft.ru/fbx/fbconn"
+	"rdb.red-soft.ru/fbx/fbproto"
 	"github.com/stretchr/testify/require"
 )
 

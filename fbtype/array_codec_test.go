@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/red-soft/fbx"
-	"github.com/red-soft/fbx/fbtype"
-	"github.com/red-soft/fbx/fbxtest"
+	"rdb.red-soft.ru/fbx"
+	"rdb.red-soft.ru/fbx/fbtype"
+	"rdb.red-soft.ru/fbx/fbxtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

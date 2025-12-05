@@ -3,8 +3,8 @@ package fbx
 import (
 	"errors"
 
-	"github.com/red-soft/fbx/fbtype"
-	"github.com/red-soft/fbx/internal/pgio"
+	"rdb.red-soft.ru/fbx/fbtype"
+	"rdb.red-soft.ru/fbx/internal/pgio"
 )
 
 // PostgreSQL format codes

@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/red-soft/fbx/internal/pgio"
+	"rdb.red-soft.ru/fbx/internal/pgio"
 )
 
 type BoxScanner interface {

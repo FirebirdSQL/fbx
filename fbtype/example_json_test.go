@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/red-soft/fbx"
+	"rdb.red-soft.ru/fbx"
 )
 
 func Example_json() {

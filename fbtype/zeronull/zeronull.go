@@ -1,7 +1,7 @@
 package zeronull
 
 import (
-	"github.com/red-soft/fbx/fbtype"
+	"rdb.red-soft.ru/fbx/fbtype"
 )
 
 // Register registers the zeronull types so they can be used in query exec modes that do not know the server OIDs.

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/red-soft/fbx/fbtype"
+	"rdb.red-soft.ru/fbx/fbtype"
 )
 
 type Timestamp time.Time

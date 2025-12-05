@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/red-soft/fbx/fbproto"
+	"rdb.red-soft.ru/fbx/fbproto"
 )
 
 var (

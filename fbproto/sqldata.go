@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/red-soft/fbx/fbproto/utils"
+	"rdb.red-soft.ru/fbx/fbproto/utils"
 )
 
 type SQLData struct {

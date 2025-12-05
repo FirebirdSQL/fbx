@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/red-soft/fbx/fbtype"
+	"rdb.red-soft.ru/fbx/fbtype"
 )
 
 type Int2 int16

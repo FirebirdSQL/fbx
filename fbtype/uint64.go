@@ -7,7 +7,7 @@ import (
 	"math"
 	"strconv"
 
-	"github.com/red-soft/fbx/internal/pgio"
+	"rdb.red-soft.ru/fbx/internal/pgio"
 )
 
 type Uint64Scanner interface {

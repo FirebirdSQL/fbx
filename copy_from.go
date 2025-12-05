@@ -3,7 +3,7 @@ package fbx
 import (
 	"context"
 
-	"github.com/red-soft/fbx/fbconn"
+	"rdb.red-soft.ru/fbx/fbconn"
 )
 
 // CopyFromRows returns a CopyFromSource interface over the provided rows slice

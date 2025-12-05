@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/red-soft/fbx/fbproto"
+	"rdb.red-soft.ru/fbx/fbproto"
 )
 
 type FBTransaction struct {

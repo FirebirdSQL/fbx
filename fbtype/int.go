@@ -10,7 +10,7 @@ import (
 	"math"
 	"strconv"
 
-	"github.com/red-soft/fbx/internal/pgio"
+	"rdb.red-soft.ru/fbx/internal/pgio"
 )
 
 type Int64Scanner interface {

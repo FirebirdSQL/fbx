@@ -3,7 +3,7 @@ package zeronull
 import (
 	"database/sql/driver"
 
-	"github.com/red-soft/fbx/fbtype"
+	"rdb.red-soft.ru/fbx/fbtype"
 )
 
 type Float8 float64

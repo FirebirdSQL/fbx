@@ -3,7 +3,7 @@ package stmtcache
 import (
 	"container/list"
 
-	"github.com/red-soft/fbx/fbconn"
+	"rdb.red-soft.ru/fbx/fbconn"
 )
 
 // LRUCache implements Cache with a Least Recently Used (LRU) cache.

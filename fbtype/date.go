@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/red-soft/fbx/internal/pgio"
+	"rdb.red-soft.ru/fbx/internal/pgio"
 )
 
 type DateScanner interface {

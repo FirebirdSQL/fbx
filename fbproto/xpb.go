@@ -1,6 +1,6 @@
 package fbproto
 
-import "github.com/red-soft/fbx/fbproto/utils"
+import "rdb.red-soft.ru/fbx/fbproto/utils"
 
 const xpbPreallocBufSize = 16
 
