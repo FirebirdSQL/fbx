@@ -189,7 +189,7 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 		return rr
 	}
 
-	if err = st.conn.writer.Flush(); err != nil {
+	if err = st.conn.flushWithPotentialWriteReadDeadlock(); err != nil {
 		st.conn.asyncClose()
 		rr.concludeCommand(QueryStatus{}, err)
 		st.conn.contextWatcher.Unwatch()
@@ -305,7 +305,7 @@ func (st *Statement) internalClose(ctx context.Context, closeOption int) error {
 	}
 
 	if closeOption == fbproto.DSQL_drop {
-		if err = st.conn.writer.Flush(); err != nil {
+		if err = st.conn.flushWithPotentialWriteReadDeadlock(); err != nil {
 			st.conn.asyncClose()
 			return err
 		}

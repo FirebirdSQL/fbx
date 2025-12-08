@@ -47,7 +47,7 @@ func (tx *FBTransaction) Commit(ctx context.Context) error {
 		return err
 	}
 
-	if err = tx.Connection.writer.Flush(); err != nil {
+	if err = tx.Connection.flushWithPotentialWriteReadDeadlock(); err != nil {
 		tx.Connection.asyncClose()
 		return err
 	}
@@ -98,7 +98,7 @@ func (tx *FBTransaction) Rollback(ctx context.Context) error {
 		return err
 	}
 
-	if err = tx.Connection.writer.Flush(); err != nil {
+	if err = tx.Connection.flushWithPotentialWriteReadDeadlock(); err != nil {
 		tx.Connection.asyncClose()
 		return err
 	}

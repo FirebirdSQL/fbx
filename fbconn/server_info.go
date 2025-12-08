@@ -134,7 +134,7 @@ func (fbConn *FbConn) getServerInfo(msgBuilder func() fbproto.ClientMessage, tru
 		if err = fbConn.client.WriteMessage(msgBuilder()); err != nil {
 			return err
 		}
-		if err = fbConn.writer.Flush(); err != nil {
+		if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
 			return err
 		}
 

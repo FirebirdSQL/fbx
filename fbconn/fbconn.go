@@ -507,7 +507,7 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 
 connectLoop:
 	for {
-		if err = fbConn.writer.Flush(); err != nil {
+		if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
 			fbConn.conn.Close()
 			return nil, newPerDialConnectError("failed to flush opConnect", err)
 		}
@@ -628,7 +628,7 @@ connectLoop:
 		fbConn.conn.Close()
 		return nil, newPerDialConnectError("failed to send opAttach", err)
 	}
-	if err = fbConn.writer.Flush(); err != nil {
+	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
 		fbConn.conn.Close()
 		return nil, newPerDialConnectError("failed to flush opAttach", err)
 	}
@@ -1042,7 +1042,7 @@ func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 		fbConn.asyncClose()
 		return nil, err
 	}
-	if err = fbConn.writer.Flush(); err != nil {
+	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
 		fbConn.asyncClose()
 		return nil, err
 	}
@@ -1199,7 +1199,7 @@ func (fbConn *FbConn) ExecImmediateTx(ctx context.Context, tx *FBTransaction, sq
 		return err
 	}
 
-	if err = fbConn.writer.Flush(); err != nil {
+	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
 		fbConn.asyncClose()
 		return err
 	}
@@ -1369,7 +1369,7 @@ func (fbConn *FbConn) Disconnect(ctx context.Context) error {
 		return err
 	}
 
-	if err = fbConn.writer.Flush(); err != nil {
+	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
 		fbConn.conn.Close()
 		return err
 	}
@@ -1483,7 +1483,7 @@ func (rr *ResultReader) NextRow() bool {
 	}); err != nil {
 		return false
 	}
-	if err = rr.fbConn.writer.Flush(); err != nil {
+	if err = rr.fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
 		return false
 	}
 	rr.fetchExecuted = true
@@ -1668,7 +1668,7 @@ func (fbConn *FbConn) Ping(ctx context.Context) error {
 		return err
 	}
 
-	if err = fbConn.writer.Flush(); err != nil {
+	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
 		fbConn.conn.Close()
 		return err
 	}
@@ -1710,16 +1710,16 @@ func (fbConn *FbConn) enterPotentialWriteReadDeadlock() {
 
 // exitPotentialWriteReadDeadlock must be called after a call to enterPotentialWriteReadDeadlock.
 func (fbConn *FbConn) exitPotentialWriteReadDeadlock() {
-	//if !fbConn.slowWriteTimer.Stop() {
-	//	// The timer starts its function in a separate goroutine. It is necessary to ensure the background reader has
-	//	// started before calling Stop. Otherwise, the background reader may not be stopped. That on its own is not a
-	//	// serious problem. But what is a serious problem is that the background reader may start at an inopportune time in
-	//	// a subsequent query. For example, if a subsequent query was canceled then a deadline may be set on the net.Conn to
-	//	// interrupt an in-progress read. After the read is interrupted, but before the deadline is cleared, the background
-	//	// reader could start and read a deadline error. Then the next query would receive the an unexpected deadline error.
-	//	<-fbConn.bgReaderStarted
-	//	fbConn.bgReader.Stop()
-	//}
+	if !fbConn.slowWriteTimer.Stop() {
+		// The timer starts its function in a separate goroutine. It is necessary to ensure the background reader has
+		// started before calling Stop. Otherwise, the background reader may not be stopped. That on its own is not a
+		// serious problem. But what is a serious problem is that the background reader may start at an inopportune time in
+		// a subsequent query. For example, if a subsequent query was canceled then a deadline may be set on the net.Conn to
+		// interrupt an in-progress read. After the read is interrupted, but before the deadline is cleared, the background
+		// reader could start and read a deadline error. Then the next query would receive the an unexpected deadline error.
+		<-fbConn.bgReaderStarted
+		fbConn.bgReader.Stop()
+	}
 }
 
 func (fbConn *FbConn) flushWithPotentialWriteReadDeadlock() error {
@@ -1893,7 +1893,7 @@ func (fbConn *FbConn) StartTransactionTPB(ctx context.Context, tpb []byte) (*FBT
 		return nil, err
 	}
 
-	if err = fbConn.writer.Flush(); err != nil {
+	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
 		return nil, err
 	}
 
