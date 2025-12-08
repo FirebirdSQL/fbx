@@ -60,39 +60,3 @@ func TestTxQueryRow(t *testing.T) {
 
 	testQueryRow(t, ctx, tx)
 }
-
-func TestTxSendBatch(t *testing.T) {
-	t.Skip("need implementation")
-	t.Parallel()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	pool, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
-	require.NoError(t, err)
-	defer pool.Close()
-
-	tx, err := pool.Begin(ctx)
-	require.NoError(t, err)
-	defer tx.Rollback(ctx)
-
-	testSendBatch(t, ctx, tx)
-}
-
-func TestTxCopyFrom(t *testing.T) {
-	t.Skip("need implementation")
-	t.Parallel()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	pool, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
-	require.NoError(t, err)
-	defer pool.Close()
-
-	tx, err := pool.Begin(ctx)
-	require.NoError(t, err)
-	defer tx.Rollback(ctx)
-
-	testCopyFrom(t, ctx, tx)
-}

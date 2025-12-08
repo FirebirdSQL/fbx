@@ -43,14 +43,6 @@ func (tx *Tx) Rollback(ctx context.Context) error {
 	return err
 }
 
-func (tx *Tx) CopyFrom(ctx context.Context, tableName fbx.Identifier, columnNames []string, rowSrc fbx.CopyFromSource) (int64, error) {
-	return tx.t.CopyFrom(ctx, tableName, columnNames, rowSrc)
-}
-
-func (tx *Tx) SendBatch(ctx context.Context, b *fbx.Batch) fbx.BatchResults {
-	return tx.t.SendBatch(ctx, b)
-}
-
 func (tx *Tx) LargeObjects() fbx.LargeObjects {
 	return tx.t.LargeObjects()
 }

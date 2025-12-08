@@ -123,8 +123,6 @@ type Tx interface {
 	// being closed.
 	Rollback(ctx context.Context) error
 
-	CopyFrom(ctx context.Context, tableName Identifier, columnNames []string, rowSrc CopyFromSource) (int64, error)
-	SendBatch(ctx context.Context, b *Batch) BatchResults
 	LargeObjects() LargeObjects
 
 	Prepare(ctx context.Context, name, sql string) (*fbconn.StatementDescription, error)
@@ -233,24 +231,6 @@ func (tx *dbTx) QueryRow(ctx context.Context, sql string, args ...any) Row {
 	return (*connRow)(rows.(*baseRows))
 }
 
-// CopyFrom delegates to the underlying *Conn
-func (tx *dbTx) CopyFrom(ctx context.Context, tableName Identifier, columnNames []string, rowSrc CopyFromSource) (int64, error) {
-	if tx.closed {
-		return 0, ErrTxClosed
-	}
-
-	return tx.conn.CopyFrom(ctx, tableName, columnNames, rowSrc)
-}
-
-// SendBatch delegates to the underlying *Conn
-func (tx *dbTx) SendBatch(ctx context.Context, b *Batch) BatchResults {
-	if tx.closed {
-		return &batchResults{err: ErrTxClosed}
-	}
-
-	return tx.conn.SendBatch(ctx, b)
-}
-
 // LargeObjects returns a LargeObjects instance for the transaction.
 func (tx *dbTx) LargeObjects() LargeObjects {
 	return LargeObjects{tx: tx}
@@ -333,24 +313,6 @@ func (sp *dbSimulatedNestedTx) Query(ctx context.Context, sql string, args ...an
 func (sp *dbSimulatedNestedTx) QueryRow(ctx context.Context, sql string, args ...any) Row {
 	rows, _ := sp.Query(ctx, sql, args...)
 	return (*connRow)(rows.(*baseRows))
-}
-
-// CopyFrom delegates to the underlying *Conn
-func (sp *dbSimulatedNestedTx) CopyFrom(ctx context.Context, tableName Identifier, columnNames []string, rowSrc CopyFromSource) (int64, error) {
-	if sp.closed {
-		return 0, ErrTxClosed
-	}
-
-	return sp.tx.CopyFrom(ctx, tableName, columnNames, rowSrc)
-}
-
-// SendBatch delegates to the underlying *Conn
-func (sp *dbSimulatedNestedTx) SendBatch(ctx context.Context, b *Batch) BatchResults {
-	if sp.closed {
-		return &batchResults{err: ErrTxClosed}
-	}
-
-	return sp.tx.SendBatch(ctx, b)
 }
 
 func (sp *dbSimulatedNestedTx) LargeObjects() LargeObjects {

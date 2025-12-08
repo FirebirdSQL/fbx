@@ -10,13 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbxpool"
 	"rdb.red-soft.ru/fbx/fbxtest"
 	"rdb.red-soft.ru/fbx/tracelog"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"golang.org/x/sync/errgroup"
 )
 
 var defaultConnTestRunner fbxtest.ConnTestRunner
@@ -231,62 +230,6 @@ func TestLogQueryArgsHandlesUTF8(t *testing.T) {
 	})
 }
 
-func TestLogCopyFrom(t *testing.T) {
-	t.Skip("CopyFrom is not supported for Firebird driver yet")
-	t.Parallel()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	logger := &testLogger{}
-	tracer := &tracelog.TraceLog{
-		Logger:   logger,
-		LogLevel: tracelog.LogLevelTrace,
-	}
-
-	ctr := defaultConnTestRunner
-	ctr.CreateConfig = func(ctx context.Context, t testing.TB) *fbx.ConnConfig {
-		config := defaultConnTestRunner.CreateConfig(ctx, t)
-		config.Tracer = tracer
-		return config
-	}
-
-	fbxtest.RunWithQueryExecModes(ctx, t, ctr, fbxtest.KnownOIDQueryExecModes, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		_, err := conn.Exec(ctx, `create temporary table foo(a int4)`)
-		require.NoError(t, err)
-
-		logger.Clear()
-
-		inputRows := [][]any{
-			{int32(1)},
-			{nil},
-		}
-
-		copyCount, err := conn.CopyFrom(ctx, fbx.Identifier{"foo"}, []string{"a"}, fbx.CopyFromRows(inputRows))
-		require.NoError(t, err)
-		require.EqualValues(t, len(inputRows), copyCount)
-
-		logs := logger.FilterByMsg("CopyFrom")
-		require.Len(t, logs, 1)
-		require.Equal(t, tracelog.LogLevelInfo, logs[0].lvl)
-
-		logger.Clear()
-
-		inputRows = [][]any{
-			{"not an integer"},
-			{nil},
-		}
-
-		copyCount, err = conn.CopyFrom(ctx, fbx.Identifier{"foo"}, []string{"a"}, fbx.CopyFromRows(inputRows))
-		require.Error(t, err)
-		require.EqualValues(t, 0, copyCount)
-
-		logs = logger.FilterByMsg("CopyFrom")
-		require.Len(t, logs, 1)
-		require.Equal(t, tracelog.LogLevelError, logs[0].lvl)
-	})
-}
-
 func TestLogConnect(t *testing.T) {
 	t.Parallel()
 
@@ -321,94 +264,6 @@ func TestLogConnect(t *testing.T) {
 	require.Len(t, logger.logs, 1)
 	require.Equal(t, "Connect", logger.logs[0].msg)
 	require.Equal(t, tracelog.LogLevelError, logger.logs[0].lvl)
-}
-
-func TestLogBatchStatementsOnExec(t *testing.T) {
-	t.Skip("need implementation")
-	t.Parallel()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	logger := &testLogger{}
-	tracer := &tracelog.TraceLog{
-		Logger:   logger,
-		LogLevel: tracelog.LogLevelTrace,
-	}
-
-	ctr := defaultConnTestRunner
-	ctr.CreateConfig = func(ctx context.Context, t testing.TB) *fbx.ConnConfig {
-		config := defaultConnTestRunner.CreateConfig(ctx, t)
-		config.Tracer = tracer
-		return config
-	}
-
-	fbxtest.RunWithQueryExecModes(ctx, t, ctr, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		logger.Clear() // Clear any logs written when establishing connection
-
-		batch := &fbx.Batch{}
-		batch.Queue("create table foo (id bigint)")
-		batch.Queue("drop table foo")
-
-		br := conn.SendBatch(ctx, batch)
-
-		_, err := br.Exec()
-		require.NoError(t, err)
-
-		_, err = br.Exec()
-		require.NoError(t, err)
-
-		err = br.Close()
-		require.NoError(t, err)
-
-		require.Len(t, logger.logs, 3)
-		assert.Equal(t, "BatchQuery", logger.logs[0].msg)
-		assert.Equal(t, "create table foo (id bigint)", logger.logs[0].data["sql"])
-		assert.Equal(t, "BatchQuery", logger.logs[1].msg)
-		assert.Equal(t, "drop table foo", logger.logs[1].data["sql"])
-		assert.Equal(t, "BatchClose", logger.logs[2].msg)
-
-	})
-}
-
-func TestLogBatchStatementsOnBatchResultClose(t *testing.T) {
-	t.Skip("need implementation")
-	t.Parallel()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	logger := &testLogger{}
-	tracer := &tracelog.TraceLog{
-		Logger:   logger,
-		LogLevel: tracelog.LogLevelTrace,
-	}
-
-	ctr := defaultConnTestRunner
-	ctr.CreateConfig = func(ctx context.Context, t testing.TB) *fbx.ConnConfig {
-		config := defaultConnTestRunner.CreateConfig(ctx, t)
-		config.Tracer = tracer
-		return config
-	}
-
-	fbxtest.RunWithQueryExecModes(ctx, t, ctr, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		logger.Clear() // Clear any logs written when establishing connection
-
-		batch := &fbx.Batch{}
-		batch.Queue("select generate_series(1,$1)", 100)
-		batch.Queue("select 1 = 1;")
-
-		br := conn.SendBatch(ctx, batch)
-		err := br.Close()
-		require.NoError(t, err)
-
-		require.Len(t, logger.logs, 3)
-		assert.Equal(t, "BatchQuery", logger.logs[0].msg)
-		assert.Equal(t, "select generate_series(1,$1)", logger.logs[0].data["sql"])
-		assert.Equal(t, "BatchQuery", logger.logs[1].msg)
-		assert.Equal(t, "select 1 = 1;", logger.logs[1].data["sql"])
-		assert.Equal(t, "BatchClose", logger.logs[2].msg)
-	})
 }
 
 func TestLogAcquire(t *testing.T) {

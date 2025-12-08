@@ -95,14 +95,6 @@ func (c *Conn) QueryRow(ctx context.Context, sql string, args ...any) fbx.Row {
 	return c.Conn().QueryRow(ctx, sql, args...)
 }
 
-func (c *Conn) SendBatch(ctx context.Context, b *fbx.Batch) fbx.BatchResults {
-	return c.Conn().SendBatch(ctx, b)
-}
-
-func (c *Conn) CopyFrom(ctx context.Context, tableName fbx.Identifier, columnNames []string, rowSrc fbx.CopyFromSource) (int64, error) {
-	return c.Conn().CopyFrom(ctx, tableName, columnNames, rowSrc)
-}
-
 // Begin starts a transaction block from the *Conn without explicitly setting a transaction mode (see BeginTx with TxOptions if transaction mode is required).
 func (c *Conn) Begin(ctx context.Context) (fbx.Tx, error) {
 	return c.Conn().Begin(ctx)

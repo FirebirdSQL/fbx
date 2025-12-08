@@ -682,16 +682,6 @@ func (p *Pool) QueryRow(ctx context.Context, sql string, args ...any) fbx.Row {
 	return c.getPoolRow(row)
 }
 
-func (p *Pool) SendBatch(ctx context.Context, b *fbx.Batch) fbx.BatchResults {
-	c, err := p.Acquire(ctx)
-	if err != nil {
-		return errBatchResults{err: err}
-	}
-
-	br := c.SendBatch(ctx, b)
-	return &poolBatchResults{br: br, c: c}
-}
-
 // Begin acquires a connection from the Pool and starts a transaction. Unlike database/sql, the context only affects the begin command. i.e. there is no
 // auto-rollback on context cancellation. Begin initiates a transaction block without explicitly setting a transaction mode for the block (see BeginTx with TxOptions if transaction mode is required).
 // *fbxpool.Tx is returned, which implements the pgx.Tx interface.
@@ -717,16 +707,6 @@ func (p *Pool) BeginTx(ctx context.Context, txOptions fbx.TxOptions) (fbx.Tx, er
 	}
 
 	return &Tx{t: t, c: c}, nil
-}
-
-func (p *Pool) CopyFrom(ctx context.Context, tableName fbx.Identifier, columnNames []string, rowSrc fbx.CopyFromSource) (int64, error) {
-	c, err := p.Acquire(ctx)
-	if err != nil {
-		return 0, err
-	}
-	defer c.Release()
-
-	return c.Conn().CopyFrom(ctx, tableName, columnNames, rowSrc)
 }
 
 // Ping acquires a connection from the Pool and executes an empty sql statement against it.

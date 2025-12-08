@@ -25,50 +25,6 @@ type TraceQueryEndData struct {
 	Err         error
 }
 
-// BatchTracer traces SendBatch.
-type BatchTracer interface {
-	// TraceBatchStart is called at the beginning of SendBatch calls. The returned context is used for the
-	// rest of the call and will be passed to TraceBatchQuery and TraceBatchEnd.
-	TraceBatchStart(ctx context.Context, conn *Conn, data TraceBatchStartData) context.Context
-
-	TraceBatchQuery(ctx context.Context, conn *Conn, data TraceBatchQueryData)
-	TraceBatchEnd(ctx context.Context, conn *Conn, data TraceBatchEndData)
-}
-
-type TraceBatchStartData struct {
-	Batch *Batch
-}
-
-type TraceBatchQueryData struct {
-	SQL        string
-	Args       []any
-	CommandTag fbconn.QueryStatus
-	Err        error
-}
-
-type TraceBatchEndData struct {
-	Err error
-}
-
-// CopyFromTracer traces CopyFrom.
-type CopyFromTracer interface {
-	// TraceCopyFromStart is called at the beginning of CopyFrom calls. The returned context is used for the
-	// rest of the call and will be passed to TraceCopyFromEnd.
-	TraceCopyFromStart(ctx context.Context, conn *Conn, data TraceCopyFromStartData) context.Context
-
-	TraceCopyFromEnd(ctx context.Context, conn *Conn, data TraceCopyFromEndData)
-}
-
-type TraceCopyFromStartData struct {
-	TableName   Identifier
-	ColumnNames []string
-}
-
-type TraceCopyFromEndData struct {
-	CommandTag fbconn.QueryStatus
-	Err        error
-}
-
 // PrepareTracer traces Prepare.
 type PrepareTracer interface {
 	// TracePrepareStart is called at the beginning of Prepare calls. The returned context is used for the
