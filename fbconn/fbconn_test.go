@@ -483,18 +483,18 @@ func TestConnectWithAfterConnect(t *testing.T) {
 
 	//"set search_path to foobar;"
 	config.AfterConnect = func(ctx context.Context, conn *fbconn.FbConn) error {
-		res := conn.Exec(ctx, "select RDB$SET_CONTEXT('USER_TRANSACTION', 'search_path', 'foobar') from rdb$database").Read()
+		res := conn.Exec(ctx, "select RDB$SET_CONTEXT('USER_SESSION', 'search_path', 'foobar') from rdb$database").Read()
 		return res.Err
 	}
 
 	conn, err := fbconn.ConnectConfig(ctx, config)
 	require.NoError(t, err)
-
-	res := conn.Exec(ctx, "select RDB$GET_CONTEXT('USER_TRANSACTION', 'search_path') from rdb$database search_path;").Read()
-	require.NoError(t, res.Err)
 	defer closeConn(t, conn)
 
-	assert.Equal(t, []byte("foobar"), res.Rows[0][0])
+	res := conn.Exec(ctx, "select RDB$GET_CONTEXT('USER_SESSION', 'search_path') from rdb$database search_path").Read()
+	require.NoError(t, res.Err)
+
+	assert.Equal(t, "foobar", string(res.Rows[0][0]))
 }
 
 func TestConnectConfigRequiresConfigFromParseConfig(t *testing.T) {
@@ -2619,7 +2619,6 @@ begin
 end
 `).Close()
 	require.NoError(t, err)
-	require.NoError(t, fbConn.Commit(ctx))
 
 	res := fbConn.Exec(ctx, `execute procedure `+t.Name()+` 1, 2`).Read()
 	require.NoError(t, res.Err)
@@ -2632,7 +2631,6 @@ begin
 end
 `).Close()
 	require.NoError(t, err)
-	require.NoError(t, fbConn.Commit(ctx))
 
 	res = fbConn.Exec(ctx, `execute procedure `+t.Name()+` 1, 2`).Read()
 	require.NoError(t, res.Err)
@@ -2650,9 +2648,6 @@ func TestConnExecImmediate(t *testing.T) {
 	defer closeConn(t, fbConn)
 
 	err = fbConn.ExecImmediate(ctx, "recreate table a(id int)")
-	require.NoError(t, err)
-
-	err = fbConn.Commit(ctx)
 	require.NoError(t, err)
 
 	tx, err := fbConn.StartTransaction(ctx)

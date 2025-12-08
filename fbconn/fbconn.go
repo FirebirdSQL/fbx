@@ -1173,11 +1173,11 @@ func (fbConn *FbConn) ExecImmediateTx(ctx context.Context, tx *FBTransaction, sq
 	if err = fbConn.lock(); err != nil {
 		return err
 	}
-	defer fbConn.unlock()
 
 	if ctx != context.Background() {
 		select {
 		case <-ctx.Done():
+			fbConn.unlock()
 			return newContextAlreadyDoneError(ctx)
 		default:
 		}
@@ -1213,10 +1213,18 @@ func (fbConn *FbConn) ExecImmediateTx(ctx context.Context, tx *FBTransaction, sq
 	switch m := msg.(type) {
 	case *fbproto.OpResponse:
 	case *fbproto.ErrorResponse:
+		fbConn.unlock()
 		return ErrorResponseToFbError(m)
 	default:
 		panic(fmt.Sprintf("wrong response message type %T instead expected OpResponse or ErrorResponse", m))
 	}
+
+	fbConn.unlock()
+	fbConn.contextWatcher.Unwatch()
+	if tx != nil && tx == fbConn.internalTransaction && fbConn.config.Autocommit && !fbConn.explicitTransaction {
+		tx.Commit(ctx)
+	}
+
 	return nil
 }
 
@@ -1390,6 +1398,8 @@ type ResultReader struct {
 	currentFetchPos      int
 	eoc                  bool
 	rowsInfoPopulated    bool
+
+	boundTransaction *FBTransaction
 }
 
 // Result is the saved query response that is returned by calling Read on a ResultReader.
@@ -1550,6 +1560,12 @@ func (rr *ResultReader) Close() (QueryStatus, error) {
 		rr.closed = true
 		rr.fbConn.unlock()
 		rr.fbConn.contextWatcher.Unwatch()
+
+		if rr.boundTransaction != nil && rr.boundTransaction == rr.fbConn.internalTransaction && rr.fbConn.config.Autocommit && !rr.fbConn.explicitTransaction {
+			if err := rr.boundTransaction.Commit(context.Background()); err != nil && rr.err == nil {
+				rr.err = err
+			}
+		}
 	}
 	return rr.queryStatus, rr.err
 }

@@ -43,6 +43,7 @@ type Config struct {
 	DPB                        []byte
 	ClientVersion              string
 	DefaultTransactionReadOnly bool
+	Autocommit                 bool
 
 	// BuildContextWatcherHandler is called to create a ContextWatcherHandler for a connection. The handler is called
 	// when a context passed to a FbConn method is canceled.
@@ -298,6 +299,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		ClientVersion:              settings["client_version"],
 		Encoding:                   settings["encoding"],
 		DefaultTransactionReadOnly: convertToBool(settings["default_transaction_read_only"], false),
+		Autocommit:                 convertToBool(settings["autocommit"], true),
 	}
 
 	if connectTimeoutSetting, present := settings["connect_timeout"]; present {
@@ -330,6 +332,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		"client_version":                {},
 		"encoding":                      {},
 		"default_transaction_read_only": {},
+		"autotommit":                    {},
 	}
 
 	// Adding kerberos configuration

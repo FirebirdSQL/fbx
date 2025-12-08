@@ -41,7 +41,6 @@ type ConnConfig struct {
 	DefaultQueryExecMode QueryExecMode
 
 	createdByParseConfig bool // Used to enforce created by ParseConfig rule.
-	autocommit           bool
 }
 
 // ParseConfigOptions contains options that control how a config is built such as getsslpassword.
@@ -84,8 +83,6 @@ type Conn struct {
 
 	wbuf []byte
 	eqb  ExtendedQueryBuilder
-
-	autocommit bool
 }
 
 // Identifier a PostgreSQL identifier or name. Identifiers can be composed of
@@ -188,7 +185,6 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 	}
 
 	defaultQueryExecMode := QueryExecModeCacheStatement
-	autocommit := true
 	if s, ok := config.RuntimeParams["default_query_exec_mode"]; ok {
 		delete(config.RuntimeParams, "default_query_exec_mode")
 		switch s {
@@ -201,14 +197,6 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		}
 	}
 
-	if s, ok := config.RuntimeParams["noautocommit"]; ok {
-		delete(config.RuntimeParams, "noautocommit")
-		autocommit = true
-		if res, err := strconv.ParseBool(s); err == nil {
-			autocommit = !res
-		}
-	}
-
 	connConfig := &ConnConfig{
 		Config:                   *config,
 		createdByParseConfig:     true,
@@ -216,7 +204,6 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		DescriptionCacheCapacity: descriptionCacheCapacity,
 		DefaultQueryExecMode:     defaultQueryExecMode,
 		connString:               connString,
-		autocommit:               autocommit,
 	}
 
 	return connConfig, nil
@@ -279,7 +266,6 @@ func connect(ctx context.Context, config *ConnConfig) (c *Conn, err error) {
 	if c.config.StatementCacheCapacity > 0 {
 		c.statementCache = stmtcache.NewLRUCache(c.config.StatementCacheCapacity)
 	}
-	c.autocommit = c.config.autocommit
 
 	return c, nil
 }
@@ -468,10 +454,6 @@ func (c *Conn) execTx(ctx context.Context, tx *dbTx, sql string, arguments ...an
 
 	if c.queryTracer != nil {
 		c.queryTracer.TraceQueryEnd(ctx, c, TraceQueryEndData{QueryStatus: commandTag, Err: err})
-	}
-
-	if err == nil && tx == nil && c.autocommit {
-		err = c.fbConn.Commit(ctx)
 	}
 
 	return commandTag, err
@@ -745,7 +727,6 @@ optionLoop:
 		}
 
 		if tx != nil {
-			rows.boundTransaction = tx.tx
 			rows.resultReader = st.ExecTx(ctx, tx.tx, c.eqb.ParamValues)
 		} else {
 			rows.resultReader = st.Exec(ctx, c.eqb.ParamValues)
@@ -1022,8 +1003,4 @@ func (c *Conn) deallocateInvalidatedCachedStatements(ctx context.Context) error 
 // Commit commits internal transaction
 func (c *Conn) Commit(ctx context.Context) error {
 	return c.fbConn.Commit(ctx)
-}
-
-func (c *Conn) SetAutocommit(autocommit bool) {
-	c.autocommit = autocommit
 }

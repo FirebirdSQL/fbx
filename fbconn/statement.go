@@ -131,8 +131,9 @@ func (st *Statement) Exec(ctx context.Context, paramValues [][]byte) *ResultRead
 func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues [][]byte) *ResultReader {
 	var err error
 	rr := &ResultReader{
-		fbConn: st.conn,
-		ctx:    ctx,
+		fbConn:           st.conn,
+		ctx:              ctx,
+		boundTransaction: tx,
 	}
 
 	if err = st.CloseCursor(ctx); err != nil {

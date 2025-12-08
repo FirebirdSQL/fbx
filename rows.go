@@ -145,8 +145,7 @@ type baseRows struct {
 	args      []any
 	rowCount  int
 
-	boundStatement   *fbconn.Statement
-	boundTransaction *fbconn.FBTransaction
+	boundStatement *fbconn.Statement
 }
 
 func (rows *baseRows) FieldDescriptions() []fbconn.FieldDescription {
@@ -160,10 +159,6 @@ func (rows *baseRows) Close() {
 
 	if rows.boundStatement != nil {
 		defer rows.boundStatement.CloseCursor(rows.ctx)
-	}
-
-	if rows.boundTransaction == nil && rows.Conn().autocommit {
-		defer rows.Conn().fbConn.Commit(rows.ctx)
 	}
 
 	rows.closed = true
