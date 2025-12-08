@@ -350,16 +350,33 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		config.RuntimeParams[k] = v
 	}
 
-	host := settings["host"]
-	portStr := settings["port"]
+	hosts := strings.Split(settings["host"], ",")
+	ports := strings.Split(settings["port"], ",")
+	fallbacks := []*FallbackConfig{}
 
-	port, err := parsePort(portStr)
-	if err != nil {
-		return nil, &ParseConfigError{ConnString: connString, msg: "invalid port", err: err}
+	for i, host := range hosts {
+		var portStr string
+		if i < len(ports) {
+			portStr = ports[i]
+		} else {
+			portStr = ports[0]
+		}
+
+		port, err := parsePort(portStr)
+		if err != nil {
+			return nil, &ParseConfigError{ConnString: connString, msg: "invalid port", err: err}
+		}
+
+		fallbacks = append(fallbacks, &FallbackConfig{
+			Host: host,
+			Port: port,
+		})
+
 	}
 
-	config.Host = host
-	config.Port = port
+	config.Host = fallbacks[0].Host
+	config.Port = fallbacks[0].Port
+	config.Fallbacks = fallbacks[1:]
 
 	return config, nil
 }

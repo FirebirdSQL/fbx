@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"rdb.red-soft.ru/fbx/fbconn"
-	"rdb.red-soft.ru/fbx/fbproto/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"rdb.red-soft.ru/fbx/fbconn"
+	"rdb.red-soft.ru/fbx/fbproto/auth"
 )
 
 func skipOnWindows(t *testing.T) {
@@ -68,9 +68,8 @@ func TestParseConfig(t *testing.T) {
 		connString string
 		config     *fbconn.Config
 	}{
-		// Test all sslmodes
 		{
-			name:       "sslmode not set (prefer)",
+			name:       "simple url",
 			connString: "firebird://jack:secret@localhost:5432/mydb",
 			config: &fbconn.Config{
 				User:          "jack",
@@ -79,12 +78,6 @@ func TestParseConfig(t *testing.T) {
 				Port:          5432,
 				Database:      "mydb",
 				RuntimeParams: map[string]string{},
-				Fallbacks: []*fbconn.FallbackConfig{
-					{
-						Host: "localhost",
-						Port: 5432,
-					},
-				},
 			},
 		},
 		{
@@ -311,6 +304,50 @@ func TestParseConfig(t *testing.T) {
 				RuntimeParams: map[string]string{},
 			},
 		},
+		{
+			name:       "Key/value multiple hosts one port",
+			connString: "user=sysdba password=secret host=foo,bar,baz port=3050 dbname=mydb",
+			config: &fbconn.Config{
+				User:          "sysdba",
+				Password:      "secret",
+				Host:          "foo",
+				Port:          3050,
+				Database:      "mydb",
+				RuntimeParams: map[string]string{},
+				Fallbacks: []*fbconn.FallbackConfig{
+					{
+						Host: "bar",
+						Port: 3050,
+					},
+					{
+						Host: "baz",
+						Port: 3050,
+					},
+				},
+			},
+		},
+		{
+			name:       "Key/value multiple hosts multiple ports",
+			connString: "user=sysdba password=secret host=foo,bar,baz port=3050,3051,3052 dbname=mydb",
+			config: &fbconn.Config{
+				User:          "sysdba",
+				Password:      "secret",
+				Host:          "foo",
+				Port:          3050,
+				Database:      "mydb",
+				RuntimeParams: map[string]string{},
+				Fallbacks: []*fbconn.FallbackConfig{
+					{
+						Host: "bar",
+						Port: 3051,
+					},
+					{
+						Host: "baz",
+						Port: 3052,
+					},
+				},
+			},
+		},
 		// https://github.com/jackc/pgconn/issues/72
 		{
 			name:       "URL without host but with port still uses default host",
@@ -473,9 +510,16 @@ func assertConfigsEqual(t *testing.T, expected, actual *fbconn.Config, testName 
 	// Can't test function equality, so just test that they are set or not.
 	assert.Equalf(t, expected.ValidateConnect == nil, actual.ValidateConnect == nil, "%s - ValidateConnect", testName)
 	assert.Equalf(t, expected.AfterConnect == nil, actual.AfterConnect == nil, "%s - AfterConnect", testName)
+
+	if assert.Equalf(t, len(expected.Fallbacks), len(actual.Fallbacks), "%s - Fallbacks", testName) {
+		for i := range expected.Fallbacks {
+			assert.Equalf(t, expected.Fallbacks[i].Host, actual.Fallbacks[i].Host, "%s - Fallback %d - Host", testName, i)
+			assert.Equalf(t, expected.Fallbacks[i].Port, actual.Fallbacks[i].Port, "%s - Fallback %d - Port", testName, i)
+		}
+	}
 }
 
-func TestParseConfigEnvLibpq(t *testing.T) {
+func TestParseConfigEnv(t *testing.T) {
 	var osUserName string
 	osUser, err := user.Current()
 	if err == nil {
@@ -505,12 +549,6 @@ func TestParseConfigEnvLibpq(t *testing.T) {
 				Port:       3050,
 
 				RuntimeParams: map[string]string{},
-				Fallbacks: []*fbconn.FallbackConfig{
-					{
-						Host: "123.123.123.123",
-						Port: 3050,
-					},
-				},
 			},
 		},
 		{

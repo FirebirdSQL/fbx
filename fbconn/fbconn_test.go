@@ -403,7 +403,7 @@ func TestConnectFailsWithResolveFailureAndFailedConnectionAttempts(t *testing.T)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	conn, err := fbconn.Connect(ctx, "host=localhost,127.0.0.1,foo.invalid port=1,2,3 sslmode=disable")
+	conn, err := fbconn.Connect(ctx, "host=localhost,127.0.0.1,foo.invalid port=1,2,3")
 	require.Error(t, err)
 	require.Nil(t, conn)
 
