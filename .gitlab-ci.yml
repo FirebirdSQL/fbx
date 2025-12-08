@@ -35,6 +35,8 @@ test:
     - chmod +x ./installer
     - ./installer --mode unattended --sysdba_password masterkey
     - cp ci/firebird.conf /opt/RedDatabase
+    - g++ -o libfbxci.so -shared -fPIC ci/udrs.cpp -I_tools/msgs/include
+    - cp libfbxci.so /opt/RedDatabase/plugins/udr
     - /etc/init.d/firebird start
   script:
     - go run gotest.tools/gotestsum@latest $(go list ./... | grep -v /vendor/) -coverprofile cover.out
