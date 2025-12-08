@@ -2,27 +2,17 @@ package fbtype_test
 
 import (
 	"context"
-	"encoding/json"
-	"math"
 	"math/big"
-	"math/rand"
 	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
+	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
 )
-
-func mustParseBigInt(t *testing.T, src string) *big.Int {
-	i := &big.Int{}
-	if _, ok := i.SetString(src, 10); !ok {
-		t.Fatalf("could not parse big.Int: %s", src)
-	}
-	return i
-}
 
 func isExpectedEqNumeric(a any) func(any) bool {
 	return func(v any) bool {
@@ -55,15 +45,102 @@ func isExpectedEqNumeric(a any) func(any) bool {
 
 func mustParseNumeric(t *testing.T, src string) fbtype.Numeric {
 	var n fbtype.Numeric
-	plan := fbtype.NumericCodec{}.PlanScan(nil, fbtype.NumericOID, 0, 0, 0, fbtype.TextFormatCode, &n)
+	plan := fbtype.NumericCodec{}.PlanScan(nil, fbproto.SQL_TYPE_INT64, 0, 0, 0, fbtype.TextFormatCode, &n)
 	require.NotNil(t, plan)
 	err := plan.Scan([]byte(src), &n)
 	require.NoError(t, err)
 	return n
 }
 
+func TestNumericBinaryScanToFloat64_Local(t *testing.T) {
+	n := fbtype.Numeric{
+		Int:   big.NewInt(1234),
+		Exp:   -2,
+		Valid: true,
+	}
+
+	buf, err := fbtype.EncodeNumericBinaryFB(nil, n, -2, 4)
+	require.NoError(t, err)
+
+	var dst fbtype.Float8
+
+	plan := fbtype.NumericCodec{}.PlanScan(
+		nil,
+		fbproto.SQL_TYPE_D_FLOAT,
+		0,
+		4,
+		-2,
+		fbtype.BinaryFormatCode,
+		&dst,
+	)
+	require.NotNil(t, plan)
+
+	err = plan.Scan(buf, &dst)
+	require.NoError(t, err)
+	require.True(t, dst.Valid)
+	assert.InDelta(t, 12.34, dst.Float64, 1e-9)
+}
+
+func TestNumericBinaryScanToFloat64_DB(t *testing.T) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
+		var f fbtype.Float8
+
+		err := conn.QueryRow(
+			ctx,
+			"SELECT CAST(4.2 AS NUMERIC(4,2)) FROM rdb$database",
+		).Scan(&f)
+		require.NoError(tb, err)
+
+		require.True(tb, f.Valid)
+		assert.InDelta(tb, 4.2, f.Float64, 1e-9)
+	})
+}
+
+func TestNumericBinaryScanToInt64_DB(t *testing.T) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
+		var i fbtype.Int8
+
+		err := conn.QueryRow(
+			ctx,
+			"SELECT CAST(42 AS NUMERIC(18,0)) FROM rdb$database",
+		).Scan(&i)
+		require.NoError(tb, err)
+
+		require.True(tb, i.Valid)
+		assert.Equal(tb, int64(42), i.Int64)
+	})
+}
+
+func TestNumericBinaryScanToInt64_Local(t *testing.T) {
+	n := fbtype.Numeric{
+		Int:   big.NewInt(123456),
+		Exp:   0,
+		Valid: true,
+	}
+
+	buf, err := fbtype.EncodeNumericBinaryFB(nil, n, 0, 8)
+	require.NoError(t, err)
+
+	var dst fbtype.Int8
+
+	plan := fbtype.NumericCodec{}.PlanScan(
+		nil,
+		fbproto.SQL_TYPE_INT64,
+		0,
+		8,
+		0,
+		fbtype.BinaryFormatCode,
+		&dst,
+	)
+	require.NotNil(t, plan)
+
+	err = plan.Scan(buf, &dst)
+	require.NoError(t, err)
+	require.True(t, dst.Valid)
+	assert.Equal(t, int64(123456), dst.Int64)
+}
+
 func TestNumericCodec(t *testing.T) {
-	skipCockroachDB(t, "server formats numeric text format differently")
 
 	eqNum := func(s string) func(any) bool {
 		return isExpectedEqNumeric(mustParseNumeric(t, s))
@@ -190,6 +267,46 @@ func TestNumericCodec(t *testing.T) {
 				},
 			},
 		},
+		{
+			typeName: "numeric(4,2)",
+			tests: []fbxtest.ValueRoundTripTest{
+				{
+					Param:  mustParseNumeric(t, "4.2"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("4.2"),
+				},
+			},
+		},
+		{
+			typeName: "numeric(4,0)",
+			tests: []fbxtest.ValueRoundTripTest{
+				{
+					Param:  mustParseNumeric(t, "0"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("0"),
+				},
+				{
+					Param:  mustParseNumeric(t, "1"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("1"),
+				},
+				{
+					Param:  mustParseNumeric(t, "-1"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("-1"),
+				},
+				{
+					Param:  mustParseNumeric(t, "-9999"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("-9999"),
+				},
+				{
+					Param:  mustParseNumeric(t, "9999"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("9999"),
+				},
+			},
+		},
 	}
 
 	for _, c := range cases {
@@ -204,18 +321,6 @@ func TestNumericCodec(t *testing.T) {
 			)
 		})
 	}
-}
-
-func TestNumericCodecInfinity(t *testing.T) {
-	t.Skip()
-	skipPostgreSQLVersionLessThan(t, 14)
-
-	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "numeric", []fbxtest.ValueRoundTripTest{
-		{Param: math.Inf(1), Result: new(float64), Test: isExpectedEq(math.Inf(1))},
-		{Param: float32(math.Inf(1)), Result: new(float32), Test: isExpectedEq(float32(math.Inf(1)))},
-		{Param: math.Inf(-1), Result: new(float64), Test: isExpectedEq(math.Inf(-1))},
-		{Param: float32(math.Inf(-1)), Result: new(float32), Test: isExpectedEq(float32(math.Inf(-1)))},
-	})
 }
 
 func TestNumericFloat64Valuer(t *testing.T) {
@@ -233,70 +338,6 @@ func TestNumericFloat64Valuer(t *testing.T) {
 		assert.NoErrorf(t, err, "%d", i)
 		assert.Equalf(t, tt.f, f, "%d", i)
 	}
-}
-
-func TestNumericCodecFuzz(t *testing.T) {
-	t.Skip()
-
-	r := rand.New(rand.NewSource(0))
-	max := &big.Int{}
-	max.SetString("9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999", 10)
-
-	tests := make([]fbxtest.ValueRoundTripTest, 0, 2000)
-	for i := 0; i < 10; i++ {
-		for j := -50; j < 50; j++ {
-			num := (&big.Int{}).Rand(r, max)
-
-			n := fbtype.Numeric{Int: num, Exp: int32(j), Valid: true}
-			tests = append(tests, fbxtest.ValueRoundTripTest{Param: n, Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(n)})
-
-			negNum := &big.Int{}
-			negNum.Neg(num)
-			n = fbtype.Numeric{Int: negNum, Exp: int32(j), Valid: true}
-			tests = append(tests, fbxtest.ValueRoundTripTest{Param: n, Result: new(fbtype.Numeric), Test: isExpectedEqNumeric(n)})
-		}
-	}
-
-	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "numeric", tests)
-}
-
-func TestNumericMarshalJSON(t *testing.T) {
-	t.Skip()
-
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-
-		for i, tt := range []struct {
-			decString string
-		}{
-			{"0"},
-			{"1"},
-			{"-1"},
-			{"1000000000000000000"},
-			{"1234.56789"},
-			{"1.56789"},
-			{"0.00000000000056789"},
-			{"0.00123000"},
-			{"123e-3"},
-			{"243723409723490243842378942378901237502734019231380123e23790"},
-			{"3409823409243892349028349023482934092340892390101e-14021"},
-			{"-1.1"},
-			{"-1.0231"},
-			{"-10.0231"},
-			{"-0.1"},   // failed with "invalid character '.' in numeric literal"
-			{"-0.01"},  // failed with "invalid character '-' after decimal point in numeric literal"
-			{"-0.001"}, // failed with "invalid character '-' after top-level value"
-		} {
-			var num fbtype.Numeric
-			var pgJSON string
-			err := conn.QueryRow(ctx, `select $1::numeric, to_json($1::numeric)`, tt.decString).Scan(&num, &pgJSON)
-			require.NoErrorf(t, err, "%d", i)
-
-			goJSON, err := json.Marshal(num)
-			require.NoErrorf(t, err, "%d", i)
-
-			require.Equal(t, pgJSON, string(goJSON))
-		}
-	})
 }
 
 func TestNumericUnmarshalJSON(t *testing.T) {

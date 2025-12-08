@@ -2,7 +2,7 @@
 
 package fbtype
 
-func registerDefaultPgTypeVariants[T any](m *Map, name string) {
+func registerDefaultFbTypeVariants[T any](m *Map, name string) {
 	arrayName := "_" + name
 
 	var value T

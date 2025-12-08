@@ -5,6 +5,7 @@ import (
 	"database/sql/driver"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"math/big"
 	"strconv"
 	"strings"
@@ -267,7 +268,7 @@ func (p encodePlanNumericCodecBinaryNumericValuer) Encode(value any, buf []byte)
 		return nil, err
 	}
 
-	return encodeNumericBinaryFB(buf, n, p.scale, p.length)
+	return EncodeNumericBinaryFB(buf, n, p.scale, p.length)
 }
 
 type encodePlanNumericCodecBinaryFloat64Valuer struct {
@@ -289,7 +290,7 @@ func (p encodePlanNumericCodecBinaryFloat64Valuer) Encode(value any, buf []byte)
 		return nil, err
 	}
 	n.Valid = true
-	return encodeNumericBinaryFB(buf, n, p.scale, p.length)
+	return EncodeNumericBinaryFB(buf, n, p.scale, p.length)
 }
 
 type encodePlanNumericCodecBinaryInt64Valuer struct {
@@ -312,73 +313,7 @@ func (p encodePlanNumericCodecBinaryInt64Valuer) Encode(value any, buf []byte) (
 		Valid: true,
 	}
 
-	return encodeNumericBinaryFB(buf, n, p.scale, p.length)
-}
-
-func encodeNumericBinaryFB(buf []byte, n Numeric, scale int32, length uint32) ([]byte, error) {
-	if !n.Valid {
-		return nil, nil
-	}
-
-	expDiff := int64(n.Exp - scale)
-
-	var scaled big.Int
-	scaled.Set(n.Int)
-
-	if expDiff > 0 {
-		var pow big.Int
-		pow.Exp(big.NewInt(10), big.NewInt(expDiff), nil)
-		scaled.Mul(&scaled, &pow)
-	} else if expDiff < 0 {
-		var pow big.Int
-		pow.Exp(big.NewInt(10), big.NewInt(-expDiff), nil)
-		var rem big.Int
-		var q big.Int
-		q.QuoRem(&scaled, &pow, &rem)
-		if rem.Sign() != 0 {
-			return nil, fmt.Errorf("numeric value %v cannot be represented exactly with scale %d", &n, scale)
-		}
-		scaled.Set(&q)
-	}
-
-	if !scaled.IsInt64() {
-		return nil, fmt.Errorf("numeric out of range for int64")
-	}
-	v64 := scaled.Int64()
-
-	switch length {
-	case 2:
-		if v64 < -32768 || v64 > 32767 {
-			return nil, fmt.Errorf("numeric out of range for SMALLINT")
-		}
-		v := int16(v64)
-
-		var tmp [2]byte
-		binary.LittleEndian.PutUint16(tmp[:], uint16(v))
-		buf = append(buf, tmp[:]...)
-
-	case 4:
-		if v64 < -2147483648 || v64 > 2147483647 {
-			return nil, fmt.Errorf("numeric out of range for INTEGER")
-		}
-		v := int32(v64)
-
-		var tmp [4]byte
-		binary.LittleEndian.PutUint32(tmp[:], uint32(v))
-		buf = append(buf, tmp[:]...)
-
-	case 8:
-		v := v64
-
-		var tmp [8]byte
-		binary.LittleEndian.PutUint64(tmp[:], uint64(v))
-		buf = append(buf, tmp[:]...)
-
-	default:
-		return nil, fmt.Errorf("unsupported numeric length %d", length)
-	}
-
-	return buf, nil
+	return EncodeNumericBinaryFB(buf, n, p.scale, p.length)
 }
 
 func encodeNumericText(n Numeric, buf []byte) (newBuf []byte, err error) {
@@ -402,6 +337,16 @@ func (NumericCodec) PlanScan(m *Map, typeId uint32, subType int32, length uint32
 			}
 		case NumericScanner:
 			return scanPlanBinaryNumericToNumericScanner{
+				scale:  scale,
+				length: length,
+			}
+		case Float64Scanner:
+			return scanPlanBinaryNumericToFloat64Scanner{
+				scale:  scale,
+				length: length,
+			}
+		case Int64Scanner:
+			return scanPlanBinaryNumericToInt64Scanner{
 				scale:  scale,
 				length: length,
 			}
@@ -441,7 +386,7 @@ func (p scanPlanBinaryNumericToNumeric) Scan(src []byte, dst any) error {
 		return nil
 	}
 
-	return decodeNumericBinaryFB(nPtr, src, p.scale)
+	return DecodeNumericBinaryFB(nPtr, src, p.scale)
 }
 
 type scanPlanBinaryNumericToNumericScanner struct {
@@ -460,64 +405,72 @@ func (p scanPlanBinaryNumericToNumericScanner) Scan(src []byte, dst any) error {
 	}
 
 	var n Numeric
-	if err := decodeNumericBinaryFB(&n, src, p.scale); err != nil {
+	if err := DecodeNumericBinaryFB(&n, src, p.scale); err != nil {
 		return err
 	}
 
 	return scanner.ScanNumeric(n)
 }
 
-// type scanPlanBinaryNumericToFloat64Scanner struct{}
+type scanPlanBinaryNumericToFloat64Scanner struct {
+	scale  int32
+	length uint32
+}
 
-// func (scanPlanBinaryNumericToFloat64Scanner) Scan(src []byte, dst any) error {
-// 	scanner := (dst).(Float64Scanner)
+func (p scanPlanBinaryNumericToFloat64Scanner) Scan(src []byte, dst any) error {
+	scanner, ok := dst.(Float64Scanner)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
 
-// 	if src == nil {
-// 		return scanner.ScanFloat64(Float8{})
-// 	}
+	if src == nil {
+		return scanner.ScanFloat64(Float8{})
+	}
 
-// 	var n Numeric
+	var n Numeric
+	if err := DecodeNumericBinaryFB(&n, src, p.scale); err != nil {
+		return err
+	}
 
-// 	err := scanPlanBinaryNumericToNumericScanner{}.Scan(src, &n)
-// 	if err != nil {
-// 		return err
-// 	}
+	f8, err := n.Float64Value()
+	if err != nil {
+		return err
+	}
 
-// 	f8, err := n.Float64Value()
-// 	if err != nil {
-// 		return err
-// 	}
+	return scanner.ScanFloat64(f8)
+}
 
-// 	return scanner.ScanFloat64(f8)
-// }
+type scanPlanBinaryNumericToInt64Scanner struct {
+	scale  int32
+	length uint32
+}
 
-// type scanPlanBinaryNumericToInt64Scanner struct{}
+func (p scanPlanBinaryNumericToInt64Scanner) Scan(src []byte, dst any) error {
+	scanner, ok := dst.(Int64Scanner)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
 
-// func (scanPlanBinaryNumericToInt64Scanner) Scan(src []byte, dst any) error {
-// 	scanner := (dst).(Int64Scanner)
+	if src == nil {
+		return scanner.ScanInt64(Int8{}) // NULL
+	}
 
-// 	if src == nil {
-// 		return scanner.ScanInt64(Int8{})
-// 	}
+	var n Numeric
+	if err := DecodeNumericBinaryFB(&n, src, p.scale); err != nil {
+		return err
+	}
 
-// 	var n Numeric
+	bigInt, err := n.toBigInt()
+	if err != nil {
+		return err
+	}
 
-// 	err := scanPlanBinaryNumericToNumericScanner{}.Scan(src, &n)
-// 	if err != nil {
-// 		return err
-// 	}
+	if !bigInt.IsInt64() {
+		return fmt.Errorf("%v is out of range for int64", bigInt)
+	}
 
-// 	bigInt, err := n.toBigInt()
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	if !bigInt.IsInt64() {
-// 		return fmt.Errorf("%v is out of range for int64", bigInt)
-// 	}
-
-// 	return scanner.ScanInt64(Int8{Int64: bigInt.Int64(), Valid: true})
-// }
+	return scanner.ScanInt64(Int8{Int64: bigInt.Int64(), Valid: true})
+}
 
 type scanPlanBinaryNumericToTextScanner struct {
 	scale  int32
@@ -535,7 +488,7 @@ func (p scanPlanBinaryNumericToTextScanner) Scan(src []byte, dst any) error {
 	}
 
 	var n Numeric
-	if err := decodeNumericBinaryFB(&n, src, p.scale); err != nil {
+	if err := DecodeNumericBinaryFB(&n, src, p.scale); err != nil {
 		return err
 	}
 
@@ -599,7 +552,7 @@ func (c NumericCodec) DecodeValue(m *Map, oid uint32, subType int32, length uint
 	return n, nil
 }
 
-func decodeNumericBinaryFB(dst *Numeric, src []byte, scale int32) error {
+func DecodeNumericBinaryFB(dst *Numeric, src []byte, scale int32) error {
 	if src == nil {
 		*dst = Numeric{}
 		return nil
@@ -607,24 +560,82 @@ func decodeNumericBinaryFB(dst *Numeric, src []byte, scale int32) error {
 
 	var s int64
 	switch len(src) {
-	case 2:
-		s = int64(int16(binary.LittleEndian.Uint16(src)))
 	case 4:
-		s = int64(int32(binary.LittleEndian.Uint32(src)))
+		s = int64(int32(binary.BigEndian.Uint32(src)))
 	case 8:
-		s = int64(binary.LittleEndian.Uint64(src))
+		s = int64(binary.BigEndian.Uint64(src))
 	default:
 		return fmt.Errorf("unsupported numeric length: %d", len(src))
 	}
 
-	n := Numeric{
+	*dst = Numeric{
 		Int:   big.NewInt(s),
 		Exp:   scale,
 		Valid: true,
 	}
-
-	*dst = n
 	return nil
+}
+
+func EncodeNumericBinaryFB(buf []byte, n Numeric, scale int32, length uint32) ([]byte, error) {
+	if !n.Valid {
+		return nil, nil
+	}
+
+	expDiff := int64(n.Exp - scale)
+
+	var scaled big.Int
+	scaled.Set(n.Int)
+
+	if expDiff > 0 {
+		var pow big.Int
+		pow.Exp(big.NewInt(10), big.NewInt(expDiff), nil)
+		scaled.Mul(&scaled, &pow)
+	} else if expDiff < 0 {
+		var pow big.Int
+		pow.Exp(big.NewInt(10), big.NewInt(-expDiff), nil)
+		var rem big.Int
+		var q big.Int
+		q.QuoRem(&scaled, &pow, &rem)
+		if rem.Sign() != 0 {
+			return nil, fmt.Errorf("numeric value %v cannot be represented exactly with scale %d", &n, scale)
+		}
+		scaled.Set(&q)
+	}
+
+	if !scaled.IsInt64() {
+		return nil, fmt.Errorf("numeric value %v is out of range for int64", &n)
+	}
+	val := scaled.Int64()
+
+	switch length {
+	case 2:
+		if val < math.MinInt16 || val > math.MaxInt16 {
+			return nil, fmt.Errorf("numeric out of range for SMALLINT")
+		}
+		v := int32(val)
+		var tmp [4]byte
+		binary.BigEndian.PutUint32(tmp[:], uint32(v))
+		buf = append(buf, tmp[:]...)
+
+	case 4:
+		if val < math.MinInt32 || val > math.MaxInt32 {
+			return nil, fmt.Errorf("numeric out of range for INTEGER")
+		}
+		v := int32(val)
+		var tmp [4]byte
+		binary.BigEndian.PutUint32(tmp[:], uint32(v))
+		buf = append(buf, tmp[:]...)
+
+	case 8:
+		var tmp [8]byte
+		binary.BigEndian.PutUint64(tmp[:], uint64(val))
+		buf = append(buf, tmp[:]...)
+
+	default:
+		return nil, fmt.Errorf("unsupported numeric length %d", length)
+	}
+
+	return buf, nil
 }
 
 func float64ToNumeric(f float64) (Numeric, error) {
