@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbtype"
-	"github.com/stretchr/testify/require"
 )
 
 func TestCompositeCodecTranscode(t *testing.T) {
@@ -206,8 +206,6 @@ create type point3d as (
 //
 // https://github.com/jackc/pgx/issues/1576
 func TestCompositeCodecTranscodeStructWrapperForTable(t *testing.T) {
-	skipCockroachDB(t, "Server does not support composite types from table definitions")
-
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 
 		_, err := conn.Exec(ctx, `drop table if exists point3d;

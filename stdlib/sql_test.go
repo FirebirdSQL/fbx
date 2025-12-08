@@ -38,21 +38,6 @@ func closeDB(t testing.TB, db *sql.DB) {
 	require.NoError(t, err)
 }
 
-func skipCockroachDB(t testing.TB, db *sql.DB, msg string) {
-	conn, err := db.Conn(context.Background())
-	require.NoError(t, err)
-	defer conn.Close()
-
-	err = conn.Raw(func(driverConn any) error {
-		conn := driverConn.(*stdlib.Conn).Conn()
-		if conn.FbConn().ParameterStatus("crdb_version") != "" {
-			t.Skip(msg)
-		}
-		return nil
-	})
-	require.NoError(t, err)
-}
-
 func skipPostgreSQLVersionLessThan(t testing.TB, db *sql.DB, minVersion int64) {
 	conn, err := db.Conn(context.Background())
 	require.NoError(t, err)
@@ -180,7 +165,6 @@ func TestNormalLifeCycle(t *testing.T) {
 	db := openDB(t)
 	defer closeDB(t, db)
 
-	skipCockroachDB(t, db, "Server issues incorrect ParameterDescription (https://github.com/cockroachdb/cockroach/issues/60907)")
 	stmt := prepareStmt(t, db, "select 'foo', n from ("+generateSeriesQuery("?", "?", "n")+")")
 	defer closeStmt(t, stmt)
 
@@ -249,8 +233,6 @@ func TestQueryCloseRowsEarly(t *testing.T) {
 	db := openDB(t)
 	defer closeDB(t, db)
 
-	skipCockroachDB(t, db, "Server issues incorrect ParameterDescription (https://github.com/cockroachdb/cockroach/issues/60907)")
-
 	stmt := prepareStmt(t, db, "select 'foo', n from ("+generateSeriesQuery("?", "?", "n")+")")
 	defer closeStmt(t, stmt)
 
@@ -306,8 +288,6 @@ func TestConnExec(t *testing.T) {
 
 func TestConnQuery(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		skipCockroachDB(t, db, "Server issues incorrect ParameterDescription (https://github.com/cockroachdb/cockroach/issues/60907)")
-
 		rows, err := db.Query("select 'foo', n from ("+generateSeriesQuery("?", "?", "n")+")", int32(1), int32(10))
 		require.NoError(t, err)
 
@@ -489,8 +469,6 @@ func TestConnQueryFailure(t *testing.T) {
 func TestConnSimpleSlicePassThrough(t *testing.T) {
 	t.Skip("need implementation")
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		skipCockroachDB(t, db, "Server does not support cardinality function")
-
 		var n int64
 		err := db.QueryRow("select cardinality($1::text[])", []string{"a", "b", "c"}).Scan(&n)
 		require.NoError(t, err)
@@ -529,8 +507,6 @@ func TestConnQueryScanArray(t *testing.T) {
 func TestConnQueryScanRange(t *testing.T) {
 	t.Skip("need implementation")
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		skipCockroachDB(t, db, "Server does not support int4range")
-
 		m := fbtype.NewMap()
 
 		var r fbtype.Range[fbtype.Int4]
@@ -674,8 +650,6 @@ func TestTransactionLifeCycle(t *testing.T) {
 
 func TestConnBeginTxIsolation(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		skipCockroachDB(t, db, "Server always uses serializable isolation level")
-
 		var defaultMode int
 		err := db.QueryRow("select mon$isolation_mode from mon$transactions where mon$transaction_id = current_transaction").Scan(&defaultMode)
 		require.NoError(t, err)
@@ -909,8 +883,6 @@ func TestStmtQueryContextSuccess(t *testing.T) {
 	db := openDB(t)
 	defer closeDB(t, db)
 
-	skipCockroachDB(t, db, "Server issues incorrect ParameterDescription (https://github.com/cockroachdb/cockroach/issues/60907)")
-
 	stmt, err := db.Prepare(generateSeriesQuery("1", "?", "n"))
 	require.NoError(t, err)
 	defer stmt.Close()
@@ -1073,8 +1045,6 @@ func TestRowsColumnTypes(t *testing.T) {
 
 func TestQueryLifeCycle(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		skipCockroachDB(t, db, "Server issues incorrect ParameterDescription (https://github.com/cockroachdb/cockroach/issues/60907)")
-
 		rows, err := db.Query("SELECT 'foo', n FROM ("+generateSeriesQuery("?", "?", "n")+") WHERE 3 = ?", 1, 10, 3)
 		require.NoError(t, err)
 
@@ -1180,7 +1150,6 @@ func TestConnQueryRowConstraintErrors(t *testing.T) {
 	t.Skip("only PG")
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
 		skipPostgreSQLVersionLessThan(t, db, 11)
-		skipCockroachDB(t, db, "Server does not support deferred constraint (https://github.com/cockroachdb/cockroach/issues/31632)")
 
 		_, err := db.Exec(`recreate table defer_test (
 			id text primary key,

@@ -28,8 +28,6 @@ func isExpectedEqPath(a any) func(any) bool {
 }
 
 func TestPathTranscode(t *testing.T) {
-	skipCockroachDB(t, "Server does not support type path")
-
 	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "path", []fbxtest.ValueRoundTripTest{
 		{Param: fbtype.Path{
 			P:      []fbtype.Vec2{{3.14, 1.678901234}, {7.1, 5.234}},

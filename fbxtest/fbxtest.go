@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"testing"
 
-	"rdb.red-soft.ru/fbx"
 	"github.com/stretchr/testify/require"
+	"rdb.red-soft.ru/fbx"
 )
 
 var AllQueryExecModes = []fbx.QueryExecMode{
@@ -141,13 +141,6 @@ func RunValueRoundTripTests(
 			}
 		}
 	})
-}
-
-// SkipCockroachDB calls Skip on t with msg if the connection is to a CockroachDB server.
-func SkipCockroachDB(t testing.TB, conn *fbx.Conn, msg string) {
-	if conn.FbConn().ParameterStatus("crdb_version") != "" {
-		t.Skip(msg)
-	}
 }
 
 func SkipPostgreSQLVersionLessThan(t testing.TB, conn *fbx.Conn, minVersion int64) {

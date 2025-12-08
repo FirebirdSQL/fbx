@@ -10,10 +10,10 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
-	"github.com/stretchr/testify/require"
 )
 
 func isExpectedEqMap(a any) func(any) bool {
@@ -274,8 +274,6 @@ func (t ChildIssue1681) MarshalJSON() ([]byte, error) {
 
 // https://github.com/jackc/pgx/issues/1681
 func TestJSONCodecEncodeJSONMarshalerThatCanBeWrapped(t *testing.T) {
-	skipCockroachDB(t, "CockroachDB treats json as jsonb. This causes it to format differently than PostgreSQL.")
-
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		var jsonStr string
 		err := conn.QueryRow(context.Background(), "select $1::json", &ParentIssue1681{}).Scan(&jsonStr)
@@ -285,8 +283,6 @@ func TestJSONCodecEncodeJSONMarshalerThatCanBeWrapped(t *testing.T) {
 }
 
 func TestJSONCodecCustomMarshal(t *testing.T) {
-	skipCockroachDB(t, "CockroachDB treats json as jsonb. This causes it to format differently than PostgreSQL.")
-
 	connTestRunner := defaultConnTestRunner
 	connTestRunner.AfterConnect = func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		conn.TypeMap().RegisterType(&fbtype.Type{

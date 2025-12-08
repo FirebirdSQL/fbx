@@ -4,13 +4,11 @@ import (
 	"context"
 	"testing"
 
-	"rdb.red-soft.ru/fbx"
 	"github.com/stretchr/testify/require"
+	"rdb.red-soft.ru/fbx"
 )
 
 func TestCompositeCodecTranscodeWithLoadTypes(t *testing.T) {
-	skipCockroachDB(t, "Server does not support composite types (see https://github.com/cockroachdb/cockroach/issues/27792)")
-
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		_, err := conn.Exec(ctx, `
 drop type if exists dtype_test;

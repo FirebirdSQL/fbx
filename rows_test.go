@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbconn"
 	"rdb.red-soft.ru/fbx/fbxtest"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 type testRowScanner struct {
@@ -968,8 +968,6 @@ func TestRowToStructByNameLaxRowValue(t *testing.T) {
 	}
 
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		fbxtest.SkipCockroachDB(t, conn, "")
-
 		rows, _ := conn.Query(ctx, `
 		WITH user_api_keys AS (
 			SELECT 1 AS user_id, 101 AS user_api_key_id, 'abc123' AS api_key from rdb$database

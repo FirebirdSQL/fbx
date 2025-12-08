@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbconn"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestCrateDBConnect(t *testing.T) {
@@ -560,8 +560,6 @@ func TestFatalRxError(t *testing.T) {
 	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 
-	fbxtest.SkipCockroachDB(t, conn, "Server does not support pg_terminate_backend() (https://github.com/cockroachdb/cockroach/issues/35897)")
-
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -726,8 +724,6 @@ func TestUnregisteredTypeUsableAsStringArgumentAndBaseResult(t *testing.T) {
 	defer cancel()
 
 	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		fbxtest.SkipCockroachDB(t, conn, "Server does support domain types (https://github.com/cockroachdb/cockroach/issues/27796)")
-
 		var n uint64
 		err := conn.QueryRow(context.Background(), "select $1::uint64", "42").Scan(&n)
 		if err != nil {
@@ -745,8 +741,6 @@ func TestDomainType(t *testing.T) {
 	defer cancel()
 
 	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		fbxtest.SkipCockroachDB(t, conn, "Server does support domain types (https://github.com/cockroachdb/cockroach/issues/27796)")
-
 		// Domain type uint64 is a PostgreSQL domain of underlying type numeric.
 
 		// In the extended protocol preparing "select $1::uint64" appears to create a statement that expects a param OID of
@@ -782,8 +776,6 @@ func TestLoadTypeSameNameInDifferentSchemas(t *testing.T) {
 	defer cancel()
 
 	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		fbxtest.SkipCockroachDB(t, conn, "Server does support composite types (https://github.com/cockroachdb/cockroach/issues/27792)")
-
 		tx, err := conn.Begin(ctx)
 		require.NoError(t, err)
 		defer tx.Rollback(ctx)
@@ -827,8 +819,6 @@ func TestLoadCompositeType(t *testing.T) {
 	defer cancel()
 
 	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		fbxtest.SkipCockroachDB(t, conn, "Server does support composite types (https://github.com/cockroachdb/cockroach/issues/27792)")
-
 		tx, err := conn.Begin(ctx)
 		require.NoError(t, err)
 		defer tx.Rollback(ctx)
@@ -849,8 +839,6 @@ func TestLoadRangeType(t *testing.T) {
 	defer cancel()
 
 	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		fbxtest.SkipCockroachDB(t, conn, "Server does support range types")
-
 		tx, err := conn.Begin(ctx)
 		require.NoError(t, err)
 		defer tx.Rollback(ctx)
@@ -883,7 +871,6 @@ func TestLoadMultiRangeType(t *testing.T) {
 	defer cancel()
 
 	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		fbxtest.SkipCockroachDB(t, conn, "Server does support range types")
 		fbxtest.SkipPostgreSQLVersionLessThan(t, conn, 14) // multirange data type was added in 14 postgresql
 
 		tx, err := conn.Begin(ctx)
@@ -1121,8 +1108,6 @@ func TestConnDeallocateInvalidatedCachedStatementsWhenCanceled(t *testing.T) {
 	defer cancel()
 
 	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		fbxtest.SkipCockroachDB(t, conn, "CockroachDB returns decimal instead of integer for integer division")
-
 		var n int32
 		err := conn.QueryRow(ctx, "select 1 / cast(? as integer) from rdb$database", 1).Scan(&n)
 		require.NoError(t, err)

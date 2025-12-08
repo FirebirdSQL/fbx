@@ -14,11 +14,11 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 var defaultConnTestRunner fbxtest.ConnTestRunner
@@ -81,18 +81,6 @@ func mustParseMacaddr(t testing.TB, s string) net.HardwareAddr {
 	}
 
 	return addr
-}
-
-func skipCockroachDB(t testing.TB, msg string) {
-	conn, err := fbx.Connect(context.Background(), os.Getenv("PGX_TEST_DATABASE"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close(context.Background())
-
-	if conn.FbConn().ParameterStatus("crdb_version") != "" {
-		t.Skip(msg)
-	}
 }
 
 func skipPostgreSQLVersionLessThan(t testing.TB, minVersion int64) {

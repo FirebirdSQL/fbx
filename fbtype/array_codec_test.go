@@ -7,11 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"rdb.red-soft.ru/fbx"
-	"rdb.red-soft.ru/fbx/fbtype"
-	"rdb.red-soft.ru/fbx/fbxtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"rdb.red-soft.ru/fbx"
+	"rdb.red-soft.ru/fbx/fbtype"
 )
 
 func TestArrayCodec(t *testing.T) {
@@ -88,7 +87,6 @@ func TestArrayCodecFlatArrayString(t *testing.T) {
 func TestArrayCodecArray(t *testing.T) {
 	ctr := defaultConnTestRunner
 	ctr.AfterConnect = func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		fbxtest.SkipCockroachDB(t, conn, "Server does not support multi-dimensional arrays")
 	}
 
 	ctr.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
@@ -253,8 +251,6 @@ func TestArrayCodecDecodeValue(t *testing.T) {
 }
 
 func TestArrayCodecScanMultipleDimensions(t *testing.T) {
-	skipCockroachDB(t, "Server does not support nested arrays (https://github.com/cockroachdb/cockroach/issues/36815)")
-
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 
 		rows, err := conn.Query(ctx, `select '{{1,2,3,4}, {5,6,7,8}, {9,10,11,12}}'::int4[]`)
@@ -272,8 +268,6 @@ func TestArrayCodecScanMultipleDimensions(t *testing.T) {
 }
 
 func TestArrayCodecScanMultipleDimensionsEmpty(t *testing.T) {
-	skipCockroachDB(t, "Server does not support nested arrays (https://github.com/cockroachdb/cockroach/issues/36815)")
-
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		rows, err := conn.Query(ctx, `select '{}'::int4[]`)
 		require.NoError(t, err)
@@ -290,8 +284,6 @@ func TestArrayCodecScanMultipleDimensionsEmpty(t *testing.T) {
 }
 
 func TestArrayCodecScanWrongMultipleDimensions(t *testing.T) {
-	skipCockroachDB(t, "Server does not support nested arrays (https://github.com/cockroachdb/cockroach/issues/36815)")
-
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		rows, err := conn.Query(ctx, `select '{{1,2,3,4}, {5,6,7,8}, {9,10,11,12}}'::int4[]`)
 		require.NoError(t, err)
@@ -305,8 +297,6 @@ func TestArrayCodecScanWrongMultipleDimensions(t *testing.T) {
 }
 
 func TestArrayCodecEncodeMultipleDimensions(t *testing.T) {
-	skipCockroachDB(t, "Server does not support nested arrays (https://github.com/cockroachdb/cockroach/issues/36815)")
-
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		rows, err := conn.Query(ctx, `select $1::int4[]`, [][]int32{{1, 2, 3, 4}, {5, 6, 7, 8}, {9, 10, 11, 12}})
 		require.NoError(t, err)
@@ -323,8 +313,6 @@ func TestArrayCodecEncodeMultipleDimensions(t *testing.T) {
 }
 
 func TestArrayCodecEncodeMultipleDimensionsRagged(t *testing.T) {
-	skipCockroachDB(t, "Server does not support nested arrays (https://github.com/cockroachdb/cockroach/issues/36815)")
-
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		rows, err := conn.Query(ctx, `select $1::int4[]`, [][]int32{{1, 2, 3, 4}, {5}, {9, 10, 11, 12}})
 		require.Error(t, err, "cannot convert [][]int32 to ArrayGetter because it is a ragged multi-dimensional")

@@ -5,14 +5,12 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
-	"github.com/stretchr/testify/require"
 )
 
 func TestPointCodec(t *testing.T) {
-	skipCockroachDB(t, "Server does not support type point")
-
 	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "point", []fbxtest.ValueRoundTripTest{
 		{Param: fbtype.Point{P: fbtype.Vec2{1.234, 5.6789012345}, Valid: true}, Result: new(fbtype.Point), Test: isExpectedEq(fbtype.Point{P: fbtype.Vec2{1.234, 5.6789012345}, Valid: true})},
 		{Param: fbtype.Point{P: fbtype.Vec2{-1.234, -5.6789}, Valid: true}, Result: new(fbtype.Point), Test: isExpectedEq(fbtype.Point{P: fbtype.Vec2{-1.234, -5.6789}, Valid: true})},

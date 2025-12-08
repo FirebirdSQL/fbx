@@ -9,8 +9,6 @@ import (
 )
 
 func TestLtreeCodec(t *testing.T) {
-	skipCockroachDB(t, "Server does not support type ltree")
-
 	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, fbxtest.KnownOIDQueryExecModes, "ltree", []fbxtest.ValueRoundTripTest{
 		{
 			Param:  "A.B.C",

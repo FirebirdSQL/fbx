@@ -6,16 +6,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestTimestampCodec(t *testing.T) {
-	skipCockroachDB(t, "Server does not support infinite timestamps (see https://github.com/cockroachdb/cockroach/issues/41564)")
-
 	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "timestamp", []fbxtest.ValueRoundTripTest{
 		{Param: time.Date(-100, 1, 1, 0, 0, 0, 0, time.UTC), Result: new(time.Time), Test: isExpectedEqTime(time.Date(-100, 1, 1, 0, 0, 0, 0, time.UTC))},
 		{Param: time.Date(-1, 1, 1, 0, 0, 0, 0, time.UTC), Result: new(time.Time), Test: isExpectedEqTime(time.Date(-1, 1, 1, 0, 0, 0, 0, time.UTC))},
@@ -41,8 +39,6 @@ func TestTimestampCodec(t *testing.T) {
 }
 
 func TestTimestampCodecWithScanLocationUTC(t *testing.T) {
-	skipCockroachDB(t, "Server does not support infinite timestamps (see https://github.com/cockroachdb/cockroach/issues/41564)")
-
 	connTestRunner := defaultConnTestRunner
 	connTestRunner.AfterConnect = func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		conn.TypeMap().RegisterType(&fbtype.Type{
@@ -60,8 +56,6 @@ func TestTimestampCodecWithScanLocationUTC(t *testing.T) {
 }
 
 func TestTimestampCodecWithScanLocationLocal(t *testing.T) {
-	skipCockroachDB(t, "Server does not support infinite timestamps (see https://github.com/cockroachdb/cockroach/issues/41564)")
-
 	connTestRunner := defaultConnTestRunner
 	connTestRunner.AfterConnect = func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		conn.TypeMap().RegisterType(&fbtype.Type{

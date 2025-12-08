@@ -9,7 +9,6 @@ import (
 
 	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbconn"
-	"rdb.red-soft.ru/fbx/fbxtest"
 )
 
 func TestLargeObjects(t *testing.T) {
@@ -23,8 +22,6 @@ func TestLargeObjects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	fbxtest.SkipCockroachDB(t, conn, "Server does support large objects")
 
 	tx, err := conn.Begin(ctx)
 	if err != nil {
@@ -143,8 +140,6 @@ func TestLargeObjectsMultipleTransactions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	fbxtest.SkipCockroachDB(t, conn, "Server does support large objects")
 
 	tx, err := conn.Begin(ctx)
 	if err != nil {

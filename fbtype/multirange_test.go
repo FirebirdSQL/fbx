@@ -5,15 +5,14 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
-	"github.com/stretchr/testify/require"
 )
 
 func TestMultirangeCodecTranscode(t *testing.T) {
 	skipPostgreSQLVersionLessThan(t, 14)
-	skipCockroachDB(t, "Server does not support range types (see https://github.com/cockroachdb/cockroach/issues/27791)")
 
 	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "int4multirange", []fbxtest.ValueRoundTripTest{
 		{Param: fbtype.Multirange[fbtype.Range[fbtype.Int4]](nil), Result: new(fbtype.Multirange[fbtype.Range[fbtype.Int4]]), Test: func(a any) bool { return reflect.DeepEqual(fbtype.Multirange[fbtype.Range[fbtype.Int4]](nil), a) }},
@@ -57,7 +56,6 @@ func TestMultirangeCodecTranscode(t *testing.T) {
 
 func TestMultirangeCodecDecodeValue(t *testing.T) {
 	skipPostgreSQLVersionLessThan(t, 14)
-	skipCockroachDB(t, "Server does not support range types (see https://github.com/cockroachdb/cockroach/issues/27791)")
 
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 

@@ -9,8 +9,6 @@ import (
 )
 
 func TestQcharTranscode(t *testing.T) {
-	skipCockroachDB(t, "Server does not support qchar")
-
 	var tests []fbxtest.ValueRoundTripTest
 	for i := 0; i <= math.MaxUint8; i++ {
 		tests = append(tests, fbxtest.ValueRoundTripTest{Param: rune(i), Result: new(rune), Test: isExpectedEq(rune(i))})

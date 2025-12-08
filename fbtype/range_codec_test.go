@@ -4,15 +4,13 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
-	"github.com/stretchr/testify/require"
 )
 
 func TestRangeCodecTranscode(t *testing.T) {
-	skipCockroachDB(t, "Server does not support range types (see https://github.com/cockroachdb/cockroach/issues/27791)")
-
 	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "int4range", []fbxtest.ValueRoundTripTest{
 		{Param: fbtype.Range[fbtype.Int4]{LowerType: fbtype.Empty, UpperType: fbtype.Empty, Valid: true}, Result: new(fbtype.Range[fbtype.Int4]), Test: isExpectedEq(fbtype.Range[fbtype.Int4]{LowerType: fbtype.Empty, UpperType: fbtype.Empty, Valid: true})},
 		{Param: fbtype.Range[fbtype.Int4]{
@@ -35,7 +33,6 @@ func TestRangeCodecTranscode(t *testing.T) {
 func TestRangeCodecTranscodeCompatibleRangeElementTypes(t *testing.T) {
 	ctr := defaultConnTestRunner
 	ctr.AfterConnect = func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		fbxtest.SkipCockroachDB(t, conn, "Server does not support range types (see https://github.com/cockroachdb/cockroach/issues/27791)")
 	}
 
 	fbxtest.RunValueRoundTripTests(context.Background(), t, ctr, nil, "numrange", []fbxtest.ValueRoundTripTest{
@@ -58,8 +55,6 @@ func TestRangeCodecTranscodeCompatibleRangeElementTypes(t *testing.T) {
 }
 
 func TestRangeCodecScanRangeTwiceWithUnbounded(t *testing.T) {
-	skipCockroachDB(t, "Server does not support range types (see https://github.com/cockroachdb/cockroach/issues/27791)")
-
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 
 		var r fbtype.Range[fbtype.Int4]
@@ -112,8 +107,6 @@ func TestRangeCodecScanRangeTwiceWithUnbounded(t *testing.T) {
 }
 
 func TestRangeCodecDecodeValue(t *testing.T) {
-	skipCockroachDB(t, "Server does not support range types (see https://github.com/cockroachdb/cockroach/issues/27791)")
-
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 
 		for _, tt := range []struct {

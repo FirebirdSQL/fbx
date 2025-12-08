@@ -27,8 +27,6 @@ func isExpectedEqHardwareAddr(a any) func(any) bool {
 }
 
 func TestMacaddrCodec(t *testing.T) {
-	skipCockroachDB(t, "Server does not support type macaddr")
-
 	// Only testing known OID query exec modes as net.HardwareAddr could map to macaddr or macaddr8.
 	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, fbxtest.KnownOIDQueryExecModes, "macaddr", []fbxtest.ValueRoundTripTest{
 		{Param: mustParseMacaddr(t, "01:23:45:67:89:ab"), Result: new(net.HardwareAddr), Test: isExpectedEqHardwareAddr(mustParseMacaddr(t, "01:23:45:67:89:ab"))},

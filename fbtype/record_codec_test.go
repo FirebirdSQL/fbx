@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbtype"
-	"github.com/stretchr/testify/require"
 )
 
 func TestRecordCodec(t *testing.T) {
@@ -22,8 +22,6 @@ func TestRecordCodec(t *testing.T) {
 }
 
 func TestRecordCodecDecodeValue(t *testing.T) {
-	skipCockroachDB(t, "Server converts row int4 to int8")
-
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		for _, tt := range []struct {
 			sql      string

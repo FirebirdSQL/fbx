@@ -9,12 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbconn"
 	"rdb.red-soft.ru/fbx/fbxpool"
-	"rdb.red-soft.ru/fbx/fbxtest"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestConnect(t *testing.T) {
@@ -160,7 +159,6 @@ func TestPoolAcquireChecksIdleConns(t *testing.T) {
 	controllerConn, err := fbx.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer controllerConn.Close(ctx)
-	fbxtest.SkipCockroachDB(t, controllerConn, "Server does not support pg_terminate_backend() (https://github.com/cockroachdb/cockroach/issues/35897)")
 
 	pool, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)

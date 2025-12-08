@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"rdb.red-soft.ru/fbx"
-	"rdb.red-soft.ru/fbx/fbxtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"rdb.red-soft.ru/fbx"
+	"rdb.red-soft.ru/fbx/fbxtest"
 )
 
 func TestDateTranscode(t *testing.T) {
@@ -757,8 +757,6 @@ func TestPointerPointer(t *testing.T) {
 	defer cancel()
 
 	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		fbxtest.SkipCockroachDB(t, conn, "Server auto converts ints to bigint and test relies on exact types")
-
 		type allTypes struct {
 			s   *string
 			i16 *int16

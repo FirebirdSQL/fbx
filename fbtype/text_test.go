@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
-	"github.com/stretchr/testify/require"
 )
 
 type someFmtStringer struct{}
@@ -50,7 +50,6 @@ func TestTextCodecName(t *testing.T) {
 // Test fixed length char types like char(3)
 func TestTextCodecBPChar(t *testing.T) {
 	t.Skip("need fix")
-	skipCockroachDB(t, "Server does not properly handle bpchar with multi-byte character")
 
 	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "char(3)", []fbxtest.ValueRoundTripTest{
 		{Param: fbtype.Text{String: "a  ", Valid: true}, Result: new(fbtype.Text), Test: isExpectedEq(fbtype.Text{String: "a  ", Valid: true})},
@@ -77,7 +76,6 @@ func TestTextCodecBPChar(t *testing.T) {
 func TestTextCodecACLItem(t *testing.T) {
 	ctr := defaultConnTestRunner
 	ctr.AfterConnect = func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		fbxtest.SkipCockroachDB(t, conn, "Server does not support type aclitem")
 	}
 
 	fbxtest.RunValueRoundTripTests(context.Background(), t, ctr, nil, "aclitem", []fbxtest.ValueRoundTripTest{
@@ -90,8 +88,6 @@ func TestTextCodecACLItem(t *testing.T) {
 func TestTextCodecACLItemRoleWithSpecialCharacters(t *testing.T) {
 	ctr := defaultConnTestRunner
 	ctr.AfterConnect = func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		fbxtest.SkipCockroachDB(t, conn, "Server does not support type aclitem")
-
 		// The tricky test user, below, has to actually exist so that it can be used in a test
 		// of aclitem formatting. It turns out aclitems cannot contain non-existing users/roles.
 		roleWithSpecialCharacters := ` tricky, ' } " \ test user `

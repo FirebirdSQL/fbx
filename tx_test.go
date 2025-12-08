@@ -7,11 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"rdb.red-soft.ru/fbx"
-	"rdb.red-soft.ru/fbx/fbconn"
-	"rdb.red-soft.ru/fbx/fbxtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"rdb.red-soft.ru/fbx"
+	"rdb.red-soft.ru/fbx/fbconn"
 )
 
 func TestTransactionSuccessfulCommit(t *testing.T) {
@@ -109,8 +108,6 @@ func TestTxCommitWhenDeferredConstraintFailure(t *testing.T) {
 
 	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	defer closeConn(t, conn)
-
-	fbxtest.SkipCockroachDB(t, conn, "Server does not support deferred constraint (https://github.com/cockroachdb/cockroach/issues/31632)")
 
 	createSql := `
     recreate table  ` + t.Name() + ` (
@@ -276,8 +273,6 @@ func TestBeginIsoLevels(t *testing.T) {
 
 	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	defer closeConn(t, conn)
-
-	fbxtest.SkipCockroachDB(t, conn, "Server always uses SERIALIZABLE isolation (https://www.cockroachlabs.com/docs/stable/demo-serializable.html)")
 
 	isoLevels := []fbx.TxIsoLevel{fbx.Serializable, fbx.RepeatableRead, fbx.ReadCommitted}
 	for _, iso := range isoLevels {

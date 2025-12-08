@@ -9,8 +9,6 @@ import (
 )
 
 func TestLsegTranscode(t *testing.T) {
-	skipCockroachDB(t, "Server does not support type lseg")
-
 	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "lseg", []fbxtest.ValueRoundTripTest{
 		{Param: fbtype.Lseg{
 			P:     [2]fbtype.Vec2{{3.14, 1.678}, {7.1, 5.2345678901}},
