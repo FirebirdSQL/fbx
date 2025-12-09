@@ -2609,8 +2609,6 @@ func TestCancelRequestContextWatcherHandler(t *testing.T) {
 }
 
 func TestReadSingletonResult(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Second)
 	defer cancel()
 
