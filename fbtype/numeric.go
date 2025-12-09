@@ -248,10 +248,12 @@ func (NumericCodec) PlanEncode(m *Map, oid uint32, subType int32, length uint32,
 	switch value.(type) {
 	case NumericValuer:
 		return encodePlanNumericCodecBinaryNumericValuer{scale: scale, length: length}
-	case Float64Valuer:
-		return encodePlanNumericCodecBinaryFloat64Valuer{scale: scale, length: length}
+	// case Float64Valuer:
+	// 	return encodePlanNumericCodecBinaryFloat64Valuer{scale: scale, length: length}
 	case Int64Valuer:
 		return encodePlanNumericCodecBinaryInt64Valuer{scale: scale, length: length}
+	case string:
+		return encodePlanNumericCodecTextString{scale: scale, length: length}
 	}
 
 	return nil
@@ -312,6 +314,23 @@ func (p encodePlanNumericCodecBinaryInt64Valuer) Encode(value any, buf []byte) (
 		Exp:   0,
 		Valid: true,
 	}
+
+	return EncodeNumericBinaryFB(buf, n, p.scale, p.length)
+}
+
+type encodePlanNumericCodecTextString struct {
+	scale  int32
+	length uint32
+}
+
+func (p encodePlanNumericCodecTextString) Encode(value any, buf []byte) ([]byte, error) {
+	s := value.(string)
+
+	var n Numeric
+	if err := n.ScanScientific(s); err != nil {
+		return nil, err
+	}
+	n.Valid = true
 
 	return EncodeNumericBinaryFB(buf, n, p.scale, p.length)
 }
