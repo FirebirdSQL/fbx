@@ -10,7 +10,7 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/red-soft/fbx/fbproto"
+	"rdb.red-soft.ru/fbx/fbproto"
 )
 
 // PostgreSQL format codes

@@ -5,9 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"net"
 	"os"
 	"reflect"
 	"regexp"
@@ -49,40 +47,6 @@ type _byteSlice []byte
 // unregisteredOID represents an actual type that is not registered. Cannot use 0 because that represents that the type
 // is not known (e.g. when using the simple protocol).
 const unregisteredOID = uint32(1)
-
-func mustParseInet(t testing.TB, s string) *net.IPNet {
-	ip, ipnet, err := net.ParseCIDR(s)
-	if err == nil {
-		if ipv4 := ip.To4(); ipv4 != nil {
-			ipnet.IP = ipv4
-		} else {
-			ipnet.IP = ip
-		}
-		return ipnet
-	}
-
-	// May be bare IP address.
-	//
-	ip = net.ParseIP(s)
-	if ip == nil {
-		t.Fatal(errors.New("unable to parse inet address"))
-	}
-	ipnet = &net.IPNet{IP: ip, Mask: net.CIDRMask(128, 128)}
-	if ipv4 := ip.To4(); ipv4 != nil {
-		ipnet.IP = ipv4
-		ipnet.Mask = net.CIDRMask(32, 32)
-	}
-	return ipnet
-}
-
-func mustParseMacaddr(t testing.TB, s string) net.HardwareAddr {
-	addr, err := net.ParseMAC(s)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return addr
-}
 
 func skipPostgreSQLVersionLessThan(t testing.TB, minVersion int64) {
 	conn, err := fbx.Connect(context.Background(), os.Getenv("PGX_TEST_DATABASE"))
