@@ -1050,7 +1050,7 @@ func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 	msg, err := fbConn.receiveMessage()
 	if err != nil {
 		fbConn.asyncClose()
-		return nil, err
+		return nil, normalizeTimeoutError(ctx, err)
 	}
 
 	var statementHandle int
@@ -1064,7 +1064,7 @@ func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 	msg, err = fbConn.receiveMessage()
 	if err != nil {
 		fbConn.asyncClose()
-		return nil, err
+		return nil, normalizeTimeoutError(ctx, err)
 	}
 	switch m := msg.(type) {
 	case *fbproto.ErrorResponse:
@@ -1207,7 +1207,7 @@ func (fbConn *FbConn) ExecImmediateTx(ctx context.Context, tx *FBTransaction, sq
 	msg, err := fbConn.receiveMessage()
 	if err != nil {
 		fbConn.asyncClose()
-		return err
+		return normalizeTimeoutError(ctx, err)
 	}
 
 	switch m := msg.(type) {
@@ -1492,7 +1492,8 @@ func (rr *ResultReader) NextRow() bool {
 	msg, err := rr.fbConn.receiveMessage()
 	if err != nil {
 		rr.fbConn.asyncClose()
-		rr.err = err
+		rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(rr.ctx, err))
+		rr.fbConn.contextWatcher.Unwatch()
 		return false
 	}
 	switch m := msg.(type) {
@@ -1678,7 +1679,7 @@ func (fbConn *FbConn) Ping(ctx context.Context) error {
 	msg, err := fbConn.receiveMessage()
 	if err != nil {
 		fbConn.asyncClose()
-		return err
+		return normalizeTimeoutError(ctx, err)
 	}
 
 	switch m := msg.(type) {
@@ -1902,7 +1903,7 @@ func (fbConn *FbConn) StartTransactionTPB(ctx context.Context, tpb []byte) (*FBT
 	msg, err := fbConn.receiveMessage()
 	if err != nil {
 		fbConn.asyncClose()
-		return nil, err
+		return nil, normalizeTimeoutError(ctx, err)
 	}
 
 	switch m := msg.(type) {

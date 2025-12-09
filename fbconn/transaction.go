@@ -55,7 +55,7 @@ func (tx *FBTransaction) Commit(ctx context.Context) error {
 	msg, err := tx.Connection.receiveMessage()
 	if err != nil {
 		tx.Connection.asyncClose()
-		return err
+		return normalizeTimeoutError(ctx, err)
 	}
 
 	switch m := msg.(type) {
@@ -106,7 +106,7 @@ func (tx *FBTransaction) Rollback(ctx context.Context) error {
 	msg, err := tx.Connection.receiveMessage()
 	if err != nil {
 		tx.Connection.asyncClose()
-		return err
+		return normalizeTimeoutError(ctx, err)
 	}
 	switch m := msg.(type) {
 	case *fbproto.ErrorResponse:

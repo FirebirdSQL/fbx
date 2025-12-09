@@ -201,7 +201,7 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 	msg, err := st.conn.receiveMessage()
 	if err != nil {
 		st.conn.asyncClose()
-		rr.concludeCommand(QueryStatus{}, err)
+		rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(ctx, err))
 		st.conn.contextWatcher.Unwatch()
 		st.conn.unlock()
 		rr.closed = true
