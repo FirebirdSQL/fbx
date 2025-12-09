@@ -97,6 +97,8 @@ func (TextCodec) PlanEncode(m *Map, oid uint32, format int16, value any) EncodeP
 			return encodePlanTextCodecString{}
 		case []byte:
 			return encodePlanTextCodecByteSlice{}
+		case fmt.Stringer:
+			return encodePlanTextCodecStringer{}
 		case TextValuer:
 			return encodePlanTextCodecTextValuer{}
 		}

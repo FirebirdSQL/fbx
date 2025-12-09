@@ -9,7 +9,7 @@ import (
 )
 
 func TestFloat8Codec(t *testing.T) {
-	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "float8", []fbxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "double precision", []fbxtest.ValueRoundTripTest{
 		{Param: fbtype.Float8{Float64: -1, Valid: true}, Result: new(fbtype.Float8), Test: isExpectedEq(fbtype.Float8{Float64: -1, Valid: true})},
 		{Param: fbtype.Float8{Float64: 0, Valid: true}, Result: new(fbtype.Float8), Test: isExpectedEq(fbtype.Float8{Float64: 0, Valid: true})},
 		{Param: fbtype.Float8{Float64: 1, Valid: true}, Result: new(fbtype.Float8), Test: isExpectedEq(fbtype.Float8{Float64: 1, Valid: true})},

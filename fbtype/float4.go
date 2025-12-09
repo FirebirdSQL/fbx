@@ -105,6 +105,8 @@ func (Float4Codec) PlanEncode(m *Map, oid uint32, format int16, value any) Encod
 		switch value.(type) {
 		case float32:
 			return encodePlanFloat4CodecBinaryFloat32{}
+		case string:
+			return encodePlanFloat4CodecBinaryString{}
 		case Float64Valuer:
 			return encodePlanFloat4CodecBinaryFloat64Valuer{}
 		case Int64Valuer:
@@ -114,6 +116,8 @@ func (Float4Codec) PlanEncode(m *Map, oid uint32, format int16, value any) Encod
 		switch value.(type) {
 		case float32:
 			return encodePlanTextFloat32{}
+		case string:
+			return encodePlanTextString{}
 		case Float64Valuer:
 			return encodePlanTextFloat64Valuer{}
 		case Int64Valuer:
@@ -131,11 +135,29 @@ func (encodePlanFloat4CodecBinaryFloat32) Encode(value any, buf []byte) (newBuf 
 	return pgio.AppendUint32(buf, math.Float32bits(n)), nil
 }
 
+type encodePlanFloat4CodecBinaryString struct{}
+
+func (encodePlanFloat4CodecBinaryString) Encode(value any, buf []byte) ([]byte, error) {
+	s := value.(string)
+	n, err := strconv.ParseFloat(s, 32)
+	if err != nil {
+		return nil, err
+	}
+	return pgio.AppendUint32(buf, math.Float32bits(float32(n))), nil
+}
+
 type encodePlanTextFloat32 struct{}
 
 func (encodePlanTextFloat32) Encode(value any, buf []byte) (newBuf []byte, err error) {
 	n := value.(float32)
 	return append(buf, strconv.FormatFloat(float64(n), 'f', -1, 32)...), nil
+}
+
+type encodePlanTextString struct{}
+
+func (encodePlanTextString) Encode(value any, buf []byte) ([]byte, error) {
+	s := value.(string)
+	return append(buf, s...), nil
 }
 
 type encodePlanFloat4CodecBinaryFloat64Valuer struct{}

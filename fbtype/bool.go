@@ -191,9 +191,9 @@ func (encodePlanBoolCodecTextBool) Encode(value any, buf []byte) (newBuf []byte,
 	v := value.(bool)
 
 	if v {
-		buf = append(buf, 't')
+		buf = append(buf, 'T', 'R', 'U', 'E')
 	} else {
-		buf = append(buf, 'f')
+		buf = append(buf, 'F', 'A', 'L', 'S', 'E')
 	}
 
 	return buf, nil
@@ -328,7 +328,6 @@ func (scanPlanTextAnyToBoolScanner) Scan(src []byte, dst any) error {
 	return s.ScanBool(Bool{Bool: v, Valid: true})
 }
 
-// https://www.postgresql.org/docs/11/datatype-boolean.html
 func planTextToBool(src []byte) (bool, error) {
 	s := string(bytes.ToLower(bytes.TrimSpace(src)))
 

@@ -629,8 +629,8 @@ func TryWrapBuiltinTypeScanPlan(target any) (plan WrappedScanPlanNextSetter, nex
 		return &wrapStringScanPlan{}, (*stringWrapper)(target), true
 	case *time.Time:
 		return &wrapTimeScanPlan{}, (*timeWrapper)(target), true
-	case *time.Duration:
-		return &wrapDurationScanPlan{}, (*durationWrapper)(target), true
+	// case *time.Duration:
+	// 	return &wrapDurationScanPlan{}, (*durationWrapper)(target), true
 	case *net.IPNet:
 		return &wrapNetIPNetScanPlan{}, (*netIPNetWrapper)(target), true
 	case *net.IP:
@@ -639,12 +639,12 @@ func TryWrapBuiltinTypeScanPlan(target any) (plan WrappedScanPlanNextSetter, nex
 		return &wrapNetipPrefixScanPlan{}, (*netipPrefixWrapper)(target), true
 	case *netip.Addr:
 		return &wrapNetipAddrScanPlan{}, (*netipAddrWrapper)(target), true
-	case *map[string]*string:
-		return &wrapMapStringToPointerStringScanPlan{}, (*mapStringToPointerStringWrapper)(target), true
-	case *map[string]string:
-		return &wrapMapStringToStringScanPlan{}, (*mapStringToStringWrapper)(target), true
-	case *[16]byte:
-		return &wrapByte16ScanPlan{}, (*byte16Wrapper)(target), true
+	// case *map[string]*string:
+	// 	return &wrapMapStringToPointerStringScanPlan{}, (*mapStringToPointerStringWrapper)(target), true
+	// case *map[string]string:
+	// 	return &wrapMapStringToStringScanPlan{}, (*mapStringToStringWrapper)(target), true
+	// case *[16]byte:
+	// 	return &wrapByte16ScanPlan{}, (*byte16Wrapper)(target), true
 	case *[]byte:
 		return &wrapByteSliceScanPlan{}, (*byteSliceWrapper)(target), true
 	}
@@ -792,15 +792,15 @@ func (plan *wrapTimeScanPlan) Scan(src []byte, dst any) error {
 	return plan.next.Scan(src, (*timeWrapper)(dst.(*time.Time)))
 }
 
-type wrapDurationScanPlan struct {
-	next ScanPlan
-}
+// type wrapDurationScanPlan struct {
+// 	next ScanPlan
+// }
 
-func (plan *wrapDurationScanPlan) SetNext(next ScanPlan) { plan.next = next }
+// func (plan *wrapDurationScanPlan) SetNext(next ScanPlan) { plan.next = next }
 
-func (plan *wrapDurationScanPlan) Scan(src []byte, dst any) error {
-	return plan.next.Scan(src, (*durationWrapper)(dst.(*time.Duration)))
-}
+// func (plan *wrapDurationScanPlan) Scan(src []byte, dst any) error {
+// 	return plan.next.Scan(src, (*durationWrapper)(dst.(*time.Duration)))
+// }
 
 type wrapNetIPNetScanPlan struct {
 	next ScanPlan
@@ -842,35 +842,35 @@ func (plan *wrapNetipAddrScanPlan) Scan(src []byte, dst any) error {
 	return plan.next.Scan(src, (*netipAddrWrapper)(dst.(*netip.Addr)))
 }
 
-type wrapMapStringToPointerStringScanPlan struct {
-	next ScanPlan
-}
+// type wrapMapStringToPointerStringScanPlan struct {
+// 	next ScanPlan
+// }
 
-func (plan *wrapMapStringToPointerStringScanPlan) SetNext(next ScanPlan) { plan.next = next }
+// func (plan *wrapMapStringToPointerStringScanPlan) SetNext(next ScanPlan) { plan.next = next }
 
-func (plan *wrapMapStringToPointerStringScanPlan) Scan(src []byte, dst any) error {
-	return plan.next.Scan(src, (*mapStringToPointerStringWrapper)(dst.(*map[string]*string)))
-}
+// func (plan *wrapMapStringToPointerStringScanPlan) Scan(src []byte, dst any) error {
+// 	return plan.next.Scan(src, (*mapStringToPointerStringWrapper)(dst.(*map[string]*string)))
+// }
 
-type wrapMapStringToStringScanPlan struct {
-	next ScanPlan
-}
+// type wrapMapStringToStringScanPlan struct {
+// 	next ScanPlan
+// }
 
-func (plan *wrapMapStringToStringScanPlan) SetNext(next ScanPlan) { plan.next = next }
+// func (plan *wrapMapStringToStringScanPlan) SetNext(next ScanPlan) { plan.next = next }
 
-func (plan *wrapMapStringToStringScanPlan) Scan(src []byte, dst any) error {
-	return plan.next.Scan(src, (*mapStringToStringWrapper)(dst.(*map[string]string)))
-}
+// func (plan *wrapMapStringToStringScanPlan) Scan(src []byte, dst any) error {
+// 	return plan.next.Scan(src, (*mapStringToStringWrapper)(dst.(*map[string]string)))
+// }
 
-type wrapByte16ScanPlan struct {
-	next ScanPlan
-}
+// type wrapByte16ScanPlan struct {
+// 	next ScanPlan
+// }
 
-func (plan *wrapByte16ScanPlan) SetNext(next ScanPlan) { plan.next = next }
+// func (plan *wrapByte16ScanPlan) SetNext(next ScanPlan) { plan.next = next }
 
-func (plan *wrapByte16ScanPlan) Scan(src []byte, dst any) error {
-	return plan.next.Scan(src, (*byte16Wrapper)(dst.(*[16]byte)))
-}
+// func (plan *wrapByte16ScanPlan) Scan(src []byte, dst any) error {
+// 	return plan.next.Scan(src, (*byte16Wrapper)(dst.(*[16]byte)))
+// }
 
 type wrapByteSliceScanPlan struct {
 	next ScanPlan
@@ -1478,8 +1478,8 @@ func TryWrapBuiltinTypeEncodePlan(value any) (plan WrappedEncodePlanNextSetter, 
 		return &wrapStringEncodePlan{}, stringWrapper(value), true
 	case time.Time:
 		return &wrapTimeEncodePlan{}, timeWrapper(value), true
-	case time.Duration:
-		return &wrapDurationEncodePlan{}, durationWrapper(value), true
+	// case time.Duration:
+	// 	return &wrapDurationEncodePlan{}, durationWrapper(value), true
 	case net.IPNet:
 		return &wrapNetIPNetEncodePlan{}, netIPNetWrapper(value), true
 	case net.IP:
@@ -1488,12 +1488,12 @@ func TryWrapBuiltinTypeEncodePlan(value any) (plan WrappedEncodePlanNextSetter, 
 		return &wrapNetipPrefixEncodePlan{}, netipPrefixWrapper(value), true
 	case netip.Addr:
 		return &wrapNetipAddrEncodePlan{}, netipAddrWrapper(value), true
-	case map[string]*string:
-		return &wrapMapStringToPointerStringEncodePlan{}, mapStringToPointerStringWrapper(value), true
-	case map[string]string:
-		return &wrapMapStringToStringEncodePlan{}, mapStringToStringWrapper(value), true
-	case [16]byte:
-		return &wrapByte16EncodePlan{}, byte16Wrapper(value), true
+	// case map[string]*string:
+	// 	return &wrapMapStringToPointerStringEncodePlan{}, mapStringToPointerStringWrapper(value), true
+	// case map[string]string:
+	// 	return &wrapMapStringToStringEncodePlan{}, mapStringToStringWrapper(value), true
+	// case [16]byte:
+	// 	return &wrapByte16EncodePlan{}, byte16Wrapper(value), true
 	case []byte:
 		return &wrapByteSliceEncodePlan{}, byteSliceWrapper(value), true
 	case fmt.Stringer:
@@ -1643,15 +1643,15 @@ func (plan *wrapTimeEncodePlan) Encode(value any, buf []byte) (newBuf []byte, er
 	return plan.next.Encode(timeWrapper(value.(time.Time)), buf)
 }
 
-type wrapDurationEncodePlan struct {
-	next EncodePlan
-}
+// type wrapDurationEncodePlan struct {
+// 	next EncodePlan
+// }
 
-func (plan *wrapDurationEncodePlan) SetNext(next EncodePlan) { plan.next = next }
+// func (plan *wrapDurationEncodePlan) SetNext(next EncodePlan) { plan.next = next }
 
-func (plan *wrapDurationEncodePlan) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	return plan.next.Encode(durationWrapper(value.(time.Duration)), buf)
-}
+// func (plan *wrapDurationEncodePlan) Encode(value any, buf []byte) (newBuf []byte, err error) {
+// 	return plan.next.Encode(durationWrapper(value.(time.Duration)), buf)
+// }
 
 type wrapNetIPNetEncodePlan struct {
 	next EncodePlan
@@ -1693,35 +1693,35 @@ func (plan *wrapNetipAddrEncodePlan) Encode(value any, buf []byte) (newBuf []byt
 	return plan.next.Encode(netipAddrWrapper(value.(netip.Addr)), buf)
 }
 
-type wrapMapStringToPointerStringEncodePlan struct {
-	next EncodePlan
-}
+// type wrapMapStringToPointerStringEncodePlan struct {
+// 	next EncodePlan
+// }
 
-func (plan *wrapMapStringToPointerStringEncodePlan) SetNext(next EncodePlan) { plan.next = next }
+// func (plan *wrapMapStringToPointerStringEncodePlan) SetNext(next EncodePlan) { plan.next = next }
 
-func (plan *wrapMapStringToPointerStringEncodePlan) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	return plan.next.Encode(mapStringToPointerStringWrapper(value.(map[string]*string)), buf)
-}
+// func (plan *wrapMapStringToPointerStringEncodePlan) Encode(value any, buf []byte) (newBuf []byte, err error) {
+// 	return plan.next.Encode(mapStringToPointerStringWrapper(value.(map[string]*string)), buf)
+// }
 
-type wrapMapStringToStringEncodePlan struct {
-	next EncodePlan
-}
+// type wrapMapStringToStringEncodePlan struct {
+// 	next EncodePlan
+// }
 
-func (plan *wrapMapStringToStringEncodePlan) SetNext(next EncodePlan) { plan.next = next }
+// func (plan *wrapMapStringToStringEncodePlan) SetNext(next EncodePlan) { plan.next = next }
 
-func (plan *wrapMapStringToStringEncodePlan) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	return plan.next.Encode(mapStringToStringWrapper(value.(map[string]string)), buf)
-}
+// func (plan *wrapMapStringToStringEncodePlan) Encode(value any, buf []byte) (newBuf []byte, err error) {
+// 	return plan.next.Encode(mapStringToStringWrapper(value.(map[string]string)), buf)
+// }
 
-type wrapByte16EncodePlan struct {
-	next EncodePlan
-}
+// type wrapByte16EncodePlan struct {
+// 	next EncodePlan
+// }
 
-func (plan *wrapByte16EncodePlan) SetNext(next EncodePlan) { plan.next = next }
+// func (plan *wrapByte16EncodePlan) SetNext(next EncodePlan) { plan.next = next }
 
-func (plan *wrapByte16EncodePlan) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	return plan.next.Encode(byte16Wrapper(value.([16]byte)), buf)
-}
+// func (plan *wrapByte16EncodePlan) Encode(value any, buf []byte) (newBuf []byte, err error) {
+// 	return plan.next.Encode(byte16Wrapper(value.([16]byte)), buf)
+// }
 
 type wrapByteSliceEncodePlan struct {
 	next EncodePlan

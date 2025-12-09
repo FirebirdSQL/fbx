@@ -933,40 +933,40 @@ func (c *Conn) getMultiRangeElementOID(ctx context.Context, oid uint32) (uint32,
 	panic("implement me")
 }
 
-func (c *Conn) getCompositeFields(ctx context.Context, oid uint32) ([]fbtype.CompositeCodecField, error) {
-	//	var typrelid uint32
-	//
-	//	err := c.QueryRow(ctx, "select typrelid from pg_type where oid=$1", oid).Scan(&typrelid)
-	//	if err != nil {
-	//		return nil, err
-	//	}
-	//
-	//	var fields []pgtype.CompositeCodecField
-	//	var fieldName string
-	//	var fieldOID uint32
-	//	rows, _ := c.Query(ctx, `select attname, atttypid
-	//from pg_attribute
-	//where attrelid=$1
-	//	and not attisdropped
-	//	and attnum > 0
-	//order by attnum`,
-	//		typrelid,
-	//	)
-	//	_, err = ForEachRow(rows, []any{&fieldName, &fieldOID}, func() error {
-	//		dt, ok := c.TypeMap().TypeForOID(fieldOID)
-	//		if !ok {
-	//			return fmt.Errorf("unknown composite type field OID: %v", fieldOID)
-	//		}
-	//		fields = append(fields, pgtype.CompositeCodecField{Name: fieldName, Type: dt})
-	//		return nil
-	//	})
-	//	if err != nil {
-	//		return nil, err
-	//	}
-	//
-	//	return fields, nil
-	panic("implement me")
-}
+// func (c *Conn) getCompositeFields(ctx context.Context, oid uint32) ([]fbtype.CompositeCodecField, error) {
+// 	//	var typrelid uint32
+// 	//
+// 	//	err := c.QueryRow(ctx, "select typrelid from pg_type where oid=$1", oid).Scan(&typrelid)
+// 	//	if err != nil {
+// 	//		return nil, err
+// 	//	}
+// 	//
+// 	//	var fields []pgtype.CompositeCodecField
+// 	//	var fieldName string
+// 	//	var fieldOID uint32
+// 	//	rows, _ := c.Query(ctx, `select attname, atttypid
+// 	//from pg_attribute
+// 	//where attrelid=$1
+// 	//	and not attisdropped
+// 	//	and attnum > 0
+// 	//order by attnum`,
+// 	//		typrelid,
+// 	//	)
+// 	//	_, err = ForEachRow(rows, []any{&fieldName, &fieldOID}, func() error {
+// 	//		dt, ok := c.TypeMap().TypeForOID(fieldOID)
+// 	//		if !ok {
+// 	//			return fmt.Errorf("unknown composite type field OID: %v", fieldOID)
+// 	//		}
+// 	//		fields = append(fields, pgtype.CompositeCodecField{Name: fieldName, Type: dt})
+// 	//		return nil
+// 	//	})
+// 	//	if err != nil {
+// 	//		return nil, err
+// 	//	}
+// 	//
+// 	//	return fields, nil
+// 	panic("implement me")
+// }
 
 func (c *Conn) deallocateInvalidatedCachedStatements(ctx context.Context) error {
 	//FIXME: fbx need to check state of transaction bound to statement?

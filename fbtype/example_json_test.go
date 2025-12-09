@@ -1,39 +1,39 @@
 package fbtype_test
 
-import (
-	"context"
-	"fmt"
-	"os"
+// import (
+// 	"context"
+// 	"fmt"
+// 	"os"
 
-	"rdb.red-soft.ru/fbx"
-)
+// 	"rdb.red-soft.ru/fbx"
+// )
 
-func Example_json() {
-	conn, err := fbx.Connect(context.Background(), os.Getenv("PGX_TEST_DATABASE"))
-	if err != nil {
-		fmt.Printf("Unable to establish connection: %v", err)
-		return
-	}
+// func Example_json() {
+// 	conn, err := fbx.Connect(context.Background(), os.Getenv("PGX_TEST_DATABASE"))
+// 	if err != nil {
+// 		fmt.Printf("Unable to establish connection: %v", err)
+// 		return
+// 	}
 
-	type person struct {
-		Name string `json:"name"`
-		Age  int    `json:"age"`
-	}
+// 	type person struct {
+// 		Name string `json:"name"`
+// 		Age  int    `json:"age"`
+// 	}
 
-	input := person{
-		Name: "John",
-		Age:  42,
-	}
+// 	input := person{
+// 		Name: "John",
+// 		Age:  42,
+// 	}
 
-	var output person
+// 	var output person
 
-	err = conn.QueryRow(context.Background(), "select $1::json", input).Scan(&output)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+// 	err = conn.QueryRow(context.Background(), "select $1::json", input).Scan(&output)
+// 	if err != nil {
+// 		fmt.Println(err)
+// 		return
+// 	}
 
-	fmt.Println(output.Name, output.Age)
-	// Output:
-	// John 42
-}
+// 	fmt.Println(output.Name, output.Age)
+// 	// Output:
+// 	// John 42
+// }

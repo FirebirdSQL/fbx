@@ -9,15 +9,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
+	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
 )
 
 func TestTimestampCodec(t *testing.T) {
 	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "timestamp", []fbxtest.ValueRoundTripTest{
-		{Param: time.Date(-100, 1, 1, 0, 0, 0, 0, time.UTC), Result: new(time.Time), Test: isExpectedEqTime(time.Date(-100, 1, 1, 0, 0, 0, 0, time.UTC))},
-		{Param: time.Date(-1, 1, 1, 0, 0, 0, 0, time.UTC), Result: new(time.Time), Test: isExpectedEqTime(time.Date(-1, 1, 1, 0, 0, 0, 0, time.UTC))},
-		{Param: time.Date(0, 1, 1, 0, 0, 0, 0, time.UTC), Result: new(time.Time), Test: isExpectedEqTime(time.Date(0, 1, 1, 0, 0, 0, 0, time.UTC))},
 		{Param: time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC), Result: new(time.Time), Test: isExpectedEqTime(time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC))},
 
 		{Param: time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC), Result: new(time.Time), Test: isExpectedEqTime(time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC))},
@@ -28,11 +26,8 @@ func TestTimestampCodec(t *testing.T) {
 		{Param: time.Date(2200, 1, 1, 0, 0, 0, 0, time.UTC), Result: new(time.Time), Test: isExpectedEqTime(time.Date(2200, 1, 1, 0, 0, 0, 0, time.UTC))},
 
 		// Nanosecond truncation
-		{Param: time.Date(2020, 1, 1, 0, 0, 0, 999999999, time.UTC), Result: new(time.Time), Test: isExpectedEqTime(time.Date(2020, 1, 1, 0, 0, 0, 999999000, time.UTC))},
-		{Param: time.Date(2020, 1, 1, 0, 0, 0, 999999001, time.UTC), Result: new(time.Time), Test: isExpectedEqTime(time.Date(2020, 1, 1, 0, 0, 0, 999999000, time.UTC))},
+		{Param: time.Date(2020, 1, 1, 0, 0, 0, 9999999, time.UTC), Result: new(time.Time), Test: isExpectedEqTime(time.Date(2020, 1, 1, 0, 0, 0, 9900000, time.UTC))},
 
-		{Param: fbtype.Timestamp{InfinityModifier: fbtype.Infinity, Valid: true}, Result: new(fbtype.Timestamp), Test: isExpectedEq(fbtype.Timestamp{InfinityModifier: fbtype.Infinity, Valid: true})},
-		{Param: fbtype.Timestamp{InfinityModifier: fbtype.NegativeInfinity, Valid: true}, Result: new(fbtype.Timestamp), Test: isExpectedEq(fbtype.Timestamp{InfinityModifier: fbtype.NegativeInfinity, Valid: true})},
 		{Param: fbtype.Timestamp{}, Result: new(fbtype.Timestamp), Test: isExpectedEq(fbtype.Timestamp{})},
 		{Param: nil, Result: new(*time.Time), Test: isExpectedEq((*time.Time)(nil))},
 	})
@@ -43,14 +38,12 @@ func TestTimestampCodecWithScanLocationUTC(t *testing.T) {
 	connTestRunner.AfterConnect = func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		conn.TypeMap().RegisterType(&fbtype.Type{
 			Name:  "timestamp",
-			OID:   fbtype.TimestampOID,
+			OID:   fbproto.SQL_TYPE_TIMESTAMP,
 			Codec: &fbtype.TimestampCodec{ScanLocation: time.UTC},
 		})
 	}
 
 	fbxtest.RunValueRoundTripTests(context.Background(), t, connTestRunner, nil, "timestamp", []fbxtest.ValueRoundTripTest{
-		// Have to use pgtype.Timestamp instead of time.Time as source because otherwise the simple and exec query exec
-		// modes will encode the time for timestamptz. That is, they will convert it from local time zone.
 		{Param: fbtype.Timestamp{Time: time.Date(2000, 1, 1, 0, 0, 0, 0, time.Local), Valid: true}, Result: new(time.Time), Test: isExpectedEq(time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC))},
 	})
 }
@@ -60,7 +53,7 @@ func TestTimestampCodecWithScanLocationLocal(t *testing.T) {
 	connTestRunner.AfterConnect = func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		conn.TypeMap().RegisterType(&fbtype.Type{
 			Name:  "timestamp",
-			OID:   fbtype.TimestampOID,
+			OID:   fbproto.SQL_TYPE_TIMESTAMP,
 			Codec: &fbtype.TimestampCodec{ScanLocation: time.Local},
 		})
 	}
@@ -70,13 +63,12 @@ func TestTimestampCodecWithScanLocationLocal(t *testing.T) {
 	})
 }
 
-// https://github.com/jackc/pgx/v4/pgtype/pull/128
 func TestTimestampTranscodeBigTimeBinary(t *testing.T) {
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		in := &fbtype.Timestamp{Time: time.Date(294276, 12, 31, 23, 59, 59, 999999000, time.UTC), Valid: true}
+		in := &fbtype.Timestamp{Time: time.Date(9999, 12, 31, 23, 59, 59, 999900000, time.UTC), Valid: true}
 		var out fbtype.Timestamp
 
-		err := conn.QueryRow(ctx, "select $1::timestamp", in).Scan(&out)
+		err := conn.QueryRow(ctx, "select cast(? as timestamp) from rdb$database", in).Scan(&out)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -86,11 +78,10 @@ func TestTimestampTranscodeBigTimeBinary(t *testing.T) {
 	})
 }
 
-// https://github.com/jackc/pgtype/issues/74
 func TestTimestampCodecDecodeTextInvalid(t *testing.T) {
 	c := &fbtype.TimestampCodec{}
 	var ts fbtype.Timestamp
-	plan := c.PlanScan(nil, fbtype.TimestampOID, fbtype.TextFormatCode, &ts)
+	plan := c.PlanScan(nil, fbproto.SQL_TYPE_TIMESTAMP, fbtype.TextFormatCode, &ts)
 	err := plan.Scan([]byte(`eeeee`), &ts)
 	require.Error(t, err)
 }
@@ -114,8 +105,6 @@ func TestTimestampMarshalJSON(t *testing.T) {
 		{source: fbtype.Timestamp{Time: tm, Valid: true}, result: tsString},
 		{source: pgt, result: tsString},
 		{source: fbtype.Timestamp{Time: tm.Add(time.Second * 555 / 1000), Valid: true}, result: `"2012-03-29T10:05:45.555"`},
-		{source: fbtype.Timestamp{InfinityModifier: fbtype.Infinity, Valid: true}, result: "\"infinity\""},
-		{source: fbtype.Timestamp{InfinityModifier: fbtype.NegativeInfinity, Valid: true}, result: "\"-infinity\""},
 	}
 	for i, tt := range successfulTests {
 		r, err := tt.source.MarshalJSON()
@@ -157,8 +146,6 @@ func TestTimestampUnmarshalJSON(t *testing.T) {
 		{source: "null", result: fbtype.Timestamp{}},
 		{source: "\"2012-03-29T10:05:45\"", result: fbtype.Timestamp{Time: time.Date(2012, 3, 29, 10, 5, 45, 0, time.UTC), Valid: true}},
 		{source: "\"2012-03-29T10:05:45.555\"", result: fbtype.Timestamp{Time: time.Date(2012, 3, 29, 10, 5, 45, 555*1000*1000, time.UTC), Valid: true}},
-		{source: "\"infinity\"", result: fbtype.Timestamp{InfinityModifier: fbtype.Infinity, Valid: true}},
-		{source: "\"-infinity\"", result: fbtype.Timestamp{InfinityModifier: fbtype.NegativeInfinity, Valid: true}},
 	}
 	for i, tt := range successfulTests {
 		var r fbtype.Timestamp
@@ -167,7 +154,7 @@ func TestTimestampUnmarshalJSON(t *testing.T) {
 			t.Errorf("%d: %v", i, err)
 		}
 
-		if !r.Time.Equal(tt.result.Time) || r.Valid != tt.result.Valid || r.InfinityModifier != tt.result.InfinityModifier {
+		if !r.Time.Equal(tt.result.Time) || r.Valid != tt.result.Valid {
 			t.Errorf("%d: expected %v to convert to %v, but it was %v", i, tt.source, tt.result, r)
 		}
 	}

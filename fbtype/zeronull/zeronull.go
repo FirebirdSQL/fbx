@@ -13,5 +13,4 @@ func Register(m *fbtype.Map) {
 	m.RegisterDefaultFbType(Text(""), "text")
 	m.RegisterDefaultFbType(Timestamp{}, "timestamp")
 	m.RegisterDefaultFbType(Timestamptz{}, "timestamptz")
-	m.RegisterDefaultFbType(UUID{}, "uuid")
 }

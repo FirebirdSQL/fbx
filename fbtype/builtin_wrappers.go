@@ -402,17 +402,8 @@ func (w *timeWrapper) ScanDate(v Date) error {
 		return fmt.Errorf("cannot scan NULL into *time.Time")
 	}
 
-	switch v.InfinityModifier {
-	case Finite:
-		*w = timeWrapper(v.Time)
-		return nil
-	case Infinity:
-		return fmt.Errorf("cannot scan Infinity into *time.Time")
-	case NegativeInfinity:
-		return fmt.Errorf("cannot scan -Infinity into *time.Time")
-	default:
-		return fmt.Errorf("invalid InfinityModifier: %v", v.InfinityModifier)
-	}
+	*w = timeWrapper(v.Time)
+	return nil
 }
 
 func (w timeWrapper) DateValue() (Date, error) {
@@ -424,17 +415,8 @@ func (w *timeWrapper) ScanTimestamp(v Timestamp) error {
 		return fmt.Errorf("cannot scan NULL into *time.Time")
 	}
 
-	switch v.InfinityModifier {
-	case Finite:
-		*w = timeWrapper(v.Time)
-		return nil
-	case Infinity:
-		return fmt.Errorf("cannot scan Infinity into *time.Time")
-	case NegativeInfinity:
-		return fmt.Errorf("cannot scan -Infinity into *time.Time")
-	default:
-		return fmt.Errorf("invalid InfinityModifier: %v", v.InfinityModifier)
-	}
+	*w = timeWrapper(v.Time)
+	return nil
 }
 
 func (w timeWrapper) TimestampValue() (Timestamp, error) {
@@ -446,17 +428,8 @@ func (w *timeWrapper) ScanTimestamptz(v Timestamptz) error {
 		return fmt.Errorf("cannot scan NULL into *time.Time")
 	}
 
-	switch v.InfinityModifier {
-	case Finite:
-		*w = timeWrapper(v.Time)
-		return nil
-	case Infinity:
-		return fmt.Errorf("cannot scan Infinity into *time.Time")
-	case NegativeInfinity:
-		return fmt.Errorf("cannot scan -Infinity into *time.Time")
-	default:
-		return fmt.Errorf("invalid InfinityModifier: %v", v.InfinityModifier)
-	}
+	*w = timeWrapper(v.Time)
+	return nil
 }
 
 func (w timeWrapper) TimestamptzValue() (Timestamptz, error) {
@@ -493,24 +466,6 @@ func (w timeWrapper) TimeValue() (Time, error) {
 		int64(t.Second())*microsecondsPerSecond +
 		int64(t.Nanosecond())/1000
 	return Time{Microseconds: usec, Valid: true}, nil
-}
-
-type durationWrapper time.Duration
-
-func (w durationWrapper) SkipUnderlyingTypePlan() {}
-
-func (w *durationWrapper) ScanInterval(v Interval) error {
-	if !v.Valid {
-		return fmt.Errorf("cannot scan NULL into *time.Interval")
-	}
-
-	us := int64(v.Months)*microsecondsPerMonth + int64(v.Days)*microsecondsPerDay + v.Microseconds
-	*w = durationWrapper(time.Duration(us) * time.Microsecond)
-	return nil
-}
-
-func (w durationWrapper) IntervalValue() (Interval, error) {
-	return Interval{Microseconds: int64(w) / 1000, Valid: true}, nil
 }
 
 type netIPNetWrapper net.IPNet
@@ -606,63 +561,12 @@ func (w netipAddrWrapper) NetipPrefixValue() (netip.Prefix, error) {
 	return netip.PrefixFrom(addr, addr.BitLen()), nil
 }
 
-type mapStringToPointerStringWrapper map[string]*string
-
-func (w *mapStringToPointerStringWrapper) ScanHstore(v Hstore) error {
-	*w = mapStringToPointerStringWrapper(v)
-	return nil
-}
-
-func (w mapStringToPointerStringWrapper) HstoreValue() (Hstore, error) {
-	return Hstore(w), nil
-}
-
-type mapStringToStringWrapper map[string]string
-
-func (w *mapStringToStringWrapper) ScanHstore(v Hstore) error {
-	*w = make(mapStringToStringWrapper, len(v))
-	for k, v := range v {
-		if v == nil {
-			return fmt.Errorf("cannot scan NULL to string")
-		}
-		(*w)[k] = *v
-	}
-	return nil
-}
-
-func (w mapStringToStringWrapper) HstoreValue() (Hstore, error) {
-	if w == nil {
-		return nil, nil
-	}
-
-	hstore := make(Hstore, len(w))
-	for k, v := range w {
-		s := v
-		hstore[k] = &s
-	}
-	return hstore, nil
-}
-
 type fmtStringerWrapper struct {
 	s fmt.Stringer
 }
 
 func (w fmtStringerWrapper) TextValue() (Text, error) {
 	return Text{String: w.s.String(), Valid: true}, nil
-}
-
-type byte16Wrapper [16]byte
-
-func (w *byte16Wrapper) ScanUUID(v UUID) error {
-	if !v.Valid {
-		return fmt.Errorf("cannot scan NULL into *[16]byte")
-	}
-	*w = byte16Wrapper(v.Bytes)
-	return nil
-}
-
-func (w byte16Wrapper) UUIDValue() (UUID, error) {
-	return UUID{Bytes: [16]byte(w), Valid: true}, nil
 }
 
 type byteSliceWrapper []byte
@@ -685,26 +589,6 @@ func (w byteSliceWrapper) TextValue() (Text, error) {
 	}
 
 	return Text{String: string(w), Valid: true}, nil
-}
-
-func (w *byteSliceWrapper) ScanUUID(v UUID) error {
-	if !v.Valid {
-		*w = nil
-		return nil
-	}
-	*w = make(byteSliceWrapper, 16)
-	copy(*w, v.Bytes[:])
-	return nil
-}
-
-func (w byteSliceWrapper) UUIDValue() (UUID, error) {
-	if w == nil {
-		return UUID{}, nil
-	}
-
-	uuid := UUID{Valid: true}
-	copy(uuid.Bytes[:], w)
-	return uuid, nil
 }
 
 // structWrapper implements CompositeIndexGetter for a struct.

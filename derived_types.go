@@ -189,17 +189,17 @@ func (c *Conn) LoadTypes(ctx context.Context, typeNames []string) ([]*fbtype.Typ
 				return nil, fmt.Errorf("Array element OID %v not registered while loading pgtype %q", ti.Typelem, ti.TypeName)
 			}
 			type_ = &fbtype.Type{Name: ti.TypeName, OID: ti.Oid, Codec: &fbtype.ArrayCodec{ElementType: dt}}
-		case "c": // composite
-			var fields []fbtype.CompositeCodecField
-			for i, fieldName := range ti.Attnames {
-				dt, ok := m.TypeForOID(ti.Atttypids[i])
-				if !ok {
-					return nil, fmt.Errorf("Unknown field for composite type %q:  field %q (OID %v) is not already registered.", ti.TypeName, fieldName, ti.Atttypids[i])
-				}
-				fields = append(fields, fbtype.CompositeCodecField{Name: fieldName, Type: dt})
-			}
+		// case "c": // composite
+		// 	var fields []fbtype.CompositeCodecField
+		// 	for i, fieldName := range ti.Attnames {
+		// 		dt, ok := m.TypeForOID(ti.Atttypids[i])
+		// 		if !ok {
+		// 			return nil, fmt.Errorf("Unknown field for composite type %q:  field %q (OID %v) is not already registered.", ti.TypeName, fieldName, ti.Atttypids[i])
+		// 		}
+		// 		fields = append(fields, fbtype.CompositeCodecField{Name: fieldName, Type: dt})
+		// 	}
 
-			type_ = &fbtype.Type{Name: ti.TypeName, OID: ti.Oid, Codec: &fbtype.CompositeCodec{Fields: fields}}
+		// 	type_ = &fbtype.Type{Name: ti.TypeName, OID: ti.Oid, Codec: &fbtype.CompositeCodec{Fields: fields}}
 		case "d": // domain
 			dt, ok := m.TypeForOID(ti.Typbasetype)
 			if !ok {
@@ -207,22 +207,22 @@ func (c *Conn) LoadTypes(ctx context.Context, typeNames []string) ([]*fbtype.Typ
 			}
 
 			type_ = &fbtype.Type{Name: ti.TypeName, OID: ti.Oid, Codec: dt.Codec}
-		case "e": // enum
-			type_ = &fbtype.Type{Name: ti.TypeName, OID: ti.Oid, Codec: &fbtype.EnumCodec{}}
-		case "r": // range
-			dt, ok := m.TypeForOID(ti.Rngsubtype)
-			if !ok {
-				return nil, fmt.Errorf("Range element OID %v was not already registered, needed for %q", ti.Rngsubtype, ti.TypeName)
-			}
+		// case "e": // enum
+		// 	type_ = &fbtype.Type{Name: ti.TypeName, OID: ti.Oid, Codec: &fbtype.EnumCodec{}}
+		// case "r": // range
+		// 	dt, ok := m.TypeForOID(ti.Rngsubtype)
+		// 	if !ok {
+		// 		return nil, fmt.Errorf("Range element OID %v was not already registered, needed for %q", ti.Rngsubtype, ti.TypeName)
+		// 	}
 
-			type_ = &fbtype.Type{Name: ti.TypeName, OID: ti.Oid, Codec: &fbtype.RangeCodec{ElementType: dt}}
-		case "m": // multirange
-			dt, ok := m.TypeForOID(ti.Rngtypid)
-			if !ok {
-				return nil, fmt.Errorf("Multirange element OID %v was not already registered, needed for %q", ti.Rngtypid, ti.TypeName)
-			}
+		// 	type_ = &fbtype.Type{Name: ti.TypeName, OID: ti.Oid, Codec: &fbtype.RangeCodec{ElementType: dt}}
+		// case "m": // multirange
+		// 	dt, ok := m.TypeForOID(ti.Rngtypid)
+		// 	if !ok {
+		// 		return nil, fmt.Errorf("Multirange element OID %v was not already registered, needed for %q", ti.Rngtypid, ti.TypeName)
+		// 	}
 
-			type_ = &fbtype.Type{Name: ti.TypeName, OID: ti.Oid, Codec: &fbtype.MultirangeCodec{ElementType: dt}}
+		// 	type_ = &fbtype.Type{Name: ti.TypeName, OID: ti.Oid, Codec: &fbtype.MultirangeCodec{ElementType: dt}}
 		default:
 			return nil, fmt.Errorf("Unknown typtype %q was found while registering %q", ti.Typtype, ti.TypeName)
 		}

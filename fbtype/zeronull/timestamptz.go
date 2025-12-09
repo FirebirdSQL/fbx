@@ -2,7 +2,6 @@ package zeronull
 
 import (
 	"database/sql/driver"
-	"fmt"
 	"time"
 
 	"rdb.red-soft.ru/fbx/fbtype"
@@ -18,17 +17,8 @@ func (ts *Timestamptz) ScanTimestamptz(v fbtype.Timestamptz) error {
 		return nil
 	}
 
-	switch v.InfinityModifier {
-	case fbtype.Finite:
-		*ts = Timestamptz(v.Time)
-		return nil
-	case fbtype.Infinity:
-		return fmt.Errorf("cannot scan Infinity into *time.Time")
-	case fbtype.NegativeInfinity:
-		return fmt.Errorf("cannot scan -Infinity into *time.Time")
-	default:
-		return fmt.Errorf("invalid InfinityModifier: %v", v.InfinityModifier)
-	}
+	*ts = Timestamptz(v.Time)
+	return nil
 }
 
 func (ts Timestamptz) TimestamptzValue() (fbtype.Timestamptz, error) {

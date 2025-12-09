@@ -1,10 +1,6 @@
 package fbtype
 
 import (
-	"encoding/json"
-	"encoding/xml"
-	"net"
-	"net/netip"
 	"reflect"
 	"sync"
 	"time"
@@ -49,68 +45,17 @@ func initDefaultMap() {
 	}
 
 	// Base types
-	defaultMap.RegisterType(&Type{Name: "aclitem", OID: ACLItemOID, Codec: &TextFormatOnlyCodec{TextCodec{}}})
-	defaultMap.RegisterType(&Type{Name: "bit", OID: BitOID, Codec: BitsCodec{}})
-	defaultMap.RegisterType(&Type{Name: "bool", OID: BoolOID, Codec: BoolCodec{}})
-	defaultMap.RegisterType(&Type{Name: "box", OID: BoxOID, Codec: BoxCodec{}})
-	defaultMap.RegisterType(&Type{Name: "bpchar", OID: BPCharOID, Codec: TextCodec{}})
-	defaultMap.RegisterType(&Type{Name: "bytea", OID: ByteaOID, Codec: ByteaCodec{}})
-	defaultMap.RegisterType(&Type{Name: "char", OID: QCharOID, Codec: QCharCodec{}})
-	defaultMap.RegisterType(&Type{Name: "cid", OID: CIDOID, Codec: Uint32Codec{}})
-	defaultMap.RegisterType(&Type{Name: "cidr", OID: CIDROID, Codec: InetCodec{}})
-	defaultMap.RegisterType(&Type{Name: "circle", OID: CircleOID, Codec: CircleCodec{}})
-	defaultMap.RegisterType(&Type{Name: "date", OID: DateOID, Codec: DateCodec{}})
-	defaultMap.RegisterType(&Type{Name: "float4", OID: Float4OID, Codec: Float4Codec{}})
-	defaultMap.RegisterType(&Type{Name: "float8", OID: Float8OID, Codec: Float8Codec{}})
-	defaultMap.RegisterType(&Type{Name: "inet", OID: InetOID, Codec: InetCodec{}})
+	defaultMap.RegisterType(&Type{Name: "date", OID: fbproto.SQL_TYPE_DATE, Codec: DateCodec{}})
 	defaultMap.RegisterType(&Type{Name: "smallint", OID: fbproto.SQL_TYPE_SHORT, Codec: Int4Codec{}})
 	defaultMap.RegisterType(&Type{Name: "int", OID: fbproto.SQL_TYPE_LONG, Codec: Int4Codec{}})
 	defaultMap.RegisterType(&Type{Name: "bigint", OID: fbproto.SQL_TYPE_INT64, Codec: Int8Codec{}})
-	defaultMap.RegisterType(&Type{Name: "interval", OID: IntervalOID, Codec: IntervalCodec{}})
-	defaultMap.RegisterType(&Type{Name: "json", OID: JSONOID, Codec: &JSONCodec{Marshal: json.Marshal, Unmarshal: json.Unmarshal}})
-	defaultMap.RegisterType(&Type{Name: "jsonb", OID: JSONBOID, Codec: &JSONBCodec{Marshal: json.Marshal, Unmarshal: json.Unmarshal}})
-	defaultMap.RegisterType(&Type{Name: "jsonpath", OID: JSONPathOID, Codec: &TextFormatOnlyCodec{TextCodec{}}})
-	defaultMap.RegisterType(&Type{Name: "line", OID: LineOID, Codec: LineCodec{}})
-	defaultMap.RegisterType(&Type{Name: "lseg", OID: LsegOID, Codec: LsegCodec{}})
-	defaultMap.RegisterType(&Type{Name: "macaddr8", OID: Macaddr8OID, Codec: MacaddrCodec{}})
-	defaultMap.RegisterType(&Type{Name: "macaddr", OID: MacaddrOID, Codec: MacaddrCodec{}})
-	defaultMap.RegisterType(&Type{Name: "name", OID: NameOID, Codec: TextCodec{}})
-	defaultMap.RegisterType(&Type{Name: "numeric", OID: NumericOID, Codec: NumericCodec{}})
-	defaultMap.RegisterType(&Type{Name: "oid", OID: OIDOID, Codec: Uint32Codec{}})
-	defaultMap.RegisterType(&Type{Name: "path", OID: PathOID, Codec: PathCodec{}})
-	defaultMap.RegisterType(&Type{Name: "point", OID: PointOID, Codec: PointCodec{}})
-	defaultMap.RegisterType(&Type{Name: "polygon", OID: PolygonOID, Codec: PolygonCodec{}})
-	defaultMap.RegisterType(&Type{Name: "record", OID: RecordOID, Codec: RecordCodec{}})
-	defaultMap.RegisterType(&Type{Name: "text", OID: TextOID, Codec: TextCodec{}})
-	defaultMap.RegisterType(&Type{Name: "tid", OID: TIDOID, Codec: TIDCodec{}})
-	defaultMap.RegisterType(&Type{Name: "time", OID: TimeOID, Codec: TimeCodec{}})
-	defaultMap.RegisterType(&Type{Name: "timestamp", OID: TimestampOID, Codec: &TimestampCodec{}})
-	defaultMap.RegisterType(&Type{Name: "timestamptz", OID: TimestamptzOID, Codec: &TimestamptzCodec{}})
-	defaultMap.RegisterType(&Type{Name: "unknown", OID: UnknownOID, Codec: TextCodec{}})
-	defaultMap.RegisterType(&Type{Name: "uuid", OID: UUIDOID, Codec: UUIDCodec{}})
-	defaultMap.RegisterType(&Type{Name: "varbit", OID: VarbitOID, Codec: BitsCodec{}})
-	defaultMap.RegisterType(&Type{Name: "varchar", OID: VarcharOID, Codec: TextCodec{}})
-	defaultMap.RegisterType(&Type{Name: "xid", OID: XIDOID, Codec: Uint32Codec{}})
-	defaultMap.RegisterType(&Type{Name: "xid8", OID: XID8OID, Codec: Uint64Codec{}})
-	defaultMap.RegisterType(&Type{Name: "xml", OID: XMLOID, Codec: &XMLCodec{
-		Marshal: xml.Marshal,
-		// xml.Unmarshal does not support unmarshalling into *any. However, XMLCodec.DecodeValue calls Unmarshal with a
-		// *any. Wrap xml.Marshal with a function that copies the data into a new byte slice in this case. Not implementing
-		// directly in XMLCodec.DecodeValue to allow for the unlikely possibility that someone uses an alternative XML
-		// unmarshaler that does support unmarshalling into *any.
-		//
-		// https://github.com/jackc/pgx/issues/2227
-		// https://github.com/jackc/pgx/pull/2228
-		Unmarshal: func(data []byte, v any) error {
-			if v, ok := v.(*any); ok {
-				dstBuf := make([]byte, len(data))
-				copy(dstBuf, data)
-				*v = dstBuf
-				return nil
-			}
-			return xml.Unmarshal(data, v)
-		},
-	}})
+	defaultMap.RegisterType(&Type{Name: "text", OID: fbproto.SQL_TYPE_TEXT, Codec: TextCodec{}})
+	defaultMap.RegisterType(&Type{Name: "time", OID: fbproto.SQL_TYPE_TIME, Codec: TimeCodec{}})
+	defaultMap.RegisterType(&Type{Name: "varchar", OID: fbproto.SQL_TYPE_VARYING, Codec: TextCodec{}})
+	defaultMap.RegisterType(&Type{Name: "float", OID: fbproto.SQL_TYPE_FLOAT, Codec: Float4Codec{}})
+	defaultMap.RegisterType(&Type{Name: "double precision", OID: fbproto.SQL_TYPE_DOUBLE, Codec: Float8Codec{}})
+	defaultMap.RegisterType(&Type{Name: "boolean", OID: fbproto.SQL_TYPE_BOOLEAN, Codec: BoolCodec{}})
+	defaultMap.RegisterType(&Type{Name: "timestamp", OID: fbproto.SQL_TYPE_TIMESTAMP, Codec: &TimestampCodec{}})
 
 	// Range types
 	//defaultMap.RegisterType(&Type{Name: "daterange", OID: DaterangeOID, Codec: &RangeCodec{ElementType: defaultMap.oidToType[DateOID]}})
@@ -192,59 +137,41 @@ func initDefaultMap() {
 	registerDefaultPgTypeVariants[uint64](defaultMap, "numeric")
 	registerDefaultPgTypeVariants[uint](defaultMap, "numeric")
 
-	registerDefaultPgTypeVariants[float32](defaultMap, "float4")
-	registerDefaultPgTypeVariants[float64](defaultMap, "float8")
+	registerDefaultPgTypeVariants[float32](defaultMap, "float")
+	registerDefaultPgTypeVariants[float64](defaultMap, "double precision")
 
-	registerDefaultPgTypeVariants[bool](defaultMap, "bool")
+	registerDefaultPgTypeVariants[bool](defaultMap, "boolean")
 	registerDefaultPgTypeVariants[time.Time](defaultMap, "timestamptz")
-	registerDefaultPgTypeVariants[time.Duration](defaultMap, "interval")
 	registerDefaultPgTypeVariants[string](defaultMap, "text")
-	registerDefaultPgTypeVariants[json.RawMessage](defaultMap, "json")
 	registerDefaultPgTypeVariants[[]byte](defaultMap, "bytea")
 
-	registerDefaultPgTypeVariants[net.IP](defaultMap, "inet")
-	registerDefaultPgTypeVariants[net.IPNet](defaultMap, "cidr")
-	registerDefaultPgTypeVariants[netip.Addr](defaultMap, "inet")
-	registerDefaultPgTypeVariants[netip.Prefix](defaultMap, "cidr")
-
 	// pgtype provided structs
-	registerDefaultPgTypeVariants[Bits](defaultMap, "varbit")
-	registerDefaultPgTypeVariants[Bool](defaultMap, "bool")
-	registerDefaultPgTypeVariants[Box](defaultMap, "box")
-	registerDefaultPgTypeVariants[Circle](defaultMap, "circle")
+	registerDefaultPgTypeVariants[Bool](defaultMap, "boolean")
 	registerDefaultPgTypeVariants[Date](defaultMap, "date")
-	registerDefaultPgTypeVariants[Range[Date]](defaultMap, "daterange")
-	registerDefaultPgTypeVariants[Multirange[Range[Date]]](defaultMap, "datemultirange")
-	registerDefaultPgTypeVariants[Float4](defaultMap, "float4")
-	registerDefaultPgTypeVariants[Float8](defaultMap, "float8")
-	registerDefaultPgTypeVariants[Range[Float8]](defaultMap, "numrange")                  // There is no PostgreSQL builtin float8range so map it to numrange.
-	registerDefaultPgTypeVariants[Multirange[Range[Float8]]](defaultMap, "nummultirange") // There is no PostgreSQL builtin float8multirange so map it to nummultirange.
-	registerDefaultPgTypeVariants[Int2](defaultMap, "int2")
-	registerDefaultPgTypeVariants[Int4](defaultMap, "int4")
-	registerDefaultPgTypeVariants[Range[Int4]](defaultMap, "int4range")
-	registerDefaultPgTypeVariants[Multirange[Range[Int4]]](defaultMap, "int4multirange")
-	registerDefaultPgTypeVariants[Int8](defaultMap, "int8")
-	registerDefaultPgTypeVariants[Range[Int8]](defaultMap, "int8range")
-	registerDefaultPgTypeVariants[Multirange[Range[Int8]]](defaultMap, "int8multirange")
-	registerDefaultPgTypeVariants[Interval](defaultMap, "interval")
-	registerDefaultPgTypeVariants[Line](defaultMap, "line")
-	registerDefaultPgTypeVariants[Lseg](defaultMap, "lseg")
+	// registerDefaultPgTypeVariants[Range[Date]](defaultMap, "daterange")
+	// registerDefaultPgTypeVariants[Multirange[Range[Date]]](defaultMap, "datemultirange")
+	registerDefaultPgTypeVariants[Float4](defaultMap, "float")
+	registerDefaultPgTypeVariants[Float8](defaultMap, "double precision")
+	// registerDefaultPgTypeVariants[Range[Float8]](defaultMap, "numrange")                  // There is no PostgreSQL builtin float8range so map it to numrange.
+	// registerDefaultPgTypeVariants[Multirange[Range[Float8]]](defaultMap, "nummultirange") // There is no PostgreSQL builtin float8multirange so map it to nummultirange.
+	registerDefaultPgTypeVariants[Int2](defaultMap, "smallint")
+	registerDefaultPgTypeVariants[Int4](defaultMap, "int")
+	// registerDefaultPgTypeVariants[Range[Int4]](defaultMap, "int4range")
+	// registerDefaultPgTypeVariants[Multirange[Range[Int4]]](defaultMap, "int4multirange")
+	registerDefaultPgTypeVariants[Int8](defaultMap, "bigint")
+	// registerDefaultPgTypeVariants[Range[Int8]](defaultMap, "int8range")
+	// registerDefaultPgTypeVariants[Multirange[Range[Int8]]](defaultMap, "int8multirange")
 	registerDefaultPgTypeVariants[Numeric](defaultMap, "numeric")
-	registerDefaultPgTypeVariants[Range[Numeric]](defaultMap, "numrange")
-	registerDefaultPgTypeVariants[Multirange[Range[Numeric]]](defaultMap, "nummultirange")
-	registerDefaultPgTypeVariants[Path](defaultMap, "path")
-	registerDefaultPgTypeVariants[Point](defaultMap, "point")
-	registerDefaultPgTypeVariants[Polygon](defaultMap, "polygon")
-	registerDefaultPgTypeVariants[TID](defaultMap, "tid")
+	// registerDefaultPgTypeVariants[Range[Numeric]](defaultMap, "numrange")
+	// registerDefaultPgTypeVariants[Multirange[Range[Numeric]]](defaultMap, "nummultirange")
 	registerDefaultPgTypeVariants[Text](defaultMap, "text")
 	registerDefaultPgTypeVariants[Time](defaultMap, "time")
 	registerDefaultPgTypeVariants[Timestamp](defaultMap, "timestamp")
 	registerDefaultPgTypeVariants[Timestamptz](defaultMap, "timestamptz")
-	registerDefaultPgTypeVariants[Range[Timestamp]](defaultMap, "tsrange")
-	registerDefaultPgTypeVariants[Multirange[Range[Timestamp]]](defaultMap, "tsmultirange")
-	registerDefaultPgTypeVariants[Range[Timestamptz]](defaultMap, "tstzrange")
-	registerDefaultPgTypeVariants[Multirange[Range[Timestamptz]]](defaultMap, "tstzmultirange")
-	registerDefaultPgTypeVariants[UUID](defaultMap, "uuid")
+	// registerDefaultPgTypeVariants[Range[Timestamp]](defaultMap, "tsrange")
+	// registerDefaultPgTypeVariants[Multirange[Range[Timestamp]]](defaultMap, "tsmultirange")
+	// registerDefaultPgTypeVariants[Range[Timestamptz]](defaultMap, "tstzrange")
+	// registerDefaultPgTypeVariants[Multirange[Range[Timestamptz]]](defaultMap, "tstzmultirange")
 
 	defaultMap.buildReflectTypeToType()
 }
