@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -554,24 +555,27 @@ func TestDeallocateMissingPreparedStatementStillClearsFromPreparedStatementMap(t
 }
 
 func TestFatalRxError(t *testing.T) {
-	t.Skip("FB do not have severity in error status")
 	t.Parallel()
 
 	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 
+	_, err := conn.Exec(context.Background(), "recreate function fbsleep (delay float not null) returns float external name 'fbxci!fbsleep' engine udr;")
+	require.NoError(t, err)
+
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		//defer wg.Done()
-		//var n int32
-		//var s string
-		//err := conn.QueryRow(context.Background(), "select 1::int4, pg_sleep(10)::varchar").Scan(&n, &s)
-		//if fbErr, ok := err.(*fbconn.FbError); ok && fbErr.Severity == "FATAL" {
-		//} else {
-		//	t.Errorf("Expected QueryRow Scan to return fatal FbError, but instead received %v", err)
-		//	return
-		//}
+		defer wg.Done()
+		var n int32
+		var s string
+		err := conn.QueryRow(context.Background(), "select 1, fbsleep(10) from rdb$database").Scan(&n, &s)
+		if fbErr, ok := err.(*fbconn.FbError); ok { //&& fbErr.Severity == "FATAL" {
+			fmt.Println(fbErr)
+		} else {
+			t.Errorf("Expected QueryRow Scan to return fatal FbError, but instead received %v", err)
+			return
+		}
 	}()
 
 	if err := conn.FbConn().Disconnect(context.Background()); err != nil {

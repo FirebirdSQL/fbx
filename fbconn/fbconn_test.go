@@ -691,31 +691,34 @@ func TestConnExecDeferredError(t *testing.T) {
 }
 
 func TestConnExecContextCanceled(t *testing.T) {
-	//t.Parallel()
-	//
-	//ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	//defer cancel()
-	//
-	//fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
-	//require.NoError(t, err)
-	//defer closeConn(t, fbConn)
-	//cancel()
-	//
-	//ctx, cancel = context.WithTimeout(context.Background(), 100*time.Millisecond)
-	//defer cancel()
-	//multiResult := fbConn.Exec(ctx, "select 'Hello, world', pg_sleep(1)")
-	//
-	//for multiResult.NextResult() {
-	//}
-	//err = multiResult.Close()
-	//assert.True(t, fbconn.Timeout(err))
-	//assert.ErrorIs(t, err, context.DeadlineExceeded)
-	//assert.True(t, fbConn.IsClosed())
-	//select {
-	//case <-fbConn.CleanupDone():
-	//case <-time.After(5 * time.Second):
-	//	t.Fatal("Connection cleanup exceeded maximum time")
-	//}
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	require.NoError(t, err)
+	defer closeConn(t, fbConn)
+
+	_, err = fbConn.Exec(ctx, "recreate function fbsleep (delay float not null) returns float external name 'fbxci!fbsleep' engine udr;").Close()
+	require.NoError(t, err)
+
+	cancel()
+
+	ctx, cancel = context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	_, err = fbConn.Exec(ctx, "select 'Hello, world'x, fbsleep(1) from rdb$database").ReadAll()
+
+	assert.Error(t, err)
+	assert.True(t, fbconn.Timeout(err))
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.True(t, fbConn.IsClosed())
+
+	select {
+	case <-fbConn.CleanupDone():
+	case <-time.After(5 * time.Second):
+		t.Fatal("Connection cleanup exceeded maximum time")
+	}
 }
 
 func TestConnExecContextPrecanceled(t *testing.T) {
@@ -859,9 +862,12 @@ func TestConnExecParamsCanceled(t *testing.T) {
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
+	_, err = fbConn.Exec(ctx, "recreate function fbsleep (delay float not null) returns float external name 'fbxci!fbsleep' engine udr;").Close()
+	require.NoError(t, err)
+
 	ctx, cancel = context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
-	result := fbConn.ExecParams(ctx, "select current_database(), pg_sleep(1)", nil)
+	result := fbConn.ExecParams(ctx, "select mon$database_name, fbsleep(1) from mon$database", nil)
 	rowCount := 0
 	for result.NextRow() {
 		rowCount += 1
@@ -1081,7 +1087,10 @@ func TestConnExecPreparedCanceled(t *testing.T) {
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
-	ps, err := fbConn.Prepare(ctx, "select current_database(), pg_sleep(1)")
+	_, err = fbConn.Exec(ctx, "recreate function fbsleep (delay float not null) returns float external name 'fbxci!fbsleep' engine udr;").Close()
+	require.NoError(t, err)
+
+	ps, err := fbConn.Prepare(ctx, "select mon$database_name, fbsleep(1) from mon$database")
 	require.NotNil(t, ps)
 	require.NoError(t, err)
 
@@ -1114,7 +1123,10 @@ func TestConnExecPreparedPrecanceled(t *testing.T) {
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
-	ps, err := fbConn.Prepare(ctx, "select current_database(), pg_sleep(1)")
+	_, err = fbConn.Exec(ctx, "recreate function fbsleep (delay float not null) returns float external name 'fbxci!fbsleep' engine udr;").Close()
+	require.NoError(t, err)
+
+	ps, err := fbConn.Prepare(ctx, "select mon$database_name, fbsleep(1) from mon$database")
 	require.NotNil(t, ps)
 	require.NoError(t, err)
 
@@ -1598,11 +1610,10 @@ func TestConnCancelRequest(t *testing.T) {
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
-	if fbConn.ParameterStatus("crdb_version") != "" {
-		t.Skip("Server does not support query cancellation (https://github.com/cockroachdb/cockroach/issues/41335)")
-	}
+	_, err = fbConn.Exec(ctx, "recreate function fbsleep (delay float not null) returns float external name 'fbxci!fbsleep' engine udr;").Close()
+	require.NoError(t, err)
 
-	rr := fbConn.Exec(ctx, "select 'Hello, world', pg_sleep(25)")
+	rr := fbConn.Exec(ctx, "select 'Hello, world', fbsleep(25) from rdb$database")
 
 	errChan := make(chan error)
 	go func() {
@@ -1647,6 +1658,9 @@ func testConnContextCanceledCancelsRunningQueryOnServer(t *testing.T, connString
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
+	_, err = fbConn.Exec(ctx, "recreate function fbsleep (delay float not null) returns float external name 'fbxci!fbsleep' engine udr;").Close()
+	require.NoError(t, err)
+
 	ctx, cancel = context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
 
@@ -1657,7 +1671,7 @@ func testConnContextCanceledCancelsRunningQueryOnServer(t *testing.T, connString
 
 	rr := fbConn.Exec(ctx, fmt.Sprintf(`
 	-- %v
-	select 'Hello, world', pg_sleep(30)
+	select 'Hello, world', fbsleep(30) from rdb$database
 	`, queryID))
 
 	for rr.NextRow() {
@@ -2450,9 +2464,12 @@ func TestDeadlineContextWatcherHandler(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 		defer cancel()
 
-		res := fbConn.Exec(ctx, "select 1, pg_sleep(1) ").Read()
+		_, err = fbConn.Exec(ctx, "recreate function fbsleep (delay float not null) returns float external name 'fbxci!fbsleep' engine udr;").Close()
+		require.NoError(t, err)
+
+		res := fbConn.Exec(ctx, "select 1, fbsleep(1) from rdb$database").Read()
 		require.Error(t, res.Err)
-		require.ErrorIs(t, err, context.DeadlineExceeded)
+		require.ErrorIs(t, res.Err, context.DeadlineExceeded)
 		require.True(t, fbConn.IsClosed())
 	})
 
@@ -2471,7 +2488,10 @@ func TestDeadlineContextWatcherHandler(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		defer cancel()
 
-		res := fbConn.Exec(ctx, "select 1, pg_sleep(0.250)").Read()
+		_, err = fbConn.Exec(ctx, "recreate function fbsleep (delay float not null) returns float external name 'fbxci!fbsleep' engine udr;").Close()
+		require.NoError(t, err)
+
+		res := fbConn.Exec(ctx, "select 1, fbsleep(0.250) from rdb$database").Read()
 		require.NoError(t, res.Err)
 
 		ensureConnValid(t, fbConn)
@@ -2479,7 +2499,7 @@ func TestDeadlineContextWatcherHandler(t *testing.T) {
 }
 
 func TestCancelRequestContextWatcherHandler(t *testing.T) {
-	t.Skip("need implementation")
+	t.Skip("need request cancelling implementation")
 	t.Parallel()
 
 	t.Run("DeadlineExceeded cancels request after CancelRequestDelay", func(t *testing.T) {
@@ -2501,7 +2521,10 @@ func TestCancelRequestContextWatcherHandler(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 		defer cancel()
 
-		res := fbConn.Exec(ctx, "select 1, pg_sleep(3)").Read()
+		_, err = fbConn.Exec(ctx, "recreate function fbsleep (delay float not null) returns float external name 'fbxci!fbsleep' engine udr;").Close()
+		require.NoError(t, err)
+
+		res := fbConn.Exec(ctx, "select 1, fbsleep(3) from rdb$database").Read()
 		require.Error(t, res.Err)
 		var fbErr *fbconn.FbError
 		require.ErrorAs(t, err, &fbErr)
@@ -2528,7 +2551,10 @@ func TestCancelRequestContextWatcherHandler(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		defer cancel()
 
-		res := fbConn.Exec(ctx, "select 1, pg_sleep(0.250)").Read()
+		_, err = fbConn.Exec(ctx, "recreate function fbsleep (delay float not null) returns float external name 'fbxci!fbsleep' engine udr;").Close()
+		require.NoError(t, err)
+
+		res := fbConn.Exec(ctx, "select 1, fbsleep(0.250) from rdb$database").Read()
 		require.NoError(t, res.Err)
 
 		ensureConnValid(t, fbConn)
@@ -2553,7 +2579,10 @@ func TestCancelRequestContextWatcherHandler(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 		defer cancel()
 
-		res := fbConn.Exec(ctx, "select 1, pg_sleep(1)").Read()
+		_, err = fbConn.Exec(ctx, "recreate function fbsleep (delay float not null) returns float external name 'fbxci!fbsleep' engine udr;").Close()
+		require.NoError(t, err)
+
+		res := fbConn.Exec(ctx, "select 1, fbsleep(1) from rdb$database").Read()
 		require.Error(t, res.Err)
 		require.ErrorIs(t, err, context.DeadlineExceeded)
 		require.True(t, fbConn.IsClosed())
@@ -2578,11 +2607,14 @@ func TestCancelRequestContextWatcherHandler(t *testing.T) {
 			require.NoError(t, err)
 			defer closeConn(t, fbConn)
 
+			_, err = fbConn.Exec(context.Background(), "recreate function fbsleep (delay float not null) returns float external name 'fbxci!fbsleep' engine udr;").Close()
+			require.NoError(t, err)
+
 			for i := 0; i < 20; i++ {
 				func() {
 					ctx, cancel := context.WithTimeout(context.Background(), 4*time.Millisecond)
 					defer cancel()
-					fbConn.Exec(ctx, "select 1, pg_sleep(0.010)").Read()
+					fbConn.Exec(ctx, "select 1, fbsleep(0.010) from rdb$database").Read()
 					time.Sleep(100 * time.Millisecond) // ensure a cancel request that was a little late doesn't interrupt ensureConnValid.
 					ensureConnValid(t, fbConn)
 				}()

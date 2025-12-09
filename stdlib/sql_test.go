@@ -861,10 +861,13 @@ func TestStmtExecContextCancel(t *testing.T) {
 	db := openDB(t)
 	defer closeDB(t, db)
 
-	_, err := db.Exec("create temporary table t(id int primary key)")
+	_, err := db.Exec("recreate procedure fbsleep (delay float not null) returns (o float) external name 'fbxci!fbsleep' engine udr")
 	require.NoError(t, err)
 
-	stmt, err := db.Prepare("insert into t(id) select $1::int4 from pg_sleep(5)")
+	_, err = db.Exec("recreate table t(id int primary key)")
+	require.NoError(t, err)
+
+	stmt, err := db.Prepare("insert into t(id) select cast(? as smallint) from fbsleep(5)")
 	require.NoError(t, err)
 	defer stmt.Close()
 
