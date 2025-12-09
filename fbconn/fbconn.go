@@ -1554,8 +1554,10 @@ func (rr *ResultReader) Values() [][]byte {
 // error.
 func (rr *ResultReader) Close() (QueryStatus, error) {
 	if !rr.closed {
-		if err := rr.populateRowsAffected(); err != nil && rr.err == nil {
-			rr.err = err
+		if rr.err == nil {
+			if err := rr.populateRowsAffected(); err != nil {
+				rr.err = err
+			}
 		}
 		rr.closed = true
 		rr.fbConn.unlock()
