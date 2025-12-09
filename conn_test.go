@@ -555,8 +555,6 @@ func TestDeallocateMissingPreparedStatementStillClearsFromPreparedStatementMap(t
 }
 
 func TestFatalRxError(t *testing.T) {
-	t.Parallel()
-
 	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 

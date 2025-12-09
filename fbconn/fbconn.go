@@ -823,19 +823,6 @@ func (fbConn *FbConn) asyncClose() {
 	go func() {
 		defer close(fbConn.cleanupDone)
 		defer fbConn.conn.Close()
-
-		//FIXME: fbx
-		//deadline := time.Now().Add(time.Second * 15)
-
-		//ctx, cancel := context.WithDeadline(context.Background(), deadline)
-		//defer cancel()
-		//
-		//fbConn.CancelRequest(ctx)
-
-		//fbConn.conn.SetDeadline(deadline)
-		//
-		//fbConn.frontend.WriteMessage(&pgproto3.Terminate{})
-		//fbConn.flushWithPotentialWriteReadDeadlock()
 	}()
 }
 
@@ -1103,57 +1090,25 @@ func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 // request, but lack of an error does not ensure that the query was canceled. As specified in the documentation, there
 // is no way to be sure a query was canceled. See https://www.postgresql.org/docs/11/protocol-flow.html#id-1.10.5.7.9
 func (fbConn *FbConn) CancelRequest(ctx context.Context) error {
-	//// Open a cancellation request to the same server. The address is taken from the net.Conn directly instead of reusing
-	//// the connection config. This is important in high availability configurations where fallback connections may be
-	//// specified or DNS may be used to load balance.
-	//serverAddr := fbConn.conn.RemoteAddr()
-	//var serverNetwork string
-	//var serverAddress string
-	//if serverAddr.Network() == "unix" {
-	//	// for unix sockets, RemoteAddr() calls getpeername() which returns the name the
-	//	// server passed to bind(). For Postgres, this is always a relative path "./.s.PGSQL.5432"
-	//	// so connecting to it will fail. Fall back to the config's value
-	//	serverNetwork, serverAddress = NetworkAddress(fbConn.config.Host, fbConn.config.Port)
-	//} else {
-	//	serverNetwork, serverAddress = serverAddr.Network(), serverAddr.String()
-	//}
-	//cancelConn, err := fbConn.config.DialFunc(ctx, serverNetwork, serverAddress)
-	//if err != nil {
-	//	// In case of unix sockets, RemoteAddr() returns only the file part of the path. If the
-	//	// first connect failed, try the config.
-	//	if serverAddr.Network() != "unix" {
-	//		return err
-	//	}
-	//	serverNetwork, serverAddr := NetworkAddress(fbConn.config.Host, fbConn.config.Port)
-	//	cancelConn, err = fbConn.config.DialFunc(ctx, serverNetwork, serverAddr)
-	//	if err != nil {
-	//		return err
-	//	}
-	//}
-	//defer cancelConn.Close()
-	//
-	//if ctx != context.Background() {
-	//	contextWatcher := ctxwatch.NewContextWatcher(&DeadlineContextWatcherHandler{Conn: cancelConn})
-	//	contextWatcher.Watch(ctx)
-	//	defer contextWatcher.Unwatch()
-	//}
-	//
-	//buf := make([]byte, 16)
-	//binary.BigEndian.PutUint32(buf[0:4], 16)
-	//binary.BigEndian.PutUint32(buf[4:8], 80877102)
-	//binary.BigEndian.PutUint32(buf[8:12], fbConn.pid)
-	//binary.BigEndian.PutUint32(buf[12:16], fbConn.secretKey)
-	//
-	//if _, err := cancelConn.Write(buf); err != nil {
-	//	return fmt.Errorf("write to connection for cancellation: %w", err)
-	//}
-	//
-	//// Wait for the cancel request to be acknowledged by the server.
-	//// It copies the behavior of the libpq: https://github.com/postgres/postgres/blob/REL_16_0/src/interfaces/libpq/fe-connect.c#L4946-L4960
-	//_, _ = cancelConn.Read(buf)
-	//
-	//return nil
-	panic("implement me")
+	if ctx != context.Background() {
+		contextWatcher := ctxwatch.NewContextWatcher(&DeadlineContextWatcherHandler{Conn: fbConn.conn})
+		contextWatcher.Watch(ctx)
+		defer contextWatcher.Unwatch()
+	}
+
+	if err := fbConn.client.WriteMessage(&fbproto.OpCancel{
+		Kind: fbproto.Fb_cancel_raise,
+	}); err != nil {
+		fbConn.asyncClose()
+		return err
+	}
+
+	if err := fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+		fbConn.asyncClose()
+		return err
+	}
+
+	return nil
 }
 
 // ExecImmediate executes statement immediate inside internal transaction
@@ -1952,38 +1907,38 @@ type CancelRequestContextWatcherHandler struct {
 }
 
 func (h *CancelRequestContextWatcherHandler) HandleCancel(context.Context) {
-	//h.cancelFinishedChan = make(chan struct{})
-	//var handleUnwatchedAfterCancelCalledCtx context.Context
-	//handleUnwatchedAfterCancelCalledCtx, h.handleUnwatchAfterCancelCalled = context.WithCancel(context.Background())
-	//
-	//deadline := time.Now().Add(h.DeadlineDelay)
-	//h.Conn.conn.SetDeadline(deadline)
-	//
-	//go func() {
-	//	defer close(h.cancelFinishedChan)
-	//
-	//	select {
-	//	case <-handleUnwatchedAfterCancelCalledCtx.Done():
-	//		return
-	//	case <-time.After(h.CancelRequestDelay):
-	//	}
-	//
-	//	cancelRequestCtx, cancel := context.WithDeadline(handleUnwatchedAfterCancelCalledCtx, deadline)
-	//	defer cancel()
-	//	h.Conn.CancelRequest(cancelRequestCtx)
-	//
-	//	// CancelRequest is inherently racy. Even though the cancel request has been received by the server at this point,
-	//	// it hasn't necessarily been delivered to the other connection. If we immediately return and the connection is
-	//	// immediately used then it is possible the CancelRequest will actually cancel our next query. The
-	//	// TestCancelRequestContextWatcherHandler Stress test can produce this error without the sleep below. The sleep time
-	//	// is arbitrary, but should be sufficient to prevent this error case.
-	//	time.Sleep(100 * time.Millisecond)
-	//}()
+	h.cancelFinishedChan = make(chan struct{})
+	var handleUnwatchedAfterCancelCalledCtx context.Context
+	handleUnwatchedAfterCancelCalledCtx, h.handleUnwatchAfterCancelCalled = context.WithCancel(context.Background())
+
+	deadline := time.Now().Add(h.DeadlineDelay)
+	h.Conn.conn.SetDeadline(deadline)
+
+	go func() {
+		defer close(h.cancelFinishedChan)
+
+		select {
+		case <-handleUnwatchedAfterCancelCalledCtx.Done():
+			return
+		case <-time.After(h.CancelRequestDelay):
+		}
+
+		cancelRequestCtx, cancel := context.WithDeadline(handleUnwatchedAfterCancelCalledCtx, deadline)
+		defer cancel()
+		h.Conn.CancelRequest(cancelRequestCtx)
+
+		// CancelRequest is inherently racy. Even though the cancel request has been received by the server at this point,
+		// it hasn't necessarily been delivered to the other connection. If we immediately return and the connection is
+		// immediately used then it is possible the CancelRequest will actually cancel our next query. The
+		// TestCancelRequestContextWatcherHandler Stress test can produce this error without the sleep below. The sleep time
+		// is arbitrary, but should be sufficient to prevent this error case.
+		time.Sleep(100 * time.Millisecond)
+	}()
 }
 
 func (h *CancelRequestContextWatcherHandler) HandleUnwatchAfterCancel() {
-	//h.handleUnwatchAfterCancelCalled()
-	//<-h.cancelFinishedChan
-	//
-	//h.Conn.conn.SetDeadline(time.Time{})
+	h.handleUnwatchAfterCancelCalled()
+	<-h.cancelFinishedChan
+
+	h.Conn.conn.SetDeadline(time.Time{})
 }
