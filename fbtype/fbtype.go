@@ -284,19 +284,49 @@ type scanPlanString struct {
 	encoding *fbproto.Encoding
 }
 
+// func (s scanPlanString) Scan(src []byte, dst any) error {
+// 	if src == nil {
+// 		return fmt.Errorf("cannot scan NULL into %T", dst)
+// 	}
+
+// 	var res string
+// 	if err := decodeFBString(src, s.typeId == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, res); err != nil {
+// 		return err
+// 	}
+
+// 	p := (dst).(*string)
+// 	*p = res
+// 	return nil
+// }
+
 func (s scanPlanString) Scan(src []byte, dst any) error {
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
-	var res string
-	if err := decodeFBString(src, s.typeId == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, res); err != nil {
+	var tmp string
+	if err := decodeFBString(src, s.typeId == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, &tmp); err != nil {
 		return err
 	}
 
-	p := (dst).(*string)
-	*p = res
-	return nil
+	switch d := dst.(type) {
+	case *string:
+		*d = tmp
+		return nil
+
+	case **string:
+		if *d == nil {
+			*d = new(string)
+		}
+		**d = tmp
+		return nil
+
+	case TextScanner:
+		return d.ScanText(Text{String: tmp, Valid: true})
+
+	default:
+		return fmt.Errorf("scanPlanString: cannot scan string into %T", dst)
+	}
 }
 
 type scanPlanAnyTextToBytes struct {

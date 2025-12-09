@@ -317,7 +317,11 @@ func decodeFBString(src []byte, varying bool, length uint32, enc *fbproto.Encodi
 		return err
 	}
 
-	p := (dst).(*string)
+	p, ok := (dst).(*string)
+	if !ok {
+		return fmt.Errorf("decodeFBString: dst must be *string, got %T", dst)
+	}
+
 	tmpStr := string(buf)
 
 	if varying {
