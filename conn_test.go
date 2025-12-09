@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbconn"
+	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
 )
@@ -699,10 +700,8 @@ func TestConnInitTypeMap(t *testing.T) {
 
 	// spot check that the standard postgres type names aren't qualified
 	nameOIDs := map[string]uint32{
-		"_int8": fbtype.Int8ArrayOID,
-		"int8":  fbtype.Int8OID,
-		"json":  fbtype.JSONOID,
-		"text":  fbtype.TextOID,
+		"long": fbproto.SQL_TYPE_LONG,
+		"text": fbproto.SQL_TYPE_TEXT,
 	}
 	for name, oid := range nameOIDs {
 		dtByName, ok := conn.TypeMap().TypeForName(name)

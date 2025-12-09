@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
+	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
 )
@@ -39,7 +40,7 @@ func TestTimestamptzCodecWithLocationUTC(t *testing.T) {
 	connTestRunner.AfterConnect = func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		conn.TypeMap().RegisterType(&fbtype.Type{
 			Name:  "timestamptz",
-			OID:   fbtype.TimestamptzOID,
+			OID:   fbproto.SQL_TYPE_TIMESTAMP_TZ,
 			Codec: &fbtype.TimestamptzCodec{ScanLocation: time.UTC},
 		})
 	}
@@ -54,7 +55,7 @@ func TestTimestamptzCodecWithLocationLocal(t *testing.T) {
 	connTestRunner.AfterConnect = func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		conn.TypeMap().RegisterType(&fbtype.Type{
 			Name:  "timestamptz",
-			OID:   fbtype.TimestamptzOID,
+			OID:   fbproto.SQL_TYPE_TIMESTAMP_TZ,
 			Codec: &fbtype.TimestamptzCodec{ScanLocation: time.Local},
 		})
 	}
@@ -86,7 +87,7 @@ func TestTimestamptzDecodeTextInvalid(t *testing.T) {
 	t.Skip()
 	c := &fbtype.TimestamptzCodec{}
 	var tstz fbtype.Timestamptz
-	plan := c.PlanScan(nil, fbtype.TimestamptzOID, 0, 0, 0, fbtype.TextFormatCode, &tstz)
+	plan := c.PlanScan(nil, fbproto.SQL_TYPE_TIMESTAMP_TZ, 0, 0, 0, fbtype.TextFormatCode, &tstz)
 	err := plan.Scan([]byte(`eeeee`), &tstz)
 	require.Error(t, err)
 }

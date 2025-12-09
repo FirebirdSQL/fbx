@@ -50,7 +50,7 @@ func TestDateCodecTextEncode(t *testing.T) {
 		{source: fbtype.Date{Time: time.Date(12200, 1, 2, 0, 0, 0, 0, time.UTC), Valid: true}, result: "12200-01-02"},
 	}
 	for i, tt := range successfulTests {
-		buf, err := m.Encode(fbproto.SQL_TIME_TZ_EX, 0, 0, 0, fbtype.BinaryFormatCode, tt.source, nil)
+		buf, err := m.Encode(fbproto.SQL_TYPE_DATE, 0, 0, 0, fbtype.TextFormatCode, tt.source, nil)
 		assert.NoErrorf(t, err, "%d", i)
 		assert.Equalf(t, tt.result, string(buf), "%d", i)
 	}

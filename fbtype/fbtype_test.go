@@ -293,28 +293,28 @@ func TestMapScanPtrToPtrToSlice(t *testing.T) {
 	m := fbtype.NewMap()
 	src := []byte("{foo,bar}")
 	var v *[]string
-	plan := m.PlanScan(fbtype.TextArrayOID, 0, 0, 0, fbtype.BinaryFormatCode, &v)
+	plan := m.PlanScan(fbproto.SQL_TYPE_TEXT, 0, 0, 0, fbtype.BinaryFormatCode, &v)
 	err := plan.Scan(src, &v)
 	require.NoError(t, err)
 	require.Equal(t, []string{"foo", "bar"}, *v)
 }
 
-func TestMapScanPtrToPtrToSliceOfStruct(t *testing.T) {
-	t.Skip()
-	type Team struct {
-		TeamID int
-		Name   string
-	}
+// func TestMapScanPtrToPtrToSliceOfStruct(t *testing.T) {
+// 	t.Skip()
+// 	type Team struct {
+// 		TeamID int
+// 		Name   string
+// 	}
 
-	// Have to use binary format because text format doesn't include type information.
-	m := fbtype.NewMap()
-	src := []byte{0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x8, 0xc9, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x1e, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x17, 0x0, 0x0, 0x0, 0x4, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x19, 0x0, 0x0, 0x0, 0x6, 0x74, 0x65, 0x61, 0x6d, 0x20, 0x31, 0x0, 0x0, 0x0, 0x1e, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x17, 0x0, 0x0, 0x0, 0x4, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x19, 0x0, 0x0, 0x0, 0x6, 0x74, 0x65, 0x61, 0x6d, 0x20, 0x32}
-	var v *[]Team
-	plan := m.PlanScan(fbtype.RecordArrayOID, 0, 0, 0, fbtype.BinaryFormatCode, &v)
-	err := plan.Scan(src, &v)
-	require.NoError(t, err)
-	require.Equal(t, []Team{{1, "team 1"}, {2, "team 2"}}, *v)
-}
+// 	// Have to use binary format because text format doesn't include type information.
+// 	m := fbtype.NewMap()
+// 	src := []byte{0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x8, 0xc9, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x1e, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x17, 0x0, 0x0, 0x0, 0x4, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x19, 0x0, 0x0, 0x0, 0x6, 0x74, 0x65, 0x61, 0x6d, 0x20, 0x31, 0x0, 0x0, 0x0, 0x1e, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x17, 0x0, 0x0, 0x0, 0x4, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x19, 0x0, 0x0, 0x0, 0x6, 0x74, 0x65, 0x61, 0x6d, 0x20, 0x32}
+// 	var v *[]Team
+// 	plan := m.PlanScan(fbtype.RecordArrayOID, 0, 0, 0, fbtype.BinaryFormatCode, &v)
+// 	err := plan.Scan(src, &v)
+// 	require.NoError(t, err)
+// 	require.Equal(t, []Team{{1, "team 1"}, {2, "team 2"}}, *v)
+// }
 
 type databaseValuerString string
 
@@ -437,7 +437,7 @@ func TestScanToSliceOfRenamedUint8(t *testing.T) {
 	t.Skip()
 	m := fbtype.NewMap()
 	var ruint8 []_uint8
-	err := m.Scan(fbtype.Int2ArrayOID, 0, 0, 0, fbx.BinaryFormatCode, []byte("{2,4}"), &ruint8)
+	err := m.Scan(fbproto.SQL_TYPE_SHORT, 0, 0, 0, fbx.BinaryFormatCode, []byte("{2,4}"), &ruint8)
 	assert.NoError(t, err)
 	assert.Equal(t, []_uint8{2, 4}, ruint8)
 }
@@ -500,31 +500,6 @@ type databaseValuerUUID [16]byte
 
 func (v databaseValuerUUID) Value() (driver.Value, error) {
 	return fmt.Sprintf("%x", v), nil
-}
-
-// https://github.com/jackc/pgx/issues/1502
-func TestMapEncodePlanCacheUUIDTypeConfusion(t *testing.T) {
-	t.Skip()
-	expected := []byte{
-		0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0xb, 0x86, 0, 0, 0, 2, 0, 0, 0, 1,
-		0, 0, 0, 16,
-		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
-		0, 0, 0, 16,
-		15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0}
-
-	m := fbtype.NewMap()
-	buf, err := m.Encode(fbtype.UUIDArrayOID, 0, 0, 0, fbtype.BinaryFormatCode,
-		[]databaseValuerUUID{{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, {15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1}},
-		nil)
-	require.NoError(t, err)
-	require.Equal(t, expected, buf)
-
-	// This actually *should* fail. In the actual query path this error is detected and the encoding falls back to the
-	// text format. In the bug this test is guarding against regression this would panic.
-	_, err = m.Encode(fbtype.UUIDArrayOID, 0, 0, 0, fbtype.BinaryFormatCode,
-		[]string{"00010203-0405-0607-0809-0a0b0c0d0e0f", "0f0e0d0c-0b0a-0908-0706-0504-03020100"},
-		nil)
-	require.Error(t, err)
 }
 
 // https://github.com/jackc/pgx/issues/1763
