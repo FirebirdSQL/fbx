@@ -1660,11 +1660,9 @@ func testConnContextCanceledCancelsRunningQueryOnServer(t *testing.T, connString
 	// server process to clients. However, we can check if the query is running by checking the generated query ID.
 	queryID := fmt.Sprintf("testConnContextCanceled %d", time.Now().UnixNano())
 
-	//FIXME: fbx UDF do not respect query cancelling
 	rr := fbConn.Exec(ctx, fmt.Sprintf(`
 	-- %v
-	select 'Hello, world', fbsleep(30) from rdb$database
-	`, queryID))
+	select 'Hello, world', fbsleep(1) from (`+generateSeriesQuery(1, 30, "n")+`)`, queryID))
 
 	for rr.NextRow() {
 	}
