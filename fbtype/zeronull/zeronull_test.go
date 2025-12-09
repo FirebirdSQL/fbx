@@ -5,10 +5,10 @@ import (
 	"os"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbtype/zeronull"
 	"rdb.red-soft.ru/fbx/fbxtest"
-	"github.com/stretchr/testify/require"
 )
 
 var defaultConnTestRunner fbxtest.ConnTestRunner

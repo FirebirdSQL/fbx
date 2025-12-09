@@ -441,7 +441,6 @@ func (w *timeWrapper) ScanTime(v Time) error {
 		return fmt.Errorf("cannot scan NULL into *time.Time")
 	}
 
-	// 24:00:00 is max allowed time in PostgreSQL, but time.Time will normalize that to 00:00:00 the next day.
 	var maxRepresentableByTime int64 = 24*60*60*1000000 - 1
 	if v.Microseconds > maxRepresentableByTime {
 		return fmt.Errorf("%d microseconds cannot be represented as time.Time", v.Microseconds)
@@ -750,7 +749,7 @@ func (a *anyMultiDimSliceArray) SetDimensions(dimensions []ArrayDimension) error
 		}
 
 		if sliceDimensionCount != len(dimensions) {
-			return fmt.Errorf("PostgreSQL array has %d dimensions but slice has %d dimensions", len(dimensions), sliceDimensionCount)
+			return fmt.Errorf("Firebird array has %d dimensions but slice has %d dimensions", len(dimensions), sliceDimensionCount)
 		}
 
 		elementCount := cardinality(dimensions)

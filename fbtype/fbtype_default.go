@@ -94,7 +94,7 @@ func initDefaultMap() {
 	registerDefaultFbTypeVariants[string](defaultMap, "text")
 	registerDefaultFbTypeVariants[[]byte](defaultMap, "bytea")
 
-	// pgtype provided structs
+	// fbtype provided structs
 	registerDefaultFbTypeVariants[Bool](defaultMap, "boolean")
 	registerDefaultFbTypeVariants[Date](defaultMap, "date")
 	registerDefaultFbTypeVariants[Float4](defaultMap, "float")

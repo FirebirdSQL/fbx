@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"os"
 	"reflect"
-	"regexp"
-	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -47,28 +45,6 @@ type _byteSlice []byte
 // unregisteredOID represents an actual type that is not registered. Cannot use 0 because that represents that the type
 // is not known (e.g. when using the simple protocol).
 const unregisteredOID = uint32(1)
-
-func skipPostgreSQLVersionLessThan(t testing.TB, minVersion int64) {
-	conn, err := fbx.Connect(context.Background(), os.Getenv("PGX_TEST_DATABASE"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close(context.Background())
-
-	serverVersionStr := conn.FbConn().ParameterStatus("server_version")
-	serverVersionStr = regexp.MustCompile(`^[0-9]+`).FindString(serverVersionStr)
-	// if not PostgreSQL do nothing
-	if serverVersionStr == "" {
-		return
-	}
-
-	serverVersion, err := strconv.ParseInt(serverVersionStr, 10, 64)
-	require.NoError(t, err)
-
-	if serverVersion < minVersion {
-		t.Skipf("Test requires PostgreSQL v%d+", minVersion)
-	}
-}
 
 // sqlScannerFunc lets an arbitrary function be used as a sql.Scanner.
 type sqlScannerFunc func(src any) error

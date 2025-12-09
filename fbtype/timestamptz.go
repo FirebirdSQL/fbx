@@ -30,7 +30,6 @@ type TimestamptzValuer interface {
 	TimestamptzValue() (Timestamptz, error)
 }
 
-// Timestamptz represents the PostgreSQL timestamptz type.
 type Timestamptz struct {
 	Time  time.Time
 	Valid bool

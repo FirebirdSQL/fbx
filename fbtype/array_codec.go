@@ -9,7 +9,6 @@ import (
 	"rdb.red-soft.ru/fbx/internal/pgio"
 )
 
-// ArrayGetter is a type that can be converted into a PostgreSQL array.
 type ArrayGetter interface {
 	// Dimensions returns the array dimensions. If array is nil then nil is returned.
 	Dimensions() []ArrayDimension
@@ -21,7 +20,6 @@ type ArrayGetter interface {
 	IndexType() any
 }
 
-// ArraySetter is a type can be set from a PostgreSQL array.
 type ArraySetter interface {
 	// SetDimensions prepares the value such that ScanIndex can be called for each element. This will remove any existing
 	// elements. dimensions may be nil to indicate a NULL array. If unable to exactly preserve dimensions SetDimensions
@@ -49,12 +47,6 @@ func (c *ArrayCodec) FormatSupported(format int16) bool {
 }
 
 func (c *ArrayCodec) PreferredFormat() int16 {
-	// The binary format should always be preferred for arrays if it is supported. Usually, this will happen automatically
-	// because most types that support binary prefer it. However, text, json, and jsonb support binary but prefer the text
-	// format. This is because it is simpler for jsonb and PostgreSQL can be significantly faster using the text format
-	// for text-like data types than binary. However, arrays appear to always be faster in binary.
-	//
-	// https://www.postgresql.org/message-id/CAMovtNoHFod2jMAKQjjxv209PCTJx5Kc66anwWvX0mEiaXwgmA%40mail.gmail.com
 	if c.ElementType.Codec.FormatSupported(BinaryFormatCode) {
 		return BinaryFormatCode
 	}

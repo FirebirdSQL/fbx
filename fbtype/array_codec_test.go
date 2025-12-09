@@ -271,7 +271,7 @@ func TestArrayCodecScanWrongMultipleDimensions(t *testing.T) {
 		for rows.Next() {
 			var ss [][][]int32
 			err := rows.Scan(&ss)
-			require.Error(t, err, "can't scan into dest[0]: PostgreSQL array has 2 dimensions but slice has 3 dimensions")
+			require.Error(t, err, "can't scan into dest[0]: Firebird array has 2 dimensions but slice has 3 dimensions")
 		}
 	})
 }

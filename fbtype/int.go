@@ -1,4 +1,4 @@
-// Code generated from pgtype/int.go.erb. DO NOT EDIT.
+// Code generated from fbtype/int.go.erb. DO NOT EDIT.
 
 package fbtype
 

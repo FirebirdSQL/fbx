@@ -68,7 +68,6 @@ func TestTimestamptzCodecWithLocationLocal(t *testing.T) {
 	})
 }
 
-// https://github.com/jackc/pgx/v4/pgtype/pull/128
 func TestTimestamptzTranscodeBigTimeBinary(t *testing.T) {
 	t.Skip()
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
@@ -85,7 +84,6 @@ func TestTimestamptzTranscodeBigTimeBinary(t *testing.T) {
 	})
 }
 
-// https://github.com/jackc/pgtype/issues/74
 func TestTimestamptzDecodeTextInvalid(t *testing.T) {
 	t.Skip()
 	c := &fbtype.TimestamptzCodec{}

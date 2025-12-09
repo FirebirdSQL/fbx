@@ -18,7 +18,6 @@ type Uint64Valuer interface {
 	Uint64Value() (Uint64, error)
 }
 
-// Uint64 is the core type that is used to represent PostgreSQL types such as XID8.
 type Uint64 struct {
 	Uint64 uint64
 	Valid  bool
