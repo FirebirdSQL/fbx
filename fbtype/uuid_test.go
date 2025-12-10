@@ -1,0 +1,168 @@
+package fbtype_test
+
+import (
+	"context"
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"rdb.red-soft.ru/fbx"
+	"rdb.red-soft.ru/fbx/fbtype"
+	"rdb.red-soft.ru/fbx/fbxtest"
+)
+
+type renamedUUIDByteArray [16]byte
+
+func TestUUIDCodec(t *testing.T) {
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "uuid", []fbxtest.ValueRoundTripTest{
+		{Param: fbtype.UUID{Bytes: [16]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Valid: true}, Result: new(fbtype.UUID), Test: isExpectedEq(fbtype.UUID{Bytes: [16]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Valid: true})},
+		{Param: "00010203-0405-0607-0809-0a0b0c0d0e0f", Result: new(fbtype.UUID), Test: isExpectedEq(fbtype.UUID{Bytes: [16]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Valid: true})},
+		{Param: "000102030405060708090a0b0c0d0e0f", Result: new(fbtype.UUID), Test: isExpectedEq(fbtype.UUID{Bytes: [16]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Valid: true})},
+		{Param: fbtype.UUID{Bytes: [16]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Valid: true}, Result: new(string), Test: isExpectedEq("00010203-0405-0607-0809-0a0b0c0d0e0f")},
+		{Param: fbtype.UUID{}, Result: new([]byte), Test: isExpectedEqBytes([]byte(nil))},
+		{Param: fbtype.UUID{}, Result: new(fbtype.UUID), Test: isExpectedEq(fbtype.UUID{})},
+		{Param: nil, Result: new(fbtype.UUID), Test: isExpectedEq(fbtype.UUID{})},
+	})
+
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, fbxtest.KnownOIDQueryExecModes, "uuid", []fbxtest.ValueRoundTripTest{
+		{Param: [16]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Result: new(fbtype.UUID), Test: isExpectedEq(fbtype.UUID{Bytes: [16]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Valid: true})},
+		{Param: renamedUUIDByteArray{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Result: new(fbtype.UUID), Test: isExpectedEq(fbtype.UUID{Bytes: [16]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Valid: true})},
+		{Param: []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Result: new(renamedUUIDByteArray), Test: isExpectedEq(renamedUUIDByteArray{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15})},
+		{Param: []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Result: new(fbtype.UUID), Test: isExpectedEq(fbtype.UUID{Bytes: [16]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Valid: true})},
+	})
+}
+
+func TestUUID_String(t *testing.T) {
+	tests := []struct {
+		name string
+		src  fbtype.UUID
+		want string
+	}{
+		{
+			name: "first",
+			src: fbtype.UUID{
+				Bytes: [16]byte{29, 72, 90, 122, 109, 24, 69, 153, 140, 108, 52, 66, 86, 22, 136, 122},
+				Valid: true,
+			},
+			want: "1d485a7a-6d18-4599-8c6c-34425616887a",
+		},
+		{
+			name: "third",
+			src: fbtype.UUID{
+				Bytes: [16]byte{},
+			},
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.src.String()
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("MarshalJSON() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUUID_MarshalJSON(t *testing.T) {
+	tests := []struct {
+		name string
+		src  fbtype.UUID
+		want []byte
+	}{
+		{
+			name: "first",
+			src: fbtype.UUID{
+				Bytes: [16]byte{29, 72, 90, 122, 109, 24, 69, 153, 140, 108, 52, 66, 86, 22, 136, 122},
+				Valid: true,
+			},
+			want: []byte(`"1d485a7a-6d18-4599-8c6c-34425616887a"`),
+		},
+		{
+			name: "third",
+			src: fbtype.UUID{
+				Bytes: [16]byte{},
+			},
+			want: []byte("null"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tt.src.MarshalJSON()
+			require.NoError(t, err)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("MarshalJSON() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUUID_UnmarshalJSON(t *testing.T) {
+	tests := []struct {
+		name    string
+		want    *fbtype.UUID
+		src     []byte
+		wantErr bool
+	}{
+		{
+			name: "first",
+			want: &fbtype.UUID{
+				Bytes: [16]byte{29, 72, 90, 122, 109, 24, 69, 153, 140, 108, 52, 66, 86, 22, 136, 122},
+				Valid: true,
+			},
+			src:     []byte(`"1d485a7a-6d18-4599-8c6c-34425616887a"`),
+			wantErr: false,
+		},
+		{
+			name: "second",
+			want: &fbtype.UUID{
+				Bytes: [16]byte{},
+			},
+			src:     []byte("null"),
+			wantErr: false,
+		},
+		{
+			name: "third",
+			want: &fbtype.UUID{
+				Bytes: [16]byte{},
+				Valid: false,
+			},
+			src:     []byte("1d485a7a-6d18-4599-8c6c-34425616887a"),
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := &fbtype.UUID{}
+			if err := got.UnmarshalJSON(tt.src); (err != nil) != tt.wantErr {
+				t.Errorf("UnmarshalJSON() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("UnmarshalJSON() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUUIDtoFB(t *testing.T) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		_, err := conn.Exec(ctx, "recreate table u(u char(16) character set octets)")
+		require.NoError(t, err)
+		_, err = conn.Exec(ctx, "insert into u values(gen_uuid())")
+		require.NoError(t, err)
+
+		var u fbtype.UUID
+		var s string
+		err = conn.QueryRow(ctx, "select u, uuid_to_char(u) from u").Scan(&u, &s)
+		require.NoError(t, err)
+		assert.Equal(t, u.String(), strings.ToLower(s))
+
+		var u2 fbtype.UUID
+		var s2 string
+		err = conn.QueryRow(ctx, "select uuid_to_char(u), ? from u", &u).Scan(&s2, &u2)
+		require.NoError(t, err)
+		assert.Equal(t, u2.String(), strings.ToLower(s2))
+	})
+}
