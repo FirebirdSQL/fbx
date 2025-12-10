@@ -767,14 +767,14 @@ func TestConnMultiplePrepareAndDeallocate(t *testing.T) {
 		require.NoError(t, err)
 
 		var preparedStmtCount int64
-		err = db.QueryRowContext(context.Background(), "select count(*) from mon$statements where cast(mon$sql_text as varchar) = ?", sql).Scan(&preparedStmtCount)
+		err = db.QueryRowContext(context.Background(), "select count(*) from mon$statements where mon$attachment_id = current_connection and cast(mon$sql_text as varchar) = ?", sql).Scan(&preparedStmtCount)
 		require.NoError(t, err)
 		require.EqualValues(t, 1, preparedStmtCount)
 
 		err = stmt2.Close() // err isn't as useful as it should be as database/sql will ignore errors from Deallocate.
 		require.NoError(t, err)
 
-		err = db.QueryRowContext(context.Background(), "select count(*) from mon$statements where cast(mon$sql_text as varchar) = ?", sql).Scan(&preparedStmtCount)
+		err = db.QueryRowContext(context.Background(), "select count(*) from mon$statements where mon$attachment_id = current_connection and cast(mon$sql_text as varchar) = ?", sql).Scan(&preparedStmtCount)
 		require.NoError(t, err)
 		require.EqualValues(t, 0, preparedStmtCount)
 	})
