@@ -8,7 +8,7 @@ type BitSet struct {
 }
 
 func NewBitSet(count int) *BitSet {
-	bytes := make([]byte, int(math.Ceil(float64(count)/8)))
+	bytes := make([]byte, int(math.Ceil(float64(count+7)/8)))
 	return &BitSet{bytes, count}
 }
 
