@@ -153,10 +153,10 @@ func (t *tracer) traceExecuteMessage(sender byte, op *OpExecute) {
 		fmt.Fprintf(t.buf, " kind=%d", op.Kind)
 		fmt.Fprintf(t.buf, " stmt=%d tx=%d", op.StatementHandle, op.TransactionHandle)
 		fmt.Fprintf(t.buf, " inBLR=%d outBLR=%d", len(op.SQLDataBlr), len(op.SQLDataOutBlr))
-		fmt.Fprintf(t.buf, " lenSQLData=%d", len(op.SQLData))
+		fmt.Fprintf(t.buf, " lenParameters=%d", len(op.Parameters))
 
 		if t.FullLogMode {
-			for _, v := range op.SQLData {
+			for _, v := range op.Parameters {
 				if v == nil {
 					t.buf.WriteString(" sqldata:-1")
 				} else {

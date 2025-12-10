@@ -172,14 +172,19 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 		rowBlr = st.Description.StatementInfo.GetRowBlr()
 	}
 
+	var sqlDataBlr []byte
+	if len(paramValues) > 0 {
+		sqlDataBlr = st.Description.StatementInfo.GetParametersBlr(paramValues)
+	}
+
 	if err = st.conn.client.WriteMessage(&fbproto.OpExecute{
 		Kind:                  execKind,
 		TransactionHandle:     tx.Handle,
 		StatementHandle:       st.Description.StatementHandle,
 		ParametersDescriptors: st.Description.StatementInfo.ParametersDescriptors,
-		SQLDataBlr:            st.Description.StatementInfo.GetParametersBlr(),
+		SQLDataBlr:            sqlDataBlr,
 		SQLDataOutBlr:         rowBlr,
-		SQLData:               paramValues,
+		Parameters:            paramValues,
 	}); err != nil {
 		st.conn.asyncClose()
 		rr.concludeCommand(QueryStatus{}, err)

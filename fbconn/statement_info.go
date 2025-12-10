@@ -146,14 +146,14 @@ func FbTypeIntoFormat(fbtype int, subtype int) int16 {
 }
 
 func (p *StatementInfo) GetRowBlr() []byte {
-	return p.CalculateBlr(p.FieldDescriptors)
+	return p.CalculateBlr(p.FieldDescriptors, nil)
 }
 
-func (p *StatementInfo) GetParametersBlr() []byte {
-	return p.CalculateBlr(p.ParametersDescriptors)
+func (p *StatementInfo) GetParametersBlr(values [][]byte) []byte {
+	return p.CalculateBlr(p.ParametersDescriptors, values)
 }
 
-func (p *StatementInfo) CalculateBlr(descriptors []fbproto.FieldDescriptor) []byte {
+func (p *StatementInfo) CalculateBlr(descriptors []fbproto.FieldDescriptor, values [][]byte) []byte {
 	ln := len(descriptors) * 2
 	blr := make([]byte, (ln*4)+8)
 	// FIXME: fbx remove magic numbers and use blr codes
@@ -165,21 +165,29 @@ func (p *StatementInfo) CalculateBlr(descriptors []fbproto.FieldDescriptor) []by
 	blr[5] = byte(ln >> 8)
 	n := 6
 
-	for _, x := range descriptors {
+	for i, x := range descriptors {
 		sqlscale := x.Scale
 		if sqlscale < 0 {
 			sqlscale += 256
 		}
+		dataLength := x.Length
+		if values != nil {
+			if values[i] != nil {
+				dataLength = len(values[i])
+			} else {
+				dataLength = 0
+			}
+		}
 		switch x.Type {
 		case fbproto.SQL_TYPE_VARYING:
 			blr[n] = 37
-			blr[n+1] = byte(x.Length & 255)
-			blr[n+2] = byte(x.Length >> 8)
+			blr[n+1] = byte(dataLength & 255)
+			blr[n+2] = byte(dataLength >> 8)
 			n += 3
 		case fbproto.SQL_TYPE_TEXT:
 			blr[n] = 14
-			blr[n+1] = byte(x.Length & 255)
-			blr[n+2] = byte(x.Length >> 8)
+			blr[n+1] = byte(dataLength & 255)
+			blr[n+2] = byte(dataLength >> 8)
 			n += 3
 		case fbproto.SQL_TYPE_LONG:
 			blr[n] = 8

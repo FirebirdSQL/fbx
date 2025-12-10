@@ -8,7 +8,7 @@ type OpExecute struct {
 	TransactionHandle     int
 	SQLDataBlr            []byte
 	SQLDataOutBlr         []byte
-	SQLData               [][]byte
+	Parameters            [][]byte
 	ParametersDescriptors []FieldDescriptor
 }
 
@@ -44,7 +44,7 @@ func (op *OpExecute) Write(x *XDRWriter) error {
 		return err
 	}
 
-	if op.SQLData == nil {
+	if len(op.Parameters) == 0 {
 		//p_sqldata_messages
 		if err = x.WriteInt32(0); err != nil {
 			return err
@@ -55,7 +55,7 @@ func (op *OpExecute) Write(x *XDRWriter) error {
 			return err
 		}
 		// Row data
-		if err = WriteRowData(x, op.ParametersDescriptors, op.SQLData); err != nil {
+		if err = WriteRowData(x, op.ParametersDescriptors, op.Parameters); err != nil {
 			return err
 		}
 	}
