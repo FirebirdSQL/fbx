@@ -12,6 +12,8 @@ import (
 	"rdb.red-soft.ru/fbx/internal/pgio"
 )
 
+var firebirdDateEpoch = time.Date(1858, time.November, 17, 0, 0, 0, 0, time.UTC)
+
 type DateScanner interface {
 	ScanDate(v Date) error
 }
@@ -21,9 +23,8 @@ type DateValuer interface {
 }
 
 type Date struct {
-	Time             time.Time
-	InfinityModifier InfinityModifier
-	Valid            bool
+	Time  time.Time
+	Valid bool
 }
 
 func (d *Date) ScanDate(v Date) error {
@@ -34,11 +35,6 @@ func (d *Date) ScanDate(v Date) error {
 func (d Date) DateValue() (Date, error) {
 	return d, nil
 }
-
-const (
-	negativeInfinityDayOffset = -2147483648
-	infinityDayOffset         = 2147483647
-)
 
 // Scan implements the database/sql Scanner interface.
 func (dst *Date) Scan(src any) error {
@@ -64,9 +60,6 @@ func (src Date) Value() (driver.Value, error) {
 		return nil, nil
 	}
 
-	if src.InfinityModifier != Finite {
-		return src.InfinityModifier.String(), nil
-	}
 	return src.Time, nil
 }
 
@@ -75,16 +68,7 @@ func (src Date) MarshalJSON() ([]byte, error) {
 		return []byte("null"), nil
 	}
 
-	var s string
-
-	switch src.InfinityModifier {
-	case Finite:
-		s = src.Time.Format("2006-01-02")
-	case Infinity:
-		s = "infinity"
-	case NegativeInfinity:
-		s = "-infinity"
-	}
+	s := src.Time.Format("2006-01-02")
 
 	return json.Marshal(s)
 }
@@ -101,19 +85,12 @@ func (dst *Date) UnmarshalJSON(b []byte) error {
 		return nil
 	}
 
-	switch *s {
-	case "infinity":
-		*dst = Date{Valid: true, InfinityModifier: Infinity}
-	case "-infinity":
-		*dst = Date{Valid: true, InfinityModifier: -Infinity}
-	default:
-		t, err := time.ParseInLocation("2006-01-02", *s, time.UTC)
-		if err != nil {
-			return err
-		}
-
-		*dst = Date{Time: t, Valid: true}
+	t, err := time.ParseInLocation("2006-01-02", *s, time.UTC)
+	if err != nil {
+		return err
 	}
+
+	*dst = Date{Time: t, Valid: true}
 
 	return nil
 }
@@ -128,7 +105,7 @@ func (DateCodec) PreferredFormat() int16 {
 	return BinaryFormatCode
 }
 
-func (DateCodec) PlanEncode(m *Map, oid uint32, format int16, value any) EncodePlan {
+func (DateCodec) PlanEncode(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
 	if _, ok := value.(DateValuer); !ok {
 		return nil
 	}
@@ -155,21 +132,11 @@ func (encodePlanDateCodecBinary) Encode(value any, buf []byte) (newBuf []byte, e
 		return nil, nil
 	}
 
-	var daysSinceDateEpoch int32
-	switch date.InfinityModifier {
-	case Finite:
-		tUnix := time.Date(date.Time.Year(), date.Time.Month(), date.Time.Day(), 0, 0, 0, 0, time.UTC).Unix()
-		dateEpoch := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
+	tUnix := time.Date(date.Time.Year(), date.Time.Month(), date.Time.Day(), 0, 0, 0, 0, time.UTC)
 
-		secSinceDateEpoch := tUnix - dateEpoch
-		daysSinceDateEpoch = int32(secSinceDateEpoch / 86400)
-	case Infinity:
-		daysSinceDateEpoch = infinityDayOffset
-	case NegativeInfinity:
-		daysSinceDateEpoch = negativeInfinityDayOffset
-	}
+	days := int32((tUnix.Unix() - firebirdDateEpoch.Unix()) / secondsPerDay)
 
-	return pgio.AppendInt32(buf, daysSinceDateEpoch), nil
+	return pgio.AppendInt32(buf, days), nil
 }
 
 type encodePlanDateCodecText struct{}
@@ -184,45 +151,28 @@ func (encodePlanDateCodecText) Encode(value any, buf []byte) (newBuf []byte, err
 		return nil, nil
 	}
 
-	switch date.InfinityModifier {
-	case Finite:
-		// Year 0000 is 1 BC
-		bc := false
-		year := date.Time.Year()
-		if year <= 0 {
-			year = -year + 1
-			bc = true
-		}
+	year := date.Time.Year()
 
-		yearBytes := strconv.AppendInt(make([]byte, 0, 6), int64(year), 10)
-		for i := len(yearBytes); i < 4; i++ {
-			buf = append(buf, '0')
-		}
-		buf = append(buf, yearBytes...)
-		buf = append(buf, '-')
-		if date.Time.Month() < 10 {
-			buf = append(buf, '0')
-		}
-		buf = strconv.AppendInt(buf, int64(date.Time.Month()), 10)
-		buf = append(buf, '-')
-		if date.Time.Day() < 10 {
-			buf = append(buf, '0')
-		}
-		buf = strconv.AppendInt(buf, int64(date.Time.Day()), 10)
-
-		if bc {
-			buf = append(buf, " BC"...)
-		}
-	case Infinity:
-		buf = append(buf, "infinity"...)
-	case NegativeInfinity:
-		buf = append(buf, "-infinity"...)
+	yearBytes := strconv.AppendInt(make([]byte, 0, 6), int64(year), 10)
+	for i := len(yearBytes); i < 4; i++ {
+		buf = append(buf, '0')
 	}
+	buf = append(buf, yearBytes...)
+	buf = append(buf, '-')
+	if date.Time.Month() < 10 {
+		buf = append(buf, '0')
+	}
+	buf = strconv.AppendInt(buf, int64(date.Time.Month()), 10)
+	buf = append(buf, '-')
+	if date.Time.Day() < 10 {
+		buf = append(buf, '0')
+	}
+	buf = strconv.AppendInt(buf, int64(date.Time.Day()), 10)
 
 	return buf, nil
 }
 
-func (DateCodec) PlanScan(m *Map, oid uint32, format int16, target any) ScanPlan {
+func (DateCodec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
 
 	switch format {
 	case BinaryFormatCode:
@@ -250,20 +200,14 @@ func (scanPlanBinaryDateToDateScanner) Scan(src []byte, dst any) error {
 	}
 
 	if len(src) != 4 {
-		return fmt.Errorf("invalid length for date: %v", len(src))
+		return fmt.Errorf("fbtype: invalid length for Firebird DATE: %d", len(src))
 	}
 
 	dayOffset := int32(binary.BigEndian.Uint32(src))
 
-	switch dayOffset {
-	case infinityDayOffset:
-		return scanner.ScanDate(Date{InfinityModifier: Infinity, Valid: true})
-	case negativeInfinityDayOffset:
-		return scanner.ScanDate(Date{InfinityModifier: -Infinity, Valid: true})
-	default:
-		t := time.Date(2000, 1, int(1+dayOffset), 0, 0, 0, 0, time.UTC)
-		return scanner.ScanDate(Date{Time: t, Valid: true})
-	}
+	t := firebirdDateEpoch.AddDate(0, 0, int(dayOffset))
+
+	return scanner.ScanDate(Date{Time: t, Valid: true})
 }
 
 type scanPlanTextAnyToDateScanner struct{}
@@ -304,47 +248,32 @@ func (scanPlanTextAnyToDateScanner) Scan(src []byte, dst any) error {
 		return scanner.ScanDate(Date{Time: t, Valid: true})
 	}
 
-	switch sbuf {
-	case "infinity":
-		return scanner.ScanDate(Date{InfinityModifier: Infinity, Valid: true})
-	case "-infinity":
-		return scanner.ScanDate(Date{InfinityModifier: -Infinity, Valid: true})
-	default:
-		return fmt.Errorf("invalid date format")
-	}
+	return fmt.Errorf("invalid date format")
 }
 
-func (c DateCodec) DecodeDatabaseSQLValue(m *Map, oid uint32, format int16, src []byte) (driver.Value, error) {
+func (c DateCodec) DecodeDatabaseSQLValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var date Date
-	err := codecScan(c, m, oid, format, src, &date)
+	err := codecScan(c, m, oid, subType, length, scale, format, src, &date)
 	if err != nil {
 		return nil, err
-	}
-
-	if date.InfinityModifier != Finite {
-		return date.InfinityModifier.String(), nil
 	}
 
 	return date.Time, nil
 }
 
-func (c DateCodec) DecodeValue(m *Map, oid uint32, format int16, src []byte) (any, error) {
+func (c DateCodec) DecodeValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var date Date
-	err := codecScan(c, m, oid, format, src, &date)
+	err := codecScan(c, m, oid, subType, length, scale, format, src, &date)
 	if err != nil {
 		return nil, err
-	}
-
-	if date.InfinityModifier != Finite {
-		return date.InfinityModifier, nil
 	}
 
 	return date.Time, nil

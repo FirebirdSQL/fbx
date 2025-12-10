@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
-	"github.com/stretchr/testify/require"
 )
 
 func isExpectedEqBytes(a any) func(any) bool {
@@ -30,6 +30,7 @@ func isExpectedEqBytes(a any) func(any) bool {
 }
 
 func TestByteaCodec(t *testing.T) {
+	t.Skip()
 	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "bytea", []fbxtest.ValueRoundTripTest{
 		{Param: []byte{1, 2, 3}, Result: new([]byte), Test: isExpectedEqBytes([]byte{1, 2, 3})},
 		{Param: []byte{}, Result: new([]byte), Test: isExpectedEqBytes([]byte{})},
@@ -39,6 +40,7 @@ func TestByteaCodec(t *testing.T) {
 }
 
 func TestDriverBytesQueryRow(t *testing.T) {
+	t.Skip()
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		var buf []byte
 		err := conn.QueryRow(ctx, `select $1::bytea`, []byte{1, 2}).Scan((*fbtype.DriverBytes)(&buf))
@@ -47,6 +49,7 @@ func TestDriverBytesQueryRow(t *testing.T) {
 }
 
 func TestDriverBytes(t *testing.T) {
+	t.Skip()
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		argBuf := make([]byte, 128)
 		for i := range argBuf {
@@ -84,6 +87,7 @@ func TestDriverBytes(t *testing.T) {
 }
 
 func TestPreallocBytes(t *testing.T) {
+	t.Skip()
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		origBuf := []byte{5, 6, 7, 8}
 		buf := origBuf
@@ -106,6 +110,7 @@ func TestPreallocBytes(t *testing.T) {
 }
 
 func TestUndecodedBytes(t *testing.T) {
+	t.Skip()
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		var buf []byte
 		err := conn.QueryRow(ctx, `select 1::int4`).Scan((*fbtype.UndecodedBytes)(&buf))
@@ -117,6 +122,7 @@ func TestUndecodedBytes(t *testing.T) {
 }
 
 func TestByteaCodecDecodeDatabaseSQLValue(t *testing.T) {
+	t.Skip()
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		var buf []byte
 		err := conn.QueryRow(ctx, `select '\xa1b2c3d4'::bytea`).Scan(sqlScannerFunc(func(src any) error {

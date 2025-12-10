@@ -11,9 +11,10 @@ import (
 	"rdb.red-soft.ru/fbx/internal/pgio"
 )
 
-const pgTimestamptzHourFormat = "2006-01-02 15:04:05.999999999Z07"
-const pgTimestamptzMinuteFormat = "2006-01-02 15:04:05.999999999Z07:00"
-const pgTimestamptzSecondFormat = "2006-01-02 15:04:05.999999999Z07:00:00"
+const fbTimestamptzHourFormat = "2006-01-02 15:04:05.999999999Z07"
+const fbTimestamptzMinuteFormat = "2006-01-02 15:04:05.999999999Z07:00"
+const fbTimestamptzSecondFormat = "2006-01-02 15:04:05.999999999Z07:00:00"
+
 const microsecFromUnixEpochToY2K = 946684800 * 1000000
 
 const (
@@ -29,11 +30,9 @@ type TimestamptzValuer interface {
 	TimestamptzValue() (Timestamptz, error)
 }
 
-// Timestamptz represents the PostgreSQL timestamptz type.
 type Timestamptz struct {
-	Time             time.Time
-	InfinityModifier InfinityModifier
-	Valid            bool
+	Time  time.Time
+	Valid bool
 }
 
 func (tstz *Timestamptz) ScanTimestamptz(v Timestamptz) error {
@@ -69,9 +68,6 @@ func (tstz Timestamptz) Value() (driver.Value, error) {
 		return nil, nil
 	}
 
-	if tstz.InfinityModifier != Finite {
-		return tstz.InfinityModifier.String(), nil
-	}
 	return tstz.Time, nil
 }
 
@@ -80,16 +76,7 @@ func (tstz Timestamptz) MarshalJSON() ([]byte, error) {
 		return []byte("null"), nil
 	}
 
-	var s string
-
-	switch tstz.InfinityModifier {
-	case Finite:
-		s = tstz.Time.Format(time.RFC3339Nano)
-	case Infinity:
-		s = "infinity"
-	case NegativeInfinity:
-		s = "-infinity"
-	}
+	s := tstz.Time.Format(time.RFC3339Nano)
 
 	return json.Marshal(s)
 }
@@ -106,20 +93,12 @@ func (tstz *Timestamptz) UnmarshalJSON(b []byte) error {
 		return nil
 	}
 
-	switch *s {
-	case "infinity":
-		*tstz = Timestamptz{Valid: true, InfinityModifier: Infinity}
-	case "-infinity":
-		*tstz = Timestamptz{Valid: true, InfinityModifier: -Infinity}
-	default:
-		// PostgreSQL uses ISO 8601 for to_json function and casting from a string to timestamptz
-		tim, err := time.Parse(time.RFC3339Nano, *s)
-		if err != nil {
-			return err
-		}
-
-		*tstz = Timestamptz{Time: tim, Valid: true}
+	tim, err := time.Parse(time.RFC3339Nano, *s)
+	if err != nil {
+		return err
 	}
+
+	*tstz = Timestamptz{Time: tim, Valid: true}
 
 	return nil
 }
@@ -138,7 +117,7 @@ func (*TimestamptzCodec) PreferredFormat() int16 {
 	return BinaryFormatCode
 }
 
-func (*TimestamptzCodec) PlanEncode(m *Map, oid uint32, format int16, value any) EncodePlan {
+func (*TimestamptzCodec) PlanEncode(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
 	if _, ok := value.(TimestamptzValuer); !ok {
 		return nil
 	}
@@ -165,16 +144,8 @@ func (encodePlanTimestamptzCodecBinary) Encode(value any, buf []byte) (newBuf []
 		return nil, nil
 	}
 
-	var microsecSinceY2K int64
-	switch ts.InfinityModifier {
-	case Finite:
-		microsecSinceUnixEpoch := ts.Time.Unix()*1000000 + int64(ts.Time.Nanosecond())/1000
-		microsecSinceY2K = microsecSinceUnixEpoch - microsecFromUnixEpochToY2K
-	case Infinity:
-		microsecSinceY2K = infinityMicrosecondOffset
-	case NegativeInfinity:
-		microsecSinceY2K = negativeInfinityMicrosecondOffset
-	}
+	microsecSinceUnixEpoch := ts.Time.Unix()*1000000 + int64(ts.Time.Nanosecond())/1000
+	microsecSinceY2K := microsecSinceUnixEpoch - microsecFromUnixEpochToY2K
 
 	buf = pgio.AppendInt64(buf, microsecSinceY2K)
 
@@ -195,28 +166,19 @@ func (encodePlanTimestamptzCodecText) Encode(value any, buf []byte) (newBuf []by
 
 	var s string
 
-	switch ts.InfinityModifier {
-	case Finite:
+	t := ts.Time.UTC().Truncate(time.Microsecond)
 
-		t := ts.Time.UTC().Truncate(time.Microsecond)
+	bc := false
+	if year := t.Year(); year <= 0 {
+		year = -year + 1
+		t = time.Date(year, t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), time.UTC)
+		bc = true
+	}
 
-		// Year 0000 is 1 BC
-		bc := false
-		if year := t.Year(); year <= 0 {
-			year = -year + 1
-			t = time.Date(year, t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), time.UTC)
-			bc = true
-		}
+	s = t.Format(fbTimestamptzSecondFormat)
 
-		s = t.Format(pgTimestamptzSecondFormat)
-
-		if bc {
-			s = s + " BC"
-		}
-	case Infinity:
-		s = "infinity"
-	case NegativeInfinity:
-		s = "-infinity"
+	if bc {
+		s = s + " BC"
 	}
 
 	buf = append(buf, s...)
@@ -224,7 +186,7 @@ func (encodePlanTimestamptzCodecText) Encode(value any, buf []byte) (newBuf []by
 	return buf, nil
 }
 
-func (c *TimestamptzCodec) PlanScan(m *Map, oid uint32, format int16, target any) ScanPlan {
+func (c *TimestamptzCodec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
 
 	switch format {
 	case BinaryFormatCode:
@@ -258,21 +220,14 @@ func (plan *scanPlanBinaryTimestamptzToTimestamptzScanner) Scan(src []byte, dst 
 	var tstz Timestamptz
 	microsecSinceY2K := int64(binary.BigEndian.Uint64(src))
 
-	switch microsecSinceY2K {
-	case infinityMicrosecondOffset:
-		tstz = Timestamptz{Valid: true, InfinityModifier: Infinity}
-	case negativeInfinityMicrosecondOffset:
-		tstz = Timestamptz{Valid: true, InfinityModifier: -Infinity}
-	default:
-		tim := time.Unix(
-			microsecFromUnixEpochToY2K/1000000+microsecSinceY2K/1000000,
-			(microsecFromUnixEpochToY2K%1000000*1000)+(microsecSinceY2K%1000000*1000),
-		)
-		if plan.location != nil {
-			tim = tim.In(plan.location)
-		}
-		tstz = Timestamptz{Time: tim, Valid: true}
+	tim := time.Unix(
+		microsecFromUnixEpochToY2K/1000000+microsecSinceY2K/1000000,
+		(microsecFromUnixEpochToY2K%1000000*1000)+(microsecSinceY2K%1000000*1000),
+	)
+	if plan.location != nil {
+		tim = tim.In(plan.location)
 	}
+	tstz = Timestamptz{Time: tim, Valid: true}
 
 	return scanner.ScanTimestamptz(tstz)
 }
@@ -288,78 +243,64 @@ func (plan *scanPlanTextTimestamptzToTimestamptzScanner) Scan(src []byte, dst an
 
 	var tstz Timestamptz
 	sbuf := string(src)
-	switch sbuf {
-	case "infinity":
-		tstz = Timestamptz{Valid: true, InfinityModifier: Infinity}
-	case "-infinity":
-		tstz = Timestamptz{Valid: true, InfinityModifier: -Infinity}
-	default:
-		bc := false
-		if strings.HasSuffix(sbuf, " BC") {
-			sbuf = sbuf[:len(sbuf)-3]
-			bc = true
-		}
 
-		var format string
-		if len(sbuf) >= 9 && (sbuf[len(sbuf)-9] == '-' || sbuf[len(sbuf)-9] == '+') {
-			format = pgTimestamptzSecondFormat
-		} else if len(sbuf) >= 6 && (sbuf[len(sbuf)-6] == '-' || sbuf[len(sbuf)-6] == '+') {
-			format = pgTimestamptzMinuteFormat
-		} else {
-			format = pgTimestamptzHourFormat
-		}
-
-		tim, err := time.Parse(format, sbuf)
-		if err != nil {
-			return err
-		}
-
-		if bc {
-			year := -tim.Year() + 1
-			tim = time.Date(year, tim.Month(), tim.Day(), tim.Hour(), tim.Minute(), tim.Second(), tim.Nanosecond(), tim.Location())
-		}
-
-		if plan.location != nil {
-			tim = tim.In(plan.location)
-		}
-
-		tstz = Timestamptz{Time: tim, Valid: true}
+	bc := false
+	if strings.HasSuffix(sbuf, " BC") {
+		sbuf = sbuf[:len(sbuf)-3]
+		bc = true
 	}
+
+	var format string
+	if len(sbuf) >= 9 && (sbuf[len(sbuf)-9] == '-' || sbuf[len(sbuf)-9] == '+') {
+		format = fbTimestamptzSecondFormat
+	} else if len(sbuf) >= 6 && (sbuf[len(sbuf)-6] == '-' || sbuf[len(sbuf)-6] == '+') {
+		format = fbTimestamptzMinuteFormat
+	} else {
+		format = fbTimestamptzHourFormat
+	}
+
+	tim, err := time.Parse(format, sbuf)
+	if err != nil {
+		return err
+	}
+
+	if bc {
+		year := -tim.Year() + 1
+		tim = time.Date(year, tim.Month(), tim.Day(), tim.Hour(), tim.Minute(), tim.Second(), tim.Nanosecond(), tim.Location())
+	}
+
+	if plan.location != nil {
+		tim = tim.In(plan.location)
+	}
+
+	tstz = Timestamptz{Time: tim, Valid: true}
 
 	return scanner.ScanTimestamptz(tstz)
 }
 
-func (c *TimestamptzCodec) DecodeDatabaseSQLValue(m *Map, oid uint32, format int16, src []byte) (driver.Value, error) {
+func (c *TimestamptzCodec) DecodeDatabaseSQLValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var tstz Timestamptz
-	err := codecScan(c, m, oid, format, src, &tstz)
+	err := codecScan(c, m, oid, subType, length, scale, format, src, &tstz)
 	if err != nil {
 		return nil, err
-	}
-
-	if tstz.InfinityModifier != Finite {
-		return tstz.InfinityModifier.String(), nil
 	}
 
 	return tstz.Time, nil
 }
 
-func (c *TimestamptzCodec) DecodeValue(m *Map, oid uint32, format int16, src []byte) (any, error) {
+func (c *TimestamptzCodec) DecodeValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var tstz Timestamptz
-	err := codecScan(c, m, oid, format, src, &tstz)
+	err := codecScan(c, m, oid, subType, length, scale, format, src, &tstz)
 	if err != nil {
 		return nil, err
-	}
-
-	if tstz.InfinityModifier != Finite {
-		return tstz.InfinityModifier, nil
 	}
 
 	return tstz.Time, nil

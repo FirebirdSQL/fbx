@@ -12,7 +12,7 @@ import (
 	"rdb.red-soft.ru/fbx/internal/pgio"
 )
 
-// Information on the internals of PostgreSQL arrays can be found in
+// Information on the internals of Firebird arrays can be found in
 // src/include/utils/array.h and src/backend/utils/adt/arrayfuncs.c. Of
 // particular interest is the array_send function.
 
@@ -362,8 +362,6 @@ func quoteArrayElement(src string) string {
 }
 
 func isSpace(ch byte) bool {
-	// see array_isspace:
-	// https://github.com/postgres/postgres/blob/master/src/backend/utils/adt/arrayfuncs.c
 	return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || ch == '\v' || ch == '\f'
 }
 
@@ -374,8 +372,6 @@ func quoteArrayElementIfNeeded(src string) string {
 	return src
 }
 
-// Array represents a PostgreSQL array for T. It implements the ArrayGetter and ArraySetter interfaces. It preserves
-// PostgreSQL dimensions and custom lower bounds. Use FlatArray if these are not needed.
 type Array[T any] struct {
 	Elements []T
 	Dims     []ArrayDimension
@@ -419,8 +415,6 @@ func (a Array[T]) ScanIndexType() any {
 	return new(T)
 }
 
-// FlatArray implements the ArrayGetter and ArraySetter interfaces for any slice of T. It ignores PostgreSQL dimensions
-// and custom lower bounds. Use Array to preserve these.
 type FlatArray[T any] []T
 
 func (a FlatArray[T]) Dimensions() []ArrayDimension {

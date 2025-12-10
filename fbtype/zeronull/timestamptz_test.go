@@ -19,7 +19,7 @@ func isExpectedEqTimestamptz(a any) func(any) bool {
 }
 
 func TestTimestamptzTranscode(t *testing.T) {
-	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "timestamptz", []fbxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "timestamp with time zone", []fbxtest.ValueRoundTripTest{
 		{
 			Param:  (zeronull.Timestamptz)(time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)),
 			Result: new(zeronull.Timestamptz),

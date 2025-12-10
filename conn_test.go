@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbconn"
+	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
 )
@@ -699,17 +700,15 @@ func TestConnInitTypeMap(t *testing.T) {
 
 	// spot check that the standard postgres type names aren't qualified
 	nameOIDs := map[string]uint32{
-		"_int8": fbtype.Int8ArrayOID,
-		"int8":  fbtype.Int8OID,
-		"json":  fbtype.JSONOID,
-		"text":  fbtype.TextOID,
+		"long": fbproto.SQL_TYPE_LONG,
+		"text": fbproto.SQL_TYPE_TEXT,
 	}
 	for name, oid := range nameOIDs {
 		dtByName, ok := conn.TypeMap().TypeForName(name)
 		if !ok {
 			t.Fatalf("Expected type named %v to be present", name)
 		}
-		dtByOID, ok := conn.TypeMap().TypeForOID(oid)
+		dtByOID, ok := conn.TypeMap().TypeForOID(oid, 0)
 		if !ok {
 			t.Fatalf("Expected type OID %v to be present", oid)
 		}
@@ -833,86 +832,6 @@ func TestLoadCompositeType(t *testing.T) {
 
 		_, err = conn.LoadType(ctx, "compositetype")
 		require.NoError(t, err)
-	})
-}
-
-func TestLoadRangeType(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		tx, err := conn.Begin(ctx)
-		require.NoError(t, err)
-		defer tx.Rollback(ctx)
-
-		_, err = tx.Exec(ctx, "create type examplefloatrange as range (subtype=float8, subtype_diff=float8mi)")
-		require.NoError(t, err)
-
-		// Register types
-		newRangeType, err := conn.LoadType(ctx, "examplefloatrange")
-		require.NoError(t, err)
-		conn.TypeMap().RegisterType(newRangeType)
-		conn.TypeMap().RegisterDefaultFbType(fbtype.Range[float64]{}, "examplefloatrange")
-
-		var inputRangeType = fbtype.Range[float64]{
-			Lower:     1.0,
-			Upper:     2.0,
-			LowerType: fbtype.Inclusive,
-			UpperType: fbtype.Inclusive,
-			Valid:     true,
-		}
-		var outputRangeType fbtype.Range[float64]
-		err = tx.QueryRow(ctx, "SELECT $1::examplefloatrange", inputRangeType).Scan(&outputRangeType)
-		require.NoError(t, err)
-		require.Equal(t, inputRangeType, outputRangeType)
-	})
-}
-
-func TestLoadMultiRangeType(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		fbxtest.SkipPostgreSQLVersionLessThan(t, conn, 14) // multirange data type was added in 14 postgresql
-
-		tx, err := conn.Begin(ctx)
-		require.NoError(t, err)
-		defer tx.Rollback(ctx)
-
-		_, err = tx.Exec(ctx, "create type examplefloatrange as range (subtype=float8, subtype_diff=float8mi, multirange_type_name=examplefloatmultirange)")
-		require.NoError(t, err)
-
-		// Register types
-		newRangeType, err := conn.LoadType(ctx, "examplefloatrange")
-		require.NoError(t, err)
-		conn.TypeMap().RegisterType(newRangeType)
-		conn.TypeMap().RegisterDefaultFbType(fbtype.Range[float64]{}, "examplefloatrange")
-
-		newMultiRangeType, err := conn.LoadType(ctx, "examplefloatmultirange")
-		require.NoError(t, err)
-		conn.TypeMap().RegisterType(newMultiRangeType)
-		conn.TypeMap().RegisterDefaultFbType(fbtype.Multirange[fbtype.Range[float64]]{}, "examplefloatmultirange")
-
-		var inputMultiRangeType = fbtype.Multirange[fbtype.Range[float64]]{
-			{
-				Lower:     1.0,
-				Upper:     2.0,
-				LowerType: fbtype.Inclusive,
-				UpperType: fbtype.Inclusive,
-				Valid:     true,
-			},
-			{
-				Lower:     3.0,
-				Upper:     4.0,
-				LowerType: fbtype.Exclusive,
-				UpperType: fbtype.Exclusive,
-				Valid:     true,
-			},
-		}
-		var outputMultiRangeType fbtype.Multirange[fbtype.Range[float64]]
-		err = tx.QueryRow(ctx, "SELECT $1::examplefloatmultirange", inputMultiRangeType).Scan(&outputMultiRangeType)
-		require.NoError(t, err)
-		require.Equal(t, inputMultiRangeType, outputMultiRangeType)
 	})
 }
 

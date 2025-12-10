@@ -9,7 +9,7 @@ import (
 )
 
 func TestTextTranscode(t *testing.T) {
-	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "text", []fbxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "varchar", []fbxtest.ValueRoundTripTest{
 		{
 			Param:  (zeronull.Text)("foo"),
 			Result: new(zeronull.Text),

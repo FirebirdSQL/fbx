@@ -1,5 +1,3 @@
-// Code generated from pgtype/int_test.go.erb. DO NOT EDIT.
-
 package fbtype_test
 
 import (
@@ -12,7 +10,7 @@ import (
 )
 
 func TestInt2Codec(t *testing.T) {
-	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "int2", []fbxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "smallint", []fbxtest.ValueRoundTripTest{
 		{Param: int8(1), Result: new(int16), Test: isExpectedEq(int16(1))},
 		{Param: int16(1), Result: new(int16), Test: isExpectedEq(int16(1))},
 		{Param: int32(1), Result: new(int16), Test: isExpectedEq(int16(1))},
@@ -46,7 +44,6 @@ func TestInt2Codec(t *testing.T) {
 		{Param: 1, Result: new(int16), Test: isExpectedEq(int16(1))},
 		{Param: math.MaxInt16, Result: new(int16), Test: isExpectedEq(int16(math.MaxInt16))},
 		{Param: 1, Result: new(fbtype.Int2), Test: isExpectedEq(fbtype.Int2{Int16: 1, Valid: true})},
-		{Param: "1", Result: new(string), Test: isExpectedEq("1")},
 		{Param: fbtype.Int2{}, Result: new(fbtype.Int2), Test: isExpectedEq(fbtype.Int2{})},
 		{Param: nil, Result: new(*int16), Test: isExpectedEq((*int16)(nil))},
 	})
@@ -94,7 +91,7 @@ func TestInt2UnmarshalJSON(t *testing.T) {
 }
 
 func TestInt4Codec(t *testing.T) {
-	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "int4", []fbxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "int", []fbxtest.ValueRoundTripTest{
 		{Param: int8(1), Result: new(int32), Test: isExpectedEq(int32(1))},
 		{Param: int16(1), Result: new(int32), Test: isExpectedEq(int32(1))},
 		{Param: int32(1), Result: new(int32), Test: isExpectedEq(int32(1))},
@@ -128,7 +125,6 @@ func TestInt4Codec(t *testing.T) {
 		{Param: 1, Result: new(int32), Test: isExpectedEq(int32(1))},
 		{Param: math.MaxInt32, Result: new(int32), Test: isExpectedEq(int32(math.MaxInt32))},
 		{Param: 1, Result: new(fbtype.Int4), Test: isExpectedEq(fbtype.Int4{Int32: 1, Valid: true})},
-		{Param: "1", Result: new(string), Test: isExpectedEq("1")},
 		{Param: fbtype.Int4{}, Result: new(fbtype.Int4), Test: isExpectedEq(fbtype.Int4{})},
 		{Param: nil, Result: new(*int32), Test: isExpectedEq((*int32)(nil))},
 	})
@@ -176,7 +172,7 @@ func TestInt4UnmarshalJSON(t *testing.T) {
 }
 
 func TestInt8Codec(t *testing.T) {
-	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "int8", []fbxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "bigint", []fbxtest.ValueRoundTripTest{
 		{Param: int8(1), Result: new(int64), Test: isExpectedEq(int64(1))},
 		{Param: int16(1), Result: new(int64), Test: isExpectedEq(int64(1))},
 		{Param: int32(1), Result: new(int64), Test: isExpectedEq(int64(1))},
@@ -210,7 +206,6 @@ func TestInt8Codec(t *testing.T) {
 		{Param: 1, Result: new(int64), Test: isExpectedEq(int64(1))},
 		{Param: math.MaxInt64, Result: new(int64), Test: isExpectedEq(int64(math.MaxInt64))},
 		{Param: 1, Result: new(fbtype.Int8), Test: isExpectedEq(fbtype.Int8{Int64: 1, Valid: true})},
-		{Param: "1", Result: new(string), Test: isExpectedEq("1")},
 		{Param: fbtype.Int8{}, Result: new(fbtype.Int8), Test: isExpectedEq(fbtype.Int8{})},
 		{Param: nil, Result: new(*int64), Test: isExpectedEq((*int64)(nil))},
 	})

@@ -9,7 +9,6 @@ import (
 	"rdb.red-soft.ru/fbx/internal/pgio"
 )
 
-// ArrayGetter is a type that can be converted into a PostgreSQL array.
 type ArrayGetter interface {
 	// Dimensions returns the array dimensions. If array is nil then nil is returned.
 	Dimensions() []ArrayDimension
@@ -21,7 +20,6 @@ type ArrayGetter interface {
 	IndexType() any
 }
 
-// ArraySetter is a type can be set from a PostgreSQL array.
 type ArraySetter interface {
 	// SetDimensions prepares the value such that ScanIndex can be called for each element. This will remove any existing
 	// elements. dimensions may be nil to indicate a NULL array. If unable to exactly preserve dimensions SetDimensions
@@ -39,6 +37,9 @@ type ArraySetter interface {
 // ArrayCodec is a codec for any array type.
 type ArrayCodec struct {
 	ElementType *Type
+	SubType     int32
+	Length      uint32
+	Scale       int32
 }
 
 func (c *ArrayCodec) FormatSupported(format int16) bool {
@@ -46,19 +47,13 @@ func (c *ArrayCodec) FormatSupported(format int16) bool {
 }
 
 func (c *ArrayCodec) PreferredFormat() int16 {
-	// The binary format should always be preferred for arrays if it is supported. Usually, this will happen automatically
-	// because most types that support binary prefer it. However, text, json, and jsonb support binary but prefer the text
-	// format. This is because it is simpler for jsonb and PostgreSQL can be significantly faster using the text format
-	// for text-like data types than binary. However, arrays appear to always be faster in binary.
-	//
-	// https://www.postgresql.org/message-id/CAMovtNoHFod2jMAKQjjxv209PCTJx5Kc66anwWvX0mEiaXwgmA%40mail.gmail.com
 	if c.ElementType.Codec.FormatSupported(BinaryFormatCode) {
 		return BinaryFormatCode
 	}
 	return TextFormatCode
 }
 
-func (c *ArrayCodec) PlanEncode(m *Map, oid uint32, format int16, value any) EncodePlan {
+func (c *ArrayCodec) PlanEncode(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
 	arrayValuer, ok := value.(ArrayGetter)
 	if !ok {
 		return nil
@@ -66,7 +61,7 @@ func (c *ArrayCodec) PlanEncode(m *Map, oid uint32, format int16, value any) Enc
 
 	elementType := arrayValuer.IndexType()
 
-	elementEncodePlan := m.PlanEncode(c.ElementType.OID, format, elementType)
+	elementEncodePlan := m.PlanEncode(c.ElementType.OID, c.SubType, c.Length, c.Scale, format, elementType)
 	if elementEncodePlan == nil {
 		if reflect.TypeOf(elementType) != nil {
 			return nil
@@ -135,7 +130,7 @@ func (p *encodePlanArrayCodecText) Encode(value any, buf []byte) (newBuf []byte,
 			elemType := reflect.TypeOf(elem)
 			if lastElemType != elemType {
 				lastElemType = elemType
-				encodePlan = p.m.PlanEncode(p.ac.ElementType.OID, TextFormatCode, elem)
+				encodePlan = p.m.PlanEncode(p.ac.ElementType.OID, p.ac.SubType, p.ac.Length, p.ac.Scale, TextFormatCode, elem)
 				if encodePlan == nil {
 					return nil, fmt.Errorf("unable to encode %v", array.Index(i))
 				}
@@ -199,7 +194,7 @@ func (p *encodePlanArrayCodecBinary) Encode(value any, buf []byte) (newBuf []byt
 			elemType := reflect.TypeOf(elem)
 			if lastElemType != elemType {
 				lastElemType = elemType
-				encodePlan = p.m.PlanEncode(p.ac.ElementType.OID, BinaryFormatCode, elem)
+				encodePlan = p.m.PlanEncode(p.ac.ElementType.OID, p.ac.SubType, p.ac.Length, p.ac.Scale, BinaryFormatCode, elem)
 				if encodePlan == nil {
 					return nil, fmt.Errorf("unable to encode %v", array.Index(i))
 				}
@@ -221,7 +216,7 @@ func (p *encodePlanArrayCodecBinary) Encode(value any, buf []byte) (newBuf []byt
 	return buf, nil
 }
 
-func (c *ArrayCodec) PlanScan(m *Map, oid uint32, format int16, target any) ScanPlan {
+func (c *ArrayCodec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
 	arrayScanner, ok := target.(ArraySetter)
 	if !ok {
 		return nil
@@ -235,7 +230,7 @@ func (c *ArrayCodec) PlanScan(m *Map, oid uint32, format int16, target any) Scan
 
 	elementType := arrayScanner.ScanIndexType()
 
-	elementScanPlan := m.PlanScan(c.ElementType.OID, format, elementType)
+	elementScanPlan := m.PlanScan(c.ElementType.OID, subType, length, scale, format, elementType)
 	if _, ok := elementScanPlan.(*scanPlanFail); ok {
 		return nil
 	}
@@ -243,7 +238,7 @@ func (c *ArrayCodec) PlanScan(m *Map, oid uint32, format int16, target any) Scan
 	return &scanPlanArrayCodec{
 		arrayCodec: c,
 		m:          m,
-		oid:        oid,
+		oid:        typeId,
 		formatCode: format,
 	}
 }
@@ -265,9 +260,9 @@ func (c *ArrayCodec) decodeBinary(m *Map, arrayOID uint32, src []byte, array Arr
 		return nil
 	}
 
-	elementScanPlan := c.ElementType.Codec.PlanScan(m, c.ElementType.OID, BinaryFormatCode, array.ScanIndex(0))
+	elementScanPlan := c.ElementType.Codec.PlanScan(m, c.ElementType.OID, c.SubType, c.Length, c.Scale, BinaryFormatCode, array.ScanIndex(0))
 	if elementScanPlan == nil {
-		elementScanPlan = m.PlanScan(c.ElementType.OID, BinaryFormatCode, array.ScanIndex(0))
+		elementScanPlan = m.PlanScan(c.ElementType.OID, c.SubType, c.Length, c.Scale, BinaryFormatCode, array.ScanIndex(0))
 	}
 
 	for i := 0; i < elementCount; i++ {
@@ -303,9 +298,9 @@ func (c *ArrayCodec) decodeText(m *Map, arrayOID uint32, src []byte, array Array
 		return nil
 	}
 
-	elementScanPlan := c.ElementType.Codec.PlanScan(m, c.ElementType.OID, TextFormatCode, array.ScanIndex(0))
+	elementScanPlan := c.ElementType.Codec.PlanScan(m, c.ElementType.OID, c.SubType, c.Length, c.Scale, TextFormatCode, array.ScanIndex(0))
 	if elementScanPlan == nil {
-		elementScanPlan = m.PlanScan(c.ElementType.OID, TextFormatCode, array.ScanIndex(0))
+		elementScanPlan = m.PlanScan(c.ElementType.OID, c.SubType, c.Length, c.Scale, TextFormatCode, array.ScanIndex(0))
 	}
 
 	for i, s := range uta.Elements {
@@ -328,6 +323,9 @@ type scanPlanArrayCodec struct {
 	arrayCodec      *ArrayCodec
 	m               *Map
 	oid             uint32
+	subType         int32
+	length          uint32
+	scale           int32
 	formatCode      int16
 	elementScanPlan ScanPlan
 }
@@ -354,7 +352,7 @@ func (spac *scanPlanArrayCodec) Scan(src []byte, dst any) error {
 	}
 }
 
-func (c *ArrayCodec) DecodeDatabaseSQLValue(m *Map, oid uint32, format int16, src []byte) (driver.Value, error) {
+func (c *ArrayCodec) DecodeDatabaseSQLValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
 	}
@@ -371,13 +369,13 @@ func (c *ArrayCodec) DecodeDatabaseSQLValue(m *Map, oid uint32, format int16, sr
 	}
 }
 
-func (c *ArrayCodec) DecodeValue(m *Map, oid uint32, format int16, src []byte) (any, error) {
+func (c *ArrayCodec) DecodeValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var slice []any
-	err := m.PlanScan(oid, format, &slice).Scan(src, &slice)
+	err := m.PlanScan(oid, subType, length, scale, format, &slice).Scan(src, &slice)
 	return slice, err
 }
 

@@ -948,9 +948,9 @@ type FieldDescription struct {
 	Index             int
 	Type              uint32
 	Format            int16 // 0 - text, 1 - binary
-	Scale             int
-	Subtype           int
-	Length            int
+	Scale             int32
+	Subtype           int32
+	Length            uint32
 	NullOk            bool
 	Name              string
 	TableAliasName    string
@@ -968,9 +968,9 @@ func (fbConn *FbConn) convertRowDescription(src []fbproto.FieldDescriptor) []Fie
 		res[i].Index = src[i].Index
 		res[i].Type = uint32(src[i].Type)
 		res[i].Format = src[i].Format
-		res[i].Scale = src[i].Scale
-		res[i].Subtype = src[i].Subtype
-		res[i].Length = src[i].Length
+		res[i].Scale = int32(src[i].Scale)
+		res[i].Subtype = int32(src[i].Subtype)
+		res[i].Length = uint32(src[i].Length)
 		res[i].NullOk = src[i].NullOk
 		res[i].Name = src[i].Name
 		res[i].TableAliasName = src[i].TableAliasName

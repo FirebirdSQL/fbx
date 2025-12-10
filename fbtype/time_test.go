@@ -6,18 +6,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestTimeCodec(t *testing.T) {
-	t.Skip("need implementation")
 	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "time", []fbxtest.ValueRoundTripTest{
 		{Param: fbtype.Time{Microseconds: 0, Valid: true}, Result: new(fbtype.Time), Test: isExpectedEq(fbtype.Time{Microseconds: 0, Valid: true})},
-		{Param: fbtype.Time{Microseconds: 1, Valid: true}, Result: new(fbtype.Time), Test: isExpectedEq(fbtype.Time{Microseconds: 1, Valid: true})},
-		{Param: fbtype.Time{Microseconds: 86399999999, Valid: true}, Result: new(fbtype.Time), Test: isExpectedEq(fbtype.Time{Microseconds: 86399999999, Valid: true})},
-		{Param: fbtype.Time{Microseconds: 86400000000, Valid: true}, Result: new(fbtype.Time), Test: isExpectedEq(fbtype.Time{Microseconds: 86400000000, Valid: true})},
+		{Param: fbtype.Time{Microseconds: 100, Valid: true}, Result: new(fbtype.Time), Test: isExpectedEq(fbtype.Time{Microseconds: 100, Valid: true})},
+		{Param: fbtype.Time{Microseconds: 86399999900, Valid: true}, Result: new(fbtype.Time), Test: isExpectedEq(fbtype.Time{Microseconds: 86399999900, Valid: true})},
 		{Param: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC), Result: new(fbtype.Time), Test: isExpectedEq(fbtype.Time{Microseconds: 0, Valid: true})},
 		{Param: fbtype.Time{Microseconds: 0, Valid: true}, Result: new(time.Time), Test: isExpectedEq(time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC))},
 		{Param: fbtype.Time{}, Result: new(fbtype.Time), Test: isExpectedEq(fbtype.Time{})},

@@ -8,33 +8,87 @@ import (
 )
 
 type Encoding struct {
-	Charset string
-	Encoder *encoding.Encoder
-	Decoder *encoding.Decoder
+	Charset         string
+	Encoder         *encoding.Encoder
+	Decoder         *encoding.Decoder
+	MaxBytesPerChar uint32
+	CharacterSetId  int32
 }
 
 type DummyTranscoder struct {
 }
 
 func (*DummyTranscoder) Transform(dst, src []byte, atEOF bool) (nDst, nSrc int, err error) {
-	return 0, 0, nil
+	n := len(src)
+	copy(dst[:], src[:])
+	return n, n, nil
 }
 
 func (*DummyTranscoder) Reset() {}
 
-func (*DummyTranscoder) Bytes([]byte) ([]byte, error) {
-	return nil, nil
+func (*DummyTranscoder) Bytes(src []byte) ([]byte, error) {
+	return src, nil
 }
-func (*DummyTranscoder) String(string) (string, error) {
-	return "", nil
+func (*DummyTranscoder) String(src string) (string, error) {
+	return src, nil
+}
+
+func CharacterSetIdIntoName(id int32) (cs string, err error) {
+	switch id {
+	case 0:
+		cs = "NONE"
+	case 1:
+		cs = "OCTETS"
+	case 2:
+		cs = "ASCII"
+	case 3:
+		cs = "UNICODE_FSS"
+	case 4:
+		cs = "UTF8"
+	case 127:
+		cs = "CS_dynamic"
+	default:
+		return "", fmt.Errorf("unknown or unsupported charset id: %d", id)
+	}
+	return
+}
+
+func NewDummyEncoder() *encoding.Encoder {
+	return &encoding.Encoder{Transformer: &DummyTranscoder{}}
+}
+
+func NewDummyDecoder() *encoding.Decoder {
+	return &encoding.Decoder{Transformer: &DummyTranscoder{}}
 }
 
 func NewEncoding(charset string) (*Encoding, error) {
-	encoding := &Encoding{Charset: charset}
+	e := &Encoding{Charset: charset}
 	switch charset {
-	case "UNICODE_FSS", "UTF8":
-		encoding.Encoder = unicode.UTF8.NewEncoder()
-		encoding.Decoder = unicode.UTF8.NewDecoder()
+	case "NONE":
+		e.Encoder = NewDummyEncoder()
+		e.Decoder = NewDummyDecoder()
+		e.MaxBytesPerChar = 1
+		e.CharacterSetId = 0
+	case "OCTETS":
+		e.Encoder = NewDummyEncoder()
+		e.Decoder = NewDummyDecoder()
+		e.MaxBytesPerChar = 1
+		e.CharacterSetId = 1
+	case "ASCII":
+		e.Encoder = NewDummyEncoder()
+		e.Decoder = NewDummyDecoder()
+		e.MaxBytesPerChar = 1
+		e.CharacterSetId = 2
+	case "UNICODE_FSS":
+		e.Encoder = unicode.UTF8.NewEncoder()
+		e.Decoder = unicode.UTF8.NewDecoder()
+		e.MaxBytesPerChar = 3
+		e.CharacterSetId = 3
+	case "UTF8", "CS_dynamic":
+		e.Encoder = unicode.UTF8.NewEncoder()
+		e.Decoder = unicode.UTF8.NewDecoder()
+		e.MaxBytesPerChar = 4
+		e.CharacterSetId = 4
 	//case "SJIS_0208":
 	//	encoding.Encoder = japanese.ShiftJIS.NewEncoder()
 	//	encoding.Decoder = japanese.ShiftJIS.NewDecoder()
@@ -139,5 +193,5 @@ func NewEncoding(charset string) (*Encoding, error) {
 	default:
 		return nil, fmt.Errorf("unknown or unsupported charset: %s", charset)
 	}
-	return encoding, nil
+	return e, nil
 }

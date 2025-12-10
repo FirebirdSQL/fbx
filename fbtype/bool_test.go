@@ -9,7 +9,7 @@ import (
 )
 
 func TestBoolCodec(t *testing.T) {
-	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "bool", []fbxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "boolean", []fbxtest.ValueRoundTripTest{
 		{Param: true, Result: new(bool), Test: isExpectedEq(true)},
 		{Param: false, Result: new(bool), Test: isExpectedEq(false)},
 		{Param: true, Result: new(fbtype.Bool), Test: isExpectedEq(fbtype.Bool{Bool: true, Valid: true})},

@@ -2,11 +2,19 @@ package fbtype
 
 import (
 	"database/sql/driver"
-	"encoding/binary"
 	"fmt"
 	"strconv"
 
-	"rdb.red-soft.ru/fbx/internal/pgio"
+	"rdb.red-soft.ru/fbx/fbproto/utils"
+)
+
+const (
+	secondsPerDay         = int64(24 * 60 * 60)
+	microsecondsPerSecond = 1000000
+	microsecondsPerMinute = 60 * microsecondsPerSecond
+	microsecondsPerHour   = 60 * microsecondsPerMinute
+	microsecondsPerDay    = 24 * microsecondsPerHour
+	microsecondsPerMonth  = 30 * microsecondsPerDay
 )
 
 type TimeScanner interface {
@@ -17,15 +25,14 @@ type TimeValuer interface {
 	TimeValue() (Time, error)
 }
 
-// Time represents the PostgreSQL time type. The PostgreSQL time is a time of day without time zone.
+// Time represents the Firebird time type. The Firebird time is a time of day without time zone.
 //
-// Time is represented as the number of microseconds since midnight in the same way that PostgreSQL does. Other time and
-// date types in pgtype can use time.Time as the underlying representation. However, fbtype.Time type cannot due to
-// needing to handle 24:00:00. time.Time converts that to 00:00:00 on the following day.
+// Time is represented as the number of 100 microseconds since midnight in the same way that Firebird does. Other time and
+// date types in fbtype can use time.Time as the underlying representation.
 //
-// The time with time zone type is not supported. Use of time with time zone is discouraged by the PostgreSQL documentation.
+// The time with time zone type is not supported. Use of time with time zone is discouraged by the Firebird documentation.
 type Time struct {
-	Microseconds int64 // Number of microseconds since midnight
+	Microseconds int64 // Number of 100 microseconds since midnight
 	Valid        bool
 }
 
@@ -64,7 +71,7 @@ func (t Time) Value() (driver.Value, error) {
 		return nil, nil
 	}
 
-	buf, err := TimeCodec{}.PlanEncode(nil, 0, TextFormatCode, t).Encode(t, nil)
+	buf, err := TimeCodec{}.PlanEncode(nil, 0, 0, 0, 0, TextFormatCode, t).Encode(t, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +88,7 @@ func (TimeCodec) PreferredFormat() int16 {
 	return BinaryFormatCode
 }
 
-func (TimeCodec) PlanEncode(m *Map, oid uint32, format int16, value any) EncodePlan {
+func (TimeCodec) PlanEncode(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
 	if _, ok := value.(TimeValuer); !ok {
 		return nil
 	}
@@ -98,17 +105,25 @@ func (TimeCodec) PlanEncode(m *Map, oid uint32, format int16, value any) EncodeP
 
 type encodePlanTimeCodecBinary struct{}
 
-func (encodePlanTimeCodecBinary) Encode(value any, buf []byte) (newBuf []byte, err error) {
+func (encodePlanTimeCodecBinary) Encode(value any, buf []byte) ([]byte, error) {
 	t, err := value.(TimeValuer).TimeValue()
 	if err != nil {
 		return nil, err
 	}
-
 	if !t.Valid {
 		return nil, nil
 	}
 
-	return pgio.AppendInt64(buf, t.Microseconds), nil
+	usec := t.Microseconds
+	if usec < 0 || usec >= microsecondsPerDay {
+		return nil, fmt.Errorf("fbtype: TIME value out of range for Firebird (µs since midnight: %d)", usec)
+	}
+
+	ticks := uint32(usec / 100)
+
+	buf = append(buf, utils.Bint32_to_bytes(int32(ticks))...)
+
+	return buf, nil
 }
 
 type encodePlanTimeCodecText struct{}
@@ -136,7 +151,7 @@ func (encodePlanTimeCodecText) Encode(value any, buf []byte) (newBuf []byte, err
 	return append(buf, s...), nil
 }
 
-func (TimeCodec) PlanScan(m *Map, oid uint32, format int16, target any) ScanPlan {
+func (TimeCodec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
 
 	switch format {
 	case BinaryFormatCode:
@@ -159,19 +174,23 @@ func (TimeCodec) PlanScan(m *Map, oid uint32, format int16, target any) ScanPlan
 type scanPlanBinaryTimeToTimeScanner struct{}
 
 func (scanPlanBinaryTimeToTimeScanner) Scan(src []byte, dst any) error {
-	scanner := (dst).(TimeScanner)
+	scanner := dst.(TimeScanner)
 
 	if src == nil {
 		return scanner.ScanTime(Time{})
 	}
 
-	if len(src) != 8 {
-		return fmt.Errorf("invalid length for time: %v", len(src))
+	if len(src) != 4 {
+		return fmt.Errorf("fbtype: invalid length for Firebird TIME: %d", len(src))
 	}
 
-	usec := int64(binary.BigEndian.Uint64(src))
+	ticks := uint32(utils.Bytes_to_bint32(src))
+	usec := int64(ticks) * 100
 
-	return scanner.ScanTime(Time{Microseconds: usec, Valid: true})
+	return scanner.ScanTime(Time{
+		Microseconds: usec,
+		Valid:        true,
+	})
 }
 
 type scanPlanBinaryTimeToTextScanner struct{}
@@ -186,15 +205,16 @@ func (scanPlanBinaryTimeToTextScanner) Scan(src []byte, dst any) error {
 		return ts.ScanText(Text{})
 	}
 
-	if len(src) != 8 {
-		return fmt.Errorf("invalid length for time: %v", len(src))
+	if len(src) != 4 {
+		return fmt.Errorf("fbtype: invalid length for Firebird TIME: %d", len(src))
 	}
 
-	usec := int64(binary.BigEndian.Uint64(src))
+	ticks := uint32(utils.Bytes_to_bint32(src))
+	usec := int64(ticks) * 100
 
 	tim := Time{Microseconds: usec, Valid: true}
 
-	buf, err := TimeCodec{}.PlanEncode(nil, 0, TextFormatCode, tim).Encode(tim, nil)
+	buf, err := TimeCodec{}.PlanEncode(nil, 0, 0, 0, 0, TextFormatCode, tim).Encode(tim, nil)
 	if err != nil {
 		return err
 	}
@@ -256,17 +276,17 @@ func (scanPlanTextAnyToTimeScanner) Scan(src []byte, dst any) error {
 	return scanner.ScanTime(Time{Microseconds: usec, Valid: true})
 }
 
-func (c TimeCodec) DecodeDatabaseSQLValue(m *Map, oid uint32, format int16, src []byte) (driver.Value, error) {
-	return codecDecodeToTextFormat(c, m, oid, format, src)
+func (c TimeCodec) DecodeDatabaseSQLValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
+	return codecDecodeToTextFormat(c, m, oid, subType, length, scale, format, src)
 }
 
-func (c TimeCodec) DecodeValue(m *Map, oid uint32, format int16, src []byte) (any, error) {
+func (c TimeCodec) DecodeValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var t Time
-	err := codecScan(c, m, oid, format, src, &t)
+	err := codecScan(c, m, oid, subType, length, scale, format, src, &t)
 	if err != nil {
 		return nil, err
 	}

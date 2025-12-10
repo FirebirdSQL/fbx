@@ -9,144 +9,9 @@ import (
 	"net/netip"
 	"reflect"
 	"time"
+
+	"rdb.red-soft.ru/fbx/fbproto"
 )
-
-// PostgreSQL oids for common types
-const (
-	BoolOID                = 16
-	ByteaOID               = 17
-	QCharOID               = 18
-	NameOID                = 19
-	Int8OID                = 20
-	Int2OID                = 21
-	Int4OID                = 23
-	TextOID                = 25
-	OIDOID                 = 26
-	TIDOID                 = 27
-	XIDOID                 = 28
-	CIDOID                 = 29
-	JSONOID                = 114
-	XMLOID                 = 142
-	XMLArrayOID            = 143
-	JSONArrayOID           = 199
-	XID8ArrayOID           = 271
-	PointOID               = 600
-	LsegOID                = 601
-	PathOID                = 602
-	BoxOID                 = 603
-	PolygonOID             = 604
-	LineOID                = 628
-	LineArrayOID           = 629
-	CIDROID                = 650
-	CIDRArrayOID           = 651
-	Float4OID              = 700
-	Float8OID              = 701
-	CircleOID              = 718
-	CircleArrayOID         = 719
-	UnknownOID             = 705
-	Macaddr8OID            = 774
-	MacaddrOID             = 829
-	InetOID                = 869
-	BoolArrayOID           = 1000
-	QCharArrayOID          = 1002
-	NameArrayOID           = 1003
-	Int2ArrayOID           = 1005
-	Int4ArrayOID           = 1007
-	TextArrayOID           = 1009
-	TIDArrayOID            = 1010
-	ByteaArrayOID          = 1001
-	XIDArrayOID            = 1011
-	CIDArrayOID            = 1012
-	BPCharArrayOID         = 1014
-	VarcharArrayOID        = 1015
-	Int8ArrayOID           = 1016
-	PointArrayOID          = 1017
-	LsegArrayOID           = 1018
-	PathArrayOID           = 1019
-	BoxArrayOID            = 1020
-	Float4ArrayOID         = 1021
-	Float8ArrayOID         = 1022
-	PolygonArrayOID        = 1027
-	OIDArrayOID            = 1028
-	ACLItemOID             = 1033
-	ACLItemArrayOID        = 1034
-	MacaddrArrayOID        = 1040
-	InetArrayOID           = 1041
-	BPCharOID              = 1042
-	VarcharOID             = 1043
-	DateOID                = 1082
-	TimeOID                = 1083
-	TimestampOID           = 1114
-	TimestampArrayOID      = 1115
-	DateArrayOID           = 1182
-	TimeArrayOID           = 1183
-	TimestamptzOID         = 1184
-	TimestamptzArrayOID    = 1185
-	IntervalOID            = 1186
-	IntervalArrayOID       = 1187
-	NumericArrayOID        = 1231
-	TimetzOID              = 1266
-	TimetzArrayOID         = 1270
-	BitOID                 = 1560
-	BitArrayOID            = 1561
-	VarbitOID              = 1562
-	VarbitArrayOID         = 1563
-	NumericOID             = 1700
-	RecordOID              = 2249
-	RecordArrayOID         = 2287
-	UUIDOID                = 2950
-	UUIDArrayOID           = 2951
-	JSONBOID               = 3802
-	JSONBArrayOID          = 3807
-	DaterangeOID           = 3912
-	DaterangeArrayOID      = 3913
-	Int4rangeOID           = 3904
-	Int4rangeArrayOID      = 3905
-	NumrangeOID            = 3906
-	NumrangeArrayOID       = 3907
-	TsrangeOID             = 3908
-	TsrangeArrayOID        = 3909
-	TstzrangeOID           = 3910
-	TstzrangeArrayOID      = 3911
-	Int8rangeOID           = 3926
-	Int8rangeArrayOID      = 3927
-	JSONPathOID            = 4072
-	JSONPathArrayOID       = 4073
-	Int4multirangeOID      = 4451
-	NummultirangeOID       = 4532
-	TsmultirangeOID        = 4533
-	TstzmultirangeOID      = 4534
-	DatemultirangeOID      = 4535
-	Int8multirangeOID      = 4536
-	XID8OID                = 5069
-	Int4multirangeArrayOID = 6150
-	NummultirangeArrayOID  = 6151
-	TsmultirangeArrayOID   = 6152
-	TstzmultirangeArrayOID = 6153
-	DatemultirangeArrayOID = 6155
-	Int8multirangeArrayOID = 6157
-)
-
-type InfinityModifier int8
-
-const (
-	Infinity         InfinityModifier = 1
-	Finite           InfinityModifier = 0
-	NegativeInfinity InfinityModifier = -Infinity
-)
-
-func (im InfinityModifier) String() string {
-	switch im {
-	case Finite:
-		return "finite"
-	case Infinity:
-		return "infinity"
-	case NegativeInfinity:
-		return "-infinity"
-	default:
-		return "invalid"
-	}
-}
 
 // PostgreSQL format codes
 const (
@@ -164,17 +29,17 @@ type Codec interface {
 
 	// PlanEncode returns an EncodePlan for encoding value into PostgreSQL format for oid and format. If no plan can be
 	// found then nil is returned.
-	PlanEncode(m *Map, oid uint32, format int16, value any) EncodePlan
+	PlanEncode(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan
 
 	// PlanScan returns a ScanPlan for scanning a PostgreSQL value into a destination with the same type as target. If
 	// no plan can be found then nil is returned.
-	PlanScan(m *Map, oid uint32, format int16, target any) ScanPlan
+	PlanScan(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan
 
 	// DecodeDatabaseSQLValue returns src decoded into a value compatible with the sql.Scanner interface.
-	DecodeDatabaseSQLValue(m *Map, oid uint32, format int16, src []byte) (driver.Value, error)
+	DecodeDatabaseSQLValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error)
 
 	// DecodeValue returns src decoded into its default format.
-	DecodeValue(m *Map, oid uint32, format int16, src []byte) (any, error)
+	DecodeValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error)
 }
 
 type nullAssignmentError struct {
@@ -293,8 +158,17 @@ func (m *Map) RegisterDefaultFbType(value any, name string) {
 }
 
 // TypeForOID returns the Type registered for the given OID. The returned Type must not be mutated.
-func (m *Map) TypeForOID(oid uint32) (*Type, bool) {
+func (m *Map) TypeForOID(oid uint32, subType int32) (*Type, bool) {
+	id := MakeTypeSubtype(oid, subType)
+	if dt, ok := m.oidToType[id]; ok {
+		return dt, true
+	}
+
 	if dt, ok := m.oidToType[oid]; ok {
+		return dt, true
+	}
+
+	if dt, ok := defaultMap.oidToType[id]; ok {
 		return dt, true
 	}
 
@@ -370,11 +244,14 @@ type scanPlanCodecSQLScanner struct {
 	c          Codec
 	m          *Map
 	oid        uint32
+	subType    int32
+	length     uint32
+	scale      int32
 	formatCode int16
 }
 
 func (plan *scanPlanCodecSQLScanner) Scan(src []byte, dst any) error {
-	value, err := plan.c.DecodeDatabaseSQLValue(plan.m, plan.oid, plan.formatCode, src)
+	value, err := plan.c.DecodeDatabaseSQLValue(plan.m, plan.oid, plan.subType, plan.length, plan.scale, plan.formatCode, src)
 	if err != nil {
 		return err
 	}
@@ -401,21 +278,69 @@ func (plan *scanPlanSQLScanner) Scan(src []byte, dst any) error {
 	}
 }
 
-type scanPlanString struct{}
+type scanPlanString struct {
+	typeId   uint32
+	length   uint32
+	encoding *fbproto.Encoding
+}
 
-func (scanPlanString) Scan(src []byte, dst any) error {
+// func (s scanPlanString) Scan(src []byte, dst any) error {
+// 	if src == nil {
+// 		return fmt.Errorf("cannot scan NULL into %T", dst)
+// 	}
+
+// 	var res string
+// 	if err := decodeFBString(src, s.typeId == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, res); err != nil {
+// 		return err
+// 	}
+
+// 	p := (dst).(*string)
+// 	*p = res
+// 	return nil
+// }
+
+func (s scanPlanString) Scan(src []byte, dst any) error {
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
-	p := (dst).(*string)
-	*p = string(src)
-	return nil
+	var tmp string
+	if err := decodeFBString(src, s.typeId == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, &tmp); err != nil {
+		return err
+	}
+
+	switch d := dst.(type) {
+	case *string:
+		*d = tmp
+		return nil
+
+	case **string:
+		if *d == nil {
+			*d = new(string)
+		}
+		**d = tmp
+		return nil
+
+	case TextScanner:
+		return d.ScanText(Text{String: tmp, Valid: true})
+
+	default:
+		return fmt.Errorf("scanPlanString: cannot scan string into %T", dst)
+	}
 }
 
-type scanPlanAnyTextToBytes struct{}
+type scanPlanAnyTextToBytes struct {
+	typeId   uint32
+	length   uint32
+	encoding *fbproto.Encoding
+}
 
-func (scanPlanAnyTextToBytes) Scan(src []byte, dst any) error {
+func (s scanPlanAnyTextToBytes) Scan(src []byte, dst any) error {
+	var res string
+	if err := decodeFBString(src, s.typeId == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, res); err != nil {
+		return err
+	}
+
 	dstBuf := dst.(*[]byte)
 	if src == nil {
 		*dstBuf = nil
@@ -430,6 +355,9 @@ func (scanPlanAnyTextToBytes) Scan(src []byte, dst any) error {
 type scanPlanFail struct {
 	m          *Map
 	oid        uint32
+	subType    int32
+	length     uint32
+	scale      int32
 	formatCode int16
 }
 
@@ -444,14 +372,14 @@ func (plan *scanPlanFail) Scan(src []byte, dst any) error {
 		// As a horrible hack try all types to find anything that can scan into dst.
 		for oid := range plan.m.oidToType {
 			// using planScan instead of Scan or PlanScan to avoid polluting the planned scan cache.
-			plan := plan.m.planScan(oid, plan.formatCode, dst, 0)
+			plan := plan.m.planScan(oid, plan.subType, plan.length, plan.scale, plan.formatCode, dst, 0)
 			if _, ok := plan.(*scanPlanFail); !ok {
 				return plan.Scan(src, dst)
 			}
 		}
 		for oid := range defaultMap.oidToType {
 			if _, ok := plan.m.oidToType[oid]; !ok {
-				plan := plan.m.planScan(oid, plan.formatCode, dst, 0)
+				plan := plan.m.planScan(oid, plan.subType, plan.length, plan.scale, plan.formatCode, dst, 0)
 				if _, ok := plan.(*scanPlanFail); !ok {
 					return plan.Scan(src, dst)
 				}
@@ -470,13 +398,13 @@ func (plan *scanPlanFail) Scan(src []byte, dst any) error {
 	}
 
 	var dataTypeName string
-	if t, ok := plan.m.TypeForOID(plan.oid); ok {
+	if t, ok := plan.m.TypeForOID(plan.oid, plan.subType); ok {
 		dataTypeName = t.Name
 	} else {
 		dataTypeName = "unknown type"
 	}
 
-	return fmt.Errorf("cannot scan %s (OID %d) in %v format into %T", dataTypeName, plan.oid, format, dst)
+	return fmt.Errorf("cannot scan %s (type id %d) with subtype %d in %v format into %T", dataTypeName, plan.oid, plan.subType, format, dst)
 }
 
 // TryWrapScanPlanFunc is a function that tries to create a wrapper plan for target. If successful it returns a plan
@@ -629,8 +557,8 @@ func TryWrapBuiltinTypeScanPlan(target any) (plan WrappedScanPlanNextSetter, nex
 		return &wrapStringScanPlan{}, (*stringWrapper)(target), true
 	case *time.Time:
 		return &wrapTimeScanPlan{}, (*timeWrapper)(target), true
-	case *time.Duration:
-		return &wrapDurationScanPlan{}, (*durationWrapper)(target), true
+	// case *time.Duration:
+	// 	return &wrapDurationScanPlan{}, (*durationWrapper)(target), true
 	case *net.IPNet:
 		return &wrapNetIPNetScanPlan{}, (*netIPNetWrapper)(target), true
 	case *net.IP:
@@ -639,12 +567,12 @@ func TryWrapBuiltinTypeScanPlan(target any) (plan WrappedScanPlanNextSetter, nex
 		return &wrapNetipPrefixScanPlan{}, (*netipPrefixWrapper)(target), true
 	case *netip.Addr:
 		return &wrapNetipAddrScanPlan{}, (*netipAddrWrapper)(target), true
-	case *map[string]*string:
-		return &wrapMapStringToPointerStringScanPlan{}, (*mapStringToPointerStringWrapper)(target), true
-	case *map[string]string:
-		return &wrapMapStringToStringScanPlan{}, (*mapStringToStringWrapper)(target), true
-	case *[16]byte:
-		return &wrapByte16ScanPlan{}, (*byte16Wrapper)(target), true
+	// case *map[string]*string:
+	// 	return &wrapMapStringToPointerStringScanPlan{}, (*mapStringToPointerStringWrapper)(target), true
+	// case *map[string]string:
+	// 	return &wrapMapStringToStringScanPlan{}, (*mapStringToStringWrapper)(target), true
+	// case *[16]byte:
+	// 	return &wrapByte16ScanPlan{}, (*byte16Wrapper)(target), true
 	case *[]byte:
 		return &wrapByteSliceScanPlan{}, (*byteSliceWrapper)(target), true
 	}
@@ -792,15 +720,15 @@ func (plan *wrapTimeScanPlan) Scan(src []byte, dst any) error {
 	return plan.next.Scan(src, (*timeWrapper)(dst.(*time.Time)))
 }
 
-type wrapDurationScanPlan struct {
-	next ScanPlan
-}
+// type wrapDurationScanPlan struct {
+// 	next ScanPlan
+// }
 
-func (plan *wrapDurationScanPlan) SetNext(next ScanPlan) { plan.next = next }
+// func (plan *wrapDurationScanPlan) SetNext(next ScanPlan) { plan.next = next }
 
-func (plan *wrapDurationScanPlan) Scan(src []byte, dst any) error {
-	return plan.next.Scan(src, (*durationWrapper)(dst.(*time.Duration)))
-}
+// func (plan *wrapDurationScanPlan) Scan(src []byte, dst any) error {
+// 	return plan.next.Scan(src, (*durationWrapper)(dst.(*time.Duration)))
+// }
 
 type wrapNetIPNetScanPlan struct {
 	next ScanPlan
@@ -842,35 +770,35 @@ func (plan *wrapNetipAddrScanPlan) Scan(src []byte, dst any) error {
 	return plan.next.Scan(src, (*netipAddrWrapper)(dst.(*netip.Addr)))
 }
 
-type wrapMapStringToPointerStringScanPlan struct {
-	next ScanPlan
-}
+// type wrapMapStringToPointerStringScanPlan struct {
+// 	next ScanPlan
+// }
 
-func (plan *wrapMapStringToPointerStringScanPlan) SetNext(next ScanPlan) { plan.next = next }
+// func (plan *wrapMapStringToPointerStringScanPlan) SetNext(next ScanPlan) { plan.next = next }
 
-func (plan *wrapMapStringToPointerStringScanPlan) Scan(src []byte, dst any) error {
-	return plan.next.Scan(src, (*mapStringToPointerStringWrapper)(dst.(*map[string]*string)))
-}
+// func (plan *wrapMapStringToPointerStringScanPlan) Scan(src []byte, dst any) error {
+// 	return plan.next.Scan(src, (*mapStringToPointerStringWrapper)(dst.(*map[string]*string)))
+// }
 
-type wrapMapStringToStringScanPlan struct {
-	next ScanPlan
-}
+// type wrapMapStringToStringScanPlan struct {
+// 	next ScanPlan
+// }
 
-func (plan *wrapMapStringToStringScanPlan) SetNext(next ScanPlan) { plan.next = next }
+// func (plan *wrapMapStringToStringScanPlan) SetNext(next ScanPlan) { plan.next = next }
 
-func (plan *wrapMapStringToStringScanPlan) Scan(src []byte, dst any) error {
-	return plan.next.Scan(src, (*mapStringToStringWrapper)(dst.(*map[string]string)))
-}
+// func (plan *wrapMapStringToStringScanPlan) Scan(src []byte, dst any) error {
+// 	return plan.next.Scan(src, (*mapStringToStringWrapper)(dst.(*map[string]string)))
+// }
 
-type wrapByte16ScanPlan struct {
-	next ScanPlan
-}
+// type wrapByte16ScanPlan struct {
+// 	next ScanPlan
+// }
 
-func (plan *wrapByte16ScanPlan) SetNext(next ScanPlan) { plan.next = next }
+// func (plan *wrapByte16ScanPlan) SetNext(next ScanPlan) { plan.next = next }
 
-func (plan *wrapByte16ScanPlan) Scan(src []byte, dst any) error {
-	return plan.next.Scan(src, (*byte16Wrapper)(dst.(*[16]byte)))
-}
+// func (plan *wrapByte16ScanPlan) Scan(src []byte, dst any) error {
+// 	return plan.next.Scan(src, (*byte16Wrapper)(dst.(*[16]byte)))
+// }
 
 type wrapByteSliceScanPlan struct {
 	next ScanPlan
@@ -886,11 +814,14 @@ type pointerEmptyInterfaceScanPlan struct {
 	codec      Codec
 	m          *Map
 	oid        uint32
+	subType    int32
+	length     uint32
+	scale      int32
 	formatCode int16
 }
 
 func (plan *pointerEmptyInterfaceScanPlan) Scan(src []byte, dst any) error {
-	value, err := plan.codec.DecodeValue(plan.m, plan.oid, plan.formatCode, src)
+	value, err := plan.codec.DecodeValue(plan.m, plan.oid, plan.subType, plan.length, plan.scale, plan.formatCode, src)
 	if err != nil {
 		return err
 	}
@@ -1058,17 +989,17 @@ func (plan *wrapPtrArrayReflectScanPlan) Scan(src []byte, target any) error {
 }
 
 // PlanScan prepares a plan to scan a value into target.
-func (m *Map) PlanScan(oid uint32, formatCode int16, target any) ScanPlan {
-	return m.planScan(oid, formatCode, target, 0)
+func (m *Map) PlanScan(typeId uint32, subType int32, length uint32, scale int32, formatCode int16, target any) ScanPlan {
+	return m.planScan(typeId, subType, length, scale, formatCode, target, 0)
 }
 
-func (m *Map) planScan(oid uint32, formatCode int16, target any, depth int) ScanPlan {
+func (m *Map) planScan(oid uint32, subType int32, length uint32, scale int32, formatCode int16, target any, depth int) ScanPlan {
 	if depth > 8 {
-		return &scanPlanFail{m: m, oid: oid, formatCode: formatCode}
+		return &scanPlanFail{m: m, oid: oid, subType: subType, length: length, scale: scale, formatCode: formatCode}
 	}
 
 	if target == nil {
-		return &scanPlanFail{m: m, oid: oid, formatCode: formatCode}
+		return &scanPlanFail{m: m, oid: oid, subType: subType, length: length, scale: scale, formatCode: formatCode}
 	}
 
 	if _, ok := target.(*UndecodedBytes); ok {
@@ -1079,27 +1010,45 @@ func (m *Map) planScan(oid uint32, formatCode int16, target any, depth int) Scan
 	case BinaryFormatCode:
 		switch target.(type) {
 		case *string:
+			charsetId := CharacterSetForType(oid, subType, scale)
+			name, err := fbproto.CharacterSetIdIntoName(charsetId)
+			if err != nil {
+				return nil
+			}
+			encoding, err := fbproto.NewEncoding(name)
+			if err != nil {
+				return nil
+			}
+
 			switch oid {
-			case TextOID, VarcharOID:
-				return scanPlanString{}
+			case fbproto.SQL_TYPE_TEXT, fbproto.SQL_TYPE_VARYING:
+				return scanPlanString{typeId: oid, encoding: encoding, length: length}
 			}
 		}
 	case TextFormatCode:
+		charsetId := CharacterSetForType(oid, subType, scale)
+		name, err := fbproto.CharacterSetIdIntoName(charsetId)
+		if err != nil {
+			return nil
+		}
+		encoding, err := fbproto.NewEncoding(name)
+		if err != nil {
+			return nil
+		}
+
 		switch target.(type) {
 		case *string:
-			return scanPlanString{}
+			return scanPlanString{typeId: oid, encoding: encoding, length: length}
 		case *[]byte:
-			if oid != ByteaOID {
-				return scanPlanAnyTextToBytes{}
-			}
+			return scanPlanAnyTextToBytes{typeId: oid, encoding: encoding, length: length}
 		case TextScanner:
-			return scanPlanTextAnyToTextScanner{}
+			return scanPlanTextAnyToTextScanner{typeId: oid, encoding: encoding, length: length}
 		}
 	}
 
 	var dt *Type
 
-	if dataType, ok := m.TypeForOID(oid); ok {
+	if dataType, ok := m.TypeForOID(oid, subType); ok {
 		dt = dataType
 	} else if dataType, ok := m.TypeForValue(target); ok {
 		dt = dataType
@@ -1107,7 +1056,7 @@ func (m *Map) planScan(oid uint32, formatCode int16, target any, depth int) Scan
 	}
 
 	if dt != nil {
-		if plan := dt.Codec.PlanScan(m, oid, formatCode, target); plan != nil {
+		if plan := dt.Codec.PlanScan(m, oid, subType, length, scale, formatCode, target); plan != nil {
 			return plan
 		}
 	}
@@ -1120,13 +1069,13 @@ func (m *Map) planScan(oid uint32, formatCode int16, target any, depth int) Scan
 		if dt == nil {
 			return &scanPlanSQLScanner{formatCode: formatCode}
 		} else {
-			return &scanPlanCodecSQLScanner{c: dt.Codec, m: m, oid: oid, formatCode: formatCode}
+			return &scanPlanCodecSQLScanner{c: dt.Codec, m: m, oid: oid, subType: subType, length: length, scale: scale, formatCode: formatCode}
 		}
 	}
 
 	for _, f := range m.TryWrapScanPlanFuncs {
 		if wrapperPlan, nextDst, ok := f(target); ok {
-			if nextPlan := m.planScan(oid, formatCode, nextDst, depth+1); nextPlan != nil {
+			if nextPlan := m.planScan(oid, subType, length, scale, formatCode, nextDst, depth+1); nextPlan != nil {
 				if _, failed := nextPlan.(*scanPlanFail); !failed {
 					wrapperPlan.SetNext(nextPlan)
 					return wrapperPlan
@@ -1137,33 +1086,33 @@ func (m *Map) planScan(oid uint32, formatCode int16, target any, depth int) Scan
 
 	if dt != nil {
 		if _, ok := target.(*any); ok {
-			return &pointerEmptyInterfaceScanPlan{codec: dt.Codec, m: m, oid: oid, formatCode: formatCode}
+			return &pointerEmptyInterfaceScanPlan{codec: dt.Codec, m: m, oid: oid, subType: subType, length: length, scale: scale, formatCode: formatCode}
 		}
 	}
 
-	return &scanPlanFail{m: m, oid: oid, formatCode: formatCode}
+	return &scanPlanFail{m: m, oid: oid, subType: subType, length: length, scale: scale, formatCode: formatCode}
 }
 
-func (m *Map) Scan(oid uint32, formatCode int16, src []byte, dst any) error {
+func (m *Map) Scan(oid uint32, subType int32, length uint32, scale int32, formatCode int16, src []byte, dst any) error {
 	if dst == nil {
 		return nil
 	}
 
-	plan := m.PlanScan(oid, formatCode, dst)
+	plan := m.PlanScan(oid, subType, length, scale, formatCode, dst)
 	return plan.Scan(src, dst)
 }
 
 var ErrScanTargetTypeChanged = errors.New("scan target type changed")
 
-func codecScan(codec Codec, m *Map, oid uint32, format int16, src []byte, dst any) error {
-	scanPlan := codec.PlanScan(m, oid, format, dst)
+func codecScan(codec Codec, m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte, dst any) error {
+	scanPlan := codec.PlanScan(m, oid, subType, length, scale, format, dst)
 	if scanPlan == nil {
 		return fmt.Errorf("PlanScan did not find a plan")
 	}
 	return scanPlan.Scan(src, dst)
 }
 
-func codecDecodeToTextFormat(codec Codec, m *Map, oid uint32, format int16, src []byte) (driver.Value, error) {
+func codecDecodeToTextFormat(codec Codec, m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
 	}
@@ -1171,11 +1120,11 @@ func codecDecodeToTextFormat(codec Codec, m *Map, oid uint32, format int16, src 
 	if format == TextFormatCode {
 		return string(src), nil
 	} else {
-		value, err := codec.DecodeValue(m, oid, format, src)
+		value, err := codec.DecodeValue(m, oid, subType, length, scale, format, src)
 		if err != nil {
 			return nil, err
 		}
-		buf, err := m.Encode(oid, TextFormatCode, value, nil)
+		buf, err := m.Encode(oid, subType, length, scale, TextFormatCode, value, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -1185,26 +1134,28 @@ func codecDecodeToTextFormat(codec Codec, m *Map, oid uint32, format int16, src 
 
 // PlanEncode returns an EncodePlan for encoding value into PostgreSQL format for oid and format. If no plan can be
 // found then nil is returned.
-func (m *Map) PlanEncode(oid uint32, format int16, value any) EncodePlan {
-	return m.planEncodeDepth(oid, format, value, 0)
+func (m *Map) PlanEncode(oid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
+	return m.planEncodeDepth(oid, subType, length, scale, format, value, 0)
 }
 
-func (m *Map) planEncodeDepth(oid uint32, format int16, value any, depth int) EncodePlan {
+func (m *Map) planEncodeDepth(oid uint32, subType int32, length uint32, scale int32, format int16, value any, depth int) EncodePlan {
 	// Guard against infinite recursion.
 	if depth > 8 {
 		return nil
 	}
 
-	oidMemo := m.memoizedEncodePlans[oid]
+	//memoize type id + subtype
+	memoId := MakeTypeSubtype(oid, subType)
+	oidMemo := m.memoizedEncodePlans[memoId]
 	if oidMemo == nil {
 		oidMemo = make(map[reflect.Type][2]EncodePlan)
-		m.memoizedEncodePlans[oid] = oidMemo
+		m.memoizedEncodePlans[memoId] = oidMemo
 	}
 	targetReflectType := reflect.TypeOf(value)
 	typeMemo := oidMemo[targetReflectType]
 	plan := typeMemo[format]
 	if plan == nil {
-		plan = m.planEncode(oid, format, value, depth)
+		plan = m.planEncode(oid, subType, length, scale, format, value, depth)
 		typeMemo[format] = plan
 		oidMemo[targetReflectType] = typeMemo
 	}
@@ -1212,7 +1163,7 @@ func (m *Map) planEncodeDepth(oid uint32, format int16, value any, depth int) En
 	return plan
 }
 
-func (m *Map) planEncode(oid uint32, format int16, value any, depth int) EncodePlan {
+func (m *Map) planEncode(oid uint32, subType int32, length uint32, scale int32, format int16, value any, depth int) EncodePlan {
 	if format == TextFormatCode {
 		switch value.(type) {
 		case string:
@@ -1223,7 +1174,7 @@ func (m *Map) planEncode(oid uint32, format int16, value any, depth int) EncodeP
 	}
 
 	var dt *Type
-	if dataType, ok := m.TypeForOID(oid); ok {
+	if dataType, ok := m.TypeForOID(oid, subType); ok {
 		dt = dataType
 	} else {
 		// If no type for the OID was found, then either it is unknowable (e.g. the simple protocol) or it is an
@@ -1236,14 +1187,14 @@ func (m *Map) planEncode(oid uint32, format int16, value any, depth int) EncodeP
 	}
 
 	if dt != nil {
-		if plan := dt.Codec.PlanEncode(m, oid, format, value); plan != nil {
+		if plan := dt.Codec.PlanEncode(m, oid, subType, length, scale, format, value); plan != nil {
 			return plan
 		}
 	}
 
 	for _, f := range m.TryWrapEncodePlanFuncs {
 		if wrapperPlan, nextValue, ok := f(value); ok {
-			if nextPlan := m.planEncodeDepth(oid, format, nextValue, depth+1); nextPlan != nil {
+			if nextPlan := m.planEncodeDepth(oid, subType, length, scale, format, nextValue, depth+1); nextPlan != nil {
 				wrapperPlan.SetNext(nextPlan)
 				return wrapperPlan
 			}
@@ -1251,7 +1202,7 @@ func (m *Map) planEncode(oid uint32, format int16, value any, depth int) EncodeP
 	}
 
 	if _, ok := value.(driver.Valuer); ok {
-		return &encodePlanDriverValuer{m: m, oid: oid, formatCode: format}
+		return &encodePlanDriverValuer{m: m, oid: oid, subType: subType, length: length, scale: scale, formatCode: format}
 	}
 
 	return nil
@@ -1281,6 +1232,9 @@ func (encodePlanTextValuerToAnyTextFormat) Encode(value any, buf []byte) (newBuf
 type encodePlanDriverValuer struct {
 	m          *Map
 	oid        uint32
+	subType    int32
+	length     uint32
+	scale      int32
 	formatCode int16
 }
 
@@ -1297,7 +1251,7 @@ func (plan *encodePlanDriverValuer) Encode(value any, buf []byte) (newBuf []byte
 		return nil, nil
 	}
 
-	newBuf, err = plan.m.Encode(plan.oid, plan.formatCode, v, buf)
+	newBuf, err = plan.m.Encode(plan.oid, plan.subType, plan.length, plan.scale, plan.formatCode, v, buf)
 	if err == nil {
 		return newBuf, nil
 	}
@@ -1308,7 +1262,7 @@ func (plan *encodePlanDriverValuer) Encode(value any, buf []byte) (newBuf []byte
 	}
 
 	var scannedValue any
-	scanErr := plan.m.Scan(plan.oid, TextFormatCode, []byte(s), &scannedValue)
+	scanErr := plan.m.Scan(plan.oid, plan.subType, plan.length, plan.scale, TextFormatCode, []byte(s), &scannedValue)
 	if scanErr != nil {
 		return nil, err
 	}
@@ -1319,7 +1273,7 @@ func (plan *encodePlanDriverValuer) Encode(value any, buf []byte) (newBuf []byte
 	}
 
 	var err2 error
-	newBuf, err2 = plan.m.Encode(plan.oid, BinaryFormatCode, scannedValue, buf)
+	newBuf, err2 = plan.m.Encode(plan.oid, plan.subType, plan.length, plan.scale, BinaryFormatCode, scannedValue, buf)
 	if err2 != nil {
 		return nil, err
 	}
@@ -1478,8 +1432,8 @@ func TryWrapBuiltinTypeEncodePlan(value any) (plan WrappedEncodePlanNextSetter, 
 		return &wrapStringEncodePlan{}, stringWrapper(value), true
 	case time.Time:
 		return &wrapTimeEncodePlan{}, timeWrapper(value), true
-	case time.Duration:
-		return &wrapDurationEncodePlan{}, durationWrapper(value), true
+	// case time.Duration:
+	// 	return &wrapDurationEncodePlan{}, durationWrapper(value), true
 	case net.IPNet:
 		return &wrapNetIPNetEncodePlan{}, netIPNetWrapper(value), true
 	case net.IP:
@@ -1488,12 +1442,12 @@ func TryWrapBuiltinTypeEncodePlan(value any) (plan WrappedEncodePlanNextSetter, 
 		return &wrapNetipPrefixEncodePlan{}, netipPrefixWrapper(value), true
 	case netip.Addr:
 		return &wrapNetipAddrEncodePlan{}, netipAddrWrapper(value), true
-	case map[string]*string:
-		return &wrapMapStringToPointerStringEncodePlan{}, mapStringToPointerStringWrapper(value), true
-	case map[string]string:
-		return &wrapMapStringToStringEncodePlan{}, mapStringToStringWrapper(value), true
-	case [16]byte:
-		return &wrapByte16EncodePlan{}, byte16Wrapper(value), true
+	// case map[string]*string:
+	// 	return &wrapMapStringToPointerStringEncodePlan{}, mapStringToPointerStringWrapper(value), true
+	// case map[string]string:
+	// return &wrapMapStringToStringEncodePlan{}, mapStringToStringWrapper(value), true
+	// case [16]byte:
+	// 	return &wrapByte16EncodePlan{}, byte16Wrapper(value), true
 	case []byte:
 		return &wrapByteSliceEncodePlan{}, byteSliceWrapper(value), true
 	case fmt.Stringer:
@@ -1643,15 +1597,15 @@ func (plan *wrapTimeEncodePlan) Encode(value any, buf []byte) (newBuf []byte, er
 	return plan.next.Encode(timeWrapper(value.(time.Time)), buf)
 }
 
-type wrapDurationEncodePlan struct {
-	next EncodePlan
-}
+// type wrapDurationEncodePlan struct {
+// 	next EncodePlan
+// }
 
-func (plan *wrapDurationEncodePlan) SetNext(next EncodePlan) { plan.next = next }
+// func (plan *wrapDurationEncodePlan) SetNext(next EncodePlan) { plan.next = next }
 
-func (plan *wrapDurationEncodePlan) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	return plan.next.Encode(durationWrapper(value.(time.Duration)), buf)
-}
+// func (plan *wrapDurationEncodePlan) Encode(value any, buf []byte) (newBuf []byte, err error) {
+// 	return plan.next.Encode(durationWrapper(value.(time.Duration)), buf)
+// }
 
 type wrapNetIPNetEncodePlan struct {
 	next EncodePlan
@@ -1693,35 +1647,35 @@ func (plan *wrapNetipAddrEncodePlan) Encode(value any, buf []byte) (newBuf []byt
 	return plan.next.Encode(netipAddrWrapper(value.(netip.Addr)), buf)
 }
 
-type wrapMapStringToPointerStringEncodePlan struct {
-	next EncodePlan
-}
+// type wrapMapStringToPointerStringEncodePlan struct {
+// 	next EncodePlan
+// }
 
-func (plan *wrapMapStringToPointerStringEncodePlan) SetNext(next EncodePlan) { plan.next = next }
+// func (plan *wrapMapStringToPointerStringEncodePlan) SetNext(next EncodePlan) { plan.next = next }
 
-func (plan *wrapMapStringToPointerStringEncodePlan) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	return plan.next.Encode(mapStringToPointerStringWrapper(value.(map[string]*string)), buf)
-}
+// func (plan *wrapMapStringToPointerStringEncodePlan) Encode(value any, buf []byte) (newBuf []byte, err error) {
+// 	return plan.next.Encode(mapStringToPointerStringWrapper(value.(map[string]*string)), buf)
+// }
 
-type wrapMapStringToStringEncodePlan struct {
-	next EncodePlan
-}
+// type wrapMapStringToStringEncodePlan struct {
+// 	next EncodePlan
+// }
 
-func (plan *wrapMapStringToStringEncodePlan) SetNext(next EncodePlan) { plan.next = next }
+// func (plan *wrapMapStringToStringEncodePlan) SetNext(next EncodePlan) { plan.next = next }
 
-func (plan *wrapMapStringToStringEncodePlan) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	return plan.next.Encode(mapStringToStringWrapper(value.(map[string]string)), buf)
-}
+// func (plan *wrapMapStringToStringEncodePlan) Encode(value any, buf []byte) (newBuf []byte, err error) {
+// 	return plan.next.Encode(mapStringToStringWrapper(value.(map[string]string)), buf)
+// }
 
-type wrapByte16EncodePlan struct {
-	next EncodePlan
-}
+// type wrapByte16EncodePlan struct {
+// 	next EncodePlan
+// }
 
-func (plan *wrapByte16EncodePlan) SetNext(next EncodePlan) { plan.next = next }
+// func (plan *wrapByte16EncodePlan) SetNext(next EncodePlan) { plan.next = next }
 
-func (plan *wrapByte16EncodePlan) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	return plan.next.Encode(byte16Wrapper(value.([16]byte)), buf)
-}
+// func (plan *wrapByte16EncodePlan) Encode(value any, buf []byte) (newBuf []byte, err error) {
+// 	return plan.next.Encode(byte16Wrapper(value.([16]byte)), buf)
+// }
 
 type wrapByteSliceEncodePlan struct {
 	next EncodePlan
@@ -1915,7 +1869,7 @@ func (plan *wrapArrayEncodeReflectPlan) Encode(value any, buf []byte) (newBuf []
 	return plan.next.Encode(w, buf)
 }
 
-func newEncodeError(value any, m *Map, oid uint32, formatCode int16, err error) error {
+func newEncodeError(value any, m *Map, oid uint32, subType int32, formatCode int16, err error) error {
 	var format string
 	switch formatCode {
 	case TextFormatCode:
@@ -1927,7 +1881,7 @@ func newEncodeError(value any, m *Map, oid uint32, formatCode int16, err error) 
 	}
 
 	var dataTypeName string
-	if t, ok := m.TypeForOID(oid); ok {
+	if t, ok := m.TypeForOID(oid, subType); ok {
 		dataTypeName = t.Name
 	} else {
 		dataTypeName = "unknown type"
@@ -1939,12 +1893,12 @@ func newEncodeError(value any, m *Map, oid uint32, formatCode int16, err error) 
 // Encode appends the encoded bytes of value to buf. If value is the SQL value NULL then append nothing and return
 // (nil, nil). The caller of Encode is responsible for writing the correct NULL value or the length of the data
 // written.
-func (m *Map) Encode(oid uint32, formatCode int16, value any, buf []byte) (newBuf []byte, err error) {
+func (m *Map) Encode(oid uint32, subType int32, length uint32, scale int32, formatCode int16, value any, buf []byte) (newBuf []byte, err error) {
 	if isNil, callNilDriverValuer := isNilDriverValuer(value); isNil {
 		if callNilDriverValuer {
-			newBuf, err = (&encodePlanDriverValuer{m: m, oid: oid, formatCode: formatCode}).Encode(value, buf)
+			newBuf, err = (&encodePlanDriverValuer{m: m, oid: oid, subType: subType, length: length, scale: scale, formatCode: formatCode}).Encode(value, buf)
 			if err != nil {
-				return nil, newEncodeError(value, m, oid, formatCode, err)
+				return nil, newEncodeError(value, m, oid, subType, formatCode, err)
 			}
 
 			return newBuf, nil
@@ -1953,14 +1907,14 @@ func (m *Map) Encode(oid uint32, formatCode int16, value any, buf []byte) (newBu
 		}
 	}
 
-	plan := m.PlanEncode(oid, formatCode, value)
+	plan := m.PlanEncode(oid, subType, length, scale, formatCode, value)
 	if plan == nil {
-		return nil, newEncodeError(value, m, oid, formatCode, errors.New("cannot find encode plan"))
+		return nil, newEncodeError(value, m, oid, subType, formatCode, errors.New("cannot find encode plan"))
 	}
 
 	newBuf, err = plan.Encode(value, buf)
 	if err != nil {
-		return nil, newEncodeError(value, m, oid, formatCode, err)
+		return nil, newEncodeError(value, m, oid, subType, formatCode, err)
 	}
 
 	return newBuf, nil
@@ -1986,24 +1940,24 @@ type sqlScannerWrapper struct {
 }
 
 func (w *sqlScannerWrapper) Scan(src any) error {
-	t, ok := w.m.TypeForValue(w.v)
-	if !ok {
-		return fmt.Errorf("cannot convert to sql.Scanner: cannot find registered type for %T", w.v)
-	}
-
-	var bufSrc []byte
-	if src != nil {
-		switch src := src.(type) {
-		case string:
-			bufSrc = []byte(src)
-		case []byte:
-			bufSrc = src
-		default:
-			bufSrc = []byte(fmt.Sprint(bufSrc))
-		}
-	}
-
-	return w.m.Scan(t.OID, TextFormatCode, bufSrc, w.v)
+	//t, ok := w.m.TypeForValue(w.v)
+	//if !ok {
+	//	return fmt.Errorf("cannot convert to sql.Scanner: cannot find registered type for %T", w.v)
+	//}
+	//
+	//var bufSrc []byte
+	//if src != nil {
+	//	switch src := src.(type) {
+	//	case string:
+	//		bufSrc = []byte(src)
+	//	case []byte:
+	//		bufSrc = src
+	//	default:
+	//		bufSrc = []byte(fmt.Sprint(bufSrc))
+	//	}
+	//}
+	//return w.m.Scan(t.OID, TextFormatCode, bufSrc, w.v)
+	panic("not implemented")
 }
 
 var valuerReflectType = reflect.TypeFor[driver.Valuer]()
@@ -2037,4 +1991,17 @@ func isNilDriverValuer(value any) (isNil bool, callNilDriverValuer bool) {
 	default:
 		return false, false
 	}
+}
+
+func CharacterSetForType(typeId uint32, subType int32, scale int32) int32 {
+	switch typeId {
+	case fbproto.SQL_TYPE_TEXT, fbproto.SQL_TYPE_VARYING:
+		return subType & 0xFF
+	case fbproto.SQL_TYPE_BLOB:
+		if subType == fbproto.Isc_blob_text {
+			return scale & 0xFF
+		}
+		return fbproto.CS_BINARY
+	}
+	return fbproto.CS_dynamic
 }
