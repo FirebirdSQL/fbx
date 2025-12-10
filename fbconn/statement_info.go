@@ -140,6 +140,9 @@ func (p *StatementInfo) feedDescriptors(r *ServerInfoBufferReader) error {
 func FbTypeIntoFormat(fbtype int, subtype int) int16 {
 	switch fbtype {
 	case fbproto.SQL_TYPE_VARYING, fbproto.SQL_TYPE_TEXT:
+		if subtype == 1 { //OCTETS
+			return 1
+		}
 		return 0
 	}
 	return 1
