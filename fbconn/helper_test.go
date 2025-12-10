@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"rdb.red-soft.ru/fbx/fbconn"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"rdb.red-soft.ru/fbx/fbconn"
 )
 
 var generateSeriesTemplate = `WITH RECURSIVE generate_series(%[3]s)
@@ -38,7 +38,7 @@ func closeConn(t testing.TB, conn *fbconn.FbConn) {
 func ensureConnValid(t *testing.T, fbConn *fbconn.FbConn) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	//select generate_series(1,$1)
-	result := fbConn.ExecParams(ctx, "WITH RECURSIVE generate_series(generate_series) AS (SELECT 1 FROM RDB$DATABASE UNION ALL SELECT (generate_series + 1) FROM generate_series WHERE generate_series < 3) SELECT generate_series FROM generate_series", [][]byte{[]byte("3")}).Read()
+	result := fbConn.ExecParams(ctx, "WITH RECURSIVE generate_series(generate_series) AS (SELECT 1 FROM RDB$DATABASE UNION ALL SELECT (generate_series + 1) FROM generate_series WHERE generate_series < ?) SELECT generate_series FROM generate_series", [][]byte{[]byte{0, 0, 0, 3}}).Read()
 	cancel()
 
 	require.Nil(t, result.Err)
