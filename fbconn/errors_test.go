@@ -3,8 +3,8 @@ package fbconn_test
 import (
 	"testing"
 
-	"rdb.red-soft.ru/fbx/fbconn"
 	"github.com/stretchr/testify/assert"
+	"rdb.red-soft.ru/fbx/fbconn"
 )
 
 func TestConfigError(t *testing.T) {
@@ -15,8 +15,8 @@ func TestConfigError(t *testing.T) {
 	}{
 		{
 			name:        "url with password",
-			err:         fbconn.NewParseConfigError("postgresql://foo:password@host", "msg", nil),
-			expectedMsg: "cannot parse `postgresql://foo:xxxxx@host`: msg",
+			err:         fbconn.NewParseConfigError("firebirdsql://foo:password@host", "msg", nil),
+			expectedMsg: "cannot parse `firebirdsql://foo:xxxxx@host`: msg",
 		},
 		{
 			name:        "keyword/value with password unquoted",
@@ -30,18 +30,18 @@ func TestConfigError(t *testing.T) {
 		},
 		{
 			name:        "weird url",
-			err:         fbconn.NewParseConfigError("postgresql://foo::password@host:1:", "msg", nil),
-			expectedMsg: "cannot parse `postgresql://foo:xxxxx@host:1:`: msg",
+			err:         fbconn.NewParseConfigError("firebirdsql://foo::password@host:1:", "msg", nil),
+			expectedMsg: "cannot parse `firebirdsql://foo:xxxxx@host:1:`: msg",
 		},
 		{
 			name:        "weird url with slash in password",
-			err:         fbconn.NewParseConfigError("postgres://user:pass/word@host:5432/db_name", "msg", nil),
-			expectedMsg: "cannot parse `postgres://user:xxxxxx@host:5432/db_name`: msg",
+			err:         fbconn.NewParseConfigError("firebirdsql://user:pass/word@host:5432/db_name", "msg", nil),
+			expectedMsg: "cannot parse `firebirdsql://user:xxxxx@host:5432/db_name`: msg",
 		},
 		{
 			name:        "url without password",
-			err:         fbconn.NewParseConfigError("postgresql://other@host/db", "msg", nil),
-			expectedMsg: "cannot parse `postgresql://other@host/db`: msg",
+			err:         fbconn.NewParseConfigError("firebirdsql://other@host/db", "msg", nil),
+			expectedMsg: "cannot parse `firebirdsql://other@host/db`: msg",
 		},
 	}
 	for _, tt := range tests {
