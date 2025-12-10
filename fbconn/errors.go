@@ -217,7 +217,7 @@ func redactPW(connString string) string {
 	plainKV := regexp.MustCompile(`password=[^ ]*`)
 	connString = plainKV.ReplaceAllLiteralString(connString, "password=xxxxx")
 	brokenURL := regexp.MustCompile(`:[^:@]+?@`)
-	connString = brokenURL.ReplaceAllLiteralString(connString, ":xxxxxx@")
+	connString = brokenURL.ReplaceAllLiteralString(connString, ":xxxxx@")
 	return connString
 }
 
