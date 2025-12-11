@@ -1,14 +1,12 @@
 package utils
 
-import "math"
-
 type BitSet struct {
 	bits  []byte
 	count int
 }
 
 func NewBitSet(count int) *BitSet {
-	bytes := make([]byte, int(math.Ceil(float64(count+7)/8)))
+	bytes := make([]byte, int(float64(count+7)/8))
 	return &BitSet{bytes, count}
 }
 

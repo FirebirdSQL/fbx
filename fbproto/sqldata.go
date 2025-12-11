@@ -2,7 +2,6 @@ package fbproto
 
 import (
 	"fmt"
-	"math"
 
 	"rdb.red-soft.ru/fbx/fbproto/utils"
 )
@@ -19,7 +18,7 @@ func ReadRowData(x *XDRReader, rowDescriptor []FieldDescriptor) (*SQLData, error
 	var err error
 	count := len(rowDescriptor)
 	rowData := make([][]byte, count)
-	l := int(math.Ceil(float64(count+7) / 8))
+	l := int(float64(count+7) / 8)
 	pad := (4 - l) & 3
 	var nullsBitset *utils.BitSet
 	if nulls, err := x.ReadBytes(int64(l + pad)); err == nil {
