@@ -7,6 +7,8 @@ fbx is a pure Go driver for Red Database and Firebird.
 **go.mod**
 
 ```
+module fbxdemo
+
 replace rdb.red-soft.ru/fbx v0.0.0 => go.gitflic.ru/red-soft/fbx main
 
 go 1.24.2
