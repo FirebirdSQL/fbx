@@ -452,7 +452,7 @@ func TestConnQueryRowByteSlice(t *testing.T) {
 		expected := []byte{222, 173, 190, 239}
 		var actual []byte
 
-		err := db.QueryRow(`select cast(0xdeadbeef as varchar(16) character set octets) from rdb$database`).Scan(&actual)
+		err := db.QueryRow(`select cast(x'deadbeef' as varchar(16) character set octets) from rdb$database`).Scan(&actual)
 		require.NoError(t, err)
 		require.EqualValues(t, expected, actual)
 	})

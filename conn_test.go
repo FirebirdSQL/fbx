@@ -700,8 +700,8 @@ func TestConnInitTypeMap(t *testing.T) {
 
 	// spot check that the standard postgres type names aren't qualified
 	nameOIDs := map[string]uint32{
-		"long": fbproto.SQL_TYPE_LONG,
-		"text": fbproto.SQL_TYPE_TEXT,
+		"int":     fbproto.SQL_TYPE_LONG,
+		"varchar": fbproto.SQL_TYPE_VARYING,
 	}
 	for name, oid := range nameOIDs {
 		dtByName, ok := conn.TypeMap().TypeForName(name)
