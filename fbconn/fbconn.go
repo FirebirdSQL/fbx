@@ -1264,13 +1264,22 @@ func (fbConn *FbConn) ExecParamsTx(ctx context.Context, tx *FBTransaction, sql s
 
 	rr := st.Exec(ctx, paramValues)
 	if rr.err != nil {
-		_ = tx.Rollback(ctx)
+		closeConn := true
+		var fbErr *FbError
+		if SafeToRetry(rr.err) || errors.As(rr.err, &fbErr) {
+			closeConn = false
+		}
+		if closeConn {
+			_ = tx.Rollback(ctx)
+		}
 		res := ResultReader{
 			fbConn: fbConn,
 			ctx:    ctx,
 			closed: true,
 		}
-		fbConn.asyncClose()
+		if closeConn {
+			fbConn.asyncClose()
+		}
 		res.concludeCommand(QueryStatus{}, rr.err)
 		return rr
 	}
