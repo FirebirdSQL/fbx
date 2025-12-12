@@ -136,6 +136,17 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 		boundTransaction: tx,
 	}
 
+	// Validate parameter count before any wire interaction.
+	if len(paramValues) != len(st.Description.StatementInfo.ParametersDescriptors) {
+		err := &FbError{
+			Message: fmt.Sprintf("Invalid number of parameters, expected %d, got %d", len(st.Description.StatementInfo.ParametersDescriptors), len(paramValues)),
+			Code:    "07008",
+		}
+		rr.concludeCommand(QueryStatus{}, err)
+		rr.closed = true
+		return rr
+	}
+
 	if err = st.CloseCursor(ctx); err != nil {
 		st.conn.asyncClose()
 		rr.concludeCommand(QueryStatus{}, err)
