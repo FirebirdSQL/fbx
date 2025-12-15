@@ -69,14 +69,8 @@ func (x *XDRReader) ReadBuffer() ([]byte, error) {
 
 func (x *XDRReader) ReadBytes(len int64) ([]byte, error) {
 	buf := make([]byte, len)
-	n, err := x.reader.Read(buf)
-	if err != nil {
-		return buf, err
-	}
-	if int64(n) < len {
-		return buf, io.EOF
-	}
-	return buf, nil
+	_, err := io.ReadFull(x.reader, buf)
+	return buf, err
 }
 
 func (x *XDRReader) ReadInt32() (int, error) {
