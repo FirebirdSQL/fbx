@@ -5,21 +5,10 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
+	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/internal/pgio"
-)
-
-const fbTimestamptzHourFormat = "2006-01-02 15:04:05.999999999Z07"
-const fbTimestamptzMinuteFormat = "2006-01-02 15:04:05.999999999Z07:00"
-const fbTimestamptzSecondFormat = "2006-01-02 15:04:05.999999999Z07:00:00"
-
-const microsecFromUnixEpochToY2K = 946684800 * 1000000
-
-const (
-	negativeInfinityMicrosecondOffset = -9223372036854775808
-	infinityMicrosecondOffset         = 9223372036854775807
 )
 
 type TimestamptzScanner interface {
@@ -32,6 +21,7 @@ type TimestamptzValuer interface {
 
 type Timestamptz struct {
 	Time  time.Time
+	TzRaw uint16
 	Valid bool
 }
 
@@ -52,14 +42,12 @@ func (tstz *Timestamptz) Scan(src any) error {
 	}
 
 	switch src := src.(type) {
-	case string:
-		return (&scanPlanTextTimestamptzToTimestamptzScanner{}).Scan([]byte(src), tstz)
 	case time.Time:
 		*tstz = Timestamptz{Time: src, Valid: true}
 		return nil
 	}
 
-	return fmt.Errorf("cannot scan %T", src)
+	return fmt.Errorf("cannot scan %T into Timestamptz", src)
 }
 
 // Value implements the database/sql/driver Valuer interface.
@@ -103,14 +91,10 @@ func (tstz *Timestamptz) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-type TimestamptzCodec struct {
-	// ScanLocation is the location to return scanned timestamptz values in. This does not change the instant in time that
-	// the timestamptz represents.
-	ScanLocation *time.Location
-}
+type TimestamptzCodec struct{}
 
 func (*TimestamptzCodec) FormatSupported(format int16) bool {
-	return format == TextFormatCode || format == BinaryFormatCode
+	return format == BinaryFormatCode
 }
 
 func (*TimestamptzCodec) PreferredFormat() int16 {
@@ -118,15 +102,17 @@ func (*TimestamptzCodec) PreferredFormat() int16 {
 }
 
 func (*TimestamptzCodec) PlanEncode(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
-	if _, ok := value.(TimestamptzValuer); !ok {
+	if format != BinaryFormatCode {
 		return nil
 	}
 
-	switch format {
-	case BinaryFormatCode:
+	switch value.(type) {
+	case TimestamptzValuer:
 		return encodePlanTimestamptzCodecBinary{}
-	case TextFormatCode:
-		return encodePlanTimestamptzCodecText{}
+	case time.Time:
+		return encodePlanTimestamptzCodecBinaryTime{}
+	case string:
+		return encodePlanTimestamptzCodecBinaryString{}
 	}
 
 	return nil
@@ -144,138 +130,160 @@ func (encodePlanTimestamptzCodecBinary) Encode(value any, buf []byte) (newBuf []
 		return nil, nil
 	}
 
-	microsecSinceUnixEpoch := ts.Time.Unix()*1000000 + int64(ts.Time.Nanosecond())/1000
-	microsecSinceY2K := microsecSinceUnixEpoch - microsecFromUnixEpochToY2K
+	if ts.TzRaw == 0 {
+		tzRaw, err := tzRawFromTime(ts.Time)
+		if err != nil {
+			return nil, err
+		}
+		ts.TzRaw = tzRaw
+	}
 
-	buf = pgio.AppendInt64(buf, microsecSinceY2K)
-
-	return buf, nil
+	return encodeTimestamptzBinary(buf, ts)
 }
 
-type encodePlanTimestamptzCodecText struct{}
+type encodePlanTimestamptzCodecBinaryTime struct{}
 
-func (encodePlanTimestamptzCodecText) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	ts, err := value.(TimestamptzValuer).TimestamptzValue()
+func (encodePlanTimestamptzCodecBinaryTime) Encode(value any, buf []byte) ([]byte, error) {
+	t := value.(time.Time)
+
+	tzRaw, err := tzRawFromTime(t)
 	if err != nil {
 		return nil, err
 	}
 
-	if !ts.Valid {
-		return nil, nil
+	ts := Timestamptz{
+		Time:  t,
+		TzRaw: tzRaw,
+		Valid: true,
 	}
 
-	var s string
+	return encodeTimestamptzBinary(buf, ts)
+}
 
-	t := ts.Time.UTC().Truncate(time.Microsecond)
+type encodePlanTimestamptzCodecBinaryString struct{}
 
-	bc := false
-	if year := t.Year(); year <= 0 {
-		year = -year + 1
-		t = time.Date(year, t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), time.UTC)
-		bc = true
+func (encodePlanTimestamptzCodecBinaryString) Encode(value any, buf []byte) ([]byte, error) {
+	s := value.(string)
+
+	var (
+		t   time.Time
+		err error
+	)
+
+	t, err = time.Parse(time.RFC3339Nano, s)
+	if err != nil {
+		t, err = time.Parse(time.RFC3339, s)
+		if err != nil {
+			return nil, fmt.Errorf("timestamptz: cannot parse %q as RFC3339: %w", s, err)
+		}
 	}
 
-	s = t.Format(fbTimestamptzSecondFormat)
-
-	if bc {
-		s = s + " BC"
+	tzRaw, err := tzRawFromTime(t)
+	if err != nil {
+		return nil, err
 	}
 
-	buf = append(buf, s...)
+	ts := Timestamptz{
+		Time:  t,
+		TzRaw: tzRaw,
+		Valid: true,
+	}
 
-	return buf, nil
+	return encodeTimestamptzBinary(buf, ts)
 }
 
 func (c *TimestamptzCodec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
+	if format != BinaryFormatCode {
+		return nil
+	}
 
-	switch format {
-	case BinaryFormatCode:
-		switch target.(type) {
-		case TimestamptzScanner:
-			return &scanPlanBinaryTimestamptzToTimestamptzScanner{location: c.ScanLocation}
-		}
-	case TextFormatCode:
-		switch target.(type) {
-		case TimestamptzScanner:
-			return &scanPlanTextTimestamptzToTimestamptzScanner{location: c.ScanLocation}
-		}
+	switch target.(type) {
+	case TimestamptzScanner:
+		return &scanPlanBinaryTimestamptzToTimestamptzScanner{}
+	case *time.Time:
+		return &scanPlanBinaryTimestamptzToTimeScanner{}
+	case *string:
+		return &scanPlanBinaryTimestamptzToStringScanner{}
 	}
 
 	return nil
 }
 
-type scanPlanBinaryTimestamptzToTimestamptzScanner struct{ location *time.Location }
+type scanPlanBinaryTimestamptzToTimestamptzScanner struct{}
 
 func (plan *scanPlanBinaryTimestamptzToTimestamptzScanner) Scan(src []byte, dst any) error {
-	scanner := (dst).(TimestamptzScanner)
+	scanner, ok := dst.(TimestamptzScanner)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
 
 	if src == nil {
 		return scanner.ScanTimestamptz(Timestamptz{})
 	}
 
-	if len(src) != 8 {
-		return fmt.Errorf("invalid length for timestamptz: %v", len(src))
-	}
-
-	var tstz Timestamptz
-	microsecSinceY2K := int64(binary.BigEndian.Uint64(src))
-
-	tim := time.Unix(
-		microsecFromUnixEpochToY2K/1000000+microsecSinceY2K/1000000,
-		(microsecFromUnixEpochToY2K%1000000*1000)+(microsecSinceY2K%1000000*1000),
-	)
-	if plan.location != nil {
-		tim = tim.In(plan.location)
-	}
-	tstz = Timestamptz{Time: tim, Valid: true}
-
-	return scanner.ScanTimestamptz(tstz)
-}
-
-type scanPlanTextTimestamptzToTimestamptzScanner struct{ location *time.Location }
-
-func (plan *scanPlanTextTimestamptzToTimestamptzScanner) Scan(src []byte, dst any) error {
-	scanner := (dst).(TimestamptzScanner)
-
-	if src == nil {
-		return scanner.ScanTimestamptz(Timestamptz{})
-	}
-
-	var tstz Timestamptz
-	sbuf := string(src)
-
-	bc := false
-	if strings.HasSuffix(sbuf, " BC") {
-		sbuf = sbuf[:len(sbuf)-3]
-		bc = true
-	}
-
-	var format string
-	if len(sbuf) >= 9 && (sbuf[len(sbuf)-9] == '-' || sbuf[len(sbuf)-9] == '+') {
-		format = fbTimestamptzSecondFormat
-	} else if len(sbuf) >= 6 && (sbuf[len(sbuf)-6] == '-' || sbuf[len(sbuf)-6] == '+') {
-		format = fbTimestamptzMinuteFormat
-	} else {
-		format = fbTimestamptzHourFormat
-	}
-
-	tim, err := time.Parse(format, sbuf)
+	v, err := decodeTimestamptzBinary(src)
 	if err != nil {
 		return err
 	}
 
-	if bc {
-		year := -tim.Year() + 1
-		tim = time.Date(year, tim.Month(), tim.Day(), tim.Hour(), tim.Minute(), tim.Second(), tim.Nanosecond(), tim.Location())
+	return scanner.ScanTimestamptz(v)
+}
+
+type scanPlanBinaryTimestamptzToTimeScanner struct{}
+
+func (plan *scanPlanBinaryTimestamptzToTimeScanner) Scan(src []byte, dst any) error {
+	ptr, ok := dst.(*time.Time)
+	if !ok {
+		return ErrScanTargetTypeChanged
 	}
 
-	if plan.location != nil {
-		tim = tim.In(plan.location)
+	if src == nil {
+		*ptr = time.Time{}
+		return nil
 	}
 
-	tstz = Timestamptz{Time: tim, Valid: true}
+	tstz, err := decodeTimestamptzBinary(src)
+	if err != nil {
+		return err
+	}
+	if !tstz.Valid {
+		*ptr = time.Time{}
+		return nil
+	}
 
-	return scanner.ScanTimestamptz(tstz)
+	t := tstz.Time
+
+	*ptr = t
+	return nil
+}
+
+type scanPlanBinaryTimestamptzToStringScanner struct{}
+
+func (plan *scanPlanBinaryTimestamptzToStringScanner) Scan(src []byte, dst any) error {
+	ptr, ok := dst.(*string)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
+	if src == nil {
+		*ptr = ""
+		return nil
+	}
+
+	tstz, err := decodeTimestamptzBinary(src)
+	if err != nil {
+		return err
+	}
+
+	if !tstz.Valid {
+		*ptr = ""
+		return nil
+	}
+
+	t := tstz.Time
+
+	*ptr = t.Format(time.RFC3339Nano)
+	return nil
 }
 
 func (c *TimestamptzCodec) DecodeDatabaseSQLValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
@@ -304,4 +312,86 @@ func (c *TimestamptzCodec) DecodeValue(m *Map, oid uint32, subType int32, length
 	}
 
 	return tstz.Time, nil
+}
+
+func encodeTimestamptzBinary(buf []byte, ts Timestamptz) ([]byte, error) {
+	if !ts.Valid {
+		return nil, nil
+	}
+
+	t := ts.Time
+
+	tMidnightUTC := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+
+	days := int32((tMidnightUTC.Unix() - firebirdDateEpoch.Unix()) / secondsPerDay)
+
+	usec := int64(t.Hour())*microsecondsPerHour +
+		int64(t.Minute())*microsecondsPerMinute +
+		int64(t.Second())*microsecondsPerSecond +
+		int64(t.Nanosecond())/1000
+
+	if usec < 0 || usec >= microsecondsPerDay {
+		return nil, fmt.Errorf("fbtype: TIMESTAMPTZ time-of-day out of range (µs since midnight: %d)", usec)
+	}
+
+	ticks := uint32(usec / 100)
+
+	buf = pgio.AppendUint32(buf, uint32(days))
+	buf = pgio.AppendUint32(buf, ticks)
+	buf = pgio.AppendUint32(buf, uint32(ts.TzRaw))
+
+	return buf, nil
+}
+
+func decodeTimestamptzBinary(src []byte) (Timestamptz, error) {
+	if src == nil {
+		return Timestamptz{}, nil
+	}
+	if len(src) != 12 {
+		return Timestamptz{}, fmt.Errorf("invalid length for timestamptz: %v", len(src))
+	}
+
+	days := int32(binary.BigEndian.Uint32(src[0:4]))
+	ticks := binary.BigEndian.Uint32(src[4:8])
+	tzVal := binary.BigEndian.Uint32(src[8:12])
+
+	tDate := firebirdDateEpoch.AddDate(0, 0, int(days))
+
+	usec := int64(ticks) * 100
+	if usec < 0 || usec >= microsecondsPerDay {
+		return Timestamptz{}, fmt.Errorf("TIMESTAMPTZ time-of-day out of range in decode (µs since midnight: %d)", usec)
+	}
+
+	hour := usec / microsecondsPerHour
+	usec -= hour * microsecondsPerHour
+	min := usec / microsecondsPerMinute
+	usec -= min * microsecondsPerMinute
+	sec := usec / microsecondsPerSecond
+	usec -= sec * microsecondsPerSecond
+
+	tzRaw := uint16(tzVal & 0xFFFF)
+	loc := fbproto.ResolveLocationByTzRaw(tzRaw)
+
+	t := time.Date(
+		tDate.Year(), tDate.Month(), tDate.Day(),
+		int(hour), int(min), int(sec), int(usec)*1000,
+		loc,
+	)
+
+	return Timestamptz{
+		Time:  t,
+		TzRaw: tzRaw,
+		Valid: true,
+	}, nil
+}
+
+func tzRawFromTime(t time.Time) (uint16, error) {
+	_, offsetSeconds := t.Zone()
+	offsetMinutes := offsetSeconds / 60
+
+	if offsetMinutes < -1439 || offsetMinutes > 1438 {
+		return 0, fmt.Errorf("timestamptz: UTC offset %d minutes out of range", offsetMinutes)
+	}
+
+	return uint16(offsetMinutes + 1439), nil
 }

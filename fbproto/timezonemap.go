@@ -1,5 +1,7 @@
 package fbproto
 
+import "time"
+
 func getTimezoneNameByID(id int) string {
 	return map[int]string{
 		65535: "GMT",
@@ -637,4 +639,23 @@ func getTimezoneNameByID(id int) string {
 		64903: "America/Nuuk",
 		64902: "Asia/Qostanay",
 	}[id]
+}
+
+func ResolveLocationByTzRaw(tzRaw uint16) *time.Location {
+	if tzRaw <= 2878 {
+		offsetMinutes := int(tzRaw) - 1439
+		return time.FixedZone("", offsetMinutes*60)
+	}
+
+	name := getTimezoneNameByID(int(tzRaw))
+	if name == "" {
+		return time.UTC
+	}
+
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		return time.UTC
+	}
+
+	return loc
 }
