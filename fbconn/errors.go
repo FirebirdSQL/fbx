@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"regexp"
 	"strings"
+	"syscall"
 
 	"rdb.red-soft.ru/fbx/fbproto"
 )
@@ -140,6 +142,36 @@ func normalizeTimeoutError(ctx context.Context, err error) error {
 			return &errTimeout{err: netErr}
 		}
 	}
+	return err
+}
+
+// normalizeConnClosedError converts transport-level connection breakage (EOF / reset / closed socket)
+// into an FbError with SQLSTATE 08006 so callers don't have to special-case io.EOF.
+//
+// It intentionally does not convert timeout errors; those are handled by normalizeTimeoutError.
+func normalizeConnClosedError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	// Keep timeout errors intact.
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return err
+	}
+
+	if errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, net.ErrClosed) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, syscall.ECONNABORTED) {
+		return &FbError{
+			Message: fmt.Sprintf("Connection failure: %s\n", err.Error()),
+			Code:    "08006",
+		}
+	}
+
 	return err
 }
 
