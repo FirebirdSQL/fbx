@@ -723,6 +723,7 @@ func (fbConn *FbConn) peekMessage() (fbproto.ServerMessage, error) {
 	}
 
 	if err != nil {
+		err = normalizeConnClosedError(err)
 		// Close on anything other than timeout error - everything else is fatal
 		var netErr net.Error
 		isNetErr := errors.As(err, &netErr)
