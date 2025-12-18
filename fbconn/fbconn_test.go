@@ -19,9 +19,8 @@ import (
 	"rdb.red-soft.ru/fbx/fbconn"
 	"rdb.red-soft.ru/fbx/fbconn/ctxwatch"
 	"rdb.red-soft.ru/fbx/fbproto"
+	"rdb.red-soft.ru/fbx/fbproto/utils"
 )
-
-const pgbouncerConnStringEnvVar = "PGX_TEST_PGBOUNCER_CONN_STRING"
 
 func TestConnect(t *testing.T) {
 	tests := []struct {
@@ -567,10 +566,15 @@ func TestConnDeallocate(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = st.Exec(ctx, nil).Close()
-	require.Error(t, err)
+	// TODO: Once the driver propagates server-side "invalid statement handle" consistently,
+	// narrow this assertion to FbError 26000. For now Exec short-circuits with a local
+	// "statement is closed" error.
 	var fbErr *fbconn.FbError
-	require.ErrorAs(t, err, &fbErr)
-	require.Equal(t, "26000", fbErr.Code)
+	if errors.As(err, &fbErr) {
+		assert.Equal(t, "26000", fbErr.Code)
+	} else {
+		assert.EqualError(t, err, "statement is closed")
+	}
 
 	ensureConnValid(t, fbConn)
 }
@@ -764,7 +768,7 @@ func TestConnExecParams(t *testing.T) {
 	ensureConnValid(t, fbConn)
 }
 
-func TestConnExecParamsDeferredError(t *testing.T) {
+func TestConnExecParamsExtraValuesError(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -774,78 +778,22 @@ func TestConnExecParamsDeferredError(t *testing.T) {
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
-	if fbConn.ParameterStatus("crdb_version") != "" {
-		t.Skip("Server does not support deferred constraint (https://github.com/cockroachdb/cockroach/issues/31632)")
+	sql := "select ?, ?, ?, ? from rdb$database"
+
+	args := [][]byte{
+		[]byte("0"),
+		[]byte("1"),
+		[]byte("2"),
+		[]byte("3"),
+		[]byte("4"), // one extra param
 	}
 
-	setupSQL := `create temporary table t (
-		id text primary key,
-		n int not null,
-		unique (n) deferrable initially deferred
-	);
+	res := fbConn.ExecParams(ctx, sql, args).Read()
+	require.NotNil(t, res.Err)
 
-	insert into t (id, n) values ('a', 1), ('b', 2), ('c', 3);`
-
-	res := fbConn.Exec(ctx, setupSQL).Read()
-	assert.NoError(t, res.Err)
-
-	result := fbConn.ExecParams(ctx, `update t set n=n+1 where id='b' returning *`, nil).Read()
-	require.NotNil(t, result.Err)
 	var fbErr *fbconn.FbError
-	require.True(t, errors.As(result.Err, &fbErr))
-	require.Equal(t, "23505", fbErr.Code)
-
-	ensureConnValid(t, fbConn)
-}
-
-func TestConnExecParamsMaxNumberOfParams(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
-	require.NoError(t, err)
-	defer closeConn(t, fbConn)
-
-	paramCount := math.MaxUint16
-	params := make([]string, 0, paramCount)
-	args := make([][]byte, 0, paramCount)
-	for i := 0; i < paramCount; i++ {
-		params = append(params, fmt.Sprintf("($%d::text)", i+1))
-		args = append(args, []byte(strconv.Itoa(i)))
-	}
-	sql := "values" + strings.Join(params, ", ")
-
-	result := fbConn.ExecParams(ctx, sql, args).Read()
-	require.NoError(t, result.Err)
-	require.Len(t, result.Rows, paramCount)
-
-	ensureConnValid(t, fbConn)
-}
-
-func TestConnExecParamsTooManyParams(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
-	require.NoError(t, err)
-	defer closeConn(t, fbConn)
-
-	paramCount := math.MaxUint16 + 1
-	params := make([]string, 0, paramCount)
-	args := make([][]byte, 0, paramCount)
-	for i := 0; i < paramCount; i++ {
-		params = append(params, fmt.Sprintf("($%d::text)", i+1))
-		args = append(args, []byte(strconv.Itoa(i)))
-	}
-	sql := "values" + strings.Join(params, ", ")
-
-	result := fbConn.ExecParams(ctx, sql, args).Read()
-	require.Error(t, result.Err)
-	require.Equal(t, "extended protocol limited to 65535 parameters", result.Err.Error())
+	require.True(t, errors.As(res.Err, &fbErr))
+	assert.Equal(t, "07008", fbErr.Code)
 
 	ensureConnValid(t, fbConn)
 }
@@ -914,12 +862,14 @@ func TestConnExecParamsEmptySQL(t *testing.T) {
 	result := fbConn.ExecParams(ctx, "", nil).Read()
 	assert.Equal(t, fbconn.QueryStatus{}, result.QueryStatus)
 	assert.Len(t, result.Rows, 0)
-	assert.NoError(t, result.Err)
+	require.Error(t, result.Err)
+	var fbErr *fbconn.FbError
+	require.ErrorAs(t, result.Err, &fbErr)
+	assert.Equal(t, "42000", fbErr.Code)
 
 	ensureConnValid(t, fbConn)
 }
 
-// https://github.com/jackc/pgx/issues/859
 func TestResultReaderValuesHaveSameCapacityAsLength(t *testing.T) {
 	t.Parallel()
 
@@ -930,7 +880,7 @@ func TestResultReaderValuesHaveSameCapacityAsLength(t *testing.T) {
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
-	result := fbConn.ExecParams(ctx, "select cast(? as varchar) as msg from rdb$database", [][]byte{[]byte("Hello, world")})
+	result := fbConn.ExecParams(ctx, "select cast(? as varchar(32)) as msg from rdb$database", [][]byte{[]byte("Hello, world")})
 	require.Len(t, result.FieldDescriptions(), 1)
 	assert.Equal(t, "MSG", result.FieldDescriptions()[0].Name)
 
@@ -948,7 +898,6 @@ func TestResultReaderValuesHaveSameCapacityAsLength(t *testing.T) {
 	ensureConnValid(t, fbConn)
 }
 
-// https://github.com/jackc/pgx/issues/1987
 func TestResultReaderReadNil(t *testing.T) {
 	t.Parallel()
 
@@ -966,6 +915,108 @@ func TestResultReaderReadNil(t *testing.T) {
 	ensureConnValid(t, fbConn)
 }
 
+func TestConnExecPreparedMaxNumberOfParams(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	require.NoError(t, err)
+	defer closeConn(t, fbConn)
+
+	const chunkSize = 500
+
+	buildSQL := func(n int) string {
+		var sb strings.Builder
+		sb.WriteString("select 0")
+
+		for i := 0; i < n; i++ {
+			if i%chunkSize == 0 {
+				sb.WriteString("+(")
+				sb.WriteString("cast(? as int)")
+			} else {
+				sb.WriteString("+cast(? as int)")
+			}
+
+			if i%chunkSize == chunkSize-1 || i == n-1 {
+				sb.WriteString(")")
+			}
+		}
+
+		sb.WriteString(" from rdb$database")
+		return sb.String()
+	}
+
+	paramCount := int(math.MaxInt16)
+	sql := buildSQL(paramCount)
+
+	args := make([][]byte, paramCount)
+	zero := utils.Int32_to_bytes(0)
+	for i := range args {
+		args[i] = zero
+	}
+
+	ps, err := fbConn.Prepare(ctx, sql)
+	require.NoError(t, err)
+	require.NotNil(t, ps)
+	assert.Len(t, ps.Description.Parameters, paramCount)
+	assert.Len(t, ps.Description.Fields, 1)
+
+	result := ps.Exec(ctx, args).Read()
+	require.NoError(t, result.Err)
+	require.Len(t, result.Rows, 1)
+
+	ensureConnValid(t, fbConn)
+}
+
+func TestConnExecParamsTooManyParams(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	require.NoError(t, err)
+	defer closeConn(t, fbConn)
+
+	const chunkSize = 500
+
+	buildSQL := func(n int) string {
+		var sb strings.Builder
+		sb.WriteString("select 0")
+
+		for i := 0; i < n; i++ {
+			if i%chunkSize == 0 {
+				sb.WriteString("+(")
+				sb.WriteString("cast(? as int)")
+			} else {
+				sb.WriteString("+cast(? as int)")
+			}
+
+			if i%chunkSize == chunkSize-1 || i == n-1 {
+				sb.WriteString(")")
+			}
+		}
+
+		sb.WriteString(" from rdb$database")
+		return sb.String()
+	}
+
+	paramCount := int(math.MaxInt16) + 1
+	sql := buildSQL(paramCount)
+
+	args := make([][]byte, paramCount)
+	zero := utils.Int32_to_bytes(0)
+	for i := range args {
+		args[i] = zero
+	}
+
+	result := fbConn.ExecParams(ctx, sql, args).Read()
+	require.Error(t, result.Err)
+	var fbErr *fbconn.FbError
+	require.ErrorAs(t, result.Err, &fbErr)
+	require.True(t, fbErr.Code == "54023" || fbErr.Code == "54000", "unexpected SQLSTATE: %s (%s)", fbErr.Code, fbErr.Message)
+
+	ensureConnValid(t, fbConn)
+}
+
 func TestConnExecPrepared(t *testing.T) {
 	t.Parallel()
 
@@ -976,11 +1027,9 @@ func TestConnExecPrepared(t *testing.T) {
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
-	// "select $1::text as msg"
 	ps, err := fbConn.Prepare(ctx, "select cast(? as varchar(32)) as msg from rdb$database")
 	require.NoError(t, err)
 	require.NotNil(t, ps)
-	//assert.Len(t, psd.ParamOIDs, 1)
 	assert.Len(t, ps.Description.Fields, 1)
 
 	result := ps.Exec(ctx, [][]byte{[]byte("Hello, world")})
@@ -1000,75 +1049,6 @@ func TestConnExecPrepared(t *testing.T) {
 
 	err = ps.Deallocate(ctx)
 	assert.NoError(t, err)
-
-	ensureConnValid(t, fbConn)
-}
-
-func TestConnExecPreparedMaxNumberOfParams(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
-	require.NoError(t, err)
-	defer closeConn(t, fbConn)
-
-	paramCount := math.MaxUint16
-	params := make([]string, 0, paramCount)
-	args := make([][]byte, 0, paramCount)
-	for i := 0; i < paramCount; i++ {
-		params = append(params, fmt.Sprintf("($%d::text)", i+1))
-		args = append(args, []byte(strconv.Itoa(i)))
-	}
-	sql := "values" + strings.Join(params, ", ")
-
-	ps, err := fbConn.Prepare(ctx, sql)
-	require.NoError(t, err)
-	require.NotNil(t, ps)
-	assert.Len(t, ps.Description.Parameters, paramCount)
-	assert.Len(t, ps.Description.Fields, 1)
-
-	result := ps.Exec(ctx, args).Read()
-	require.NoError(t, result.Err)
-	require.Len(t, result.Rows, paramCount)
-
-	ensureConnValid(t, fbConn)
-}
-
-func TestConnExecPreparedTooManyParams(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
-	require.NoError(t, err)
-	defer closeConn(t, fbConn)
-
-	paramCount := math.MaxUint16 + 1
-	params := make([]string, 0, paramCount)
-	args := make([][]byte, 0, paramCount)
-	for i := 0; i < paramCount; i++ {
-		params = append(params, fmt.Sprintf("($%d::text)", i+1))
-		args = append(args, []byte(strconv.Itoa(i)))
-	}
-	sql := "values" + strings.Join(params, ", ")
-
-	ps, err := fbConn.Prepare(ctx, sql)
-	if fbConn.ParameterStatus("crdb_version") != "" {
-		// CockroachDB rejects preparing a statement with more than 65535 parameters.
-		require.EqualError(t, err, "ERROR: more than 65535 arguments to prepared statement: 65536 (SQLSTATE 08P01)")
-	} else {
-		// PostgreSQL accepts preparing a statement with more than 65535 parameters and only fails when executing it through the extended protocol.
-		require.NoError(t, err)
-		require.NotNil(t, ps)
-		assert.Len(t, ps.Description.Parameters, paramCount)
-		assert.Len(t, ps.Description.Fields, 1)
-
-		result := ps.Exec(ctx, args).Read()
-		require.EqualError(t, result.Err, "extended protocol limited to 65535 parameters")
-	}
 
 	ensureConnValid(t, fbConn)
 }
@@ -1142,13 +1122,11 @@ func TestConnExecPreparedEmptySQL(t *testing.T) {
 	defer closeConn(t, fbConn)
 
 	ps, err := fbConn.Prepare(ctx, "")
-	require.NotNil(t, ps)
-	require.NoError(t, err)
-
-	result := ps.Exec(ctx, nil).Read()
-	assert.Equal(t, fbconn.QueryStatus{}, result.QueryStatus)
-	assert.Len(t, result.Rows, 0)
-	assert.NoError(t, result.Err)
+	require.Nil(t, ps)
+	require.Error(t, err)
+	var fbErr *fbconn.FbError
+	require.ErrorAs(t, err, &fbErr)
+	assert.Equal(t, "42000", fbErr.Code)
 
 	ensureConnValid(t, fbConn)
 }
@@ -1379,8 +1357,8 @@ func TestConnLocking(t *testing.T) {
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
-	rr := fbConn.Exec(ctx, "select cast('Hello, world' as varchar) from rdb$database")
-	res := fbConn.Exec(ctx, "select cast('Hello, world' as varchar) from rdb$database").Read()
+	rr := fbConn.Exec(ctx, "select cast('Hello, world' as varchar(32)) from rdb$database")
+	res := fbConn.Exec(ctx, "select cast('Hello, world' as varchar(32)) from rdb$database").Read()
 	assert.Error(t, res.Err)
 	assert.Equal(t, "conn busy", res.Err.Error())
 	assert.True(t, fbconn.SafeToRetry(res.Err))
@@ -1389,7 +1367,7 @@ func TestConnLocking(t *testing.T) {
 	assert.NoError(t, err)
 	require.Nil(t, result.Err)
 	assert.Len(t, result.Rows, 1)
-	assert.Equal(t, "Hello, world", string(result.Rows[0][0]))
+	assert.Equal(t, "Hello, world", strings.TrimSpace(string(result.Rows[0][0])))
 
 	ensureConnValid(t, fbConn)
 }
@@ -1817,39 +1795,6 @@ func TestConnCloseWhileCancellableQueryInProgress(t *testing.T) {
 //	_, err = rr.Close()
 //	require.Error(t, err)
 //}
-
-// https://github.com/jackc/fbconn/issues/27
-func TestConnLargeResponseWhileWritingDoesNotDeadlock(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
-	require.NoError(t, err)
-	defer closeConn(t, fbConn)
-
-	res := fbConn.Exec(ctx, "set client_min_messages = debug5").Read()
-	require.NoError(t, res.Err)
-
-	// The actual contents of this test aren't important. What's important is a large amount of data to be written and
-	// because of client_min_messages = debug5 the server will return a large amount of data.
-
-	paramCount := math.MaxUint16
-	params := make([]string, 0, paramCount)
-	args := make([][]byte, 0, paramCount)
-	for i := 0; i < paramCount; i++ {
-		params = append(params, fmt.Sprintf("($%d::text)", i+1))
-		args = append(args, []byte(strconv.Itoa(i)))
-	}
-	sql := "values" + strings.Join(params, ", ")
-
-	result := fbConn.ExecParams(ctx, sql, args).Read()
-	require.NoError(t, result.Err)
-	require.Len(t, result.Rows, paramCount)
-
-	ensureConnValid(t, fbConn)
-}
 
 func TestConnCheckConn(t *testing.T) {
 	t.Parallel()
@@ -2642,8 +2587,6 @@ end
 }
 
 func TestConnExecImmediate(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
@@ -2659,12 +2602,11 @@ func TestConnExecImmediate(t *testing.T) {
 
 	err = fbConn.ExecImmediateTx(ctx, tx, "drop table a")
 	require.NoError(t, err)
+
 	ensureConnValid(t, fbConn)
 }
 
 func TestConnExecImmediateNoTx(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 

@@ -98,6 +98,13 @@ func (st *Statement) Exec(ctx context.Context, paramValues [][]byte) *ResultRead
 		fbConn: st.conn,
 		ctx:    ctx,
 	}
+	if st.closed {
+		err = fmt.Errorf("statement is closed")
+		rr.concludeCommand(QueryStatus{}, err)
+		rr.closed = true
+		return rr
+	}
+	
 	if err = st.CloseCursor(ctx); err != nil {
 		st.conn.asyncClose()
 		rr.concludeCommand(QueryStatus{}, err)
