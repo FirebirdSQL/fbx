@@ -51,6 +51,17 @@ func (c *Conn) Begin(ctx context.Context) (Tx, error) {
 // BeginTx starts a transaction with txOptions determining the transaction mode. Unlike database/sql, the context only
 // affects the begin command. i.e. there is no auto-rollback on context cancellation.
 func (c *Conn) BeginTx(ctx context.Context, txOptions TxOptions) (Tx, error) {
+	// If no options are specified, use server / database defaults. This matches Firebird semantics and keeps
+	// database/sql LevelDefault behaving as expected (i.e. do not silently force READ COMMITTED).
+	if txOptions.AccessMode == "" && txOptions.IsoLevel == "" {
+		fbTx, err := c.fbConn.StartTransactionTPB(ctx, nil)
+		if err != nil {
+			c.die()
+			return nil, err
+		}
+		return &dbTx{conn: c, tx: fbTx}, nil
+	}
+
 	tpb := fbproto.NewTPBWriterV3()
 	mode := txOptions.AccessMode
 	level := txOptions.IsoLevel
