@@ -438,7 +438,9 @@ func (c *Conn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, e
 	var fbxOpts fbx.TxOptions
 	switch sql.IsolationLevel(opts.Isolation) {
 	case sql.LevelDefault:
-		fallthrough
+		// Use server / database default isolation. This is important for Firebird where the default is
+		// SNAPSHOT (concurrency) instead of READ COMMITTED.
+		// Leave fbxOpts.IsoLevel empty so fbx.Conn.BeginTx can use server defaults.
 	case sql.LevelReadCommitted:
 		fbxOpts.IsoLevel = fbx.ReadCommitted
 	case sql.LevelRepeatableRead, sql.LevelSnapshot:
