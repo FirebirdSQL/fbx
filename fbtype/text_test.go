@@ -29,8 +29,6 @@ func TestTextCodec(t *testing.T) {
 
 // Test fixed length char types like char(3)
 func TestTextCodecBPChar(t *testing.T) {
-	t.Skip("need fix")
-
 	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "char(3)", []fbxtest.ValueRoundTripTest{
 		{Param: fbtype.Text{String: "a  ", Valid: true}, Result: new(fbtype.Text), Test: isExpectedEq(fbtype.Text{String: "a  ", Valid: true})},
 		{Param: nil, Result: new(fbtype.Text), Test: isExpectedEq(fbtype.Text{})},
