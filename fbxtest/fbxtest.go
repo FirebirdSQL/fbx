@@ -5,8 +5,6 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"regexp"
-	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -141,22 +139,4 @@ func RunValueRoundTripTests(
 			}
 		}
 	})
-}
-
-func SkipPostgreSQLVersionLessThan(t testing.TB, conn *fbx.Conn, minVersion int64) {
-	serverVersionStr := conn.FbConn().ParameterStatus("server_version")
-	serverVersionStr = regexp.MustCompile(`^[0-9]+`).FindString(serverVersionStr)
-	// if not PostgreSQL do nothing
-	if serverVersionStr == "" {
-		return
-	}
-
-	serverVersion, err := strconv.ParseInt(serverVersionStr, 10, 64)
-	if err != nil {
-		t.Fatalf("postgres version parsed failed: %s", err)
-	}
-
-	if serverVersion < minVersion {
-		t.Skipf("Test requires PostgreSQL v%d+", minVersion)
-	}
 }
