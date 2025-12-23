@@ -57,6 +57,13 @@ type Type struct {
 	OID   uint32
 }
 
+type encodePlanKey struct {
+	oid    uint32
+	sub    int32
+	length uint32
+	scale  int32
+}
+
 // Map is the mapping between Firebird server types and Go type handling logic. It can encode values for
 // transmission to a Firebird server and scan received values.
 type Map struct {
@@ -67,7 +74,7 @@ type Map struct {
 
 	reflectTypeToType map[reflect.Type]*Type
 
-	memoizedEncodePlans map[uint32]map[reflect.Type][2]EncodePlan
+	memoizedEncodePlans map[encodePlanKey]map[reflect.Type][2]EncodePlan
 
 	// TryWrapEncodePlanFuncs is a slice of functions that will wrap a value that cannot be encoded by the Codec. Every
 	// time a wrapper is found the PlanEncode method will be recursively called with the new value. This allows several layers of wrappers
@@ -100,7 +107,7 @@ func NewMap() *Map {
 		reflectTypeToName: make(map[reflect.Type]string),
 		oidToFormatCode:   make(map[uint32]int16),
 
-		memoizedEncodePlans: make(map[uint32]map[reflect.Type][2]EncodePlan),
+		memoizedEncodePlans: make(map[encodePlanKey]map[reflect.Type][2]EncodePlan),
 
 		TryWrapEncodePlanFuncs: []TryWrapEncodePlanFunc{
 			TryWrapDerefPointerEncodePlan,
@@ -1142,12 +1149,19 @@ func (m *Map) planEncodeDepth(oid uint32, subType int32, length uint32, scale in
 	}
 
 	//memoize type id + subtype
-	memoId := MakeTypeSubtype(oid, subType)
-	oidMemo := m.memoizedEncodePlans[memoId]
+	// memoId := MakeTypeSubtype(oid, subType)
+	// oidMemo := m.memoizedEncodePlans[memoId]
+	// if oidMemo == nil {
+	// 	oidMemo = make(map[reflect.Type][2]EncodePlan)
+	// 	m.memoizedEncodePlans[memoId] = oidMemo
+	// }
+	key := encodePlanKey{oid: oid, sub: subType, length: length, scale: scale}
+	oidMemo := m.memoizedEncodePlans[key]
 	if oidMemo == nil {
 		oidMemo = make(map[reflect.Type][2]EncodePlan)
-		m.memoizedEncodePlans[memoId] = oidMemo
+		m.memoizedEncodePlans[key] = oidMemo
 	}
+
 	targetReflectType := reflect.TypeOf(value)
 	typeMemo := oidMemo[targetReflectType]
 	plan := typeMemo[format]
