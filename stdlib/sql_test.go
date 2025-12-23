@@ -10,7 +10,6 @@ import (
 	"math"
 	"os"
 	"reflect"
-	"regexp"
 	"strconv"
 	"sync"
 	"testing"
@@ -35,34 +34,6 @@ func openDB(t testing.TB) *sql.DB {
 
 func closeDB(t testing.TB, db *sql.DB) {
 	err := db.Close()
-	require.NoError(t, err)
-}
-
-func skipPostgreSQLVersionLessThan(t testing.TB, db *sql.DB, minVersion int64) {
-	conn, err := db.Conn(context.Background())
-	require.NoError(t, err)
-	defer conn.Close()
-
-	err = conn.Raw(func(driverConn any) error {
-		conn := driverConn.(*stdlib.Conn).Conn()
-		serverVersionStr := conn.FbConn().ParameterStatus("server_version")
-		serverVersionStr = regexp.MustCompile(`^[0-9]+`).FindString(serverVersionStr)
-		// if not PostgreSQL do nothing
-		if serverVersionStr == "" {
-			return nil
-		}
-
-		serverVersion, err := strconv.ParseInt(serverVersionStr, 10, 64)
-		if err != nil {
-			return err
-		}
-
-		if serverVersion < minVersion {
-			t.Skipf("Test requires PostgreSQL v%d+", minVersion)
-		}
-
-		return nil
-	})
 	require.NoError(t, err)
 }
 
@@ -510,20 +481,6 @@ func TestConnQueryRowPgxBinary(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
 		sql := "select cast(? as integer) from rdb$database"
 		expected := "{1,2,3}"
-		var actual string
-
-		err := db.QueryRow(sql, expected).Scan(&actual)
-		require.NoError(t, err)
-		require.EqualValues(t, expected, actual)
-	})
-}
-
-func TestConnQueryRowUnknownType(t *testing.T) {
-	t.Skip("need implementation")
-
-	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		sql := "select $1::point"
-		expected := "(1,2)"
 		var actual string
 
 		err := db.QueryRow(sql, expected).Scan(&actual)
@@ -1125,46 +1082,6 @@ func TestRegisterConnConfig(t *testing.T) {
 	l := logger.logs[len(logger.logs)-1]
 	assert.Equal(t, "Query", l.msg)
 	assert.Equal(t, "select 1 from rdb$database", l.data["sql"])
-}
-
-// https://github.com/jackc/fbx/issues/958
-func TestConnQueryRowConstraintErrors(t *testing.T) {
-	t.Skip("only PG")
-	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		skipPostgreSQLVersionLessThan(t, db, 11)
-
-		_, err := db.Exec(`recreate table defer_test (
-			id text primary key,
-			n int not null, unique (n),
-			unique (n) deferrable initially deferred )`)
-		require.NoError(t, err)
-
-		_, err = db.Exec(`drop function if exists test_trigger cascade`)
-		require.NoError(t, err)
-
-		_, err = db.Exec(`create function test_trigger() returns trigger language plpgsql as $$
-		begin
-		if new.n = 4 then
-			raise exception 'n cant be 4!';
-		end if;
-		return new;
-	end$$`)
-		require.NoError(t, err)
-
-		_, err = db.Exec(`create constraint trigger test
-			after insert or update on defer_test
-			deferrable initially deferred
-			for each row
-			execute function test_trigger()`)
-		require.NoError(t, err)
-
-		_, err = db.Exec(`insert into defer_test (id, n) values ('a', 1), ('b', 2), ('c', 3)`)
-		require.NoError(t, err)
-
-		var id string
-		err = db.QueryRow(`insert into defer_test (id, n) values ('e', 4) returning id`).Scan(&id)
-		assert.Error(t, err)
-	})
 }
 
 func TestOptionBeforeAfterConnect(t *testing.T) {
