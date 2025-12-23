@@ -728,20 +728,27 @@ func TestConnInitTypeMap(t *testing.T) {
 	ensureConnValid(t, conn)
 }
 
-func TestInsertDurationInterval(t *testing.T) {
-	t.Skip("need implementation")
+func TestInsertDurationBigint(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
 	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		_, err := conn.Exec(context.Background(), "recreate table t(duration INTERVAL(0) NOT NULL)")
+		_, err := conn.Exec(context.Background(), "recreate table t(duration_ms bigint not null)")
 		require.NoError(t, err)
 
-		result, err := conn.Exec(context.Background(), "insert into t(duration) values(?)", time.Minute)
+		const duration = time.Minute
+		durationMs := duration.Milliseconds()
+
+		result, err := conn.Exec(context.Background(), "insert into t(duration_ms) values(?)", durationMs)
 		require.NoError(t, err)
 
 		n := result.RowsAffected()
 		require.EqualValues(t, 1, n)
+
+		var storedMs int64
+		err = conn.QueryRow(ctx, "select duration_ms from t").Scan(&storedMs)
+		require.NoError(t, err)
+		require.EqualValues(t, durationMs, storedMs)
 	})
 }
 
