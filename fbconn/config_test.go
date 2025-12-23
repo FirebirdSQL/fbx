@@ -17,12 +17,6 @@ import (
 	"rdb.red-soft.ru/fbx/fbproto/auth"
 )
 
-func skipOnWindows(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("FIXME: skipping on Windows, investigate why this test fails in CI environment")
-	}
-}
-
 func getDefaultPort(t *testing.T) uint16 {
 	if envPGPORT := os.Getenv("PGPORT"); envPGPORT != "" {
 		p, err := strconv.ParseUint(envPGPORT, 10, 16)
@@ -53,7 +47,6 @@ func getDefaultUser(t *testing.T) string {
 }
 
 func TestParseConfig(t *testing.T) {
-	skipOnWindows(t)
 	t.Parallel()
 
 	config, err := fbconn.ParseConfig("")
