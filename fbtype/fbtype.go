@@ -343,19 +343,21 @@ type scanPlanAnyTextToBytes struct {
 }
 
 func (s scanPlanAnyTextToBytes) Scan(src []byte, dst any) error {
-	var res string
-	if err := decodeFBString(src, s.typeId == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, &res); err != nil {
-		return err
-	}
-
 	dstBuf := dst.(*[]byte)
 	if src == nil {
 		*dstBuf = nil
 		return nil
 	}
 
-	*dstBuf = make([]byte, len(src))
-	copy(*dstBuf, src)
+	var res string
+	if err := decodeFBString(src, s.typeId == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, &res); err != nil {
+		return err
+	}
+
+	b := []byte(res)
+	*dstBuf = make([]byte, len(b))
+	copy(*dstBuf, b)
+
 	return nil
 }
 

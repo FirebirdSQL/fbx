@@ -534,25 +534,10 @@ func TestScanIntoByteSlice(t *testing.T) {
 		{"text - binary", "select cast('hi' as varchar(2)) from rdb$database", fbx.BinaryFormatCode, []byte("hi")},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			// TODO scan string into []byte
-
-			// var buf []byte
-			// err := conn.QueryRow(context.Background(), tt.sql, fbx.QueryResultFormats{tt.resultFormatCode}).Scan(&buf)
-			// require.NoError(t, err)
-			// require.Equal(t, tt.output, buf)
-			switch tt.name {
-			case "text - text", "text - binary":
-				var s string
-				err := conn.QueryRow(context.Background(), tt.sql, fbx.QueryResultFormats{tt.resultFormatCode}).Scan(&s)
-				require.NoError(t, err)
-				require.Equal(t, tt.output, []byte(s))
-			default:
-				var buf []byte
-				err := conn.QueryRow(context.Background(), tt.sql, fbx.QueryResultFormats{tt.resultFormatCode}).Scan(&buf)
-				require.NoError(t, err)
-				require.Equal(t, tt.output, buf)
-			}
-
+			var buf []byte
+			err := conn.QueryRow(context.Background(), tt.sql, fbx.QueryResultFormats{tt.resultFormatCode}).Scan(&buf)
+			require.NoError(t, err)
+			require.Equal(t, tt.output, buf)
 		})
 	}
 }
