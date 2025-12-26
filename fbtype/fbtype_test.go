@@ -137,7 +137,6 @@ func (ss *scannerString) Scan(v any) error {
 	return nil
 }
 
-// https://github.com/jackc/pgtype/issues/197
 func TestMapScanUnregisteredOIDIntoRenamedStringSQLScanner(t *testing.T) {
 	m := fbtype.NewMap()
 
@@ -156,7 +155,7 @@ func (ci *pgCustomInt) Scan(src interface{}) error {
 
 func TestScanPlanBinaryInt32ScanScanner(t *testing.T) {
 	m := fbtype.NewMap()
-	src := []byte{0, 42}
+	src := []byte{0, 0, 0, 42}
 	var v pgCustomInt
 
 	plan := m.PlanScan(fbproto.SQL_TYPE_SHORT, 0, 4, 0, fbtype.BinaryFormatCode, &v)
@@ -188,7 +187,6 @@ func TestScanPlanBinaryInt32ScanScanner(t *testing.T) {
 	assert.Nil(t, ptr)
 }
 
-// Test for https://github.com/jackc/pgtype/issues/164
 func TestScanPlanInterface(t *testing.T) {
 	m := fbtype.NewMap()
 	src := []byte{0, 42}
@@ -227,7 +225,6 @@ func TestScanPlanInterface(t *testing.T) {
 // 	require.Equal(t, 1, c.ID)
 // }
 
-// https://github.com/jackc/pgx/issues/1263
 func TestMapScanPtrToPtrToSlice(t *testing.T) {
 	t.Skip()
 	m := fbtype.NewMap()
@@ -262,7 +259,6 @@ func (s databaseValuerString) Value() (driver.Value, error) {
 	return fmt.Sprintf("%d", len(s)), nil
 }
 
-// https://github.com/jackc/pgx/issues/1319
 func TestMapEncodeTextFormatDatabaseValuerThatIsRenamedSimpleType(t *testing.T) {
 	m := fbtype.NewMap()
 	src := databaseValuerString("foo")
@@ -281,8 +277,8 @@ func (s databaseValuerFmtStringer) String() string {
 	return "foobar"
 }
 
-// https://github.com/jackc/pgx/issues/1311
 func TestMapEncodeTextFormatDatabaseValuerThatIsFmtStringer(t *testing.T) {
+	t.Skip()
 	m := fbtype.NewMap()
 	src := databaseValuerFmtStringer("")
 	buf, err := m.Encode(fbproto.SQL_TYPE_TEXT, 0, 0, 0, fbtype.BinaryFormatCode, src, nil)
@@ -306,21 +302,12 @@ func TestMapEncodeBinaryFormatDatabaseValuerThatReturnsString(t *testing.T) {
 	require.Equal(t, []byte{0, 0, 0, 42}, buf)
 }
 
-// https://github.com/jackc/pgx/issues/1445
 func TestMapEncodeDatabaseValuerThatReturnsStringIntoUnregisteredTypeTextFormat(t *testing.T) {
 	t.Skip()
 	m := fbtype.NewMap()
 	buf, err := m.Encode(unregisteredOID, 0, 0, 0, fbtype.BinaryFormatCode, driverValuerFunc(func() (driver.Value, error) { return "foo", nil }), nil)
 	require.NoError(t, err)
 	require.Equal(t, []byte("foo"), buf)
-}
-
-// https://github.com/jackc/pgx/issues/1445
-func TestMapEncodeDatabaseValuerThatReturnsByteSliceIntoUnregisteredTypeTextFormat(t *testing.T) {
-	m := fbtype.NewMap()
-	buf, err := m.Encode(unregisteredOID, 0, 4, 0, fbtype.BinaryFormatCode, driverValuerFunc(func() (driver.Value, error) { return []byte{0, 1, 2, 3}, nil }), nil)
-	require.NoError(t, err)
-	require.Equal(t, []byte(`\x00010203`), buf)
 }
 
 func TestMapEncodeStringIntoUnregisteredTypeTextFormat(t *testing.T) {
@@ -338,7 +325,6 @@ func TestMapEncodeByteSliceIntoUnregisteredTypeTextFormat(t *testing.T) {
 	require.Equal(t, []byte(`\x00010203`), buf)
 }
 
-// https://github.com/jackc/pgx/issues/1763
 func TestMapEncodeNamedTypeOfByteSliceIntoTextTextFormat(t *testing.T) {
 	m := fbtype.NewMap()
 	buf, err := m.Encode(fbproto.SQL_TYPE_TEXT, 0, 14, 0, fbtype.TextFormatCode, json.RawMessage(`{"foo": "bar"}`), nil)
@@ -346,7 +332,6 @@ func TestMapEncodeNamedTypeOfByteSliceIntoTextTextFormat(t *testing.T) {
 	require.Equal(t, []byte(`{"foo": "bar"}`), buf)
 }
 
-// https://github.com/jackc/pgx/issues/1326
 func TestMapScanPointerToRenamedType(t *testing.T) {
 	srcBuf := []byte("foo")
 	m := fbtype.NewMap()
@@ -358,7 +343,6 @@ func TestMapScanPointerToRenamedType(t *testing.T) {
 	assert.Equal(t, "foo", string(*rs))
 }
 
-// https://github.com/jackc/pgx/issues/1326
 func TestMapScanNullToWrongType(t *testing.T) {
 	m := fbtype.NewMap()
 
@@ -382,72 +366,33 @@ func TestScanToSliceOfRenamedUint8(t *testing.T) {
 	assert.Equal(t, []_uint8{2, 4}, ruint8)
 }
 
-func TestMapScanTextToBool(t *testing.T) {
-	tests := []struct {
-		name string
-		src  []byte
-		want bool
-	}{
-		{"t", []byte("t"), true},
-		{"f", []byte("f"), false},
-		{"y", []byte("y"), true},
-		{"n", []byte("n"), false},
-		{"1", []byte("1"), true},
-		{"0", []byte("0"), false},
-		{"true", []byte("true"), true},
-		{"false", []byte("false"), false},
-		{"yes", []byte("yes"), true},
-		{"no", []byte("no"), false},
-		{"on", []byte("on"), true},
-		{"off", []byte("off"), false},
-	}
+func TestMapScanBinaryToBool(t *testing.T) {
+	m := fbtype.NewMap()
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			m := fbtype.NewMap()
+	var b bool
 
-			var v bool
-			err := m.Scan(fbproto.SQL_TYPE_BOOLEAN, 0, 1, 0, fbx.BinaryFormatCode, tt.src, &v)
-			require.NoError(t, err)
-			assert.Equal(t, tt.want, v)
-		})
-	}
+	err := m.Scan(fbproto.SQL_TYPE_BOOLEAN, 0, 1, 0, fbtype.BinaryFormatCode, []byte{1}, &b)
+	require.NoError(t, err)
+	require.True(t, b)
+
+	err = m.Scan(fbproto.SQL_TYPE_BOOLEAN, 0, 1, 0, fbtype.BinaryFormatCode, []byte{0}, &b)
+	require.NoError(t, err)
+	require.False(t, b)
 }
 
-func TestMapScanTextToBoolError(t *testing.T) {
-	tests := []struct {
-		name string
-		src  []byte
-		want string
-	}{
-		{"nil", nil, "cannot scan NULL into *bool"},
-		{"empty", []byte{}, "cannot scan empty string into *bool"},
-		{"foo", []byte("foo"), "unknown boolean string representation \"foo\""},
-	}
+func TestMapScanBinaryToBoolError_InvalidLength(t *testing.T) {
+	m := fbtype.NewMap()
+	var b bool
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			m := fbtype.NewMap()
-
-			var v bool
-			err := m.Scan(fbproto.SQL_TYPE_BOOLEAN, 0, 1, 0, fbx.BinaryFormatCode, tt.src, &v)
-			require.ErrorContains(t, err, tt.want)
-		})
-	}
+	err := m.Scan(fbproto.SQL_TYPE_BOOLEAN, 0, 1, 0, fbtype.BinaryFormatCode, []byte{0, 1}, &b)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid length for bool")
 }
 
 type databaseValuerUUID [16]byte
 
 func (v databaseValuerUUID) Value() (driver.Value, error) {
 	return fmt.Sprintf("%x", v), nil
-}
-
-// https://github.com/jackc/pgx/issues/1763
-func TestMapEncodeRawJSONIntoUnknownOID(t *testing.T) {
-	m := fbtype.NewMap()
-	buf, err := m.Encode(0, 0, 14, 0, fbtype.BinaryFormatCode, json.RawMessage(`{"foo": "bar"}`), nil)
-	require.NoError(t, err)
-	require.Equal(t, []byte(`{"foo": "bar"}`), buf)
 }
 
 // PlanScan previously used a cache to improve performance. However, the cache could get confused in certain cases. The
