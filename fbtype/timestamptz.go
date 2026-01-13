@@ -21,8 +21,8 @@ type TimestamptzValuer interface {
 
 type Timestamptz struct {
 	Time  time.Time
-	TzRaw uint16
 	Valid bool
+	tzRaw uint16
 }
 
 func (tstz *Timestamptz) ScanTimestamptz(v Timestamptz) error {
@@ -130,12 +130,12 @@ func (encodePlanTimestamptzCodecBinary) Encode(value any, buf []byte) (newBuf []
 		return nil, nil
 	}
 
-	if ts.TzRaw == 0 {
+	if ts.tzRaw == 0 {
 		tzRaw, err := tzRawFromTime(ts.Time)
 		if err != nil {
 			return nil, err
 		}
-		ts.TzRaw = tzRaw
+		ts.tzRaw = tzRaw
 	}
 
 	return encodeTimestamptzBinary(buf, ts)
@@ -153,7 +153,7 @@ func (encodePlanTimestamptzCodecBinaryTime) Encode(value any, buf []byte) ([]byt
 
 	ts := Timestamptz{
 		Time:  t,
-		TzRaw: tzRaw,
+		tzRaw: tzRaw,
 		Valid: true,
 	}
 
@@ -185,7 +185,7 @@ func (encodePlanTimestamptzCodecBinaryString) Encode(value any, buf []byte) ([]b
 
 	ts := Timestamptz{
 		Time:  t,
-		TzRaw: tzRaw,
+		tzRaw: tzRaw,
 		Valid: true,
 	}
 
@@ -319,16 +319,16 @@ func encodeTimestamptzBinary(buf []byte, ts Timestamptz) ([]byte, error) {
 		return nil, nil
 	}
 
-	t := ts.Time
+	utc := ts.Time.In(time.UTC)
 
-	tMidnightUTC := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+	tMidnightUTC := time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC)
 
 	days := int32((tMidnightUTC.Unix() - firebirdDateEpoch.Unix()) / secondsPerDay)
 
-	usec := int64(t.Hour())*microsecondsPerHour +
-		int64(t.Minute())*microsecondsPerMinute +
-		int64(t.Second())*microsecondsPerSecond +
-		int64(t.Nanosecond())/1000
+	usec := int64(utc.Hour())*microsecondsPerHour +
+		int64(utc.Minute())*microsecondsPerMinute +
+		int64(utc.Second())*microsecondsPerSecond +
+		int64(utc.Nanosecond())/1000
 
 	if usec < 0 || usec >= microsecondsPerDay {
 		return nil, fmt.Errorf("fbtype: TIMESTAMPTZ time-of-day out of range (µs since midnight: %d)", usec)
@@ -338,7 +338,7 @@ func encodeTimestamptzBinary(buf []byte, ts Timestamptz) ([]byte, error) {
 
 	buf = pgio.AppendUint32(buf, uint32(days))
 	buf = pgio.AppendUint32(buf, ticks)
-	buf = pgio.AppendUint32(buf, uint32(ts.TzRaw))
+	buf = pgio.AppendUint32(buf, uint32(ts.tzRaw))
 
 	return buf, nil
 }
@@ -369,18 +369,20 @@ func decodeTimestamptzBinary(src []byte) (Timestamptz, error) {
 	sec := usec / microsecondsPerSecond
 	usec -= sec * microsecondsPerSecond
 
+	utc := time.Date(
+		tDate.Year(), tDate.Month(), tDate.Day(),
+		int(hour), int(min), int(sec), int(usec)*1000,
+		time.UTC,
+	)
+
 	tzRaw := uint16(tzVal & 0xFFFF)
 	loc := fbproto.ResolveLocationByTzRaw(tzRaw)
 
-	t := time.Date(
-		tDate.Year(), tDate.Month(), tDate.Day(),
-		int(hour), int(min), int(sec), int(usec)*1000,
-		loc,
-	)
+	t := utc.In(loc)
 
 	return Timestamptz{
 		Time:  t,
-		TzRaw: tzRaw,
+		tzRaw: tzRaw,
 		Valid: true,
 	}, nil
 }
