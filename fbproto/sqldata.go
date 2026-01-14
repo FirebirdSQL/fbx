@@ -12,33 +12,102 @@ type SQLData struct {
 	RowDescriptor []FieldDescriptor
 }
 
+type rowScratch struct {
+	buf   []byte
+	pos   int
+	data  [][]byte
+	nulls []byte
+}
+
+const rowScratchMinBufSize = 256
+
+func (s *rowScratch) reset(cols int, nullsLen int) {
+	s.pos = 0
+	if cap(s.data) < cols {
+		s.data = make([][]byte, cols)
+	} else {
+		s.data = s.data[:cols]
+		for i := range s.data {
+			s.data[i] = nil
+		}
+	}
+	if cap(s.nulls) < nullsLen {
+		s.nulls = make([]byte, nullsLen)
+	} else {
+		s.nulls = s.nulls[:nullsLen]
+	}
+	if cap(s.buf) < rowScratchMinBufSize {
+		s.buf = make([]byte, 0, rowScratchMinBufSize)
+	} else if len(s.buf) != 0 {
+		s.buf = s.buf[:0]
+	}
+}
+
+func (s *rowScratch) take(i int, n int) []byte {
+	if n == 0 {
+		return []byte{}
+	}
+	start := s.pos
+	need := s.pos + n
+	if cap(s.buf) < need {
+		newCap := cap(s.buf) * 2
+		if newCap < need {
+			newCap = need
+		}
+		newBuf := make([]byte, need, newCap)
+		copy(newBuf, s.buf[:start])
+		s.buf = newBuf
+	} else if len(s.buf) < need {
+		s.buf = s.buf[:need]
+	}
+	dst := s.buf[start:need:need]
+	s.pos = need
+	s.data[i] = dst
+	return dst
+}
+
 // ReadRowData - read fields null-bitset and data in 13+ protocol version
 // https://firebirdsql.org/file/documentation/html/en/firebirddocs/wireprotocol/firebird-wire-protocol.html#wireprotocol-row-data-format
-func ReadRowData(x *XDRReader, rowDescriptor []FieldDescriptor) (*SQLData, error) {
+func ReadRowData(x *XDRReader, rowDescriptor []FieldDescriptor, scratch *rowScratch) (*SQLData, error) {
 	var err error
 	count := len(rowDescriptor)
-	rowData := make([][]byte, count)
 	l := int(float64(count+7) / 8)
 	pad := (4 - l) & 3
+	if scratch == nil {
+		scratch = &rowScratch{}
+	}
+	scratch.reset(count, l+pad)
 	var nullsBitset *utils.BitSet
-	if nulls, err := x.ReadBytes(int64(l + pad)); err == nil {
-		nullsBitset = utils.NewBitSetFromBytes(l, nulls)
+	if err = x.ReadBytesInto(scratch.nulls); err == nil {
+		nullsBitset = utils.NewBitSetFromBytes(l, scratch.nulls[:l])
 	} else {
 		return nil, err
 	}
 	for i := 0; i < count; i++ {
 		if nullsBitset.Get(i) {
-			rowData[i] = nil
+			scratch.data[i] = nil
 		} else {
 			ioLen := rowDescriptor[i].GetIOLength()
 			var data []byte
 			if ioLen == 0 {
-				data, err = x.ReadBuffer()
-			} else if ioLen < 0 {
-				data, err = x.ReadBytes(int64(-ioLen))
-			} else {
-				data, err = x.ReadBytes(int64(ioLen - 1))
+				var n int
+				n, err = x.ReadInt32()
 				if err != nil {
+					return nil, err
+				}
+				data = scratch.take(i, n)
+				if err = x.ReadBytesInto(data); err != nil {
+					return nil, err
+				}
+				if err = x.SkipPadding(int64(n)); err != nil {
+					return nil, err
+				}
+			} else if ioLen < 0 {
+				data = scratch.take(i, -ioLen)
+				err = x.ReadBytesInto(data)
+			} else {
+				data = scratch.take(i, ioLen-1)
+				if err = x.ReadBytesInto(data); err != nil {
 					return nil, err
 				}
 				err = x.SkipPadding(int64(ioLen - 1))
@@ -46,11 +115,9 @@ func ReadRowData(x *XDRReader, rowDescriptor []FieldDescriptor) (*SQLData, error
 			if err != nil {
 				return nil, err
 			}
-			rowData[i] = data
 		}
 	}
-
-	return &SQLData{Nulls: nullsBitset, RowData: rowData, RowDescriptor: rowDescriptor}, nil
+	return &SQLData{Nulls: nullsBitset, RowData: scratch.data, RowDescriptor: rowDescriptor}, nil
 }
 
 // WriteRowData - write fields null-bitset and data in 13+ protocol version

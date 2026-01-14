@@ -1359,8 +1359,7 @@ type ResultReader struct {
 	singletonResult      bool
 	cursorOpened         bool
 	fetchExecuted        bool
-	currentFetch         [][][]byte
-	currentFetchPos      int
+	fetchResp            *fbproto.OpFetchResponse
 	eoc                  bool
 	rowsInfoPopulated    bool
 
@@ -1425,82 +1424,105 @@ func (rr *ResultReader) NextRow() bool {
 		return false
 	}
 
-	if rr.currentFetch != nil {
-		if rr.currentFetchPos+1 < len(rr.currentFetch) {
-			rr.currentFetchPos += 1
-			rr.rowValues = rr.currentFetch[rr.currentFetchPos]
-			return true
-		}
-	}
-
 	if rr.eoc {
 		return false
 	}
 
-	var rowBlr []byte
-	if !rr.fetchExecuted {
-		rowBlr = rr.statementDescription.StatementInfo.GetRowBlr()
-	}
-	if err = rr.fbConn.client.WriteMessage(&fbproto.OpFetch{
-		StatementHandle: rr.statementDescription.StatementHandle,
-		RowBlr:          rowBlr,
-		Messages:        400,
-	}); err != nil {
-		return false
-	}
-	if err = rr.fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
-		return false
-	}
-	rr.fetchExecuted = true
+	if rr.fetchResp == nil || !rr.fetchResp.MoreRows() {
+		if rr.fetchResp != nil && rr.fetchResp.EndOfCursor() {
+			rr.eoc = true
+			return false
+		}
 
-	var fetchResp *fbproto.OpFetchResponse
-	msg, err := rr.fbConn.receiveMessage()
-	if err != nil {
-		rr.fbConn.asyncClose()
-		rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(rr.ctx, err))
-		rr.fbConn.contextWatcher.Unwatch()
-		return false
-	}
-	switch m := msg.(type) {
-	case *fbproto.OpFetchResponse:
-		fetchResp = m
-	case *fbproto.ErrorResponse:
-		rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(m))
-		return false
-	default:
-		panic(fmt.Sprintf("wrong response message type %T instead expected OpFetchResponse or ErrorResponse", m))
-	}
-	rr.currentFetch = nil
-	rr.currentFetchPos = 0
+		var rowBlr []byte
+		if !rr.fetchExecuted {
+			rowBlr = rr.statementDescription.StatementInfo.GetRowBlr()
+		}
+		if err = rr.fbConn.client.WriteMessage(&fbproto.OpFetch{
+			StatementHandle: rr.statementDescription.StatementHandle,
+			RowBlr:          rowBlr,
+			Messages:        400,
+		}); err != nil {
+			return false
+		}
+		if err = rr.fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+			return false
+		}
+		rr.fetchExecuted = true
 
-	if fetchResp.EndOfCursor() {
-		rr.eoc = true
-		return false
-	}
-
-	for fetchResp.MoreRows() {
-		row, msg, err := rr.fbConn.client.ReceiveSQLData(rr.statementDescription.StatementInfo.FieldDescriptors)
+		msg, err := rr.fbConn.receiveMessage()
 		if err != nil {
 			rr.fbConn.asyncClose()
-			rr.concludeCommand(QueryStatus{}, err)
+			rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(rr.ctx, err))
+			rr.fbConn.contextWatcher.Unwatch()
 			return false
 		}
 		switch m := msg.(type) {
 		case *fbproto.OpFetchResponse:
-			fetchResp = m
+			rr.fetchResp = m
 		case *fbproto.ErrorResponse:
 			rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(m))
 			return false
 		default:
 			panic(fmt.Sprintf("wrong response message type %T instead expected OpFetchResponse or ErrorResponse", m))
 		}
-		rr.currentFetch = append(rr.currentFetch, row.RowData)
+
+		if rr.fetchResp.EndOfCursor() {
+			rr.eoc = true
+			return false
+		}
+		if !rr.fetchResp.MoreRows() {
+			return false
+		}
 	}
-	rr.eoc = fetchResp.EndOfCursor()
-	rr.currentFetchPos = 0
-	rr.rowValues = rr.currentFetch[rr.currentFetchPos]
+
+	row, msg, err := rr.fbConn.client.ReceiveSQLData(rr.statementDescription.StatementInfo.FieldDescriptors)
+	if err != nil {
+		rr.fbConn.asyncClose()
+		rr.concludeCommand(QueryStatus{}, err)
+		return false
+	}
+	switch m := msg.(type) {
+	case *fbproto.OpFetchResponse:
+		rr.fetchResp = m
+	case *fbproto.ErrorResponse:
+		rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(m))
+		return false
+	default:
+		panic(fmt.Sprintf("wrong response message type %T instead expected OpFetchResponse or ErrorResponse", m))
+	}
+	rr.rowValues = row.RowData
+	if rr.fetchResp.EndOfCursor() {
+		rr.eoc = true
+	}
 
 	return true
+}
+
+func (rr *ResultReader) drainCurrentFetch() {
+	if !rr.cursorOpened || rr.eoc || rr.fetchResp == nil {
+		return
+	}
+	for rr.fetchResp.MoreRows() {
+		_, msg, err := rr.fbConn.client.ReceiveSQLData(rr.statementDescription.StatementInfo.FieldDescriptors)
+		if err != nil {
+			rr.fbConn.asyncClose()
+			rr.concludeCommand(QueryStatus{}, err)
+			return
+		}
+		switch m := msg.(type) {
+		case *fbproto.OpFetchResponse:
+			rr.fetchResp = m
+		case *fbproto.ErrorResponse:
+			rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(m))
+			return
+		default:
+			panic(fmt.Sprintf("wrong response message type %T instead expected OpFetchResponse or ErrorResponse", m))
+		}
+	}
+	if rr.fetchResp.EndOfCursor() {
+		rr.eoc = true
+	}
 }
 
 // FieldDescriptions returns the field descriptions for the current result set. The returned slice is only valid until
@@ -1521,8 +1543,11 @@ func (rr *ResultReader) Values() [][]byte {
 func (rr *ResultReader) Close() (QueryStatus, error) {
 	if !rr.closed {
 		if rr.err == nil {
-			if err := rr.populateRowsAffected(); err != nil {
-				rr.err = err
+			rr.drainCurrentFetch()
+			if rr.err == nil {
+				if err := rr.populateRowsAffected(); err != nil {
+					rr.err = err
+				}
 			}
 		}
 		rr.closed = true

@@ -73,28 +73,40 @@ func (x *XDRReader) ReadBytes(len int64) ([]byte, error) {
 	return buf, err
 }
 
+// ReadBytesInto reads len(buf) bytes into buf.
+func (x *XDRReader) ReadBytesInto(buf []byte) error {
+	if len(buf) == 0 {
+		return nil
+	}
+	_, err := io.ReadFull(x.reader, buf)
+	return err
+}
+
 func (x *XDRReader) ReadInt32() (int, error) {
-	buf, err := x.ReadBytes(4)
+	var buf [4]byte
+	_, err := io.ReadFull(x.reader, buf[:])
 	if err != nil {
 		return 0, err
 	}
-	return int(int32(binary.BigEndian.Uint32(buf))), nil
+	return int(int32(binary.BigEndian.Uint32(buf[:]))), nil
 }
 
 func (x *XDRReader) ReadUInt32() (uint, error) {
-	buf, err := x.ReadBytes(4)
+	var buf [4]byte
+	_, err := io.ReadFull(x.reader, buf[:])
 	if err != nil {
 		return 0, err
 	}
-	return uint(binary.BigEndian.Uint32(buf)), nil
+	return uint(binary.BigEndian.Uint32(buf[:])), nil
 }
 
 func (x *XDRReader) ReadInt64() (int64, error) {
-	buf, err := x.ReadBytes(8)
+	var buf [8]byte
+	_, err := io.ReadFull(x.reader, buf[:])
 	if err != nil {
 		return 0, err
 	}
-	return int64(binary.BigEndian.Uint64(buf)), nil
+	return int64(binary.BigEndian.Uint64(buf[:])), nil
 }
 
 func (x *XDRReader) ReadString(encoding *Encoding) (string, error) {
