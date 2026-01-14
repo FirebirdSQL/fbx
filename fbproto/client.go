@@ -14,6 +14,7 @@ type Client struct {
 	codec       StreamCodec
 	xdrReader   *XDRReader
 	xdrWriter   *XDRWriter
+	rowScratch  rowScratch
 	tracer      *tracer
 	lazyCounter int
 }
@@ -185,7 +186,7 @@ func (c *Client) ReceiveMessage() (ServerMessage, error) {
 }
 
 func (c *Client) ReceiveSQLData(row []FieldDescriptor) (*SQLData, ServerMessage, error) {
-	sqlData, err := ReadRowData(c.xdrReader, row)
+	sqlData, err := ReadRowData(c.xdrReader, row, &c.rowScratch)
 	if err != nil {
 		return nil, nil, err
 	}

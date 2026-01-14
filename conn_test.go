@@ -753,8 +753,6 @@ func TestInsertDurationBigint(t *testing.T) {
 }
 
 func TestRawValuesUnderlyingMemoryReused(t *testing.T) {
-	//FIXME: check for possibility permanent memory allocation for rows
-	t.Skip("too slow")
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		var buf []byte
 
@@ -773,6 +771,7 @@ func TestRawValuesUnderlyingMemoryReused(t *testing.T) {
 		for i := 0; i < 1_000_000; i++ {
 			rows, err := conn.Query(ctx, `select cast(? as int) from rdb$database`, i)
 			require.NoError(t, err)
+			rows.Next()
 			rows.Close()
 			require.NoError(t, rows.Err())
 
