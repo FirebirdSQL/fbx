@@ -17,6 +17,18 @@ type Client struct {
 	rowScratch  rowScratch
 	tracer      *tracer
 	lazyCounter int
+	reusable    reusableServerMessages
+}
+
+type reusableServerMessages struct {
+	dummy         OpDummy
+	condAccept    OpCondAccept
+	dataAccept    OpDataAccept
+	response      OpResponse
+	reject        OpReject
+	fetchResponse OpFetchResponse
+	sqlResponse   OpSqlResponse
+	contAuth      OpContAuth
 }
 
 // StreamCodec is a minimal interface for symmetric wire encryption.
@@ -33,6 +45,10 @@ func NewClient(r io.Reader, w io.Writer, encoding *Encoding) *Client {
 	c.xdrReader = NewXDRReader(&c)
 	c.xdrWriter = NewXDRWriter(&c)
 	c.Encoding = encoding
+	c.reusable.condAccept.Encoding = encoding
+	c.reusable.dataAccept.Encoding = encoding
+	c.reusable.response.Encoding = encoding
+	c.reusable.contAuth.Encoding = encoding
 	return &c
 }
 
@@ -121,21 +137,25 @@ func (c *Client) ReadMessage() (ServerMessage, error) {
 	var msg ServerMessage
 	switch opcode {
 	case Op_dummy:
-		return &OpDummy{}, nil
+		return &c.reusable.dummy, nil
 	case Op_cond_accept:
-		msg = &OpCondAccept{Encoding: c.Encoding}
+		c.reusable.condAccept.Encoding = c.Encoding
+		msg = &c.reusable.condAccept
 	case Op_accept_data:
-		msg = &OpDataAccept{OpCondAccept{Encoding: c.Encoding}}
+		c.reusable.dataAccept.Encoding = c.Encoding
+		msg = &c.reusable.dataAccept
 	case Op_response:
-		msg = &OpResponse{Encoding: c.Encoding}
+		c.reusable.response.Encoding = c.Encoding
+		msg = &c.reusable.response
 	case Op_reject:
-		msg = &OpReject{}
+		msg = &c.reusable.reject
 	case Op_fetch_response:
-		msg = &OpFetchResponse{}
+		msg = &c.reusable.fetchResponse
 	case Op_sql_response:
-		msg = &OpSqlResponse{}
+		msg = &c.reusable.sqlResponse
 	case Op_cont_auth:
-		msg = &OpContAuth{Encoding: c.Encoding}
+		c.reusable.contAuth.Encoding = c.Encoding
+		msg = &c.reusable.contAuth
 	default:
 		return nil, fmt.Errorf("unknown opcode: %d", opcode)
 	}
@@ -162,11 +182,21 @@ func (c *Client) ReceiveMessage() (ServerMessage, error) {
 		case *OpResponse:
 			if c.lazyCounter == 0 {
 				if m.Failure {
-					return &ErrorResponse{Object: m.Object, BlobId: m.BlobId, GdsCodes: m.GdsCodes, SqlErr: m.SqlErr, SqlState: m.SqlState, Message: m.Message, Line: m.Line, Position: m.Position}, nil
+					// OpResponse is reused, so copy slices that could be overwritten by the next read.
+					gdsCodes := append([]int(nil), m.GdsCodes...)
+					return &ErrorResponse{
+						Object:   m.Object,
+						BlobId:   m.BlobId,
+						GdsCodes: gdsCodes,
+						SqlErr:   m.SqlErr,
+						SqlState: m.SqlState,
+						Message:  m.Message,
+						Line:     m.Line,
+						Position: m.Position,
+					}, nil
 				}
 			} else {
 				if m.Failure {
-					//FIXME: fbx need some callback for lazy response error?
 					fmt.Printf("Ignoring lazy response with error: %s", m.Message)
 				}
 				c.lazyCounter--
