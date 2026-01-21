@@ -333,6 +333,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		"encoding":                      {},
 		"default_transaction_read_only": {},
 		"autotommit":                    {},
+		"target_session_attrs":          {},
 	}
 
 	// Adding kerberos configuration
@@ -377,6 +378,17 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 	config.Host = fallbacks[0].Host
 	config.Port = fallbacks[0].Port
 	config.Fallbacks = fallbacks[1:]
+
+	switch tsa := settings["target_session_attrs"]; tsa {
+	case "replica":
+		config.ValidateConnect = ValidateConnectTargetSessionAttrsReplica
+	case "primary":
+		config.ValidateConnect = ValidateConnectTargetSessionAttrsPrimary
+	case "any":
+		// do nothing
+	default:
+		return nil, &ParseConfigError{ConnString: connString, msg: fmt.Sprintf("unknown target_session_attrs value: %v", tsa)}
+	}
 
 	return config, nil
 }
@@ -697,6 +709,49 @@ func ValidateConnectTargetSessionAttrsReadOnly(ctx context.Context, fbConn *FbCo
 
 	if res.Rows[0][0][3] != 1 {
 		return errors.New("connection is not read only")
+	}
+
+	return nil
+}
+
+func checkSessionAttrIsPrimary(ctx context.Context, fbConn *FbConn) (bool, error) {
+	res := fbConn.Exec(ctx, "select rdb$get_context('SYSTEM', 'REPLICATING'), rdb$get_context('SYSTEM', 'REPLICA_MODE') from rdb$database").Read()
+	if res.Err != nil {
+		return false, res.Err
+	}
+
+	if len(res.Rows[0][1]) == 0 && string(res.Rows[0][0]) == "TRUE" {
+		return true, nil
+	} else if len(res.Rows[0][1]) != 0 {
+		return false, nil
+	}
+
+	return false, errors.New("Replication is not configured")
+}
+
+func ValidateConnectTargetSessionAttrsReplica(ctx context.Context, fbConn *FbConn) error {
+	isPrimary, err := checkSessionAttrIsPrimary(ctx, fbConn)
+
+	if err != nil {
+		return err
+	}
+
+	if isPrimary {
+		return errors.New("Not replica")
+	}
+
+	return nil
+}
+
+func ValidateConnectTargetSessionAttrsPrimary(ctx context.Context, fbConn *FbConn) error {
+	isPrimary, err := checkSessionAttrIsPrimary(ctx, fbConn)
+
+	if err != nil {
+		return err
+	}
+
+	if !isPrimary {
+		return errors.New("Not primary")
 	}
 
 	return nil
