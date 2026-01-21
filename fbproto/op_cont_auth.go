@@ -40,7 +40,7 @@ func (op *OpContAuth) Write(x *XDRWriter) error {
 func (op *OpContAuth) Read(r *XDRReader) error {
 	var err error
 	// p_data (Buffer)
-	if op.AuthData, err = r.ReadBuffer(); err != nil {
+	if op.AuthData, err = r.ReadBufferInto(&op.AuthData); err != nil {
 		return err
 	}
 	// p_name
@@ -52,8 +52,6 @@ func (op *OpContAuth) Read(r *XDRReader) error {
 		return err
 	}
 	// p_keys (Buffer)
-	if op.Keys, err = r.ReadBuffer(); err == nil {
-		return err
-	}
-	return nil
+	_, err = r.ReadBufferInto(&op.Keys)
+	return err
 }
