@@ -332,7 +332,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		"client_version":                {},
 		"encoding":                      {},
 		"default_transaction_read_only": {},
-		"autotommit":                    {},
+		"autocommit":                    {},
 	}
 
 	// Adding kerberos configuration
