@@ -380,10 +380,16 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 	config.Fallbacks = fallbacks[1:]
 
 	switch tsa := settings["target_session_attrs"]; tsa {
-	case "replica":
-		config.ValidateConnect = ValidateConnectTargetSessionAttrsReplica
 	case "primary":
 		config.ValidateConnect = ValidateConnectTargetSessionAttrsPrimary
+	case "replica":
+		config.ValidateConnect = ValidateConnectTargetSessionAttrsReplica
+	case "prefer-replica":
+		config.ValidateConnect = ValidateConnectTargetSessionAttrsPreferReplica
+	case "read-only":
+		config.ValidateConnect = ValidateConnectTargetSessionAttrsReadOnly
+	case "read-write":
+		config.ValidateConnect = ValidateConnectTargetSessionAttrsReadWrite
 	case "any":
 		// do nothing
 	default:
@@ -752,6 +758,20 @@ func ValidateConnectTargetSessionAttrsPrimary(ctx context.Context, fbConn *FbCon
 
 	if !isPrimary {
 		return errors.New("Not primary")
+	}
+
+	return nil
+}
+
+func ValidateConnectTargetSessionAttrsPreferReplica(ctx context.Context, fbConn *FbConn) error {
+	isPrimary, err := checkSessionAttrIsPrimary(ctx, fbConn)
+
+	if err != nil {
+		return err
+	}
+
+	if isPrimary {
+		return &NotPreferredError{err: errors.New("Not replica")}
 	}
 
 	return nil
