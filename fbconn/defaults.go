@@ -33,6 +33,8 @@ func defaultSettings() map[string]string {
 		settings["client_version"] = bi.Main.Version
 	}
 
+	settings["target_session_attrs"] = "any"
+
 	return settings
 }
 

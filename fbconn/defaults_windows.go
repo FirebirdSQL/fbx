@@ -1,7 +1,9 @@
 package fbconn
 
 import (
+	"os"
 	"os/user"
+	"runtime/debug"
 	"strings"
 
 	"rdb.red-soft.ru/fbx/fbproto/auth"
@@ -34,6 +36,8 @@ func defaultSettings() map[string]string {
 	if bi, ok := debug.ReadBuildInfo(); ok {
 		settings["client_version"] = bi.Main.Version
 	}
+
+	settings["target_session_attrs"] = "any"
 
 	return settings
 }
