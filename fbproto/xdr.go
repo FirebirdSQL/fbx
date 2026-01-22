@@ -4,6 +4,7 @@ package fbproto
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 )
 
@@ -65,6 +66,42 @@ func (x *XDRReader) ReadBuffer() ([]byte, error) {
 		return buf, err
 	}
 	return buf, nil
+}
+
+// ReadBufferInto reads a length-prefixed buffer into *dst, reusing the existing
+// capacity of *dst when possible.
+//
+// The returned slice aliases *dst.
+func (x *XDRReader) ReadBufferInto(dst *[]byte) ([]byte, error) {
+	if dst == nil {
+		return x.ReadBuffer()
+	}
+
+	n, err := x.ReadInt32()
+	if err != nil {
+		return nil, err
+	}
+	if n < 0 {
+		return nil, fmt.Errorf("invalid buffer length %d", n)
+	}
+	if n == 0 {
+		*dst = (*dst)[:0]
+		return *dst, nil
+	}
+
+	if cap(*dst) < n {
+		*dst = make([]byte, n)
+	} else {
+		*dst = (*dst)[:n]
+	}
+
+	if err := x.ReadBytesInto(*dst); err != nil {
+		return *dst, err
+	}
+	if err := x.SkipPadding(int64(n)); err != nil {
+		return *dst, err
+	}
+	return *dst, nil
 }
 
 func (x *XDRReader) ReadBytes(len int64) ([]byte, error) {

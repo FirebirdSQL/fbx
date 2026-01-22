@@ -46,7 +46,7 @@ func (op *OpCondAccept) Read(r *XDRReader) error {
 	op.Compress = (acceptType & Pflag_compress) != 0
 
 	//p_acpt_data
-	if op.Data, err = r.ReadBuffer(); err != nil {
+	if op.Data, err = r.ReadBufferInto(&op.Data); err != nil {
 		return err
 	}
 
@@ -63,7 +63,7 @@ func (op *OpCondAccept) Read(r *XDRReader) error {
 	op.AuthComplete = authComplete == 1
 
 	//p_acpt_keys
-	if op.ServerKeys, err = r.ReadBuffer(); err != nil {
+	if op.ServerKeys, err = r.ReadBufferInto(&op.ServerKeys); err != nil {
 		return err
 	}
 	return nil

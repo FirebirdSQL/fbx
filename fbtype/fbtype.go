@@ -13,13 +13,13 @@ import (
 	"rdb.red-soft.ru/fbx/fbproto"
 )
 
-// PostgreSQL format codes
+// Firebird format codes
 const (
 	TextFormatCode   = 0
 	BinaryFormatCode = 1
 )
 
-// A Codec converts between Go and PostgreSQL values. A Codec must not be mutated after it is registered with a Map.
+// A Codec converts between Go and Firebird values. A Codec must not be mutated after it is registered with a Map.
 type Codec interface {
 	// FormatSupported returns true if the format is supported.
 	FormatSupported(int16) bool
@@ -27,11 +27,11 @@ type Codec interface {
 	// PreferredFormat returns the preferred format.
 	PreferredFormat() int16
 
-	// PlanEncode returns an EncodePlan for encoding value into PostgreSQL format for oid and format. If no plan can be
+	// PlanEncode returns an EncodePlan for encoding value into Firebird format for oid and format. If no plan can be
 	// found then nil is returned.
 	PlanEncode(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan
 
-	// PlanScan returns a ScanPlan for scanning a PostgreSQL value into a destination with the same type as target. If
+	// PlanScan returns a ScanPlan for scanning a Firebird value into a destination with the same type as target. If
 	// no plan can be found then nil is returned.
 	PlanScan(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan
 
@@ -50,15 +50,22 @@ func (e *nullAssignmentError) Error() string {
 	return fmt.Sprintf("cannot assign NULL to %T", e.dst)
 }
 
-// Type represents a PostgreSQL data type. It must not be mutated after it is registered with a Map.
+// Type represents a Firebird data type. It must not be mutated after it is registered with a Map.
 type Type struct {
 	Codec Codec
 	Name  string
 	OID   uint32
 }
 
-// Map is the mapping between PostgreSQL server types and Go type handling logic. It can encode values for
-// transmission to a PostgreSQL server and scan received values.
+type encodePlanKey struct {
+	oid    uint32
+	sub    int32
+	length uint32
+	scale  int32
+}
+
+// Map is the mapping between Firebird server types and Go type handling logic. It can encode values for
+// transmission to a Firebird server and scan received values.
 type Map struct {
 	oidToType         map[uint32]*Type
 	nameToType        map[string]*Type
@@ -67,7 +74,7 @@ type Map struct {
 
 	reflectTypeToType map[reflect.Type]*Type
 
-	memoizedEncodePlans map[uint32]map[reflect.Type][2]EncodePlan
+	memoizedEncodePlans map[encodePlanKey]map[reflect.Type][2]EncodePlan
 
 	// TryWrapEncodePlanFuncs is a slice of functions that will wrap a value that cannot be encoded by the Codec. Every
 	// time a wrapper is found the PlanEncode method will be recursively called with the new value. This allows several layers of wrappers
@@ -100,7 +107,7 @@ func NewMap() *Map {
 		reflectTypeToName: make(map[reflect.Type]string),
 		oidToFormatCode:   make(map[uint32]int16),
 
-		memoizedEncodePlans: make(map[uint32]map[reflect.Type][2]EncodePlan),
+		memoizedEncodePlans: make(map[encodePlanKey]map[reflect.Type][2]EncodePlan),
 
 		TryWrapEncodePlanFuncs: []TryWrapEncodePlanFunc{
 			TryWrapDerefPointerEncodePlan,
@@ -144,8 +151,8 @@ func (m *Map) RegisterType(t *Type) {
 	}
 }
 
-// RegisterDefaultFbType registers a mapping of a Go type to a PostgreSQL type name. Typically the data type to be
-// encoded or decoded is determined by the PostgreSQL OID. But if the OID of a value to be encoded or decoded is
+// RegisterDefaultFbType registers a mapping of a Go type to a Firebird type name. Typically the data type to be
+// encoded or decoded is determined by the Firebird OID. But if the OID of a value to be encoded or decoded is
 // unknown, this additional mapping will be used by TypeForValue to determine a suitable data type.
 func (m *Map) RegisterDefaultFbType(value any, name string) {
 	m.reflectTypeToName[reflect.TypeOf(value)] = name
@@ -336,19 +343,21 @@ type scanPlanAnyTextToBytes struct {
 }
 
 func (s scanPlanAnyTextToBytes) Scan(src []byte, dst any) error {
-	var res string
-	if err := decodeFBString(src, s.typeId == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, res); err != nil {
-		return err
-	}
-
 	dstBuf := dst.(*[]byte)
 	if src == nil {
 		*dstBuf = nil
 		return nil
 	}
 
-	*dstBuf = make([]byte, len(src))
-	copy(*dstBuf, src)
+	var res string
+	if err := decodeFBString(src, s.typeId == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, &res); err != nil {
+		return err
+	}
+
+	b := []byte(res)
+	*dstBuf = make([]byte, len(b))
+	copy(*dstBuf, b)
+
 	return nil
 }
 
@@ -363,11 +372,9 @@ type scanPlanFail struct {
 
 func (plan *scanPlanFail) Scan(src []byte, dst any) error {
 	// If src is NULL it might be possible to scan into dst even though it is the types are not compatible. While this
-	// may seem to be a contrived case it can occur when selecting NULL directly. PostgreSQL assigns it the type of text.
-	// It would be surprising to the caller to have to cast the NULL (e.g. `select null::int`). So try to figure out a
+	// may seem to be a contrived case it can occur when selecting NULL directly. Firebird assigns it the type of text.
+	// It would be surprising to the caller to have to cast the NULL (e.g. `cast(null as int)`). So try to figure out a
 	// compatible data type for dst and scan with that.
-	//
-	// See https://github.com/jackc/pgx/issues/1326
 	if src == nil {
 		// As a horrible hack try all types to find anything that can scan into dst.
 		for oid := range plan.m.oidToType {
@@ -1064,7 +1071,6 @@ func (m *Map) planScan(oid uint32, subType int32, length uint32, scale int32, fo
 	// This needs to happen before trying m.TryWrapScanPlanFuncs. Otherwise, a sql.Scanner would not get called if it was
 	// defined on a type that could be unwrapped such as `type myString string`.
 	//
-	//  https://github.com/jackc/pgtype/issues/197
 	if _, ok := target.(sql.Scanner); ok {
 		if dt == nil {
 			return &scanPlanSQLScanner{formatCode: formatCode}
@@ -1132,7 +1138,7 @@ func codecDecodeToTextFormat(codec Codec, m *Map, oid uint32, subType int32, len
 	}
 }
 
-// PlanEncode returns an EncodePlan for encoding value into PostgreSQL format for oid and format. If no plan can be
+// PlanEncode returns an EncodePlan for encoding value into Firebird format for oid and format. If no plan can be
 // found then nil is returned.
 func (m *Map) PlanEncode(oid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
 	return m.planEncodeDepth(oid, subType, length, scale, format, value, 0)
@@ -1145,12 +1151,19 @@ func (m *Map) planEncodeDepth(oid uint32, subType int32, length uint32, scale in
 	}
 
 	//memoize type id + subtype
-	memoId := MakeTypeSubtype(oid, subType)
-	oidMemo := m.memoizedEncodePlans[memoId]
+	// memoId := MakeTypeSubtype(oid, subType)
+	// oidMemo := m.memoizedEncodePlans[memoId]
+	// if oidMemo == nil {
+	// 	oidMemo = make(map[reflect.Type][2]EncodePlan)
+	// 	m.memoizedEncodePlans[memoId] = oidMemo
+	// }
+	key := encodePlanKey{oid: oid, sub: subType, length: length, scale: scale}
+	oidMemo := m.memoizedEncodePlans[key]
 	if oidMemo == nil {
 		oidMemo = make(map[reflect.Type][2]EncodePlan)
-		m.memoizedEncodePlans[memoId] = oidMemo
+		m.memoizedEncodePlans[key] = oidMemo
 	}
+
 	targetReflectType := reflect.TypeOf(value)
 	typeMemo := oidMemo[targetReflectType]
 	plan := typeMemo[format]
@@ -1179,7 +1192,7 @@ func (m *Map) planEncode(oid uint32, subType int32, length uint32, scale int32, 
 	} else {
 		// If no type for the OID was found, then either it is unknowable (e.g. the simple protocol) or it is an
 		// unregistered type. In either case try to find the type and OID that matches the value (e.g. a []byte would be
-		// registered to PostgreSQL bytea).
+		// registered to Firebird bytea).
 		if dataType, ok := m.TypeForValue(value); ok {
 			dt = dataType
 			oid = dt.OID // Preserve assumed OID in case we are recursively called below.
@@ -1924,7 +1937,7 @@ func (m *Map) Encode(oid uint32, subType int32, length uint32, scale int32, form
 // type needs assistance from Map to implement the sql.Scanner interface. It is not necessary for types like Box that
 // implement sql.Scanner directly.
 //
-// This uses the type of v to look up the PostgreSQL OID that v presumably came from. This means v must be registered
+// This uses the type of v to look up the Firebird OID that v presumably came from. This means v must be registered
 // with m by calling RegisterDefaultFbType.
 func (m *Map) SQLScanner(v any) sql.Scanner {
 	if s, ok := v.(sql.Scanner); ok {

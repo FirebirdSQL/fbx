@@ -24,8 +24,33 @@ type OpResponse struct {
 	Position    int
 }
 
+func (op *OpResponse) resetForRead() {
+	op.Object = 0
+	op.BlobId = 0
+	op.SqlErr = 0
+	// Avoid retaining large buffers indefinitely allow
+	// growth when needed, but shrink back to a reasonable baseline.
+	// Note: this limits retained capacity, not the segment size that can be read.
+	if cap(op.Data) <= 0 {
+		op.Data = make([]byte, 0, 512)
+	} else if cap(op.Data) > 8192 {
+		op.Data = make([]byte, 0, 8192)
+	} else {
+		op.Data = op.Data[:0]
+	}
+	op.GdsCodes = op.GdsCodes[:0]
+	op.SqlState = ""
+	op.Message = ""
+	op.WarnMessage = ""
+	op.Failure = false
+	op.Warnings = false
+	op.Line = 0
+	op.Position = 0
+}
+
 func (op *OpResponse) Read(x *XDRReader) error {
 	var err error
+	op.resetForRead()
 	// p_resp_object
 	if op.Object, err = x.ReadInt32(); err != nil {
 		return err
@@ -37,7 +62,7 @@ func (op *OpResponse) Read(x *XDRReader) error {
 	}
 
 	// p_resp_data
-	if op.Data, err = x.ReadBuffer(); err != nil {
+	if op.Data, err = x.ReadBufferInto(&op.Data); err != nil {
 		return err
 	}
 

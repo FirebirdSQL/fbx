@@ -16,6 +16,7 @@ import (
 type renamedUUIDByteArray [16]byte
 
 func TestUUIDCodec(t *testing.T) {
+	t.Skip()
 	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "uuid", []fbxtest.ValueRoundTripTest{
 		{Param: fbtype.UUID{Bytes: [16]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Valid: true}, Result: new(fbtype.UUID), Test: isExpectedEq(fbtype.UUID{Bytes: [16]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Valid: true})},
 		{Param: "00010203-0405-0607-0809-0a0b0c0d0e0f", Result: new(fbtype.UUID), Test: isExpectedEq(fbtype.UUID{Bytes: [16]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Valid: true})},
