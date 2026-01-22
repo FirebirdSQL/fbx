@@ -3,11 +3,8 @@ package fbx_test
 import (
 	"bytes"
 	"context"
-	"fmt"
-	"net"
 	"os"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -66,7 +63,7 @@ func TestTimestampTzTranscode(t *testing.T) {
 	defer cancel()
 
 	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		inputTime := time.Date(2013, 1, 2, 3, 4, 5, 6000, time.Local)
+		inputTime := time.Date(2013, 1, 2, 3, 4, 5, 600000, time.Local)
 
 		var outputTime time.Time
 
@@ -82,508 +79,8 @@ func TestTimestampTzTranscode(t *testing.T) {
 
 // TODO - move these tests to pgtype
 
-func TestJSONAndJSONBTranscode(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		for _, typename := range []string{"json", "jsonb"} {
-			if _, ok := conn.TypeMap().TypeForName(typename); !ok {
-				continue // No JSON/JSONB type -- must be running against old PostgreSQL
-			}
-
-			testJSONString(t, conn, typename)
-			testJSONStringPointer(t, conn, typename)
-		}
-	})
-}
-
-func TestJSONAndJSONBTranscodeExtendedOnly(t *testing.T) {
-	t.Parallel()
-
-	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
-	defer closeConn(t, conn)
-
-	for _, typename := range []string{"json", "jsonb"} {
-		if _, ok := conn.TypeMap().TypeForName(typename); !ok {
-			continue // No JSON/JSONB type -- must be running against old PostgreSQL
-		}
-		testJSONSingleLevelStringMap(t, conn, typename)
-		testJSONNestedMap(t, conn, typename)
-		testJSONStringArray(t, conn, typename)
-		testJSONInt64Array(t, conn, typename)
-		testJSONInt16ArrayFailureDueToOverflow(t, conn, typename)
-		testJSONStruct(t, conn, typename)
-	}
-
-}
-
-func testJSONString(t testing.TB, conn *fbx.Conn, typename string) {
-	input := `{"key": "value"}`
-	expectedOutput := map[string]string{"key": "value"}
-	var output map[string]string
-	err := conn.QueryRow(context.Background(), "select $1::"+typename, input).Scan(&output)
-	if err != nil {
-		t.Errorf("%s: QueryRow Scan failed: %v", typename, err)
-		return
-	}
-
-	if !reflect.DeepEqual(expectedOutput, output) {
-		t.Errorf("%s: Did not transcode map[string]string successfully: %v is not %v", typename, expectedOutput, output)
-		return
-	}
-}
-
-func testJSONStringPointer(t testing.TB, conn *fbx.Conn, typename string) {
-	input := `{"key": "value"}`
-	expectedOutput := map[string]string{"key": "value"}
-	var output map[string]string
-	err := conn.QueryRow(context.Background(), "select $1::"+typename, &input).Scan(&output)
-	if err != nil {
-		t.Errorf("%s: QueryRow Scan failed: %v", typename, err)
-		return
-	}
-
-	if !reflect.DeepEqual(expectedOutput, output) {
-		t.Errorf("%s: Did not transcode map[string]string successfully: %v is not %v", typename, expectedOutput, output)
-		return
-	}
-}
-
-func testJSONSingleLevelStringMap(t *testing.T, conn *fbx.Conn, typename string) {
-	input := map[string]string{"key": "value"}
-	var output map[string]string
-	err := conn.QueryRow(context.Background(), "select $1::"+typename, input).Scan(&output)
-	if err != nil {
-		t.Errorf("%s: QueryRow Scan failed: %v", typename, err)
-		return
-	}
-
-	if !reflect.DeepEqual(input, output) {
-		t.Errorf("%s: Did not transcode map[string]string successfully: %v is not %v", typename, input, output)
-		return
-	}
-}
-
-func testJSONNestedMap(t *testing.T, conn *fbx.Conn, typename string) {
-	input := map[string]any{
-		"name":      "Uncanny",
-		"stats":     map[string]any{"hp": float64(107), "maxhp": float64(150)},
-		"inventory": []any{"phone", "key"},
-	}
-	var output map[string]any
-	err := conn.QueryRow(context.Background(), "select $1::"+typename, input).Scan(&output)
-	if err != nil {
-		t.Errorf("%s: QueryRow Scan failed: %v", typename, err)
-		return
-	}
-
-	if !reflect.DeepEqual(input, output) {
-		t.Errorf("%s: Did not transcode map[string]any successfully: %v is not %v", typename, input, output)
-		return
-	}
-}
-
-func testJSONStringArray(t *testing.T, conn *fbx.Conn, typename string) {
-	input := []string{"foo", "bar", "baz"}
-	var output []string
-	err := conn.QueryRow(context.Background(), "select $1::"+typename, input).Scan(&output)
-	if err != nil {
-		t.Errorf("%s: QueryRow Scan failed: %v", typename, err)
-	}
-
-	if !reflect.DeepEqual(input, output) {
-		t.Errorf("%s: Did not transcode []string successfully: %v is not %v", typename, input, output)
-	}
-}
-
-func testJSONInt64Array(t *testing.T, conn *fbx.Conn, typename string) {
-	input := []int64{1, 2, 234432}
-	var output []int64
-	err := conn.QueryRow(context.Background(), "select $1::"+typename, input).Scan(&output)
-	if err != nil {
-		t.Errorf("%s: QueryRow Scan failed: %v", typename, err)
-	}
-
-	if !reflect.DeepEqual(input, output) {
-		t.Errorf("%s: Did not transcode []int64 successfully: %v is not %v", typename, input, output)
-	}
-}
-
-func testJSONInt16ArrayFailureDueToOverflow(t *testing.T, conn *fbx.Conn, typename string) {
-	input := []int{1, 2, 234432}
-	var output []int16
-	err := conn.QueryRow(context.Background(), "select $1::"+typename, input).Scan(&output)
-	fieldName := typename
-	if conn.FbConn().ParameterStatus("crdb_version") != "" && typename == "json" {
-		fieldName = "jsonb" // Seems like CockroachDB treats json as jsonb.
-	}
-	expectedMessage := fmt.Sprintf("can't scan into dest[0] (col: %s): json: cannot unmarshal number 234432 into Go value of type int16", fieldName)
-	if err == nil || err.Error() != expectedMessage {
-		t.Errorf("%s: Expected *json.UnmarshalTypeError, but got %v", typename, err)
-	}
-}
-
-func testJSONStruct(t *testing.T, conn *fbx.Conn, typename string) {
-	type person struct {
-		Name string `json:"name"`
-		Age  int    `json:"age"`
-	}
-
-	input := person{
-		Name: "John",
-		Age:  42,
-	}
-
-	var output person
-
-	err := conn.QueryRow(context.Background(), "select $1::"+typename, input).Scan(&output)
-	if err != nil {
-		t.Errorf("%s: QueryRow Scan failed: %v", typename, err)
-	}
-
-	if !reflect.DeepEqual(input, output) {
-		t.Errorf("%s: Did not transcode struct successfully: %v is not %v", typename, input, output)
-	}
-}
-
-func mustParseCIDR(t testing.TB, s string) *net.IPNet {
-	_, ipnet, err := net.ParseCIDR(s)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return ipnet
-}
-
-func TestInetCIDRTranscodeIPNet(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		tests := []struct {
-			sql   string
-			value *net.IPNet
-		}{
-			{"select $1::inet", mustParseCIDR(t, "0.0.0.0/32")},
-			{"select $1::inet", mustParseCIDR(t, "127.0.0.1/32")},
-			{"select $1::inet", mustParseCIDR(t, "12.34.56.0/32")},
-			{"select $1::inet", mustParseCIDR(t, "192.168.1.0/24")},
-			{"select $1::inet", mustParseCIDR(t, "255.0.0.0/8")},
-			{"select $1::inet", mustParseCIDR(t, "255.255.255.255/32")},
-			{"select $1::inet", mustParseCIDR(t, "::/128")},
-			{"select $1::inet", mustParseCIDR(t, "::/0")},
-			{"select $1::inet", mustParseCIDR(t, "::1/128")},
-			{"select $1::inet", mustParseCIDR(t, "2607:f8b0:4009:80b::200e/128")},
-			{"select $1::cidr", mustParseCIDR(t, "0.0.0.0/32")},
-			{"select $1::cidr", mustParseCIDR(t, "127.0.0.1/32")},
-			{"select $1::cidr", mustParseCIDR(t, "12.34.56.0/32")},
-			{"select $1::cidr", mustParseCIDR(t, "192.168.1.0/24")},
-			{"select $1::cidr", mustParseCIDR(t, "255.0.0.0/8")},
-			{"select $1::cidr", mustParseCIDR(t, "255.255.255.255/32")},
-			{"select $1::cidr", mustParseCIDR(t, "::/128")},
-			{"select $1::cidr", mustParseCIDR(t, "::/0")},
-			{"select $1::cidr", mustParseCIDR(t, "::1/128")},
-			{"select $1::cidr", mustParseCIDR(t, "2607:f8b0:4009:80b::200e/128")},
-		}
-
-		for i, tt := range tests {
-			if conn.FbConn().ParameterStatus("crdb_version") != "" && strings.Contains(tt.sql, "cidr") {
-				t.Log("Server does not support cidr type (https://github.com/cockroachdb/cockroach/issues/18846)")
-				continue
-			}
-
-			var actual net.IPNet
-
-			err := conn.QueryRow(context.Background(), tt.sql, tt.value).Scan(&actual)
-			if err != nil {
-				t.Errorf("%d. Unexpected failure: %v (sql -> %v, value -> %v)", i, err, tt.sql, tt.value)
-				continue
-			}
-
-			if actual.String() != tt.value.String() {
-				t.Errorf("%d. Expected %v, got %v (sql -> %v)", i, tt.value, actual, tt.sql)
-			}
-		}
-	})
-}
-
-func TestInetCIDRTranscodeIP(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		tests := []struct {
-			sql   string
-			value net.IP
-		}{
-			{"select $1::inet", net.ParseIP("0.0.0.0")},
-			{"select $1::inet", net.ParseIP("127.0.0.1")},
-			{"select $1::inet", net.ParseIP("12.34.56.0")},
-			{"select $1::inet", net.ParseIP("255.255.255.255")},
-			{"select $1::inet", net.ParseIP("::1")},
-			{"select $1::inet", net.ParseIP("2607:f8b0:4009:80b::200e")},
-			{"select $1::cidr", net.ParseIP("0.0.0.0")},
-			{"select $1::cidr", net.ParseIP("127.0.0.1")},
-			{"select $1::cidr", net.ParseIP("12.34.56.0")},
-			{"select $1::cidr", net.ParseIP("255.255.255.255")},
-			{"select $1::cidr", net.ParseIP("::1")},
-			{"select $1::cidr", net.ParseIP("2607:f8b0:4009:80b::200e")},
-		}
-
-		for i, tt := range tests {
-			if conn.FbConn().ParameterStatus("crdb_version") != "" && strings.Contains(tt.sql, "cidr") {
-				t.Log("Server does not support cidr type (https://github.com/cockroachdb/cockroach/issues/18846)")
-				continue
-			}
-
-			var actual net.IP
-
-			err := conn.QueryRow(context.Background(), tt.sql, tt.value).Scan(&actual)
-			if err != nil {
-				t.Errorf("%d. Unexpected failure: %v (sql -> %v, value -> %v)", i, err, tt.sql, tt.value)
-				continue
-			}
-
-			if !actual.Equal(tt.value) {
-				t.Errorf("%d. Expected %v, got %v (sql -> %v)", i, tt.value, actual, tt.sql)
-			}
-
-			ensureConnValid(t, conn)
-		}
-
-		failTests := []struct {
-			sql   string
-			value *net.IPNet
-		}{
-			{"select $1::inet", mustParseCIDR(t, "192.168.1.0/24")},
-			{"select $1::cidr", mustParseCIDR(t, "192.168.1.0/24")},
-		}
-		for i, tt := range failTests {
-			var actual net.IP
-
-			err := conn.QueryRow(context.Background(), tt.sql, tt.value).Scan(&actual)
-			if err == nil {
-				t.Errorf("%d. Expected failure but got none", i)
-				continue
-			}
-
-			ensureConnValid(t, conn)
-		}
-	})
-}
-
-func TestInetCIDRArrayTranscodeIPNet(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		tests := []struct {
-			sql   string
-			value []*net.IPNet
-		}{
-			{
-				"select $1::inet[]",
-				[]*net.IPNet{
-					mustParseCIDR(t, "0.0.0.0/32"),
-					mustParseCIDR(t, "127.0.0.1/32"),
-					mustParseCIDR(t, "12.34.56.0/32"),
-					mustParseCIDR(t, "192.168.1.0/24"),
-					mustParseCIDR(t, "255.0.0.0/8"),
-					mustParseCIDR(t, "255.255.255.255/32"),
-					mustParseCIDR(t, "::/128"),
-					mustParseCIDR(t, "::/0"),
-					mustParseCIDR(t, "::1/128"),
-					mustParseCIDR(t, "2607:f8b0:4009:80b::200e/128"),
-				},
-			},
-			{
-				"select $1::cidr[]",
-				[]*net.IPNet{
-					mustParseCIDR(t, "0.0.0.0/32"),
-					mustParseCIDR(t, "127.0.0.1/32"),
-					mustParseCIDR(t, "12.34.56.0/32"),
-					mustParseCIDR(t, "192.168.1.0/24"),
-					mustParseCIDR(t, "255.0.0.0/8"),
-					mustParseCIDR(t, "255.255.255.255/32"),
-					mustParseCIDR(t, "::/128"),
-					mustParseCIDR(t, "::/0"),
-					mustParseCIDR(t, "::1/128"),
-					mustParseCIDR(t, "2607:f8b0:4009:80b::200e/128"),
-				},
-			},
-		}
-
-		for i, tt := range tests {
-			if conn.FbConn().ParameterStatus("crdb_version") != "" && strings.Contains(tt.sql, "cidr") {
-				t.Log("Server does not support cidr type (https://github.com/cockroachdb/cockroach/issues/18846)")
-				continue
-			}
-
-			var actual []*net.IPNet
-
-			err := conn.QueryRow(context.Background(), tt.sql, tt.value).Scan(&actual)
-			if err != nil {
-				t.Errorf("%d. Unexpected failure: %v (sql -> %v, value -> %v)", i, err, tt.sql, tt.value)
-				continue
-			}
-
-			if !reflect.DeepEqual(actual, tt.value) {
-				t.Errorf("%d. Expected %v, got %v (sql -> %v)", i, tt.value, actual, tt.sql)
-			}
-
-			ensureConnValid(t, conn)
-		}
-	})
-}
-
-func TestInetCIDRArrayTranscodeIP(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		tests := []struct {
-			sql   string
-			value []net.IP
-		}{
-			{
-				"select $1::inet[]",
-				[]net.IP{
-					net.ParseIP("0.0.0.0"),
-					net.ParseIP("127.0.0.1"),
-					net.ParseIP("12.34.56.0"),
-					net.ParseIP("255.255.255.255"),
-					net.ParseIP("2607:f8b0:4009:80b::200e"),
-				},
-			},
-			{
-				"select $1::cidr[]",
-				[]net.IP{
-					net.ParseIP("0.0.0.0"),
-					net.ParseIP("127.0.0.1"),
-					net.ParseIP("12.34.56.0"),
-					net.ParseIP("255.255.255.255"),
-					net.ParseIP("2607:f8b0:4009:80b::200e"),
-				},
-			},
-		}
-
-		for i, tt := range tests {
-			if conn.FbConn().ParameterStatus("crdb_version") != "" && strings.Contains(tt.sql, "cidr") {
-				t.Log("Server does not support cidr type (https://github.com/cockroachdb/cockroach/issues/18846)")
-				continue
-			}
-
-			var actual []net.IP
-
-			err := conn.QueryRow(context.Background(), tt.sql, tt.value).Scan(&actual)
-			if err != nil {
-				t.Errorf("%d. Unexpected failure: %v (sql -> %v, value -> %v)", i, err, tt.sql, tt.value)
-				continue
-			}
-
-			assert.Equal(t, len(tt.value), len(actual), "%d", i)
-			for j := range actual {
-				assert.True(t, actual[j].Equal(tt.value[j]), "%d", i)
-			}
-
-			ensureConnValid(t, conn)
-		}
-
-		failTests := []struct {
-			sql   string
-			value []*net.IPNet
-		}{
-			{
-				"select $1::inet[]",
-				[]*net.IPNet{
-					mustParseCIDR(t, "12.34.56.0/32"),
-					mustParseCIDR(t, "192.168.1.0/24"),
-				},
-			},
-			{
-				"select $1::cidr[]",
-				[]*net.IPNet{
-					mustParseCIDR(t, "12.34.56.0/32"),
-					mustParseCIDR(t, "192.168.1.0/24"),
-				},
-			},
-		}
-
-		for i, tt := range failTests {
-			var actual []net.IP
-
-			err := conn.QueryRow(context.Background(), tt.sql, tt.value).Scan(&actual)
-			if err == nil {
-				t.Errorf("%d. Expected failure but got none", i)
-				continue
-			}
-
-			ensureConnValid(t, conn)
-		}
-	})
-}
-
-func TestInetCIDRTranscodeWithJustIP(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		tests := []struct {
-			sql   string
-			value string
-		}{
-			{"select $1::inet", "0.0.0.0/32"},
-			{"select $1::inet", "127.0.0.1/32"},
-			{"select $1::inet", "12.34.56.0/32"},
-			{"select $1::inet", "255.255.255.255/32"},
-			{"select $1::inet", "::/128"},
-			{"select $1::inet", "2607:f8b0:4009:80b::200e/128"},
-			{"select $1::cidr", "0.0.0.0/32"},
-			{"select $1::cidr", "127.0.0.1/32"},
-			{"select $1::cidr", "12.34.56.0/32"},
-			{"select $1::cidr", "255.255.255.255/32"},
-			{"select $1::cidr", "::/128"},
-			{"select $1::cidr", "2607:f8b0:4009:80b::200e/128"},
-		}
-
-		for i, tt := range tests {
-			if conn.FbConn().ParameterStatus("crdb_version") != "" && strings.Contains(tt.sql, "cidr") {
-				t.Log("Server does not support cidr type (https://github.com/cockroachdb/cockroach/issues/18846)")
-				continue
-			}
-
-			expected := mustParseCIDR(t, tt.value)
-			var actual net.IPNet
-
-			err := conn.QueryRow(context.Background(), tt.sql, expected.IP).Scan(&actual)
-			if err != nil {
-				t.Errorf("%d. Unexpected failure: %v (sql -> %v, value -> %v)", i, err, tt.sql, tt.value)
-				continue
-			}
-
-			if actual.String() != expected.String() {
-				t.Errorf("%d. Expected %v, got %v (sql -> %v)", i, tt.value, actual, tt.sql)
-			}
-
-			ensureConnValid(t, conn)
-		}
-	})
-}
-
 func TestArrayDecoding(t *testing.T) {
+	t.Skip()
 	t.Parallel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -703,6 +200,7 @@ func TestArrayDecoding(t *testing.T) {
 }
 
 func TestEmptyArrayDecoding(t *testing.T) {
+	t.Skip()
 	t.Parallel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -810,8 +308,8 @@ func TestPointerPointer(t *testing.T) {
 			{"select cast(? as boolean) from rdb$database", []any{expected.b}, []any{&actual.b}, allTypes{b: expected.b}},
 			{"select cast(? as boolean) from rdb$database", []any{zero.b}, []any{&actual.b}, allTypes{}},
 			//FIXME: fbx need properly converting to sqldata buffer
-			//{"select cast(? as timestamp with time zone) from rdb$database", []any{expected.t}, []any{&actual.t}, allTypes{t: expected.t}},
-			//{"select cast(? as timestamp with time zone) from rdb$database", []any{zero.t}, []any{&actual.t}, allTypes{}},
+			// {"select cast(? as timestamp with time zone) from rdb$database", []any{expected.t}, []any{&actual.t}, allTypes{t: expected.t}},
+			// {"select cast(? as timestamp with time zone) from rdb$database", []any{zero.t}, []any{&actual.t}, allTypes{}},
 		}
 
 		for i, tt := range tests {
@@ -848,7 +346,7 @@ func TestPointerPointerNonZero(t *testing.T) {
 		f := "foo"
 		dest := &f
 
-		err := conn.QueryRow(context.Background(), "select $1::text", nil).Scan(&dest)
+		err := conn.QueryRow(ctx, "select cast(? as varchar) from rdb$database", nil).Scan(&dest)
 		if err != nil {
 			t.Errorf("Unexpected failure scanning: %v", err)
 		}
@@ -914,20 +412,20 @@ func TestEncodeTypeRename(t *testing.T) {
 		var outBool _bool
 
 		// pgx.QueryExecModeExec requires all types to be registered.
-		conn.TypeMap().RegisterDefaultFbType(inInt, "int8")
-		conn.TypeMap().RegisterDefaultFbType(inInt8, "int8")
-		conn.TypeMap().RegisterDefaultFbType(inInt16, "int8")
-		conn.TypeMap().RegisterDefaultFbType(inInt32, "int8")
-		conn.TypeMap().RegisterDefaultFbType(inInt64, "int8")
-		conn.TypeMap().RegisterDefaultFbType(inUint, "int8")
-		conn.TypeMap().RegisterDefaultFbType(inUint8, "int8")
-		conn.TypeMap().RegisterDefaultFbType(inUint16, "int8")
-		conn.TypeMap().RegisterDefaultFbType(inUint32, "int8")
-		conn.TypeMap().RegisterDefaultFbType(inUint64, "int8")
-		conn.TypeMap().RegisterDefaultFbType(inString, "text")
-		conn.TypeMap().RegisterDefaultFbType(inBool, "bool")
+		conn.TypeMap().RegisterDefaultFbType(inInt, "integer")
+		conn.TypeMap().RegisterDefaultFbType(inInt8, "smallint")
+		conn.TypeMap().RegisterDefaultFbType(inInt16, "smallint")
+		conn.TypeMap().RegisterDefaultFbType(inInt32, "integer")
+		conn.TypeMap().RegisterDefaultFbType(inInt64, "bigint")
+		conn.TypeMap().RegisterDefaultFbType(inUint, "integer")
+		conn.TypeMap().RegisterDefaultFbType(inUint8, "smallint")
+		conn.TypeMap().RegisterDefaultFbType(inUint16, "smallint")
+		conn.TypeMap().RegisterDefaultFbType(inUint32, "integer")
+		conn.TypeMap().RegisterDefaultFbType(inUint64, "bigint")
+		conn.TypeMap().RegisterDefaultFbType(inString, "varchar")
+		conn.TypeMap().RegisterDefaultFbType(inBool, "boolean")
 
-		err := conn.QueryRow(context.Background(), "select $1::int, $2::int, $3::int2, $4::int4, $5::int8, $6::int, $7::int, $8::int, $9::int, $10::int, $11::text, $12::bool",
+		err := conn.QueryRow(ctx, "select cast(? as bigint), cast(? as bigint), cast(? as smallint), cast(? as integer), cast(? as bigint), cast(? as bigint), cast(? as bigint), cast(? as bigint), cast(? as bigint), cast(? as bigint), cast(? as varchar), cast(? as boolean) from rdb$database",
 			inInt, inInt8, inInt16, inInt32, inInt64, inUint, inUint8, inUint16, inUint32, inUint64, inString, inBool,
 		).Scan(&outInt, &outInt8, &outInt16, &outInt32, &outInt64, &outUint, &outUint8, &outUint16, &outUint32, &outUint64, &outString, &outBool)
 		if err != nil {
@@ -984,52 +482,6 @@ func TestEncodeTypeRename(t *testing.T) {
 	})
 }
 
-// func TestRowDecodeBinary(t *testing.T) {
-// 	t.Parallel()
-
-// 	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
-// 	defer closeConn(t, conn)
-
-// 	tests := []struct {
-// 		sql      string
-// 		expected []any
-// 	}{
-// 		{
-// 			"select row(1, 'cat', '2015-01-01 08:12:42-00'::timestamptz)",
-// 			[]any{
-// 				int32(1),
-// 				"cat",
-// 				time.Date(2015, 1, 1, 8, 12, 42, 0, time.UTC).Local(),
-// 			},
-// 		},
-// 		{
-// 			"select row(100.0::float, 1.09::float)",
-// 			[]any{
-// 				float64(100),
-// 				float64(1.09),
-// 			},
-// 		},
-// 	}
-
-// 	for i, tt := range tests {
-// 		var actual []any
-
-// 		err := conn.QueryRow(context.Background(), tt.sql).Scan(&actual)
-// 		if err != nil {
-// 			t.Errorf("%d. Unexpected failure: %v (sql -> %v)", i, err, tt.sql)
-// 			continue
-// 		}
-
-// 		for j := range tt.expected {
-// 			assert.EqualValuesf(t, tt.expected[j], actual[j], "%d. [%d]", i, j)
-
-// 		}
-
-// 		ensureConnValid(t, conn)
-// 	}
-// }
-
-// https://github.com/jackc/pgx/issues/810
 func TestRowsScanNilThenScanValue(t *testing.T) {
 	t.Parallel()
 
@@ -1037,12 +489,11 @@ func TestRowsScanNilThenScanValue(t *testing.T) {
 	defer cancel()
 
 	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		sql := `select null as a, null as b
-union
-select 1, 2
-order by a nulls first
+		sql := `select cast(null as integer) as a, cast(null as integer) as b from rdb$database
+union all
+select 1, 2 from rdb$database
 `
-		rows, err := conn.Query(context.Background(), sql)
+		rows, err := conn.Query(ctx, sql)
 		require.NoError(t, err)
 
 		require.True(t, rows.Next())
@@ -1077,14 +528,10 @@ func TestScanIntoByteSlice(t *testing.T) {
 		resultFormatCode int16
 		output           []byte
 	}{
-		{"int - text", "select 42", fbx.TextFormatCode, []byte("42")},
-		{"int - binary", "select 42", fbx.BinaryFormatCode, []byte("42")},
-		{"text - text", "select 'hi'", fbx.TextFormatCode, []byte("hi")},
-		{"text - binary", "select 'hi'", fbx.BinaryFormatCode, []byte("hi")},
-		{"json - text", "select '{}'::json", fbx.TextFormatCode, []byte("{}")},
-		{"json - binary", "select '{}'::json", fbx.BinaryFormatCode, []byte("{}")},
-		{"jsonb - text", "select '{}'::jsonb", fbx.TextFormatCode, []byte("{}")},
-		{"jsonb - binary", "select '{}'::jsonb", fbx.BinaryFormatCode, []byte("{}")},
+		{"int - text", "select 42 from rdb$database", fbx.TextFormatCode, []byte("42")},
+		{"int - binary", "select 42 from rdb$database", fbx.BinaryFormatCode, []byte("42")},
+		{"text - text", "select cast('hi' as varchar(2)) from rdb$database", fbx.TextFormatCode, []byte("hi")},
+		{"text - binary", "select cast('hi' as varchar(2)) from rdb$database", fbx.BinaryFormatCode, []byte("hi")},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf []byte

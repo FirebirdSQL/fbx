@@ -2,9 +2,11 @@ package fbtype_test
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -338,6 +340,119 @@ func TestNumericFloat64Valuer(t *testing.T) {
 		assert.NoErrorf(t, err, "%d", i)
 		assert.Equalf(t, tt.f, f, "%d", i)
 	}
+}
+
+func TestNumericEncodeFromFloat64_DB(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		typeName string
+		arg      float64
+
+		wantText string
+		wantInt  string
+		wantExp  int32
+	}{
+		{
+			name:     "numeric(9,2) keeps trailing zeros (12.10)",
+			typeName: "numeric(9,2)",
+			arg:      12.10,
+			wantText: "12.10",
+			wantInt:  "1210",
+			wantExp:  -2,
+		},
+		{
+			name:     "numeric(9,2) rounds half away from zero (12.129 -> 12.13)",
+			typeName: "numeric(9,2)",
+			arg:      12.129,
+			wantText: "12.13",
+			wantInt:  "1213",
+			wantExp:  -2,
+		},
+		{
+			name:     "numeric(9,2) rounds half away from zero (negative)",
+			typeName: "numeric(9,2)",
+			arg:      -12.125,
+			wantText: "-12.13",
+			wantInt:  "-1213",
+			wantExp:  -2,
+		},
+		{
+			name:     "numeric(10,2) dirty float (4323.989... -> 4323.99)",
+			typeName: "numeric(10,2)",
+			arg:      4323.9898923948928,
+			wantText: "4323.99",
+			wantInt:  "432399",
+			wantExp:  -2,
+		},
+		{
+			name:     "numeric(9,0) integer-ish (123456789)",
+			typeName: "numeric(9,0)",
+			arg:      123456789.0,
+			wantText: "123456789",
+			wantInt:  "123456789",
+			wantExp:  0,
+		},
+		{
+			name:     "numeric(18,0) bigint-ish (9e17)",
+			typeName: "numeric(18,0)",
+			arg:      9_000_000_000_000_000_00.0,
+			wantText: "900000000000000000",
+			wantInt:  "900000000000000000",
+			wantExp:  0,
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
+				var n fbtype.Numeric
+				q := fmt.Sprintf("select cast(? as %s) from rdb$database", tc.typeName)
+				err := conn.QueryRow(ctx, q, tc.arg).Scan(&n)
+				require.NoError(tb, err)
+				require.True(tb, n.Valid)
+				require.NotNil(tb, n.Int)
+				assert.Equal(tb, tc.wantInt, n.Int.String())
+				assert.Equal(tb, tc.wantExp, n.Exp)
+
+				var s string
+				q = fmt.Sprintf("select cast(cast(? as %s) as varchar(50)) from rdb$database", tc.typeName)
+				err = conn.QueryRow(ctx, q, tc.arg).Scan(&s)
+				require.NoError(tb, err)
+				assert.Equal(tb, tc.wantText, s)
+			})
+		})
+	}
+}
+
+func TestNumericEncodePlanMemoization_Regression_DB(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
+		var s string
+
+		err := conn.QueryRow(ctx,
+			"select cast(cast(? as numeric(9,2)) as varchar(20)) from rdb$database",
+			12.12,
+		).Scan(&s)
+		require.NoError(tb, err)
+		require.Equal(tb, "12.12", s)
+
+		err = conn.QueryRow(ctx,
+			"select cast(cast(? as numeric(9,0)) as varchar(20)) from rdb$database",
+			123456789.0,
+		).Scan(&s)
+		require.NoError(tb, err)
+		require.Equal(tb, "123456789", s)
+	})
 }
 
 func TestNumericUnmarshalJSON(t *testing.T) {

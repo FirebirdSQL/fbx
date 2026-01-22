@@ -33,7 +33,7 @@ func initDefaultMap() {
 		reflectTypeToName: make(map[reflect.Type]string),
 		oidToFormatCode:   make(map[uint32]int16),
 
-		memoizedEncodePlans: make(map[uint32]map[reflect.Type][2]EncodePlan),
+		memoizedEncodePlans: make(map[encodePlanKey]map[reflect.Type][2]EncodePlan),
 
 		TryWrapEncodePlanFuncs: []TryWrapEncodePlanFunc{
 			TryWrapDerefPointerEncodePlan,
@@ -68,6 +68,7 @@ func initDefaultMap() {
 	defaultMap.RegisterType(&Type{Name: "double precision", OID: fbproto.SQL_TYPE_DOUBLE, Codec: Float8Codec{}})
 	defaultMap.RegisterType(&Type{Name: "boolean", OID: fbproto.SQL_TYPE_BOOLEAN, Codec: BoolCodec{}})
 	defaultMap.RegisterType(&Type{Name: "timestamp", OID: fbproto.SQL_TYPE_TIMESTAMP, Codec: &TimestampCodec{}})
+	defaultMap.RegisterType(&Type{Name: "timestamptz", OID: fbproto.SQL_TYPE_TIMESTAMP_TZ, Codec: &TimestamptzCodec{}})
 	defaultMap.RegisterType(&Type{Name: "numeric", OID: MakeTypeSubtype(fbproto.SQL_TYPE_SHORT, 1), Codec: &NumericCodec{}})
 	defaultMap.RegisterType(&Type{Name: "numeric", OID: MakeTypeSubtype(fbproto.SQL_TYPE_LONG, 1), Codec: &NumericCodec{}})
 	defaultMap.RegisterType(&Type{Name: "numeric", OID: MakeTypeSubtype(fbproto.SQL_TYPE_INT64, 1), Codec: &NumericCodec{}})

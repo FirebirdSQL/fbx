@@ -248,8 +248,8 @@ func (NumericCodec) PlanEncode(m *Map, oid uint32, subType int32, length uint32,
 	switch value.(type) {
 	case NumericValuer:
 		return encodePlanNumericCodecBinaryNumericValuer{scale: scale, length: length}
-	// case Float64Valuer:
-	// 	return encodePlanNumericCodecBinaryFloat64Valuer{scale: scale, length: length}
+	case Float64Valuer:
+		return encodePlanNumericCodecBinaryFloat64Valuer{scale: scale, length: length}
 	case Int64Valuer:
 		return encodePlanNumericCodecBinaryInt64Valuer{scale: scale, length: length}
 	case string:
@@ -292,7 +292,8 @@ func (p encodePlanNumericCodecBinaryFloat64Valuer) Encode(value any, buf []byte)
 		return nil, err
 	}
 	n.Valid = true
-	return EncodeNumericBinaryFB(buf, n, p.scale, p.length)
+
+	return EncodeNumericBinaryFBRoundHalfAwayFromZero(buf, n, p.scale, p.length)
 }
 
 type encodePlanNumericCodecBinaryInt64Valuer struct {
@@ -626,42 +627,15 @@ func EncodeNumericBinaryFB(buf []byte, n Numeric, scale int32, length uint32) ([
 	}
 	val := scaled.Int64()
 
-	switch length {
-	case 2:
-		if val < math.MinInt16 || val > math.MaxInt16 {
-			return nil, fmt.Errorf("numeric out of range for SMALLINT")
-		}
-		v := int32(val)
-		var tmp [4]byte
-		binary.BigEndian.PutUint32(tmp[:], uint32(v))
-		buf = append(buf, tmp[:]...)
-
-	case 4:
-		if val < math.MinInt32 || val > math.MaxInt32 {
-			return nil, fmt.Errorf("numeric out of range for INTEGER")
-		}
-		v := int32(val)
-		var tmp [4]byte
-		binary.BigEndian.PutUint32(tmp[:], uint32(v))
-		buf = append(buf, tmp[:]...)
-
-	case 8:
-		var tmp [8]byte
-		binary.BigEndian.PutUint64(tmp[:], uint64(val))
-		buf = append(buf, tmp[:]...)
-
-	default:
-		return nil, fmt.Errorf("unsupported numeric length %d", length)
-	}
-
-	return buf, nil
+	return appendFBScaledIntByLength(buf, val, length)
 }
 
 func float64ToNumeric(f float64) (Numeric, error) {
 	if f == 0 {
 		return Numeric{
-			Int: big.NewInt(0),
-			Exp: 0,
+			Int:   big.NewInt(0),
+			Exp:   0,
+			Valid: true,
 		}, nil
 	}
 
@@ -679,8 +653,9 @@ func float64ToNumeric(f float64) (Numeric, error) {
 		}
 
 		return Numeric{
-			Int: i,
-			Exp: int32(-scale),
+			Int:   i,
+			Exp:   int32(-scale),
+			Valid: true,
 		}, nil
 	}
 
@@ -691,7 +666,83 @@ func float64ToNumeric(f float64) (Numeric, error) {
 	}
 
 	return Numeric{
-		Int: i,
-		Exp: 0,
+		Int:   i,
+		Exp:   0,
+		Valid: true,
 	}, nil
+}
+
+func EncodeNumericBinaryFBRoundHalfAwayFromZero(buf []byte, n Numeric, scale int32, length uint32) ([]byte, error) {
+	if !n.Valid {
+		return nil, nil
+	}
+
+	expDiff := int64(n.Exp - scale)
+
+	var scaled big.Int
+	scaled.Set(n.Int)
+
+	if expDiff > 0 {
+		var pow big.Int
+		pow.Exp(big.NewInt(10), big.NewInt(expDiff), nil)
+		scaled.Mul(&scaled, &pow)
+	} else if expDiff < 0 {
+		var pow big.Int
+		pow.Exp(big.NewInt(10), big.NewInt(-expDiff), nil)
+
+		var rem big.Int
+		var q big.Int
+		q.QuoRem(&scaled, &pow, &rem)
+
+		if rem.Sign() != 0 {
+			absRem := new(big.Int).Abs(&rem)
+			twice := new(big.Int).Lsh(absRem, 1)
+			cmp := twice.Cmp(&pow)
+			if cmp >= 0 {
+				if scaled.Sign() >= 0 {
+					q.Add(&q, big.NewInt(1))
+				} else {
+					q.Sub(&q, big.NewInt(1))
+				}
+			}
+		}
+		scaled.Set(&q)
+	}
+
+	if !scaled.IsInt64() {
+		return nil, fmt.Errorf("numeric value %v is out of range for int64", &n)
+	}
+	val := scaled.Int64()
+
+	return appendFBScaledIntByLength(buf, val, length)
+}
+
+func appendFBScaledIntByLength(buf []byte, val int64, length uint32) ([]byte, error) {
+	switch length {
+	case 2:
+		if val < math.MinInt16 || val > math.MaxInt16 {
+			return nil, fmt.Errorf("numeric out of range for SMALLINT")
+		}
+		v := int32(val)
+		var tmp [4]byte
+		binary.BigEndian.PutUint32(tmp[:], uint32(v))
+		return append(buf, tmp[:]...), nil
+
+	case 4:
+		if val < math.MinInt32 || val > math.MaxInt32 {
+			return nil, fmt.Errorf("numeric out of range for INTEGER")
+		}
+		v := int32(val)
+		var tmp [4]byte
+		binary.BigEndian.PutUint32(tmp[:], uint32(v))
+		return append(buf, tmp[:]...), nil
+
+	case 8:
+		var tmp [8]byte
+		binary.BigEndian.PutUint64(tmp[:], uint64(val))
+		return append(buf, tmp[:]...), nil
+
+	default:
+		return nil, fmt.Errorf("unsupported numeric length %d", length)
+	}
 }
