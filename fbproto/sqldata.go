@@ -45,7 +45,9 @@ func (s *rowScratch) reset(cols int, nullsLen int) {
 
 func (s *rowScratch) take(i int, n int) []byte {
 	if n == 0 {
-		return []byte{}
+		empty := s.buf[s.pos:s.pos:s.pos]
+		s.data[i] = empty
+		return empty
 	}
 	start := s.pos
 	need := s.pos + n
