@@ -73,6 +73,7 @@ func initDefaultMap() {
 	defaultMap.RegisterType(&Type{Name: "numeric", OID: MakeTypeSubtype(fbproto.SQL_TYPE_SHORT, 1), Codec: &NumericCodec{}})
 	defaultMap.RegisterType(&Type{Name: "numeric", OID: MakeTypeSubtype(fbproto.SQL_TYPE_LONG, 1), Codec: &NumericCodec{}})
 	defaultMap.RegisterType(&Type{Name: "numeric", OID: MakeTypeSubtype(fbproto.SQL_TYPE_INT64, 1), Codec: &NumericCodec{}})
+	defaultMap.RegisterType(&Type{Name: "numeric", OID: MakeTypeSubtype(fbproto.SQL_TYPE_INT128, 1), Codec: &NumericCodec{}})
 	defaultMap.RegisterType(&Type{Name: "octets", OID: MakeTypeSubtype(fbproto.SQL_TYPE_TEXT, 1), Codec: &ByteaCodec{}})
 	defaultMap.RegisterType(&Type{Name: "octets", OID: MakeTypeSubtype(fbproto.SQL_TYPE_VARYING, 1), Codec: &ByteaCodec{}})
 

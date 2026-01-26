@@ -155,6 +155,81 @@ func TestNumericCodec(t *testing.T) {
 
 	cases := []rtCase{
 		{
+			typeName: "numeric(38,0)",
+			tests: []fbxtest.ValueRoundTripTest{
+				{
+					Param:  mustParseNumeric(t, "0"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("0"),
+				},
+				{
+					Param:  mustParseNumeric(t, "1234567890123456789"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("1234567890123456789"),
+				},
+				{
+					Param:  mustParseNumeric(t, "170141183460469231731687303715884105727"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("170141183460469231731687303715884105727"),
+				},
+				{
+					Param:  mustParseNumeric(t, "-170141183460469231731687303715884105728"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("-170141183460469231731687303715884105728"),
+				},
+			},
+		},
+		{
+			typeName: "numeric(38,2)",
+			tests: []fbxtest.ValueRoundTripTest{
+				{
+					Param:  mustParseNumeric(t, "12.12"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("12.12"),
+				},
+				{
+					Param:  mustParseNumeric(t, "1234567890123456789012345678.90"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("1234567890123456789012345678.90"),
+				},
+				{
+					Param:  mustParseNumeric(t, "1701411834604692317316873037158841057.27"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("1701411834604692317316873037158841057.27"),
+				},
+			},
+		},
+		{
+			typeName: "numeric(38,30)",
+			tests: []fbxtest.ValueRoundTripTest{
+				{
+					Param:  mustParseNumeric(t, "0.123"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("0.123"),
+				},
+				{
+					Param:  mustParseNumeric(t, "123456.789012345678"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("123456.789012345678"),
+				},
+				{
+					Param:  mustParseNumeric(t, "1.2345678901234567890123456789"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("1.2345678901234567890123456789"),
+				},
+				{
+					Param:  mustParseNumeric(t, "0.999999999999999999999999999999"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("0.999999999999999999999999999999"),
+				},
+				{
+					Param:  1.23456789012345678901234567895,
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("1.2345678901234567"),
+				},
+			},
+		},
+		{
 			typeName: "numeric(18,5)",
 			tests: []fbxtest.ValueRoundTripTest{
 				{
@@ -330,6 +405,8 @@ func TestNumericFloat64Valuer(t *testing.T) {
 		n fbtype.Numeric
 		f fbtype.Float8
 	}{
+		{mustParseNumeric(t, "170141183460469231731687303715884105727"), fbtype.Float8{Float64: 1.7014118346046923173e+38, Valid: true}},
+		{mustParseNumeric(t, "-170141183460469231731687303715884105728"), fbtype.Float8{Float64: -1.7014118346046923173e+38, Valid: true}},
 		{mustParseNumeric(t, "1"), fbtype.Float8{Float64: 1, Valid: true}},
 		{mustParseNumeric(t, "0.0000000000000000001"), fbtype.Float8{Float64: 0.0000000000000000001, Valid: true}},
 		{mustParseNumeric(t, "-99999999999"), fbtype.Float8{Float64: -99999999999, Valid: true}},
@@ -341,6 +418,108 @@ func TestNumericFloat64Valuer(t *testing.T) {
 		assert.Equalf(t, tt.f, f, "%d", i)
 	}
 }
+
+func TestNumericInt128_DB(t *testing.T) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
+		var n fbtype.Numeric
+
+		err := conn.QueryRow(ctx,
+			"SELECT CAST(170141183460469231731687303715884105727 AS NUMERIC(38,0)) FROM rdb$database",
+		).Scan(&n)
+		require.NoError(tb, err)
+		require.True(tb, n.Valid)
+		assert.Equal(tb, "170141183460469231731687303715884105727", n.Int.String())
+		assert.Equal(tb, int32(0), n.Exp)
+
+		err = conn.QueryRow(ctx,
+			"SELECT CAST(1234567890123456789012345678.90 AS NUMERIC(38,2)) FROM rdb$database",
+		).Scan(&n)
+		require.NoError(tb, err)
+		require.True(tb, n.Valid)
+		assert.Equal(tb, "123456789012345678901234567890", n.Int.String())
+		assert.Equal(tb, int32(-2), n.Exp)
+
+		err = conn.QueryRow(ctx,
+			"SELECT CAST(0.999999999999999999999999999999 AS NUMERIC(38,30)) FROM rdb$database",
+		).Scan(&n)
+		require.NoError(tb, err)
+		require.True(tb, n.Valid)
+		assert.Equal(tb, "999999999999999999999999999999", n.Int.String())
+		assert.Equal(tb, int32(-30), n.Exp)
+	})
+}
+
+func TestNumericRounding_DB(t *testing.T) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
+		var s string
+
+		err := conn.QueryRow(ctx,
+			"SELECT CAST(1.234567890123456789 AS NUMERIC(38,9)) FROM rdb$database",
+		).Scan(&s)
+		require.NoError(tb, err)
+		assert.Equal(tb, "1.234567890", s)
+
+		err = conn.QueryRow(ctx,
+			"SELECT CAST(ROUND(1.234567890123456789 * 1e9, 0) / 1e9 AS NUMERIC(38,9)) FROM rdb$database",
+		).Scan(&s)
+		require.NoError(tb, err)
+		assert.Equal(tb, "1.234567890", s)
+
+		err = conn.QueryRow(ctx,
+			"SELECT CAST(170141183460469231731687303715884105727 AS NUMERIC(38,0)) FROM rdb$database",
+		).Scan(&s)
+		require.NoError(tb, err)
+		assert.Equal(tb, "170141183460469231731687303715884105727", s)
+
+		err = conn.QueryRow(ctx,
+			"SELECT CAST(1234567890123456789.01 AS NUMERIC(38,2)) FROM rdb$database",
+		).Scan(&s)
+		require.NoError(tb, err)
+		assert.Equal(tb, "1234567890123456789.01", s)
+	})
+}
+
+func mustBigInt(t *testing.T, s string) *big.Int {
+	t.Helper()
+	z := new(big.Int)
+	_, ok := z.SetString(s, 10)
+	require.True(t, ok, "invalid big.Int: %s", s)
+	return z
+}
+
+func TestInt128Overflow(t *testing.T) {
+	maxInt128 := "170141183460469231731687303715884105727"
+	minInt128 := "-170141183460469231731687303715884105728"
+
+	okCases := []fbtype.Numeric{
+		{Int: mustBigInt(t, maxInt128), Exp: 0, Valid: true},
+		{Int: mustBigInt(t, minInt128), Exp: 0, Valid: true},
+	}
+
+	for _, n := range okCases {
+		_, err := fbtype.EncodeNumericBinaryFB(nil, n, 0, 16)
+		require.NoError(t, err)
+	}
+
+	overflowCases := []fbtype.Numeric{
+		{Int: mustBigInt(t, "170141183460469231731687303715884105728"), Exp: 0, Valid: true},
+		{Int: mustBigInt(t, "-170141183460469231731687303715884105729"), Exp: 0, Valid: true},
+		{Int: mustBigInt(t, "9999999999999999999999999999999999999999"), Exp: 0, Valid: true},
+		{Int: mustBigInt(t, maxInt128), Exp: 0, Valid: true},
+	}
+
+	for i, n := range overflowCases {
+		scale := int32(0)
+		if i == 3 {
+			scale = -30
+		}
+		
+		_, err := fbtype.EncodeNumericBinaryFB(nil, n, scale, 16)
+		require.Errorf(t, err, "overflow case %d", i)
+		assert.Containsf(t, err.Error(), "out of range for int128", "case %d: %v", i, n)
+	}
+}
+
 
 func TestNumericEncodeFromFloat64_DB(t *testing.T) {
 	t.Parallel()
@@ -433,7 +612,7 @@ func TestNumericEncodeFromFloat64_DB(t *testing.T) {
 func TestNumericEncodePlanMemoization_Regression_DB(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
 	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
