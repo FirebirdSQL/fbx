@@ -18,6 +18,8 @@ type Client struct {
 	tracer      *tracer
 	lazyCounter int
 	reusable    reusableServerMessages
+	
+	writeScratch []byte
 }
 
 type reusableServerMessages struct {
@@ -56,14 +58,17 @@ func NewClient(r io.Reader, w io.Writer, encoding *Encoding) *Client {
 func (c *Client) SetCodec(plugin string, codec StreamCodec) {
 	c.plugin = plugin
 	c.codec = codec
+	if codec != nil && cap(c.writeScratch) < cryptoChunkSize {
+		c.writeScratch = make([]byte, cryptoChunkSize)
+	}
 }
 
 func (c *Client) Read(buf []byte) (n int, err error) {
 	if c.codec != nil {
-		src := make([]byte, len(buf))
-		n, err = c.reader.Read(src)
+		n, err = c.reader.Read(buf)
 		if n > 0 {
-			c.codec.Decrypt(buf, src[:n])
+			// NOTE: Our wire crypt plugins are stream ciphers and support in-place XOR.
+			c.codec.Decrypt(buf[:n], buf[:n])
 		}
 		return
 	}
@@ -72,21 +77,33 @@ func (c *Client) Read(buf []byte) (n int, err error) {
 
 func (c *Client) Write(buf []byte) (n int, err error) {
 	if c.codec != nil {
-		dst := make([]byte, len(buf))
-		c.codec.Encrypt(dst, buf)
-		written := 0
-		for written < len(buf) {
-			n, err = c.writer.Write(dst[written:])
-			if err != nil {
-				return
-			}
-			written += n
+		if cap(c.writeScratch) < cryptoChunkSize {
+			c.writeScratch = make([]byte, cryptoChunkSize)
 		}
-		n = written
-	} else {
-		n, err = c.writer.Write(buf)
+		scratch := c.writeScratch[:cryptoChunkSize]
+		totalWritten := 0
+		for offset := 0; offset < len(buf); {
+			chunkLen := len(buf) - offset
+			if chunkLen > len(scratch) {
+				chunkLen = len(scratch)
+			}
+			chunk := scratch[:chunkLen]
+			c.codec.Encrypt(chunk, buf[offset:offset+chunkLen])
+
+			written := 0
+			for written < chunkLen {
+				n, err = c.writer.Write(chunk[written:])
+				if err != nil {
+					return totalWritten, err
+				}
+				written += n
+				totalWritten += n
+			}
+			offset += chunkLen
+		}
+		return totalWritten, nil
 	}
-	return
+	return c.writer.Write(buf)
 }
 
 func (c *Client) WriteMessage(msg ClientMessage) error {
@@ -243,3 +260,5 @@ func (c *Client) Trace(w io.Writer, options TracerOptions) {
 func (c *Client) Untrace() {
 	c.tracer = nil
 }
+
+const cryptoChunkSize = 16 * 1024
