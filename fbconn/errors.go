@@ -50,10 +50,11 @@ func (e *FbError) Error() string {
 }
 
 func ErrorResponseToFbError(errorResponse *fbproto.ErrorResponse) *FbError {
+	gdsCodes := append([]int(nil), errorResponse.GdsCodes...)
 	return &FbError{
 		Object:   errorResponse.Object,
 		BlobId:   errorResponse.BlobId,
-		GdsCodes: errorResponse.GdsCodes,
+		GdsCodes: gdsCodes,
 		SqlErr:   errorResponse.SqlErr,
 		Code:     errorResponse.SqlState,
 		Message:  errorResponse.Message,
