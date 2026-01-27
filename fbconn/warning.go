@@ -9,8 +9,10 @@ type FbWarning struct {
 }
 
 func OpResponseToFbWarning(resp *fbproto.OpResponse) *FbWarning {
+	// Copy codes because OpResponse is reused by the client.
+	gdsCodes := append([]int(nil), resp.GdsCodes...)
 	return &FbWarning{
-		GdsCodes: resp.GdsCodes,
+		GdsCodes: gdsCodes,
 		Code:     resp.SqlState,
 		Message:  resp.WarnMessage,
 	}
