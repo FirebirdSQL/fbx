@@ -472,7 +472,7 @@ func (p scanPlanBinaryNumericToInt64Scanner) Scan(src []byte, dst any) error {
 	}
 
 	if src == nil {
-		return scanner.ScanInt64(Int8{}) // NULL
+		return scanner.ScanInt64(Int8{})
 	}
 
 	var n Numeric
@@ -578,18 +578,25 @@ func DecodeNumericBinaryFB(dst *Numeric, src []byte, scale int32) error {
 		return nil
 	}
 
-	var s int64
+	var bigInt *big.Int
 	switch len(src) {
 	case 4:
-		s = int64(int32(binary.BigEndian.Uint32(src)))
+		s := int64(int32(binary.BigEndian.Uint32(src)))
+		bigInt = big.NewInt(s)
 	case 8:
-		s = int64(binary.BigEndian.Uint64(src))
+		s := int64(binary.BigEndian.Uint64(src))
+		bigInt = big.NewInt(s)
+	case 16:
+		bigInt = new(big.Int)
+		if err := int128SetFromBinary(bigInt, src); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("unsupported numeric length: %d", len(src))
 	}
 
 	*dst = Numeric{
-		Int:   big.NewInt(s),
+		Int:   bigInt,
 		Exp:   scale,
 		Valid: true,
 	}
@@ -622,12 +629,19 @@ func EncodeNumericBinaryFB(buf []byte, n Numeric, scale int32, length uint32) ([
 		scaled.Set(&q)
 	}
 
-	if !scaled.IsInt64() {
-		return nil, fmt.Errorf("numeric value %v is out of range for int64", &n)
+	if scaled.IsInt64() {
+		val := scaled.Int64()
+		return appendFBScaledIntByLength(buf, val, length)
 	}
-	val := scaled.Int64()
 
-	return appendFBScaledIntByLength(buf, val, length)
+	if length == 16 {
+		if err := checkInt128Range(&scaled); err != nil {
+			return nil, fmt.Errorf("numeric value %v is out of range for int128: %w", &n, err)
+		}
+		return appendInt128BinaryFromBig(buf, &scaled)
+	}
+
+	return nil, fmt.Errorf("numeric value %v is out of range for length %d", &n, length)
 }
 
 func float64ToNumeric(f float64) (Numeric, error) {
@@ -709,12 +723,19 @@ func EncodeNumericBinaryFBRoundHalfAwayFromZero(buf []byte, n Numeric, scale int
 		scaled.Set(&q)
 	}
 
-	if !scaled.IsInt64() {
-		return nil, fmt.Errorf("numeric value %v is out of range for int64", &n)
+	if scaled.IsInt64() {
+		val := scaled.Int64()
+		return appendFBScaledIntByLength(buf, val, length)
 	}
-	val := scaled.Int64()
 
-	return appendFBScaledIntByLength(buf, val, length)
+	if length == 16 {
+		if err := checkInt128Range(&scaled); err != nil {
+			return nil, fmt.Errorf("numeric value %v is out of range for int128: %w", &n, err)
+		}
+		return appendInt128BinaryFromBig(buf, &scaled)
+	}
+
+	return nil, fmt.Errorf("numeric value %v is out of range for length %d", &n, length)
 }
 
 func appendFBScaledIntByLength(buf []byte, val int64, length uint32) ([]byte, error) {
@@ -742,7 +763,19 @@ func appendFBScaledIntByLength(buf []byte, val int64, length uint32) ([]byte, er
 		binary.BigEndian.PutUint64(tmp[:], uint64(val))
 		return append(buf, tmp[:]...), nil
 
+	case 16:
+		z := big.NewInt(val)
+		return appendInt128BinaryFromBig(buf, z)
+
 	default:
 		return nil, fmt.Errorf("unsupported numeric length %d", length)
 	}
+}
+
+func ParseNumeric(s string) (Numeric, error) {
+	num, exp, err := parseNumericString(s)
+	if err != nil {
+		return Numeric{}, err
+	}
+	return Numeric{Int: num, Exp: exp, Valid: true}, nil
 }

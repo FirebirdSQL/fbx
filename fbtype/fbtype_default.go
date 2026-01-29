@@ -61,6 +61,7 @@ func initDefaultMap() {
 	defaultMap.RegisterType(&Type{Name: "smallint", OID: fbproto.SQL_TYPE_SHORT, Codec: Int4Codec{}})
 	defaultMap.RegisterType(&Type{Name: "int", OID: fbproto.SQL_TYPE_LONG, Codec: Int4Codec{}})
 	defaultMap.RegisterType(&Type{Name: "bigint", OID: fbproto.SQL_TYPE_INT64, Codec: Int8Codec{}})
+	defaultMap.RegisterType(&Type{Name: "int128", OID: fbproto.SQL_TYPE_INT128, Codec: Int128Codec{}})
 	defaultMap.RegisterType(&Type{Name: "text", OID: fbproto.SQL_TYPE_TEXT, Codec: TextCodec{}})
 	defaultMap.RegisterType(&Type{Name: "time", OID: fbproto.SQL_TYPE_TIME, Codec: TimeCodec{}})
 	defaultMap.RegisterType(&Type{Name: "varchar", OID: fbproto.SQL_TYPE_VARYING, Codec: TextCodec{}})
@@ -72,6 +73,7 @@ func initDefaultMap() {
 	defaultMap.RegisterType(&Type{Name: "numeric", OID: MakeTypeSubtype(fbproto.SQL_TYPE_SHORT, 1), Codec: &NumericCodec{}})
 	defaultMap.RegisterType(&Type{Name: "numeric", OID: MakeTypeSubtype(fbproto.SQL_TYPE_LONG, 1), Codec: &NumericCodec{}})
 	defaultMap.RegisterType(&Type{Name: "numeric", OID: MakeTypeSubtype(fbproto.SQL_TYPE_INT64, 1), Codec: &NumericCodec{}})
+	defaultMap.RegisterType(&Type{Name: "numeric", OID: MakeTypeSubtype(fbproto.SQL_TYPE_INT128, 1), Codec: &NumericCodec{}})
 	defaultMap.RegisterType(&Type{Name: "octets", OID: MakeTypeSubtype(fbproto.SQL_TYPE_TEXT, 1), Codec: &ByteaCodec{}})
 	defaultMap.RegisterType(&Type{Name: "octets", OID: MakeTypeSubtype(fbproto.SQL_TYPE_VARYING, 1), Codec: &ByteaCodec{}})
 
@@ -105,6 +107,7 @@ func initDefaultMap() {
 	registerDefaultFbTypeVariants[Int2](defaultMap, "smallint")
 	registerDefaultFbTypeVariants[Int4](defaultMap, "int")
 	registerDefaultFbTypeVariants[Int8](defaultMap, "bigint")
+	registerDefaultFbTypeVariants[Int128](defaultMap, "int128")
 	registerDefaultFbTypeVariants[Numeric](defaultMap, "numeric")
 	registerDefaultFbTypeVariants[Text](defaultMap, "text")
 	registerDefaultFbTypeVariants[Time](defaultMap, "time")
