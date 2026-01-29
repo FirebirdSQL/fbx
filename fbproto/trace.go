@@ -174,6 +174,13 @@ func (t *tracer) traceExecuteMessage(sender byte, op *OpExecute) {
 					traceDoubleQuotedString([]byte(v.OriginalTableName)), v.Nullable)
 			}
 		}
+
+		if op.ProtocolFeatures.OpExecuteHaveTimeout {
+			fmt.Fprintf(t.buf, " timeout=%d", op.Timeout)
+		}
+		if op.ProtocolFeatures.OpExecuteHaveCursorFlags {
+			fmt.Fprintf(t.buf, " cursorFlags=%d", op.CursorFlags)
+		}
 	}
 
 	t.writeTrace(sender, "Execute", writeDetails)

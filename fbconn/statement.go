@@ -85,6 +85,18 @@ type Statement struct {
 	transaction  *FBTransaction
 	cursorOpened bool
 	closed       bool
+	timeout      int
+	cursorFlags  int
+}
+
+// SetTimeout sets statement timeout (milliseconds).
+func (st *Statement) SetTimeout(timeout int) {
+	st.timeout = timeout
+}
+
+// SetCursorFlags sets cursor flags for this statement.
+func (st *Statement) SetCursorFlags(flags int) {
+	st.cursorFlags = flags
 }
 
 // Exec executed a prepared statement inside bound transaction
@@ -104,7 +116,7 @@ func (st *Statement) Exec(ctx context.Context, paramValues [][]byte) *ResultRead
 		rr.closed = true
 		return rr
 	}
-	
+
 	if err = st.CloseCursor(ctx); err != nil {
 		st.conn.asyncClose()
 		rr.concludeCommand(QueryStatus{}, err)
@@ -203,6 +215,9 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 		SQLDataBlr:            sqlDataBlr,
 		SQLDataOutBlr:         rowBlr,
 		Parameters:            paramValues,
+		Timeout:               st.timeout,
+		CursorFlags:           st.cursorFlags,
+		ProtocolFeatures:      st.conn.protocolFeatures,
 	}); err != nil {
 		st.conn.asyncClose()
 		rr.concludeCommand(QueryStatus{}, err)
