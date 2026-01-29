@@ -23,5 +23,6 @@ var (
 		{PROTOCOL_VERSION15 | ProtocolFlag, GenericAchitectureClient, Ptype_lazy_send, Ptype_lazy_send, 12},
 		{PROTOCOL_VERSION16 | ProtocolFlag, GenericAchitectureClient, Ptype_lazy_send, Ptype_lazy_send, 14},
 		{PROTOCOL_VERSION17 | ProtocolFlag, GenericAchitectureClient, Ptype_lazy_send, Ptype_lazy_send, 16},
+		{PROTOCOL_VERSION18 | ProtocolFlag, GenericAchitectureClient, Ptype_lazy_send, Ptype_lazy_send, 18},
 	}
 )

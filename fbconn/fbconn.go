@@ -98,7 +98,8 @@ type FbConn struct {
 
 	config *Config
 
-	status byte // One of connStatus* constants
+	status        byte // One of connStatus* constants
+	protocolFeatures ProtocolFeatures
 
 	bufferingReceive    bool
 	bufferingReceiveMux sync.Mutex
@@ -191,6 +192,9 @@ func ConnectConfig(ctx context.Context, config *Config) (*FbConn, error) {
 }
 
 func (fbConn *FbConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *auth.AuthManager, respond bool) error {
+	if msg.Version != 0 {
+		fbConn.protocolFeatures = ProtocolFeaturesForVersion(msg.Version)
+	}
 	authPrintf("[AUTHDBG] cond_accept: plugin=%s data_len=%d\n", msg.PluginName, len(msg.Data))
 	authPrintf("%#v\n", msg)
 
@@ -1080,11 +1084,14 @@ func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 		StatementInfo:   &statementInfo,
 	}
 
-	if tx == fbConn.internalTransaction {
-		return &Statement{conn: fbConn, Description: desc}, nil
-	} else {
-		return &Statement{conn: fbConn, transaction: tx, Description: desc}, nil
+	st := &Statement{
+		conn:        fbConn,
+		Description: desc,
 	}
+	if tx != fbConn.internalTransaction {
+		st.transaction = tx
+	}
+	return st, nil
 }
 
 // CancelRequest sends a cancel request to the PostgreSQL server. It returns an error if unable to deliver the cancel
