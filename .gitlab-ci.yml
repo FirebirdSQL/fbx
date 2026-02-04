@@ -40,7 +40,12 @@ test:
     - cp ci/firebird.conf /opt/RedDatabase
     - g++ -o libfbxci.so -shared -fPIC ci/udrs.cpp -I_tools/msgs/include
     - cp libfbxci.so /opt/RedDatabase/plugins/udr
-    - /etc/init.d/firebird start
+    - |
+      if [ -e /etc/init.d/reddatabase ]; then
+        /etc/init.d/reddatabase start
+      else
+        /etc/init.d/firebird start
+      fi
   script:
     - go run gotest.tools/gotestsum@latest $(go list ./... | grep -v /vendor/) -coverprofile cover.out
   after_script:
