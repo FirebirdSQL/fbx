@@ -76,6 +76,8 @@ func initDefaultMap() {
 	defaultMap.RegisterType(&Type{Name: "numeric", OID: MakeTypeSubtype(fbproto.SQL_TYPE_INT128, 1), Codec: &NumericCodec{}})
 	defaultMap.RegisterType(&Type{Name: "octets", OID: MakeTypeSubtype(fbproto.SQL_TYPE_TEXT, 1), Codec: &ByteaCodec{}})
 	defaultMap.RegisterType(&Type{Name: "octets", OID: MakeTypeSubtype(fbproto.SQL_TYPE_VARYING, 1), Codec: &ByteaCodec{}})
+	defaultMap.RegisterType(&Type{Name: "decfloat16", OID: fbproto.SQL_TYPE_DEC64, Codec: DecFloat16Codec{}})
+	defaultMap.RegisterType(&Type{Name: "decfloat34", OID: fbproto.SQL_TYPE_DEC128, Codec: DecFloat34Codec{}})
 
 	// Integer types that directly map to a Firebird type
 	registerDefaultFbTypeVariants[int16](defaultMap, "smallint")
@@ -113,6 +115,8 @@ func initDefaultMap() {
 	registerDefaultFbTypeVariants[Time](defaultMap, "time")
 	registerDefaultFbTypeVariants[Timestamp](defaultMap, "timestamp")
 	registerDefaultFbTypeVariants[Timestamptz](defaultMap, "timestamptz")
+	registerDefaultFbTypeVariants[DecFloat16](defaultMap, "decfloat16")
+	registerDefaultFbTypeVariants[DecFloat34](defaultMap, "decfloat34")
 
 	defaultMap.buildReflectTypeToType()
 }
