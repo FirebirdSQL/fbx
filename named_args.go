@@ -3,21 +3,23 @@ package fbx
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 )
 
-// NamedArgs can be used as the first argument to a query method. It will replace every '@' named placeholder with a '$'
+// NamedArgs can be used as the first argument to a query method. It will replace every '@' named placeholder with a '?'
 // ordinal placeholder and construct the appropriate arguments.
 //
 // For example, the following two queries are equivalent:
 //
-//	conn.Query(ctx, "select * from widgets where foo = @foo and bar = @bar", pgx.NamedArgs{"foo": 1, "bar": 2})
-//	conn.Query(ctx, "select * from widgets where foo = $1 and bar = $2", 1, 2)
+//	conn.Query(ctx, "select * from widgets where foo = @foo and bar = @bar", fbx.NamedArgs{"foo": 1, "bar": 2})
+//	conn.Query(ctx, "select * from widgets where foo = ? and bar = ?", 1, 2)
 //
 // Named placeholders are case sensitive and must start with a letter or underscore. Subsequent characters can be
 // letters, numbers, or underscores.
+//
+// Note that Firebird arguments not ordinal, but positional, final arguments count can increase after query rewriting if
+// named argument used in query multiple times
 type NamedArgs map[string]any
 
 // RewriteQuery implements the QueryRewriter interface.
@@ -44,16 +46,18 @@ type sqlLexer struct {
 	stateFn stateFn
 	parts   []any
 
-	nameToOrdinal map[namedArg]int
+	namedArgs        map[namedArg]struct{}
+	positionalToName []namedArg
 }
 
 type stateFn func(*sqlLexer) stateFn
 
 func rewriteQuery(na map[string]any, sql string, isStrict bool) (newSQL string, newArgs []any, err error) {
 	l := &sqlLexer{
-		src:           sql,
-		stateFn:       rawState,
-		nameToOrdinal: make(map[namedArg]int, len(na)),
+		src:              sql,
+		stateFn:          rawState,
+		namedArgs:        make(map[namedArg]struct{}, len(na)),
+		positionalToName: make([]namedArg, 0, len(na)),
 	}
 
 	for l.stateFn != nil {
@@ -66,15 +70,14 @@ func rewriteQuery(na map[string]any, sql string, isStrict bool) (newSQL string, 
 		case string:
 			sb.WriteString(p)
 		case namedArg:
-			sb.WriteRune('$')
-			sb.WriteString(strconv.Itoa(l.nameToOrdinal[p]))
+			sb.WriteRune('?')
 		}
 	}
 
-	newArgs = make([]any, len(l.nameToOrdinal))
-	for name, ordinal := range l.nameToOrdinal {
+	newArgs = make([]any, len(l.positionalToName))
+	for pos, name := range l.positionalToName {
 		var found bool
-		newArgs[ordinal-1], found = na[string(name)]
+		newArgs[pos], found = na[string(name)]
 		if isStrict && !found {
 			return "", nil, fmt.Errorf("argument %s found in sql query but not present in StrictNamedArgs", name)
 		}
@@ -82,7 +85,7 @@ func rewriteQuery(na map[string]any, sql string, isStrict bool) (newSQL string, 
 
 	if isStrict {
 		for name := range na {
-			if _, found := l.nameToOrdinal[namedArg(name)]; !found {
+			if _, found := l.namedArgs[namedArg(name)]; !found {
 				return "", nil, fmt.Errorf("argument %s of StrictNamedArgs not found in sql query", name)
 			}
 		}
@@ -150,8 +153,9 @@ func namedArgState(l *sqlLexer) stateFn {
 		if r == utf8.RuneError {
 			if l.pos-l.start > 0 {
 				na := namedArg(l.src[l.start:l.pos])
-				if _, found := l.nameToOrdinal[na]; !found {
-					l.nameToOrdinal[na] = len(l.nameToOrdinal) + 1
+				l.positionalToName = append(l.positionalToName, na)
+				if _, found := l.namedArgs[na]; !found {
+					l.namedArgs[na] = struct{}{}
 				}
 				l.parts = append(l.parts, na)
 				l.start = l.pos
@@ -160,8 +164,9 @@ func namedArgState(l *sqlLexer) stateFn {
 		} else if !(isLetter(r) || (r >= '0' && r <= '9') || r == '_') {
 			l.pos -= width
 			na := namedArg(l.src[l.start:l.pos])
-			if _, found := l.nameToOrdinal[na]; !found {
-				l.nameToOrdinal[na] = len(l.nameToOrdinal) + 1
+			l.positionalToName = append(l.positionalToName, na)
+			if _, found := l.namedArgs[na]; !found {
+				l.namedArgs[na] = struct{}{}
 			}
 			l.parts = append(l.parts, namedArg(na))
 			l.start = l.pos

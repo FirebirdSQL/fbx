@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"rdb.red-soft.ru/fbx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"rdb.red-soft.ru/fbx"
 )
 
 func TestNamedArgsRewriteQuery(t *testing.T) {
@@ -22,25 +22,25 @@ func TestNamedArgsRewriteQuery(t *testing.T) {
 		{
 			sql:          "select * from users where id = @id",
 			namedArgs:    fbx.NamedArgs{"id": int32(42)},
-			expectedSQL:  "select * from users where id = $1",
+			expectedSQL:  "select * from users where id = ?",
 			expectedArgs: []any{int32(42)},
 		},
 		{
 			sql:          "select * from t where foo < @abc and baz = @def and bar < @abc",
 			namedArgs:    fbx.NamedArgs{"abc": int32(42), "def": int32(1)},
-			expectedSQL:  "select * from t where foo < $1 and baz = $2 and bar < $1",
-			expectedArgs: []any{int32(42), int32(1)},
+			expectedSQL:  "select * from t where foo < ? and baz = ? and bar < ?",
+			expectedArgs: []any{int32(42), int32(1), int32(42)},
 		},
 		{
-			sql:          "select @a::int, @b::text",
+			sql:          "select cast(@a as int), cast(@b as int) from rdb$database",
 			namedArgs:    fbx.NamedArgs{"a": int32(42), "b": "foo"},
-			expectedSQL:  "select $1::int, $2::text",
+			expectedSQL:  "select cast(? as int), cast(? as int) from rdb$database",
 			expectedArgs: []any{int32(42), "foo"},
 		},
 		{
-			sql:          "select @Abc::int, @b_4::text, @_c::int",
+			sql:          "select cast(@Abc as int), cast(@b_4 as varchar), cast(@_c as int) from rdb$database",
 			namedArgs:    fbx.NamedArgs{"Abc": int32(42), "b_4": "foo", "_c": int32(1)},
-			expectedSQL:  "select $1::int, $2::text, $3::int",
+			expectedSQL:  "select cast(? as int), cast(? as varchar), cast(? as int) from rdb$database",
 			expectedArgs: []any{int32(42), "foo", int32(1)},
 		},
 		{
@@ -64,7 +64,7 @@ func TestNamedArgsRewriteQuery(t *testing.T) {
 		{
 			sql:          `select *, '@foo' as "@bar" from users where id = @id`,
 			namedArgs:    fbx.NamedArgs{"id": int32(42)},
-			expectedSQL:  `select *, '@foo' as "@bar" from users where id = $1`,
+			expectedSQL:  `select *, '@foo' as "@bar" from users where id = ?`,
 			expectedArgs: []any{int32(42)},
 		},
 		{
@@ -74,7 +74,7 @@ func TestNamedArgsRewriteQuery(t *testing.T) {
 			namedArgs: fbx.NamedArgs{"id": int32(42)},
 			expectedSQL: `select * -- @foo
 			from users -- @single line comments
-			where id = $1;`,
+			where id = ?;`,
 			expectedArgs: []any{int32(42)},
 		},
 		{
@@ -90,7 +90,7 @@ func TestNamedArgsRewriteQuery(t *testing.T) {
 			*/
 			/* /* with @nesting */ */
 			from users
-			where id = $1;`,
+			where id = ?;`,
 			expectedArgs: []any{int32(42)},
 		},
 		{
@@ -102,7 +102,7 @@ func TestNamedArgsRewriteQuery(t *testing.T) {
 		{
 			sql:          "@missing argument",
 			namedArgs:    fbx.NamedArgs{},
-			expectedSQL:  "$1 argument",
+			expectedSQL:  "? argument",
 			expectedArgs: []any{nil},
 		},
 
@@ -135,7 +135,7 @@ func TestStrictNamedArgsRewriteQuery(t *testing.T) {
 		{
 			sql:             "@all @matches",
 			namedArgs:       fbx.StrictNamedArgs{"all": int32(1), "matches": int32(2)},
-			expectedSQL:     "$1 $2",
+			expectedSQL:     "? ?",
 			expectedArgs:    []any{int32(1), int32(2)},
 			isExpectedError: false,
 		},
