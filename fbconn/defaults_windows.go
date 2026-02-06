@@ -17,6 +17,10 @@ func defaultSettings() map[string]string {
 	settings["auth_plugin_list"] = auth.DefaultPluginListString()
 	settings["wire_crypt"] = "true"
 	settings["encoding"] = "UTF8"
+	settings["blob_buffer_size"] = "16384"
+	settings["use_stream_blobs"] = "true"
+	settings["max_inline_blob_size"] = "65536"
+	settings["max_blob_cache_size"] = "10485760"
 
 	user, err := user.Current()
 	if err == nil {

@@ -43,10 +43,6 @@ func (tx *Tx) Rollback(ctx context.Context) error {
 	return err
 }
 
-func (tx *Tx) LargeObjects() fbx.LargeObjects {
-	return tx.t.LargeObjects()
-}
-
 // Prepare creates a prepared statement with name and sql. If the name is empty,
 // an anonymous prepared statement will be used. sql can contain placeholders
 // for bound parameters. These placeholders are referenced positionally as $1, $2, etc.

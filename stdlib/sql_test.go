@@ -121,6 +121,89 @@ func TestSQLOpen(t *testing.T) {
 	}
 }
 
+func TestStdlibBlobBinary(t *testing.T) {
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		_, err := db.Exec("recreate table stdlib_blob_bin(id integer primary key, data blob sub_type 0)")
+		require.NoError(t, err)
+
+		data := make([]byte, 1024*1024*10)
+		for i := range data {
+			data[i] = byte((i % 251) + 1)
+		}
+
+		tx, err := db.Begin()
+		require.NoError(t, err)
+		defer func() { _ = tx.Rollback() }()
+
+		_, err = tx.Exec("insert into stdlib_blob_bin(id, data) values (?, ?)", 1, bytes.NewReader(data))
+		require.NoError(t, err)
+
+		rows, err := tx.Query("select data from stdlib_blob_bin where id = ?", 1)
+		require.NoError(t, err)
+
+		require.True(t, rows.Next())
+		var blob stdlib.Blob
+		err = rows.Scan(&blob)
+		require.NoError(t, err)
+		rows.Close()
+		require.NoError(t, rows.Err())
+
+		got, err := blob.Bytes()
+		require.NoError(t, err)
+		require.Equal(t, data, got)
+
+		require.NoError(t, tx.Commit())
+	})
+}
+
+func TestStdlibBlobText(t *testing.T) {
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		tests := []struct {
+			name    string
+			charset string
+			text    string
+		}{
+			{name: "utf8", charset: "UTF8", text: "blob-utf-" + string([]rune{0x20AC, 0x00A9})},
+			{name: "unicode_fss", charset: "UNICODE_FSS", text: "blob-fss-" + string([]rune{0x0422, 0x0435, 0x0441, 0x0442})},
+			{name: "ascii", charset: "ASCII", text: "blob-ascii"},
+		}
+
+		for _, tc := range tests {
+			tc := tc
+			t.Run(tc.name, func(t *testing.T) {
+				table := fmt.Sprintf("stdlib_blob_text_%s", tc.name)
+				_, err := db.Exec(fmt.Sprintf("recreate table %s(id integer primary key, data blob sub_type 1 character set %s)", table, tc.charset))
+				if err != nil {
+					t.Skipf("charset %s not supported: %v", tc.charset, err)
+				}
+
+				_, err = db.Exec(fmt.Sprintf("insert into %s(id, data) values (?, ?)", table), 1, tc.text)
+				require.NoError(t, err)
+
+				tx, err := db.Begin()
+				require.NoError(t, err)
+				defer func() { _ = tx.Rollback() }()
+
+				rows, err := tx.Query(fmt.Sprintf("select data from %s where id = ?", table), 1)
+				require.NoError(t, err)
+
+				require.True(t, rows.Next())
+				var blob stdlib.Blob
+				err = rows.Scan(&blob)
+				require.NoError(t, err)
+				rows.Close()
+				require.NoError(t, rows.Err())
+
+				got, err := blob.Text()
+				require.NoError(t, err)
+				require.Equal(t, tc.text, got)
+
+				require.NoError(t, tx.Commit())
+			})
+		}
+	})
+}
+
 func TestSQLOpenFromPool(t *testing.T) {
 	pool, err := fbxpool.New(context.Background(), os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)

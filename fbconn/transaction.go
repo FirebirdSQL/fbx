@@ -20,6 +20,7 @@ func (tx *FBTransaction) Commit(ctx context.Context) error {
 		return ErrTransactionClosed
 	}
 	tx.Closed = true
+	defer tx.Connection.clearInlineBlobCache(tx.Handle)
 	var err error
 
 	if err = tx.Connection.lock(); err != nil {
@@ -71,6 +72,7 @@ func (tx *FBTransaction) Rollback(ctx context.Context) error {
 		return ErrTransactionClosed
 	}
 	tx.Closed = true
+	defer tx.Connection.clearInlineBlobCache(tx.Handle)
 	var err error
 
 	if err = tx.Connection.lock(); err != nil {

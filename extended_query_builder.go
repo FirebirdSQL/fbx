@@ -1,14 +1,17 @@
 package fbx
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"io"
+	"reflect"
 
 	"rdb.red-soft.ru/fbx/fbconn"
 	"rdb.red-soft.ru/fbx/fbtype"
 )
 
-// ExtendedQueryBuilder is used to choose the parameter formats, to format the parameters and to choose the result
-// formats for an extended query.
+// ExtendedQueryBuilder chooses parameter formats, encodes parameters, and tracks result formats for statement execution.
 type ExtendedQueryBuilder struct {
 	ParamValues     [][]byte
 	paramValueBytes []byte
@@ -18,12 +21,12 @@ type ExtendedQueryBuilder struct {
 
 // Build sets ParamValues, ParamFormats, and ResultFormats for use with *FbConn.ExecParams or *FbConn.ExecPrepared. If
 // sd is nil then QueryExecModeExec behavior will be used.
-func (eqb *ExtendedQueryBuilder) Build(m *fbtype.Map, sd *fbconn.StatementDescription, args []any) error {
-	eqb.reset()
+func (pb *ExtendedQueryBuilder) Build(ctx context.Context, conn *Conn, tx *dbTx, m *fbtype.Map, sd *fbconn.StatementDescription, args []any) error {
+	pb.reset()
 
 	if sd == nil {
 		for i := range args {
-			err := eqb.appendParam(m, 0, 0, 0, 0, fbtype.TextFormatCode, args[i])
+			err := pb.appendParam(ctx, conn, tx, m, 0, 0, 0, 0, fbtype.TextFormatCode, args[i])
 			if err != nil {
 				err = fmt.Errorf("failed to encode args[%d]: %w", i, err)
 				return err
@@ -37,7 +40,7 @@ func (eqb *ExtendedQueryBuilder) Build(m *fbtype.Map, sd *fbconn.StatementDescri
 	}
 
 	for i := range args {
-		err := eqb.appendParam(m, sd.Parameters[i].Type, sd.Parameters[i].Subtype, sd.Parameters[i].Length, sd.Parameters[i].Scale, -1, args[i])
+		err := pb.appendParam(ctx, conn, tx, m, sd.Parameters[i].Type, sd.Parameters[i].Subtype, sd.Parameters[i].Length, sd.Parameters[i].Scale, -1, args[i])
 		if err != nil {
 			err = fmt.Errorf("failed to encode args[%d]: %w", i, err)
 			return err
@@ -49,11 +52,11 @@ func (eqb *ExtendedQueryBuilder) Build(m *fbtype.Map, sd *fbconn.StatementDescri
 
 // appendParam appends a parameter to the query. format may be -1 to automatically choose the format. If arg is nil it
 // must be an untyped nil.
-func (eqb *ExtendedQueryBuilder) appendParam(m *fbtype.Map, typeId uint32, subType int32, length uint32, scale int32, format int16, arg any) error {
+func (pb *ExtendedQueryBuilder) appendParam(ctx context.Context, conn *Conn, tx *dbTx, m *fbtype.Map, typeId uint32, subType int32, length uint32, scale int32, format int16, arg any) error {
 	format = 1
 	if format == -1 {
-		preferredFormat := eqb.chooseParameterFormatCode(m, typeId, arg)
-		preferredErr := eqb.appendParam(m, typeId, subType, length, scale, preferredFormat, arg)
+		preferredFormat := pb.chooseParameterFormatCode(m, typeId, arg)
+		preferredErr := pb.appendParam(ctx, conn, tx, m, typeId, subType, length, scale, preferredFormat, arg)
 		if preferredErr == nil {
 			return nil
 		}
@@ -65,7 +68,7 @@ func (eqb *ExtendedQueryBuilder) appendParam(m *fbtype.Map, typeId uint32, subTy
 			otherFormat = TextFormatCode
 		}
 
-		otherErr := eqb.appendParam(m, typeId, subType, length, scale, otherFormat, arg)
+		otherErr := pb.appendParam(ctx, conn, tx, m, typeId, subType, length, scale, otherFormat, arg)
 		if otherErr == nil {
 			return nil
 		}
@@ -73,67 +76,230 @@ func (eqb *ExtendedQueryBuilder) appendParam(m *fbtype.Map, typeId uint32, subTy
 		return preferredErr // return the error from the preferred format
 	}
 
-	v, err := eqb.encodeExtendedParamValue(m, typeId, subType, length, scale, format, arg)
+	v, err := pb.encodeParamValue(ctx, conn, tx, m, typeId, subType, length, scale, format, arg)
 	if err != nil {
 		return err
 	}
 
-	eqb.ParamFormats = append(eqb.ParamFormats, format)
-	eqb.ParamValues = append(eqb.ParamValues, v)
+	pb.ParamFormats = append(pb.ParamFormats, format)
+	pb.ParamValues = append(pb.ParamValues, v)
 
 	return nil
 }
 
 // appendResultFormat appends a result format to the query.
-func (eqb *ExtendedQueryBuilder) appendResultFormat(format int16) {
-	eqb.ResultFormats = append(eqb.ResultFormats, format)
+func (pb *ExtendedQueryBuilder) appendResultFormat(format int16) {
+	pb.ResultFormats = append(pb.ResultFormats, format)
 }
 
-// reset readies eqb to build another query.
-func (eqb *ExtendedQueryBuilder) reset() {
-	eqb.ParamValues = eqb.ParamValues[0:0]
-	eqb.paramValueBytes = eqb.paramValueBytes[0:0]
-	eqb.ParamFormats = eqb.ParamFormats[0:0]
-	eqb.ResultFormats = eqb.ResultFormats[0:0]
+// reset readies pb to build another query.
+func (pb *ExtendedQueryBuilder) reset() {
+	pb.ParamValues = pb.ParamValues[0:0]
+	pb.paramValueBytes = pb.paramValueBytes[0:0]
+	pb.ParamFormats = pb.ParamFormats[0:0]
+	pb.ResultFormats = pb.ResultFormats[0:0]
 
-	if cap(eqb.ParamValues) > 64 {
-		eqb.ParamValues = make([][]byte, 0, 64)
+	if cap(pb.ParamValues) > 64 {
+		pb.ParamValues = make([][]byte, 0, 64)
 	}
 
-	if cap(eqb.paramValueBytes) > 256 {
-		eqb.paramValueBytes = make([]byte, 0, 256)
+	if cap(pb.paramValueBytes) > 256 {
+		pb.paramValueBytes = make([]byte, 0, 256)
 	}
 
-	if cap(eqb.ParamFormats) > 64 {
-		eqb.ParamFormats = make([]int16, 0, 64)
+	if cap(pb.ParamFormats) > 64 {
+		pb.ParamFormats = make([]int16, 0, 64)
 	}
-	if cap(eqb.ResultFormats) > 64 {
-		eqb.ResultFormats = make([]int16, 0, 64)
+	if cap(pb.ResultFormats) > 64 {
+		pb.ResultFormats = make([]int16, 0, 64)
 	}
 }
 
-func (eqb *ExtendedQueryBuilder) encodeExtendedParamValue(m *fbtype.Map, oid uint32, subType int32, length uint32, scale int32, formatCode int16, arg any) ([]byte, error) {
-	if eqb.paramValueBytes == nil {
-		eqb.paramValueBytes = make([]byte, 0, 128)
+func (pb *ExtendedQueryBuilder) encodeParamValue(ctx context.Context, conn *Conn, tx *dbTx, m *fbtype.Map, typeId uint32, subType int32, length uint32, scale int32, formatCode int16, arg any) ([]byte, error) {
+	if pb.paramValueBytes == nil {
+		pb.paramValueBytes = make([]byte, 0, 128)
 	}
 
-	pos := len(eqb.paramValueBytes)
+	pos := len(pb.paramValueBytes)
 
-	buf, err := m.Encode(oid, subType, length, scale, formatCode, arg, eqb.paramValueBytes)
+	if fbconn.IsBlobType(typeId) || isBlobArgument(arg) {
+		buf, err := pb.encodeBlobParam(ctx, conn, tx, typeId, subType, scale, arg)
+		if err != nil {
+			return nil, err
+		}
+		if buf == nil {
+			return nil, nil
+		}
+		pb.paramValueBytes = append(pb.paramValueBytes, buf...)
+		return pb.paramValueBytes[pos:], nil
+	}
+
+	buf, err := m.Encode(typeId, subType, length, scale, formatCode, arg, pb.paramValueBytes)
 	if err != nil {
 		return nil, err
 	}
 	if buf == nil {
 		return nil, nil
 	}
-	eqb.paramValueBytes = buf
-	return eqb.paramValueBytes[pos:], nil
+	pb.paramValueBytes = buf
+	return pb.paramValueBytes[pos:], nil
+}
+
+func (pb *ExtendedQueryBuilder) encodeBlobParam(ctx context.Context, conn *Conn, tx *dbTx, typeId uint32, subType int32, scale int32, arg any) ([]byte, error) {
+	if isNilArg(arg) {
+		return nil, nil
+	}
+	if typeId != 0 && !fbconn.IsBlobType(typeId) {
+		return nil, fmt.Errorf("blob argument is not compatible with oid %d", typeId)
+	}
+	switch v := arg.(type) {
+	case []byte:
+		if !fbconn.IsBlobType(typeId) {
+			return nil, fmt.Errorf("blob parameter expected, got raw bytes")
+		}
+		return pb.createBlobFromBytes(ctx, conn, tx, subType, scale, v)
+	case string:
+		if !fbconn.IsBlobType(typeId) {
+			return nil, fmt.Errorf("blob parameter expected, got string")
+		}
+		return pb.createBlobFromString(ctx, conn, tx, subType, scale, v)
+	case io.Reader:
+		if typeId != 0 && !fbconn.IsBlobType(typeId) {
+			return nil, fmt.Errorf("blob parameter expected, got reader")
+		}
+		id, err := pb.createBlobFromReader(ctx, conn, tx, subType, scale, v)
+		if err != nil {
+			return nil, err
+		}
+		return fbconn.EncodeBlobID(int64(id)), nil
+	default:
+		if fbconn.IsBlobType(typeId) {
+			return nil, fmt.Errorf("unsupported blob argument type %T", arg)
+		}
+		return nil, fmt.Errorf("blob argument type %T is not compatible with oid %d", arg, typeId)
+	}
+}
+
+func (pb *ExtendedQueryBuilder) createBlobFromBytes(ctx context.Context, conn *Conn, tx *dbTx, subType int32, scale int32, data []byte) ([]byte, error) {
+	blobID, err := pb.createBlobFromReader(ctx, conn, tx, subType, scale, &bytesReader{data: data})
+	if err != nil {
+		return nil, err
+	}
+	return fbconn.EncodeBlobID(int64(blobID)), nil
+}
+
+func (pb *ExtendedQueryBuilder) createBlobFromString(ctx context.Context, conn *Conn, tx *dbTx, subType int32, scale int32, s string) ([]byte, error) {
+	if conn == nil {
+		return nil, errors.New("blob parameter requires connection")
+	}
+	cfg, err := blobConfigFromParam(conn, subType, scale)
+	if err != nil {
+		return nil, err
+	}
+	fbTx, err := resolveExecTx(ctx, conn, tx)
+	if err != nil {
+		return nil, err
+	}
+	blob, err := newOutputBlob(ctx, conn, fbTx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	writer, err := blob.Writer(ctx)
+	if err != nil {
+		_ = blob.Cancel(ctx)
+		return nil, err
+	}
+	if _, err := writer.WriteString(s); err != nil {
+		_ = writer.Cancel()
+		return nil, err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	return fbconn.EncodeBlobID(int64(blob.ID())), nil
+}
+
+func (pb *ExtendedQueryBuilder) createBlobFromReader(ctx context.Context, conn *Conn, tx *dbTx, subType int32, scale int32, r io.Reader) (blobID, error) {
+	if conn == nil {
+		return 0, errors.New("blob parameter requires connection")
+	}
+	cfg, err := blobConfigFromParam(conn, subType, scale)
+	if err != nil {
+		return 0, err
+	}
+	fbTx, err := resolveExecTx(ctx, conn, tx)
+	if err != nil {
+		return 0, err
+	}
+	blob, err := newOutputBlob(ctx, conn, fbTx, cfg)
+	if err != nil {
+		return 0, err
+	}
+	writer, err := blob.Writer(ctx)
+	if err != nil {
+		_ = blob.Cancel(ctx)
+		return 0, err
+	}
+	if _, err := io.Copy(writer, r); err != nil {
+		_ = writer.Cancel()
+		return 0, err
+	}
+	if err := writer.Close(); err != nil {
+		return 0, err
+	}
+	return blob.ID(), nil
+}
+
+func resolveExecTx(ctx context.Context, conn *Conn, tx *dbTx) (*fbconn.FBTransaction, error) {
+	if conn == nil || conn.fbConn == nil {
+		return nil, errors.New("blob parameter requires connection")
+	}
+	if tx != nil {
+		return tx.tx, nil
+	}
+	return nil, nil
+}
+
+func isBlobArgument(arg any) bool {
+	switch arg.(type) {
+	case io.Reader:
+		return true
+	default:
+		return false
+	}
+}
+
+func isNilArg(arg any) bool {
+	if arg == nil {
+		return true
+	}
+	v := reflect.ValueOf(arg)
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Map, reflect.Ptr, reflect.Interface, reflect.Slice:
+		return v.IsNil()
+	default:
+		return false
+	}
+}
+
+type bytesReader struct {
+	data []byte
+	pos  int
+}
+
+func (r *bytesReader) Read(p []byte) (int, error) {
+	if r.pos >= len(r.data) {
+		return 0, io.EOF
+	}
+	n := copy(p, r.data[r.pos:])
+	r.pos += n
+	return n, nil
 }
 
 // chooseParameterFormatCode determines the correct format code for an
 // argument to a prepared statement. It defaults to TextFormatCode if no
 // determination can be made.
-func (eqb *ExtendedQueryBuilder) chooseParameterFormatCode(m *fbtype.Map, oid uint32, arg any) int16 {
+func (pb *ExtendedQueryBuilder) chooseParameterFormatCode(m *fbtype.Map, oid uint32, arg any) int16 {
 	switch arg.(type) {
 	case string, *string:
 		return TextFormatCode

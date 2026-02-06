@@ -1,0 +1,13 @@
+package fbconn
+
+import "rdb.red-soft.ru/fbx/fbproto"
+
+// IsBlobType reports whether the type id represents a blob.
+func IsBlobType(typeId uint32) bool {
+	return typeId == fbproto.SQL_TYPE_BLOB
+}
+
+// IsBlob reports whether the field description represents a blob.
+func (fd FieldDescription) IsBlob() bool {
+	return IsBlobType(fd.Type)
+}
