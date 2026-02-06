@@ -150,7 +150,7 @@ func (pb *ExtendedQueryBuilder) encodeBlobParam(ctx context.Context, conn *Conn,
 		return nil, nil
 	}
 	if typeId != 0 && !fbconn.IsBlobType(typeId) {
-		return nil, fmt.Errorf("blob argument is not compatible with oid %d", typeId)
+		return nil, fmt.Errorf("blob argument is not compatible with typeid %d", typeId)
 	}
 	switch v := arg.(type) {
 	case []byte:
@@ -176,7 +176,7 @@ func (pb *ExtendedQueryBuilder) encodeBlobParam(ctx context.Context, conn *Conn,
 		if fbconn.IsBlobType(typeId) {
 			return nil, fmt.Errorf("unsupported blob argument type %T", arg)
 		}
-		return nil, fmt.Errorf("blob argument type %T is not compatible with oid %d", arg, typeId)
+		return nil, fmt.Errorf("blob argument type %T is not compatible with typeid %d", arg, typeId)
 	}
 }
 
@@ -299,11 +299,11 @@ func (r *bytesReader) Read(p []byte) (int, error) {
 // chooseParameterFormatCode determines the correct format code for an
 // argument to a prepared statement. It defaults to TextFormatCode if no
 // determination can be made.
-func (pb *ExtendedQueryBuilder) chooseParameterFormatCode(m *fbtype.Map, oid uint32, arg any) int16 {
+func (pb *ExtendedQueryBuilder) chooseParameterFormatCode(m *fbtype.Map, typeid uint32, arg any) int16 {
 	switch arg.(type) {
 	case string, *string:
 		return TextFormatCode
 	}
 
-	return m.FormatCodeForOID(oid)
+	return m.FormatCodeForTypeID(typeid)
 }

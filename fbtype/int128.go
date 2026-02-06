@@ -167,7 +167,7 @@ func (Int128Codec) FormatSupported(format int16) bool {
 
 func (Int128Codec) PreferredFormat() int16 { return BinaryFormatCode }
 
-func (Int128Codec) PlanEncode(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
+func (Int128Codec) PlanEncode(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
 	switch format {
 	case BinaryFormatCode:
 		switch value.(type) {
@@ -558,7 +558,7 @@ func (scanPlanBinaryInt128ToUint) Scan(src []byte, dst any) error {
 	return nil
 }
 
-func (c Int128Codec) DecodeDatabaseSQLValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
+func (c Int128Codec) DecodeDatabaseSQLValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
 	}
@@ -577,7 +577,7 @@ func (c Int128Codec) DecodeDatabaseSQLValue(m *Map, oid uint32, subType int32, l
 	}
 }
 
-func (c Int128Codec) DecodeValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error) {
+func (c Int128Codec) DecodeValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
 	}

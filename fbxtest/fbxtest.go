@@ -16,8 +16,8 @@ var AllQueryExecModes = []fbx.QueryExecMode{
 	fbx.QueryExecModeExec,
 }
 
-// KnownOIDQueryExecModes is a slice of all query exec modes where the param and result OIDs are known before sending the query.
-var KnownOIDQueryExecModes = []fbx.QueryExecMode{
+// KnownTypeIDQueryExecModes is a slice of all query exec modes where the param and result TypeIDs are known before sending the query.
+var KnownTypeIDQueryExecModes = []fbx.QueryExecMode{
 	fbx.QueryExecModeCacheStatement,
 }
 

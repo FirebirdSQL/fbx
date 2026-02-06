@@ -27,7 +27,7 @@ func TestUUIDCodec(t *testing.T) {
 		{Param: nil, Result: new(fbtype.UUID), Test: isExpectedEq(fbtype.UUID{})},
 	})
 
-	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, fbxtest.KnownOIDQueryExecModes, "uuid", []fbxtest.ValueRoundTripTest{
+	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, fbxtest.KnownTypeIDQueryExecModes, "uuid", []fbxtest.ValueRoundTripTest{
 		{Param: [16]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Result: new(fbtype.UUID), Test: isExpectedEq(fbtype.UUID{Bytes: [16]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Valid: true})},
 		{Param: renamedUUIDByteArray{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Result: new(fbtype.UUID), Test: isExpectedEq(fbtype.UUID{Bytes: [16]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Valid: true})},
 		{Param: []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Result: new(renamedUUIDByteArray), Test: isExpectedEq(renamedUUIDByteArray{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15})},

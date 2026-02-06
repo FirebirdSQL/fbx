@@ -213,8 +213,8 @@ func (TextCodec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, s
 	return nil
 }
 
-func (c TextCodec) DecodeDatabaseSQLValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
-	return c.DecodeValue(m, oid, subType, length, scale, format, src)
+func (c TextCodec) DecodeDatabaseSQLValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
+	return c.DecodeValue(m, typeid, subType, length, scale, format, src)
 }
 
 func (c TextCodec) DecodeValue(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error) {

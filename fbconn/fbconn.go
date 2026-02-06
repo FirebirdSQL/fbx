@@ -1225,9 +1225,9 @@ func (fbConn *FbConn) ExecTx(ctx context.Context, tx *FBTransaction, sql string)
 //
 // paramValues are the parameter values. It must be encoded in the format given by paramFormats.
 //
-// paramOIDs is a slice of data type OIDs for paramValues. If paramOIDs is nil, the server will infer the data type for
-// all parameters. Any paramOID element that is 0 that will cause the server to infer the data type for that parameter.
-// ExecParams will panic if len(paramOIDs) is not 0, 1, or len(paramValues).
+// paramTypeIDs is a slice of data type TypeIDs for paramValues. If paramTypeIDs is nil, the server will infer the data type for
+// all parameters. Any paramTypeID element that is 0 that will cause the server to infer the data type for that parameter.
+// ExecParams will panic if len(paramTypeIDs) is not 0, 1, or len(paramValues).
 //
 // paramFormats is a slice of format codes determining for each paramValue column whether it is encoded in text or
 // binary format. If paramFormats is nil all params are text format. ExecParams will panic if

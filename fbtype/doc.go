@@ -1,6 +1,6 @@
 // Package fbtype converts between Go and Firebird values.
 /*
-The primary type is the Map type. It is a map of Firebird types identified by OID (object ID) to a Codec. A Codec is
+The primary type is the Map type. It is a map of Firebird types identified by TypeID (object ID) to a Codec. A Codec is
 responsible for converting between Go and Firebird values. NewMap creates a Map with all supported standard Firebird
 types already registered. Additional types can be registered with Map.RegisterType.
 
@@ -75,8 +75,8 @@ integrations.
 
 New Firebird Type Support
 
-fbtype uses the Firebird OID to determine how to encode or decode a value. fbtype supports array, composite, domain,
-and enum types. However, any type created in Firebird with CREATE TYPE will receive a new OID. This means that the OID
+fbtype uses the Firebird TypeID to determine how to encode or decode a value. fbtype supports array, composite, domain,
+and enum types. However, any type created in Firebird with CREATE TYPE will receive a new TypeID. This means that the TypeID
 of each new Firebird type must be registered for fbtype to handle values of that type with the correct Codec.
 
 The fbx.Conn LoadType method can return a *Type for array, composite, domain, and enum types by inspecting the database
@@ -107,7 +107,7 @@ A type cannot be registered unless all types it depends on are already registere
 registered until its element type is registered.
 
 ArrayCodec implements support for arrays. If fbtype supports type T then it can easily support []T by registering an
-ArrayCodec for the appropriate Firebird OID. In addition, Array[T] type can support multi-dimensional arrays.
+ArrayCodec for the appropriate Firebird TypeID. In addition, Array[T] type can support multi-dimensional arrays.
 
 CompositeCodec implements support for Firebird composite types. Go structs can be scanned into if the public fields of
 the struct are in the exact order and type of the Firebird type or by implementing CompositeIndexScanner and
@@ -122,14 +122,14 @@ While fbtype will often still work with unregistered types it is highly recommen
 an improvement in performance and the elimination of certain edge cases.
 
 If an entirely new Firebird type (e.g. PostGIS types) is used then the application or a library can create a new
-Codec. Then the OID / Codec mapping can be registered with Map.RegisterType. There is no difference between a Codec
+Codec. Then the TypeID / Codec mapping can be registered with Map.RegisterType. There is no difference between a Codec
 defined and registered by the application and a Codec built in to fbtype. See any of the Codecs in fbtype for Codec
 examples and for examples of type registration.
 
 Encoding Unknown Types
 
-fbtype works best when the OID of the Firebird type is known. But in some cases such as using the simple protocol the
-OID is unknown. In this case Map.RegisterDefaultFbType can be used to register an assumed OID for a particular Go type.
+fbtype works best when the TypeID of the Firebird type is known. But in some cases such as using the simple protocol the
+TypeID is unknown. In this case Map.RegisterDefaultFbType can be used to register an assumed TypeID for a particular Go type.
 
 Renamed Types
 
@@ -159,7 +159,7 @@ example_child_records_test.go for an example.
 
 Overview of Scanning Implementation
 
-The first step is to use the OID to lookup the correct Codec. The Map will call the Codec's PlanScan method to get a
+The first step is to use the TypeID to lookup the correct Codec. The Map will call the Codec's PlanScan method to get a
 plan for scanning into the Go value. A Codec will support scanning into one or more Go types. Oftentime these Go types
 are interfaces rather than explicit types. For example, PointCodec can use any Go type that implements the PointScanner
 and PointValuer interfaces.

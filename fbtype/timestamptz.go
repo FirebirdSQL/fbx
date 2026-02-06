@@ -101,7 +101,7 @@ func (*TimestamptzCodec) PreferredFormat() int16 {
 	return BinaryFormatCode
 }
 
-func (*TimestamptzCodec) PlanEncode(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
+func (*TimestamptzCodec) PlanEncode(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
 	if format != BinaryFormatCode {
 		return nil
 	}
@@ -286,13 +286,13 @@ func (plan *scanPlanBinaryTimestamptzToStringScanner) Scan(src []byte, dst any) 
 	return nil
 }
 
-func (c *TimestamptzCodec) DecodeDatabaseSQLValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
+func (c *TimestamptzCodec) DecodeDatabaseSQLValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var tstz Timestamptz
-	err := codecScan(c, m, oid, subType, length, scale, format, src, &tstz)
+	err := codecScan(c, m, typeid, subType, length, scale, format, src, &tstz)
 	if err != nil {
 		return nil, err
 	}
@@ -300,13 +300,13 @@ func (c *TimestamptzCodec) DecodeDatabaseSQLValue(m *Map, oid uint32, subType in
 	return tstz.Time, nil
 }
 
-func (c *TimestamptzCodec) DecodeValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error) {
+func (c *TimestamptzCodec) DecodeValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var tstz Timestamptz
-	err := codecScan(c, m, oid, subType, length, scale, format, src, &tstz)
+	err := codecScan(c, m, typeid, subType, length, scale, format, src, &tstz)
 	if err != nil {
 		return nil, err
 	}

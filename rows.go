@@ -345,7 +345,7 @@ func (rows *baseRows) Values() ([]any, error) {
 			continue
 		}
 
-		if dt, ok := rows.typeMap.TypeForOID(fd.Type, fd.Subtype); ok {
+		if dt, ok := rows.typeMap.TypeForTypeID(fd.Type, fd.Subtype); ok {
 			value, err := dt.Codec.DecodeValue(rows.typeMap, fd.Type, fd.Subtype, fd.Length, fd.Scale, fd.Format, buf)
 			if err != nil {
 				rows.fatal(err)
@@ -456,8 +456,8 @@ func (e ScanArgError) Unwrap() error {
 
 // ScanRow decodes raw row data into dest. It can be used to scan rows read from the lower level fbconn interface.
 //
-// typeMap - OID to Go type mapping.
-// fieldDescriptions - OID and format of values
+// typeMap - TypeID to Go type mapping.
+// fieldDescriptions - TypeID and format of values
 // values - the raw data as returned from the PostgreSQL server
 // dest - the destination that values will be decoded into
 func ScanRow(typeMap *fbtype.Map, fieldDescriptions []fbconn.FieldDescription, values [][]byte, dest ...any) error {

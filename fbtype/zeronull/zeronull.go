@@ -4,7 +4,7 @@ import (
 	"rdb.red-soft.ru/fbx/fbtype"
 )
 
-// Register registers the zeronull types so they can be used in query exec modes that do not know the server OIDs.
+// Register registers the zeronull types so they can be used in query exec modes that do not know the server TypeIDs.
 func Register(m *fbtype.Map) {
 	m.RegisterDefaultFbType(Float8(0), "float8")
 	m.RegisterDefaultFbType(Int2(0), "int2")
