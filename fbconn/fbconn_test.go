@@ -1580,7 +1580,7 @@ func TestConnCancelRequest(t *testing.T) {
 	_, err = fbConn.Exec(ctx, "recreate function fbsleep (delay float not null) returns float external name 'fbxci!fbsleep' engine udr;").Close()
 	require.NoError(t, err)
 
-	rr := fbConn.Exec(ctx, "select 'Hello, world', fbsleep(25) from rdb$database")
+	rr := fbConn.Exec(ctx, `select 'Hello, world', fbsleep(3) from (`+generateSeriesQuery(1, 10, "")+`)`)
 
 	errChan := make(chan error)
 	go func() {
