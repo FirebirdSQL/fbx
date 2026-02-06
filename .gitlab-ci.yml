@@ -37,7 +37,7 @@ test:
     - wget -q ${RDB_DOWNLOAD_URL} -O installer
     - chmod +x ./installer
     - ./installer --mode unattended --sysdba_password masterkey
-    - cp ci/firebird.conf /opt/RedDatabase
+    - cp ci/firebird.conf ci/fbtrace.conf /opt/RedDatabase
     - g++ -o libfbxci.so -shared -fPIC ci/udrs.cpp -I_tools/msgs/include
     - cp libfbxci.so /opt/RedDatabase/plugins/udr
     - |
@@ -55,6 +55,7 @@ test:
     when: always
     paths:
       - cover.html
+      - /tmp/fbtrace.log
   coverage: '/total:\s+\(statements\)\s+\d+.\d+%/'
   parallel:
     matrix:
