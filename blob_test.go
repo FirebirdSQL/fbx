@@ -18,7 +18,9 @@ import (
 )
 
 func TestBlobReadBytesAndReader(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
 	runWithBlobStreamModes(ctx, t, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		table := createBlobTestTable(ctx, t, conn)
 		dataA := makeBlobData(16384*2 + 17)
@@ -91,7 +93,9 @@ func TestBlobReadBytesAndReader(t *testing.T) {
 }
 
 func TestClobReadString(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
 	runWithBlobStreamModes(ctx, t, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		table := createBlobTestTable(ctx, t, conn)
 		textValue := strings.Repeat("clob-data-", 1000)
@@ -107,7 +111,9 @@ func TestClobReadString(t *testing.T) {
 }
 
 func TestBlobExecParamAutoCreate(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
 	runWithBlobStreamModes(ctx, t, func(ctx context.Context, t testing.TB, config *fbx.ConnConfig) {
 		config.DefaultQueryExecMode = fbx.QueryExecModeCacheStatement
 	}, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
@@ -139,7 +145,9 @@ func TestBlobExecParamAutoCreate(t *testing.T) {
 }
 
 func TestBlobExecParamExplicitTxCommit(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
 	runWithBlobStreamModes(ctx, t, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		table := createBlobTestTable(ctx, t, conn)
 		data := makeBlobData(2048 + 3)
@@ -171,7 +179,9 @@ func TestBlobExecParamExplicitTxCommit(t *testing.T) {
 }
 
 func TestBlobExecParamExplicitTxRollback(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
 	runWithBlobStreamModes(ctx, t, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		table := createBlobTestTable(ctx, t, conn)
 		data := makeBlobData(1024 + 7)
@@ -191,7 +201,9 @@ func TestBlobExecParamExplicitTxRollback(t *testing.T) {
 }
 
 func TestInlineBlobHandler(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
 	runWithBlobStreamModes(ctx, t, func(ctx context.Context, t testing.TB, config *fbx.ConnConfig) {
 		config.MaxInlineBlobSize = 65536
 		config.MaxBlobCacheSize = 1 << 20
@@ -266,7 +278,9 @@ func parseEngineMajorVersion(version string) (int, bool) {
 }
 
 func TestBlobExecParamFromFile(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
 	runWithBlobStreamModes(ctx, t, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		table := createBlobTestTable(ctx, t, conn)
 		data := makeBlobData(5 * 1024 * 1024)
