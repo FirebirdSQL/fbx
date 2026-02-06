@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -13,7 +14,10 @@ import (
 )
 
 func TestUUIDTranscode(t *testing.T) {
-	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "uuid", []fbxtest.ValueRoundTripTest{
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbxtest.RunValueRoundTripTests(ctx, t, defaultConnTestRunner, nil, "uuid", []fbxtest.ValueRoundTripTest{
 		{
 			Param:  (zeronull.UUID)([16]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}),
 			Result: new(zeronull.UUID),
@@ -33,7 +37,10 @@ func TestUUIDTranscode(t *testing.T) {
 }
 
 func TestUUIDtoFB(t *testing.T) {
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	defaultConnTestRunner.RunTest(ctx, t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		_, err := conn.Exec(ctx, "recreate table u(u char(16) character set octets)")
 		require.NoError(t, err)
 		_, err = conn.Exec(ctx, "insert into u values(gen_uuid())")
