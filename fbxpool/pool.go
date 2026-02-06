@@ -643,7 +643,7 @@ func (p *Pool) Exec(ctx context.Context, sql string, arguments ...any) (fbconn.Q
 // If preferred, ignore the error returned from Query and handle errors using the returned pgx.Rows.
 //
 // For extra control over how the query is executed, the types QuerySimpleProtocol, QueryResultFormats, and
-// QueryResultFormatsByOID may be used as the first args to control exactly how the query is executed. This is rarely
+// QueryResultFormatsByTypeID may be used as the first args to control exactly how the query is executed. This is rarely
 // needed. See the documentation for those types for details.
 func (p *Pool) Query(ctx context.Context, sql string, args ...any) (fbx.Rows, error) {
 	c, err := p.Acquire(ctx)
@@ -670,7 +670,7 @@ func (p *Pool) Query(ctx context.Context, sql string, args ...any) (fbx.Rows, er
 // Arguments should be referenced positionally from the SQL string as $1, $2, etc.
 //
 // For extra control over how the query is executed, the types QuerySimpleProtocol, QueryResultFormats, and
-// QueryResultFormatsByOID may be used as the first args to control exactly how the query is executed. This is rarely
+// QueryResultFormatsByTypeID may be used as the first args to control exactly how the query is executed. This is rarely
 // needed. See the documentation for those types for details.
 func (p *Pool) QueryRow(ctx context.Context, sql string, args ...any) fbx.Row {
 	c, err := p.Acquire(ctx)

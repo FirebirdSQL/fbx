@@ -148,7 +148,7 @@ func (UUIDCodec) PreferredFormat() int16 {
 	return BinaryFormatCode
 }
 
-func (UUIDCodec) PlanEncode(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
+func (UUIDCodec) PlanEncode(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
 	if _, ok := value.(UUIDValuer); !ok {
 		return nil
 	}
@@ -193,7 +193,7 @@ func (encodePlanUUIDCodecTextUUIDValuer) Encode(value any, buf []byte) (newBuf [
 	return append(buf, encodeUUID(uuid.Bytes)...), nil
 }
 
-func (UUIDCodec) PlanScan(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
+func (UUIDCodec) PlanScan(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
 	switch format {
 	case BinaryFormatCode:
 		switch target.(type) {
@@ -266,13 +266,13 @@ func (scanPlanTextAnyToUUIDScanner) Scan(src []byte, dst any) error {
 
 	return scanner.ScanUUID(UUID{Bytes: buf, Valid: true})
 }
-func (c UUIDCodec) DecodeDatabaseSQLValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
+func (c UUIDCodec) DecodeDatabaseSQLValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var uuid UUID
-	err := codecScan(c, m, oid, subType, length, scale, format, src, &uuid)
+	err := codecScan(c, m, typeid, subType, length, scale, format, src, &uuid)
 	if err != nil {
 		return nil, err
 	}
@@ -280,13 +280,13 @@ func (c UUIDCodec) DecodeDatabaseSQLValue(m *Map, oid uint32, subType int32, len
 	return encodeUUID(uuid.Bytes), nil
 }
 
-func (c UUIDCodec) DecodeValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error) {
+func (c UUIDCodec) DecodeValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var uuid UUID
-	err := codecScan(c, m, oid, subType, length, scale, format, src, &uuid)
+	err := codecScan(c, m, typeid, subType, length, scale, format, src, &uuid)
 	if err != nil {
 		return nil, err
 	}

@@ -244,7 +244,7 @@ func (NumericCodec) PreferredFormat() int16 {
 	return BinaryFormatCode
 }
 
-func (NumericCodec) PlanEncode(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
+func (NumericCodec) PlanEncode(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
 	switch value.(type) {
 	case NumericValuer:
 		return encodePlanNumericCodecBinaryNumericValuer{scale: scale, length: length}
@@ -537,7 +537,7 @@ func (scanPlanTextAnyToNumericScanner) Scan(src []byte, dst any) error {
 	return scanner.ScanNumeric(Numeric{Int: num, Exp: exp, Valid: true})
 }
 
-func (c NumericCodec) DecodeDatabaseSQLValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
+func (c NumericCodec) DecodeDatabaseSQLValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
 	}
@@ -547,25 +547,25 @@ func (c NumericCodec) DecodeDatabaseSQLValue(m *Map, oid uint32, subType int32, 
 	}
 
 	var n Numeric
-	err := codecScan(c, m, oid, subType, length, scale, format, src, &n)
+	err := codecScan(c, m, typeid, subType, length, scale, format, src, &n)
 	if err != nil {
 		return nil, err
 	}
 
-	buf, err := m.Encode(oid, subType, length, scale, TextFormatCode, n, nil)
+	buf, err := m.Encode(typeid, subType, length, scale, TextFormatCode, n, nil)
 	if err != nil {
 		return nil, err
 	}
 	return string(buf), nil
 }
 
-func (c NumericCodec) DecodeValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error) {
+func (c NumericCodec) DecodeValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var n Numeric
-	err := codecScan(c, m, oid, subType, length, scale, format, src, &n)
+	err := codecScan(c, m, typeid, subType, length, scale, format, src, &n)
 	if err != nil {
 		return nil, err
 	}

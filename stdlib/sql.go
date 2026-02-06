@@ -91,7 +91,7 @@ import (
 )
 
 // Only intrinsic types should be binary format with database/sql.
-var databaseSQLResultFormats fbx.QueryResultFormatsByOID
+var databaseSQLResultFormats fbx.QueryResultFormatsByTypeID
 
 var fbxDriver *Driver
 
@@ -106,7 +106,7 @@ func init() {
 		sql.Register("fbx", fbxDriver)
 	}
 
-	databaseSQLResultFormats = fbx.QueryResultFormatsByOID{
+	databaseSQLResultFormats = fbx.QueryResultFormatsByTypeID{
 		fbproto.SQL_TYPE_BOOLEAN:      1,
 		fbproto.SQL_TYPE_DATE:         1,
 		fbproto.SQL_TYPE_FLOAT:        1,
@@ -605,9 +605,9 @@ func (r *Rows) Columns() []string {
 	return r.columnNames
 }
 
-// ColumnTypeDatabaseTypeName returns the database system type name. If the name is unknown the OID is returned.
+// ColumnTypeDatabaseTypeName returns the database system type name. If the name is unknown the TypeID is returned.
 func (r *Rows) ColumnTypeDatabaseTypeName(index int) string {
-	if dt, ok := r.conn.conn.TypeMap().TypeForOID(r.rows.FieldDescriptions()[index].Type, r.rows.FieldDescriptions()[index].Subtype); ok {
+	if dt, ok := r.conn.conn.TypeMap().TypeForTypeID(r.rows.FieldDescriptions()[index].Type, r.rows.FieldDescriptions()[index].Subtype); ok {
 		return strings.ToUpper(dt.Name)
 	}
 
@@ -625,7 +625,7 @@ func (r *Rows) ColumnTypeLength(index int) (int64, bool) {
 	switch fd.Type {
 	case fbproto.SQL_TYPE_TEXT:
 		return math.MaxInt64, true
-	// case fbtype.VarcharOID, fbtype.BPCharArrayOID:
+	// case fbtype.VarcharTypeID, fbtype.BPCharArrayTypeID:
 	// 	// FIXME: fbx
 	// 	//return int64(fd.TypeModifier - varHeaderSize), true
 	// 	return 0, true
@@ -640,7 +640,7 @@ func (r *Rows) ColumnTypePrecisionScale(index int) (precision, scale int64, ok b
 	fd := r.rows.FieldDescriptions()[index]
 
 	switch fd.Type {
-	// case fbtype.NumericOID:
+	// case fbtype.NumericTypeID:
 	// 	// FIXME: fbx
 	// 	mod := 0 //fd.TypeModifier - varHeaderSize
 	// 	precision = int64((mod >> 16) & 0xffff)
@@ -670,11 +670,11 @@ func (r *Rows) ColumnTypeScanType(index int) reflect.Type {
 		return reflect.TypeOf(int16(0))
 	case fbproto.SQL_TYPE_BOOLEAN:
 		return reflect.TypeOf(false)
-	// case fbtype.NumericOID:
+	// case fbtype.NumericTypeID:
 	// 	return reflect.TypeOf(float64(0))
 	case fbproto.SQL_TYPE_DATE, fbproto.SQL_TYPE_TIMESTAMP, fbproto.SQL_TYPE_TIMESTAMP_TZ:
 		return reflect.TypeOf(time.Time{})
-	// case fbtype.ByteaOID:
+	// case fbtype.ByteaTypeID:
 	// 	return reflect.TypeOf([]byte(nil))
 	default:
 		return reflect.TypeOf("")
@@ -695,7 +695,7 @@ func (r *Rows) Next(dest []driver.Value) error {
 		r.blobColumns = make([]bool, len(fieldDescriptions))
 
 		for i, fd := range fieldDescriptions {
-			dataTypeOID := fd.Type
+			dataTypeTypeID := fd.Type
 			format := fd.Format
 
 			switch fd.Type {
@@ -705,21 +705,21 @@ func (r *Rows) Next(dest []driver.Value) error {
 				continue
 			case fbproto.SQL_TYPE_BOOLEAN:
 				var d bool
-				scanPlan := m.PlanScan(dataTypeOID, fd.Subtype, fd.Length, fd.Scale, format, &d)
+				scanPlan := m.PlanScan(dataTypeTypeID, fd.Subtype, fd.Length, fd.Scale, format, &d)
 				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
 					err := scanPlan.Scan(src, &d)
 					return d, err
 				}
-			// case fbtype.ByteaOID:
+			// case fbtype.ByteaTypeID:
 			// 	var d []byte
-			// 	scanPlan := m.PlanScan(dataTypeOID, fd.Subtype, fd.Length, fd.Scale, format, &d)
+			// 	scanPlan := m.PlanScan(dataTypeTypeID, fd.Subtype, fd.Length, fd.Scale, format, &d)
 			// 	r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
 			// 		err := scanPlan.Scan(src, &d)
 			// 		return d, err
 			// 	}
 			// case fbtype.CIDOID, fbtype.OIDOID, fbtype.XIDOID:
 			// 	var d fbtype.Uint32
-			// 	scanPlan := m.PlanScan(dataTypeOID, fd.Subtype, fd.Length, fd.Scale, format, &d)
+			// 	scanPlan := m.PlanScan(dataTypeTypeID, fd.Subtype, fd.Length, fd.Scale, format, &d)
 			// 	r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
 			// 		err := scanPlan.Scan(src, &d)
 			// 		if err != nil {
@@ -729,7 +729,7 @@ func (r *Rows) Next(dest []driver.Value) error {
 			// 	}
 			case fbproto.SQL_TYPE_DATE:
 				var d fbtype.Date
-				scanPlan := m.PlanScan(dataTypeOID, fd.Subtype, fd.Length, fd.Scale, format, &d)
+				scanPlan := m.PlanScan(dataTypeTypeID, fd.Subtype, fd.Length, fd.Scale, format, &d)
 				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
 					err := scanPlan.Scan(src, &d)
 					if err != nil {
@@ -739,42 +739,42 @@ func (r *Rows) Next(dest []driver.Value) error {
 				}
 			case fbproto.SQL_TYPE_FLOAT:
 				var d float32
-				scanPlan := m.PlanScan(dataTypeOID, fd.Subtype, fd.Length, fd.Scale, format, &d)
+				scanPlan := m.PlanScan(dataTypeTypeID, fd.Subtype, fd.Length, fd.Scale, format, &d)
 				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
 					err := scanPlan.Scan(src, &d)
 					return float64(d), err
 				}
 			case fbproto.SQL_TYPE_DOUBLE:
 				var d float64
-				scanPlan := m.PlanScan(dataTypeOID, fd.Subtype, fd.Length, fd.Scale, format, &d)
+				scanPlan := m.PlanScan(dataTypeTypeID, fd.Subtype, fd.Length, fd.Scale, format, &d)
 				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
 					err := scanPlan.Scan(src, &d)
 					return d, err
 				}
 			case fbproto.SQL_TYPE_SHORT:
 				var d int16
-				scanPlan := m.PlanScan(dataTypeOID, fd.Subtype, fd.Length, fd.Scale, format, &d)
+				scanPlan := m.PlanScan(dataTypeTypeID, fd.Subtype, fd.Length, fd.Scale, format, &d)
 				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
 					err := scanPlan.Scan(src, &d)
 					return int64(d), err
 				}
 			case fbproto.SQL_TYPE_LONG:
 				var d int32
-				scanPlan := m.PlanScan(dataTypeOID, fd.Subtype, fd.Length, fd.Scale, format, &d)
+				scanPlan := m.PlanScan(dataTypeTypeID, fd.Subtype, fd.Length, fd.Scale, format, &d)
 				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
 					err := scanPlan.Scan(src, &d)
 					return int64(d), err
 				}
 			case fbproto.SQL_TYPE_INT64:
 				var d int64
-				scanPlan := m.PlanScan(dataTypeOID, fd.Subtype, fd.Length, fd.Scale, format, &d)
+				scanPlan := m.PlanScan(dataTypeTypeID, fd.Subtype, fd.Length, fd.Scale, format, &d)
 				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
 					err := scanPlan.Scan(src, &d)
 					return d, err
 				}
 			// case fbtype.JSONOID, fbtype.JSONBOID:
 			// 	var d []byte
-			// 	scanPlan := m.PlanScan(dataTypeOID, fd.Subtype, fd.Length, fd.Scale, format, &d)
+			// 	scanPlan := m.PlanScan(dataTypeTypeID, fd.Subtype, fd.Length, fd.Scale, format, &d)
 			// 	r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
 			// 		err := scanPlan.Scan(src, &d)
 			// 		if err != nil {
@@ -784,7 +784,7 @@ func (r *Rows) Next(dest []driver.Value) error {
 			// 	}
 			case fbproto.SQL_TYPE_TIMESTAMP:
 				var d fbtype.Timestamp
-				scanPlan := m.PlanScan(dataTypeOID, fd.Subtype, fd.Length, fd.Scale, format, &d)
+				scanPlan := m.PlanScan(dataTypeTypeID, fd.Subtype, fd.Length, fd.Scale, format, &d)
 				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
 					err := scanPlan.Scan(src, &d)
 					if err != nil {
@@ -794,7 +794,7 @@ func (r *Rows) Next(dest []driver.Value) error {
 				}
 			case fbproto.SQL_TYPE_TIMESTAMP_TZ:
 				var d fbtype.Timestamptz
-				scanPlan := m.PlanScan(dataTypeOID, fd.Subtype, fd.Length, fd.Scale, format, &d)
+				scanPlan := m.PlanScan(dataTypeTypeID, fd.Subtype, fd.Length, fd.Scale, format, &d)
 				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
 					err := scanPlan.Scan(src, &d)
 					if err != nil {
@@ -804,7 +804,7 @@ func (r *Rows) Next(dest []driver.Value) error {
 				}
 			// case fbtype.XMLOID:
 			// 	var d []byte
-			// 	scanPlan := m.PlanScan(dataTypeOID, fd.Subtype, fd.Length, fd.Scale, format, &d)
+			// 	scanPlan := m.PlanScan(dataTypeTypeID, fd.Subtype, fd.Length, fd.Scale, format, &d)
 			// 	r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
 			// 		err := scanPlan.Scan(src, &d)
 			// 		if err != nil {
@@ -815,14 +815,14 @@ func (r *Rows) Next(dest []driver.Value) error {
 			default:
 				if fd.Subtype != fbproto.CS_BINARY {
 					var d string
-					scanPlan := m.PlanScan(dataTypeOID, fd.Subtype, fd.Length, fd.Scale, format, &d)
+					scanPlan := m.PlanScan(dataTypeTypeID, fd.Subtype, fd.Length, fd.Scale, format, &d)
 					r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
 						err := scanPlan.Scan(src, &d)
 						return d, err
 					}
 				} else {
 					var d []byte
-					scanPlan := m.PlanScan(dataTypeOID, fd.Subtype, fd.Length, fd.Scale, format, &d)
+					scanPlan := m.PlanScan(dataTypeTypeID, fd.Subtype, fd.Length, fd.Scale, format, &d)
 					r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
 						err := scanPlan.Scan(src, &d)
 						return d, err

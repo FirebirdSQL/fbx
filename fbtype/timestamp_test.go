@@ -38,7 +38,7 @@ func TestTimestampCodecWithScanLocationUTC(t *testing.T) {
 	connTestRunner.AfterConnect = func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		conn.TypeMap().RegisterType(&fbtype.Type{
 			Name:  "timestamp",
-			OID:   fbproto.SQL_TYPE_TIMESTAMP,
+			TypeID:   fbproto.SQL_TYPE_TIMESTAMP,
 			Codec: &fbtype.TimestampCodec{ScanLocation: time.UTC},
 		})
 	}
@@ -53,7 +53,7 @@ func TestTimestampCodecWithScanLocationLocal(t *testing.T) {
 	connTestRunner.AfterConnect = func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		conn.TypeMap().RegisterType(&fbtype.Type{
 			Name:  "timestamp",
-			OID:   fbproto.SQL_TYPE_TIMESTAMP,
+			TypeID:   fbproto.SQL_TYPE_TIMESTAMP,
 			Codec: &fbtype.TimestampCodec{ScanLocation: time.Local},
 		})
 	}

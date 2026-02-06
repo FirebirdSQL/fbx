@@ -28,10 +28,10 @@ func GetSubType(t uint32) int32 {
 
 func initDefaultMap() {
 	defaultMap = &Map{
-		oidToType:         make(map[uint32]*Type),
-		nameToType:        make(map[string]*Type),
-		reflectTypeToName: make(map[reflect.Type]string),
-		oidToFormatCode:   make(map[uint32]int16),
+		typeidToType:       make(map[uint32]*Type),
+		nameToType:         make(map[string]*Type),
+		reflectTypeToName:  make(map[reflect.Type]string),
+		typeidToFormatCode: make(map[uint32]int16),
 
 		memoizedEncodePlans: make(map[encodePlanKey]map[reflect.Type][2]EncodePlan),
 
@@ -57,27 +57,27 @@ func initDefaultMap() {
 	}
 
 	// Base types
-	defaultMap.RegisterType(&Type{Name: "date", OID: fbproto.SQL_TYPE_DATE, Codec: DateCodec{}})
-	defaultMap.RegisterType(&Type{Name: "smallint", OID: fbproto.SQL_TYPE_SHORT, Codec: Int4Codec{}})
-	defaultMap.RegisterType(&Type{Name: "int", OID: fbproto.SQL_TYPE_LONG, Codec: Int4Codec{}})
-	defaultMap.RegisterType(&Type{Name: "bigint", OID: fbproto.SQL_TYPE_INT64, Codec: Int8Codec{}})
-	defaultMap.RegisterType(&Type{Name: "int128", OID: fbproto.SQL_TYPE_INT128, Codec: Int128Codec{}})
-	defaultMap.RegisterType(&Type{Name: "text", OID: fbproto.SQL_TYPE_TEXT, Codec: TextCodec{}})
-	defaultMap.RegisterType(&Type{Name: "time", OID: fbproto.SQL_TYPE_TIME, Codec: TimeCodec{}})
-	defaultMap.RegisterType(&Type{Name: "varchar", OID: fbproto.SQL_TYPE_VARYING, Codec: TextCodec{}})
-	defaultMap.RegisterType(&Type{Name: "float", OID: fbproto.SQL_TYPE_FLOAT, Codec: Float4Codec{}})
-	defaultMap.RegisterType(&Type{Name: "double precision", OID: fbproto.SQL_TYPE_DOUBLE, Codec: Float8Codec{}})
-	defaultMap.RegisterType(&Type{Name: "boolean", OID: fbproto.SQL_TYPE_BOOLEAN, Codec: BoolCodec{}})
-	defaultMap.RegisterType(&Type{Name: "timestamp", OID: fbproto.SQL_TYPE_TIMESTAMP, Codec: &TimestampCodec{}})
-	defaultMap.RegisterType(&Type{Name: "timestamptz", OID: fbproto.SQL_TYPE_TIMESTAMP_TZ, Codec: &TimestamptzCodec{}})
-	defaultMap.RegisterType(&Type{Name: "numeric", OID: MakeTypeSubtype(fbproto.SQL_TYPE_SHORT, 1), Codec: &NumericCodec{}})
-	defaultMap.RegisterType(&Type{Name: "numeric", OID: MakeTypeSubtype(fbproto.SQL_TYPE_LONG, 1), Codec: &NumericCodec{}})
-	defaultMap.RegisterType(&Type{Name: "numeric", OID: MakeTypeSubtype(fbproto.SQL_TYPE_INT64, 1), Codec: &NumericCodec{}})
-	defaultMap.RegisterType(&Type{Name: "numeric", OID: MakeTypeSubtype(fbproto.SQL_TYPE_INT128, 1), Codec: &NumericCodec{}})
-	defaultMap.RegisterType(&Type{Name: "octets", OID: MakeTypeSubtype(fbproto.SQL_TYPE_TEXT, 1), Codec: &ByteaCodec{}})
-	defaultMap.RegisterType(&Type{Name: "octets", OID: MakeTypeSubtype(fbproto.SQL_TYPE_VARYING, 1), Codec: &ByteaCodec{}})
-	defaultMap.RegisterType(&Type{Name: "decfloat16", OID: fbproto.SQL_TYPE_DEC64, Codec: DecFloat16Codec{}})
-	defaultMap.RegisterType(&Type{Name: "decfloat34", OID: fbproto.SQL_TYPE_DEC128, Codec: DecFloat34Codec{}})
+	defaultMap.RegisterType(&Type{Name: "date", TypeID: fbproto.SQL_TYPE_DATE, Codec: DateCodec{}})
+	defaultMap.RegisterType(&Type{Name: "smallint", TypeID: fbproto.SQL_TYPE_SHORT, Codec: Int4Codec{}})
+	defaultMap.RegisterType(&Type{Name: "int", TypeID: fbproto.SQL_TYPE_LONG, Codec: Int4Codec{}})
+	defaultMap.RegisterType(&Type{Name: "bigint", TypeID: fbproto.SQL_TYPE_INT64, Codec: Int8Codec{}})
+	defaultMap.RegisterType(&Type{Name: "int128", TypeID: fbproto.SQL_TYPE_INT128, Codec: Int128Codec{}})
+	defaultMap.RegisterType(&Type{Name: "text", TypeID: fbproto.SQL_TYPE_TEXT, Codec: TextCodec{}})
+	defaultMap.RegisterType(&Type{Name: "time", TypeID: fbproto.SQL_TYPE_TIME, Codec: TimeCodec{}})
+	defaultMap.RegisterType(&Type{Name: "varchar", TypeID: fbproto.SQL_TYPE_VARYING, Codec: TextCodec{}})
+	defaultMap.RegisterType(&Type{Name: "float", TypeID: fbproto.SQL_TYPE_FLOAT, Codec: Float4Codec{}})
+	defaultMap.RegisterType(&Type{Name: "double precision", TypeID: fbproto.SQL_TYPE_DOUBLE, Codec: Float8Codec{}})
+	defaultMap.RegisterType(&Type{Name: "boolean", TypeID: fbproto.SQL_TYPE_BOOLEAN, Codec: BoolCodec{}})
+	defaultMap.RegisterType(&Type{Name: "timestamp", TypeID: fbproto.SQL_TYPE_TIMESTAMP, Codec: &TimestampCodec{}})
+	defaultMap.RegisterType(&Type{Name: "timestamptz", TypeID: fbproto.SQL_TYPE_TIMESTAMP_TZ, Codec: &TimestamptzCodec{}})
+	defaultMap.RegisterType(&Type{Name: "numeric", TypeID: MakeTypeSubtype(fbproto.SQL_TYPE_SHORT, 1), Codec: &NumericCodec{}})
+	defaultMap.RegisterType(&Type{Name: "numeric", TypeID: MakeTypeSubtype(fbproto.SQL_TYPE_LONG, 1), Codec: &NumericCodec{}})
+	defaultMap.RegisterType(&Type{Name: "numeric", TypeID: MakeTypeSubtype(fbproto.SQL_TYPE_INT64, 1), Codec: &NumericCodec{}})
+	defaultMap.RegisterType(&Type{Name: "numeric", TypeID: MakeTypeSubtype(fbproto.SQL_TYPE_INT128, 1), Codec: &NumericCodec{}})
+	defaultMap.RegisterType(&Type{Name: "octets", TypeID: MakeTypeSubtype(fbproto.SQL_TYPE_TEXT, 1), Codec: &ByteaCodec{}})
+	defaultMap.RegisterType(&Type{Name: "octets", TypeID: MakeTypeSubtype(fbproto.SQL_TYPE_VARYING, 1), Codec: &ByteaCodec{}})
+	defaultMap.RegisterType(&Type{Name: "decfloat16", TypeID: fbproto.SQL_TYPE_DEC64, Codec: DecFloat16Codec{}})
+	defaultMap.RegisterType(&Type{Name: "decfloat34", TypeID: fbproto.SQL_TYPE_DEC128, Codec: DecFloat34Codec{}})
 
 	// Integer types that directly map to a Firebird type
 	registerDefaultFbTypeVariants[int16](defaultMap, "smallint")

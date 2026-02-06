@@ -129,7 +129,7 @@ func (Int<%= pg_byte_size %>Codec) PreferredFormat() int16 {
 	return BinaryFormatCode
 }
 
-func (Int<%= pg_byte_size %>Codec) PlanEncode(m *Map, oid uint32, format int16, value any) EncodePlan {
+func (Int<%= pg_byte_size %>Codec) PlanEncode(m *Map, typeid uint32, format int16, value any) EncodePlan {
 	switch format {
 	case BinaryFormatCode:
 		switch value.(type) {
@@ -208,7 +208,7 @@ func (encodePlanInt<%= pg_byte_size %>CodecTextInt64Valuer) Encode(value any, bu
   return append(buf, strconv.FormatInt(n.Int64, 10)...), nil
 }
 
-func (Int<%= pg_byte_size %>Codec) PlanScan(m *Map, oid uint32, format int16, target any) ScanPlan {
+func (Int<%= pg_byte_size %>Codec) PlanScan(m *Map, typeid uint32, format int16, target any) ScanPlan {
 
 	switch format {
 	case BinaryFormatCode:
@@ -268,26 +268,26 @@ func (Int<%= pg_byte_size %>Codec) PlanScan(m *Map, oid uint32, format int16, ta
 	return nil
 }
 
-func (c Int<%= pg_byte_size %>Codec) DecodeDatabaseSQLValue(m *Map, oid uint32, format int16, src []byte) (driver.Value, error) {
+func (c Int<%= pg_byte_size %>Codec) DecodeDatabaseSQLValue(m *Map, typeid uint32, format int16, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var n int64
-	err := codecScan(c, m, oid, format, src, &n)
+	err := codecScan(c, m, typeid, format, src, &n)
 	if err != nil {
 		return nil, err
 	}
 	return n, nil
 }
 
-func (c Int<%= pg_byte_size %>Codec) DecodeValue(m *Map, oid uint32, format int16, src []byte) (any, error) {
+func (c Int<%= pg_byte_size %>Codec) DecodeValue(m *Map, typeid uint32, format int16, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var n int<%= pg_bit_size %>
-	err := codecScan(c, m, oid, format, src, &n)
+	err := codecScan(c, m, typeid, format, src, &n)
 	if err != nil {
 		return nil, err
 	}

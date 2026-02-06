@@ -42,9 +42,9 @@ type _float32Slice []float32
 type _float64Slice []float64
 type _byteSlice []byte
 
-// unregisteredOID represents an actual type that is not registered. Cannot use 0 because that represents that the type
+// unregisteredTypeID represents an actual type that is not registered. Cannot use 0 because that represents that the type
 // is not known (e.g. when using the simple protocol).
-const unregisteredOID = uint32(1)
+const unregisteredTypeID = uint32(1)
 
 // sqlScannerFunc lets an arbitrary function be used as a sql.Scanner.
 type sqlScannerFunc func(src any) error
@@ -84,29 +84,29 @@ func TestMapScanBinaryFormatInterfacePtr(t *testing.T) {
 	assert.Equal(t, "foo", got)
 }
 
-func TestMapScanUnknownOIDToStringsAndBytes(t *testing.T) {
+func TestMapScanUnknownTypeIDToStringsAndBytes(t *testing.T) {
 	t.Skip("")
-	unknownOID := uint32(999999)
+	unknownTypeID := uint32(999999)
 	srcBuf := []byte("foo")
 	m := fbtype.NewMap()
 
 	var s string
-	err := m.Scan(unknownOID, 0, 3, 0, fbx.TextFormatCode, srcBuf, &s)
+	err := m.Scan(unknownTypeID, 0, 3, 0, fbx.TextFormatCode, srcBuf, &s)
 	assert.NoError(t, err)
 	assert.Equal(t, "foo", s)
 
 	var rs _string
-	err = m.Scan(unknownOID, 0, 3, 0, fbx.TextFormatCode, srcBuf, &rs)
+	err = m.Scan(unknownTypeID, 0, 3, 0, fbx.TextFormatCode, srcBuf, &rs)
 	assert.NoError(t, err)
 	assert.Equal(t, "foo", string(rs))
 
 	var b []byte
-	err = m.Scan(unknownOID, 0, 3, 0, fbx.BinaryFormatCode, srcBuf, &b)
+	err = m.Scan(unknownTypeID, 0, 3, 0, fbx.BinaryFormatCode, srcBuf, &b)
 	assert.NoError(t, err)
 	assert.Equal(t, []byte("foo"), b)
 
 	var rb _byteSlice
-	err = m.Scan(unknownOID, 0, 3, 0, fbx.BinaryFormatCode, srcBuf, &rb)
+	err = m.Scan(unknownTypeID, 0, 3, 0, fbx.BinaryFormatCode, srcBuf, &rb)
 	assert.NoError(t, err)
 	assert.Equal(t, []byte("foo"), []byte(rb))
 }
@@ -120,7 +120,7 @@ func TestMapScanPointerToNilStructDoesNotCrash(t *testing.T) {
 	require.NotNil(t, err)
 }
 
-func TestMapScanUnknownOIDIntoSQLScanner(t *testing.T) {
+func TestMapScanUnknownTypeIDIntoSQLScanner(t *testing.T) {
 	m := fbtype.NewMap()
 
 	var s sql.NullString
@@ -137,11 +137,11 @@ func (ss *scannerString) Scan(v any) error {
 	return nil
 }
 
-func TestMapScanUnregisteredOIDIntoRenamedStringSQLScanner(t *testing.T) {
+func TestMapScanUnregisteredTypeIDIntoRenamedStringSQLScanner(t *testing.T) {
 	m := fbtype.NewMap()
 
 	var s scannerString
-	err := m.Scan(unregisteredOID, 0, 0, 0, fbx.BinaryFormatCode, []byte(nil), &s)
+	err := m.Scan(unregisteredTypeID, 0, 0, 0, fbx.BinaryFormatCode, []byte(nil), &s)
 	assert.NoError(t, err)
 	assert.Equal(t, "scanned", string(s))
 }
@@ -203,7 +203,7 @@ func TestScanPlanInterface(t *testing.T) {
 // 		ID int
 // 	}
 
-// 	int4Type, _ := m.TypeForOID(fbtype.Int4OID)
+// 	int4Type, _ := m.TypeForTypeID(fbtype.Int4TypeID)
 // 	pgt := &fbtype.Type{
 // 		Codec: &fbtype.CompositeCodec{
 // 			Fields: []fbtype.CompositeCodecField{
@@ -214,12 +214,12 @@ func TestScanPlanInterface(t *testing.T) {
 // 			},
 // 		},
 // 		Name: "composite",
-// 		OID:  215333,
+// 		TypeID:  215333,
 // 	}
 // 	m.RegisterType(pgt)
 
 // 	var c *composite
-// 	plan := m.PlanScan(pgt.OID, fbtype.BinaryFormatCode, &c)
+// 	plan := m.PlanScan(pgt.TypeID, fbtype.BinaryFormatCode, &c)
 // 	err := plan.Scan([]byte("(1)"), &c)
 // 	require.NoError(t, err)
 // 	require.Equal(t, 1, c.ID)
@@ -247,7 +247,7 @@ func TestMapScanPtrToPtrToSlice(t *testing.T) {
 // 	m := fbtype.NewMap()
 // 	src := []byte{0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x8, 0xc9, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x1e, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x17, 0x0, 0x0, 0x0, 0x4, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x19, 0x0, 0x0, 0x0, 0x6, 0x74, 0x65, 0x61, 0x6d, 0x20, 0x31, 0x0, 0x0, 0x0, 0x1e, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x17, 0x0, 0x0, 0x0, 0x4, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x19, 0x0, 0x0, 0x0, 0x6, 0x74, 0x65, 0x61, 0x6d, 0x20, 0x32}
 // 	var v *[]Team
-// 	plan := m.PlanScan(fbtype.RecordArrayOID, 0, 0, 0, fbtype.BinaryFormatCode, &v)
+// 	plan := m.PlanScan(fbtype.RecordArrayTypeID, 0, 0, 0, fbtype.BinaryFormatCode, &v)
 // 	err := plan.Scan(src, &v)
 // 	require.NoError(t, err)
 // 	require.Equal(t, []Team{{1, "team 1"}, {2, "team 2"}}, *v)
@@ -305,14 +305,14 @@ func TestMapEncodeBinaryFormatDatabaseValuerThatReturnsString(t *testing.T) {
 func TestMapEncodeDatabaseValuerThatReturnsStringIntoUnregisteredTypeTextFormat(t *testing.T) {
 	t.Skip()
 	m := fbtype.NewMap()
-	buf, err := m.Encode(unregisteredOID, 0, 0, 0, fbtype.BinaryFormatCode, driverValuerFunc(func() (driver.Value, error) { return "foo", nil }), nil)
+	buf, err := m.Encode(unregisteredTypeID, 0, 0, 0, fbtype.BinaryFormatCode, driverValuerFunc(func() (driver.Value, error) { return "foo", nil }), nil)
 	require.NoError(t, err)
 	require.Equal(t, []byte("foo"), buf)
 }
 
 func TestMapEncodeStringIntoUnregisteredTypeTextFormat(t *testing.T) {
 	m := fbtype.NewMap()
-	buf, err := m.Encode(unregisteredOID, 0, 3, 0, fbtype.BinaryFormatCode, "foo", nil)
+	buf, err := m.Encode(unregisteredTypeID, 0, 3, 0, fbtype.BinaryFormatCode, "foo", nil)
 	require.NoError(t, err)
 	require.Equal(t, []byte("foo"), buf)
 }
@@ -320,7 +320,7 @@ func TestMapEncodeStringIntoUnregisteredTypeTextFormat(t *testing.T) {
 func TestMapEncodeByteSliceIntoUnregisteredTypeTextFormat(t *testing.T) {
 	t.Skip()
 	m := fbtype.NewMap()
-	buf, err := m.Encode(unregisteredOID, 0, 4, 0, fbtype.BinaryFormatCode, []byte{0, 1, 2, 3}, nil)
+	buf, err := m.Encode(unregisteredTypeID, 0, 4, 0, fbtype.BinaryFormatCode, []byte{0, 1, 2, 3}, nil)
 	require.NoError(t, err)
 	require.Equal(t, []byte(`\x00010203`), buf)
 }

@@ -619,8 +619,8 @@ func (m QueryExecMode) String() string {
 // QueryResultFormats controls the result format (text=0, binary=1) of a query by result column position.
 type QueryResultFormats []int16
 
-// QueryResultFormatsByOID controls the result format (text=0, binary=1) of a query by the result column OID.
-type QueryResultFormatsByOID map[uint32]int16
+// QueryResultFormatsByTypeID controls the result format (text=0, binary=1) of a query by the result column TypeID.
+type QueryResultFormatsByTypeID map[uint32]int16
 
 // QueryRewriter rewrites a query when used as the first arguments to a query method.
 type QueryRewriter interface {
@@ -646,7 +646,7 @@ type QueryRewriter interface {
 // replace args. For example, NamedArgs is QueryRewriter that implements named arguments.
 //
 // For extra control over how the query is executed, the types QueryExecMode, QueryResultFormats, and
-// QueryResultFormatsByOID may be used as the first args to control exactly how the query is executed. This is rarely
+// QueryResultFormatsByTypeID may be used as the first args to control exactly how the query is executed. This is rarely
 // needed. See the documentation for those types for details.
 func (c *Conn) Query(ctx context.Context, sql string, args ...any) (Rows, error) {
 	return c.queryTx(ctx, nil, sql, args...)
@@ -671,7 +671,7 @@ optionLoop:
 		switch arg := args[0].(type) {
 		case QueryResultFormats:
 			args = args[1:]
-		case QueryResultFormatsByOID:
+		case QueryResultFormatsByTypeID:
 			args = args[1:]
 		case QueryExecMode:
 			mode = arg
@@ -769,7 +769,7 @@ optionLoop:
 // getStatementDescription returns the statement description of the sql query
 // according to the given mode.
 //
-// If the mode is one that doesn't require to know the param and result OIDs
+// If the mode is one that doesn't require to know the param and result TypeIDs
 // then nil is returned without error.
 func (c *Conn) getStatementDescription(
 	ctx context.Context,
@@ -827,9 +827,9 @@ func (c *Conn) QueryRow(ctx context.Context, sql string, args ...any) Row {
 //   - A range type name where the element type is already registered.
 //   - A multirange type name where the element type is already registered.
 func (c *Conn) LoadType(ctx context.Context, typeName string) (*fbtype.Type, error) {
-	//var oid uint32
+	//var typeid uint32
 	//
-	//err := c.QueryRow(ctx, "select $1::text::regtype::oid;", typeName).Scan(&oid)
+	//err := c.QueryRow(ctx, "select $1::text::regtype::typeid;", typeName).Scan(&typeid)
 	//if err != nil {
 	//	return nil, err
 	//}
@@ -837,74 +837,74 @@ func (c *Conn) LoadType(ctx context.Context, typeName string) (*fbtype.Type, err
 	//var typtype string
 	//var typbasetype uint32
 	//
-	//err = c.QueryRow(ctx, "select typtype::text, typbasetype from pg_type where oid=$1", oid).Scan(&typtype, &typbasetype)
+	//err = c.QueryRow(ctx, "select typtype::text, typbasetype from pg_type where typeid=$1", typeid).Scan(&typtype, &typbasetype)
 	//if err != nil {
 	//	return nil, err
 	//}
 	//
 	//switch typtype {
 	//case "b": // array
-	//	elementOID, err := c.getArrayElementOID(ctx, oid)
+	//	elementTypeID, err := c.getArrayElementTypeID(ctx, typeid)
 	//	if err != nil {
 	//		return nil, err
 	//	}
 	//
-	//	dt, ok := c.TypeMap().TypeForOID(elementOID)
+	//	dt, ok := c.TypeMap().TypeForTypeID(elementTypeID)
 	//	if !ok {
-	//		return nil, errors.New("array element OID not registered")
+	//		return nil, errors.New("array element TypeID not registered")
 	//	}
 	//
-	//	return &pgtype.Type{Name: typeName, OID: oid, Codec: &pgtype.ArrayCodec{ElementType: dt}}, nil
+	//	return &pgtype.Type{Name: typeName, TypeID: typeid, Codec: &pgtype.ArrayCodec{ElementType: dt}}, nil
 	//case "c": // composite
-	//	fields, err := c.getCompositeFields(ctx, oid)
+	//	fields, err := c.getCompositeFields(ctx, typeid)
 	//	if err != nil {
 	//		return nil, err
 	//	}
 	//
-	//	return &pgtype.Type{Name: typeName, OID: oid, Codec: &pgtype.CompositeCodec{Fields: fields}}, nil
+	//	return &pgtype.Type{Name: typeName, TypeID: typeid, Codec: &pgtype.CompositeCodec{Fields: fields}}, nil
 	//case "d": // domain
-	//	dt, ok := c.TypeMap().TypeForOID(typbasetype)
+	//	dt, ok := c.TypeMap().TypeForTypeID(typbasetype)
 	//	if !ok {
-	//		return nil, errors.New("domain base type OID not registered")
+	//		return nil, errors.New("domain base type TypeID not registered")
 	//	}
 	//
-	//	return &pgtype.Type{Name: typeName, OID: oid, Codec: dt.Codec}, nil
+	//	return &pgtype.Type{Name: typeName, TypeID: typeid, Codec: dt.Codec}, nil
 	//case "e": // enum
-	//	return &pgtype.Type{Name: typeName, OID: oid, Codec: &pgtype.EnumCodec{}}, nil
+	//	return &pgtype.Type{Name: typeName, TypeID: typeid, Codec: &pgtype.EnumCodec{}}, nil
 	//case "r": // range
-	//	elementOID, err := c.getRangeElementOID(ctx, oid)
+	//	elementTypeID, err := c.getRangeElementTypeID(ctx, typeid)
 	//	if err != nil {
 	//		return nil, err
 	//	}
 	//
-	//	dt, ok := c.TypeMap().TypeForOID(elementOID)
+	//	dt, ok := c.TypeMap().TypeForTypeID(elementTypeID)
 	//	if !ok {
-	//		return nil, errors.New("range element OID not registered")
+	//		return nil, errors.New("range element TypeID not registered")
 	//	}
 	//
-	//	return &pgtype.Type{Name: typeName, OID: oid, Codec: &pgtype.RangeCodec{ElementType: dt}}, nil
+	//	return &pgtype.Type{Name: typeName, TypeID: typeid, Codec: &pgtype.RangeCodec{ElementType: dt}}, nil
 	//case "m": // multirange
-	//	elementOID, err := c.getMultiRangeElementOID(ctx, oid)
+	//	elementTypeID, err := c.getMultiRangeElementTypeID(ctx, typeid)
 	//	if err != nil {
 	//		return nil, err
 	//	}
 	//
-	//	dt, ok := c.TypeMap().TypeForOID(elementOID)
+	//	dt, ok := c.TypeMap().TypeForTypeID(elementTypeID)
 	//	if !ok {
-	//		return nil, errors.New("multirange element OID not registered")
+	//		return nil, errors.New("multirange element TypeID not registered")
 	//	}
 	//
-	//	return &pgtype.Type{Name: typeName, OID: oid, Codec: &pgtype.MultirangeCodec{ElementType: dt}}, nil
+	//	return &pgtype.Type{Name: typeName, TypeID: typeid, Codec: &pgtype.MultirangeCodec{ElementType: dt}}, nil
 	//default:
 	//	return &pgtype.Type{}, errors.New("unknown typtype")
 	//}
 	panic("implement me")
 }
 
-func (c *Conn) getArrayElementOID(ctx context.Context, oid uint32) (uint32, error) {
+func (c *Conn) getArrayElementTypeID(ctx context.Context, typeid uint32) (uint32, error) {
 	//var typelem uint32
 	//
-	//err := c.QueryRow(ctx, "select typelem from pg_type where oid=$1", oid).Scan(&typelem)
+	//err := c.QueryRow(ctx, "select typelem from pg_type where typeid=$1", typeid).Scan(&typelem)
 	//if err != nil {
 	//	return 0, err
 	//}
@@ -913,10 +913,10 @@ func (c *Conn) getArrayElementOID(ctx context.Context, oid uint32) (uint32, erro
 	panic("implement me")
 }
 
-func (c *Conn) getRangeElementOID(ctx context.Context, oid uint32) (uint32, error) {
+func (c *Conn) getRangeElementTypeID(ctx context.Context, typeid uint32) (uint32, error) {
 	//var typelem uint32
 	//
-	//err := c.QueryRow(ctx, "select rngsubtype from pg_range where rngtypid=$1", oid).Scan(&typelem)
+	//err := c.QueryRow(ctx, "select rngsubtype from pg_range where rngtypid=$1", typeid).Scan(&typelem)
 	//if err != nil {
 	//	return 0, err
 	//}
@@ -925,10 +925,10 @@ func (c *Conn) getRangeElementOID(ctx context.Context, oid uint32) (uint32, erro
 	panic("implement me")
 }
 
-func (c *Conn) getMultiRangeElementOID(ctx context.Context, oid uint32) (uint32, error) {
+func (c *Conn) getMultiRangeElementTypeID(ctx context.Context, typeid uint32) (uint32, error) {
 	//var typelem uint32
 	//
-	//err := c.QueryRow(ctx, "select rngtypid from pg_range where rngmultitypid=$1", oid).Scan(&typelem)
+	//err := c.QueryRow(ctx, "select rngtypid from pg_range where rngmultitypid=$1", typeid).Scan(&typelem)
 	//if err != nil {
 	//	return 0, err
 	//}
@@ -937,17 +937,17 @@ func (c *Conn) getMultiRangeElementOID(ctx context.Context, oid uint32) (uint32,
 	panic("implement me")
 }
 
-// func (c *Conn) getCompositeFields(ctx context.Context, oid uint32) ([]fbtype.CompositeCodecField, error) {
+// func (c *Conn) getCompositeFields(ctx context.Context, typeid uint32) ([]fbtype.CompositeCodecField, error) {
 // 	//	var typrelid uint32
 // 	//
-// 	//	err := c.QueryRow(ctx, "select typrelid from pg_type where oid=$1", oid).Scan(&typrelid)
+// 	//	err := c.QueryRow(ctx, "select typrelid from pg_type where typeid=$1", typeid).Scan(&typrelid)
 // 	//	if err != nil {
 // 	//		return nil, err
 // 	//	}
 // 	//
 // 	//	var fields []pgtype.CompositeCodecField
 // 	//	var fieldName string
-// 	//	var fieldOID uint32
+// 	//	var fieldTypeID uint32
 // 	//	rows, _ := c.Query(ctx, `select attname, atttypid
 // 	//from pg_attribute
 // 	//where attrelid=$1
@@ -956,10 +956,10 @@ func (c *Conn) getMultiRangeElementOID(ctx context.Context, oid uint32) (uint32,
 // 	//order by attnum`,
 // 	//		typrelid,
 // 	//	)
-// 	//	_, err = ForEachRow(rows, []any{&fieldName, &fieldOID}, func() error {
-// 	//		dt, ok := c.TypeMap().TypeForOID(fieldOID)
+// 	//	_, err = ForEachRow(rows, []any{&fieldName, &fieldTypeID}, func() error {
+// 	//		dt, ok := c.TypeMap().TypeForTypeID(fieldTypeID)
 // 	//		if !ok {
-// 	//			return fmt.Errorf("unknown composite type field OID: %v", fieldOID)
+// 	//			return fmt.Errorf("unknown composite type field TypeID: %v", fieldTypeID)
 // 	//		}
 // 	//		fields = append(fields, pgtype.CompositeCodecField{Name: fieldName, Type: dt})
 // 	//		return nil

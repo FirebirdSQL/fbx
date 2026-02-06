@@ -151,7 +151,7 @@ func (DecFloat16Codec) PreferredFormat() int16 {
 	return BinaryFormatCode
 }
 
-func (DecFloat16Codec) PlanEncode(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
+func (DecFloat16Codec) PlanEncode(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
 	if format != BinaryFormatCode {
 		return nil
 	}
@@ -383,13 +383,13 @@ func (scanPlanTextAnyToDecFloat16Scanner) Scan(src []byte, dst any) error {
 	return scanner.ScanDec16(d)
 }
 
-func (c DecFloat16Codec) DecodeDatabaseSQLValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
+func (c DecFloat16Codec) DecodeDatabaseSQLValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var d DecFloat16
-	err := codecScan(c, m, oid, subType, length, scale, format, src, &d)
+	err := codecScan(c, m, typeid, subType, length, scale, format, src, &d)
 	if err != nil {
 		return nil, err
 	}
@@ -397,13 +397,13 @@ func (c DecFloat16Codec) DecodeDatabaseSQLValue(m *Map, oid uint32, subType int3
 	return d.String(), nil
 }
 
-func (c DecFloat16Codec) DecodeValue(m *Map, oid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error) {
+func (c DecFloat16Codec) DecodeValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var d DecFloat16
-	err := codecScan(c, m, oid, subType, length, scale, format, src, &d)
+	err := codecScan(c, m, typeid, subType, length, scale, format, src, &d)
 	if err != nil {
 		return nil, err
 	}
