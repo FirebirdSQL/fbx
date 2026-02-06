@@ -63,7 +63,7 @@ func (cc *ConnConfig) ConnString() string {
 	return cc.connString
 }
 
-// Conn is a PostgreSQL connection handle. It is not safe for concurrent usage. Use a connection pool to manage access
+// Conn is a Firebird connection handle. It is not safe for concurrent usage. Use a connection pool to manage access
 // to multiple database connections from multiple goroutines.
 type Conn struct {
 	fbConn             *fbconn.FbConn
@@ -85,7 +85,7 @@ type Conn struct {
 	eqb  ExtendedQueryBuilder
 }
 
-// Identifier a PostgreSQL identifier or name. Identifiers can be composed of
+// Identifier a Firebird identifier or name. Identifiers can be composed of
 // multiple parts such as ["schema", "table"] or ["table", "column"].
 type Identifier []string
 
@@ -126,7 +126,7 @@ var (
 	errDisabledStatementCache = fmt.Errorf("cannot use QueryExecModeCacheStatement with disabled statement cache")
 )
 
-// Connect establishes a connection with a PostgreSQL server with a connection string. See
+// Connect establishes a connection with a Firebird server with a connection string. See
 // fbconn.Connect for details.
 func Connect(ctx context.Context, connString string) (*Conn, error) {
 	connConfig, err := ParseConfig(connString)
@@ -146,7 +146,7 @@ func ConnectWithOptions(ctx context.Context, connString string, options ParseCon
 	return connect(ctx, connConfig)
 }
 
-// ConnectConfig establishes a connection with a PostgreSQL server with a configuration struct.
+// ConnectConfig establishes a connection with a Firebird server with a configuration struct.
 // connConfig must have been created by ParseConfig.
 func ConnectConfig(ctx context.Context, connConfig *ConnConfig) (*Conn, error) {
 	// In general this improves safety. In particular avoid the config.Config.OnNotification mutation from affecting other
@@ -282,10 +282,10 @@ func (c *Conn) Close(ctx context.Context) error {
 }
 
 // Prepare creates a prepared statement with name and sql. sql can contain placeholders for bound parameters. These
-// placeholders are referenced positionally as $1, $2, etc. name can be used instead of sql with Query, QueryRow, and
+// placeholders are referenced positionally as ?. name can be used instead of sql with Query, QueryRow, and
 // Exec to execute the statement. It can also be used with Batch.Queue.
 //
-// The underlying PostgreSQL identifier for the prepared statement will be name if name != sql or a digest of sql if
+// The underlying Firebird identifier for the prepared statement will be name if name != sql or a digest of sql if
 // name == sql.
 //
 // Prepare is idempotent; i.e. it is safe to call Prepare multiple times with the same name and sql arguments. This
@@ -434,13 +434,13 @@ func (c *Conn) Config() *ConnConfig {
 }
 
 // Exec executes sql inside internal transaction. sql can be either a prepared statement name or an SQL string. arguments should be referenced
-// positionally from the sql string as $1, $2, etc.
+// positionally from the sql string as ?.
 func (c *Conn) Exec(ctx context.Context, sql string, arguments ...any) (fbconn.QueryStatus, error) {
 	return c.execTx(ctx, nil, sql, arguments...)
 }
 
 // ExecTx executes sql inside created transaction. sql can be either a prepared statement name or an SQL string. arguments should be referenced
-// positionally from the sql string as $1, $2, etc.
+// positionally from the sql string as ?.
 func (c *Conn) execTx(ctx context.Context, tx *dbTx, sql string, arguments ...any) (fbconn.QueryStatus, error) {
 	if c.queryTracer != nil {
 		ctx = c.queryTracer.TraceQueryStart(ctx, c, TraceQueryStartData{SQL: sql, Args: arguments})
@@ -588,11 +588,11 @@ const (
 	// number of columns returned by a "SELECT *" changes or the type of a column is changed.
 	QueryExecModeCacheStatement
 
-	// Assume the PostgreSQL query parameter types based on the Go type of the arguments. This uses the extended protocol
+	// Assume the Firebird query parameter types based on the Go type of the arguments. This uses the extended protocol
 	// with text formatted parameters and results. Queries are executed in a single round trip. Type mappings can be
 	// registered with pgtype.Map.RegisterDefaultPgType. Queries will be rejected that have arguments that are
-	// unregistered or ambiguous. e.g. A map[string]string may have the PostgreSQL type json or hstore. Modes that know
-	// the PostgreSQL type can use a map[string]string directly as an argument. This mode cannot.
+	// unregistered or ambiguous. e.g. A map[string]string may have the Firebird type json or hstore. Modes that know
+	// the Firebird type can use a map[string]string directly as an argument. This mode cannot.
 	//
 	// On rare occasions user defined types may behave differently when encoded in the text format instead of the binary
 	// format. For example, this could happen if a "type RomanNumeral int32" implements fmt.Stringer to format integers as
