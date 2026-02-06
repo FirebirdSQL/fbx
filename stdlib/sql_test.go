@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -742,10 +743,18 @@ func TestBeginTxContextCancel(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
 		ctx, cancelFn := context.WithCancel(context.Background())
 
+		_, err := db.Exec("drop table t")
+		if err != nil {
+			var fbErr *fbconn.FbError
+			if err != nil && !errors.As(err, &fbErr) || fbErr.Code != "42S02" {
+				t.Fatalf(`err => %v, want FbError{Code: "42S02"}`, err)
+			}
+		}
+
 		tx, err := db.BeginTx(ctx, nil)
 		require.NoError(t, err)
 
-		_, err = tx.Exec("recreate table t(id int)")
+		_, err = tx.Exec("create table t(id int)")
 		require.NoError(t, err)
 
 		cancelFn()
