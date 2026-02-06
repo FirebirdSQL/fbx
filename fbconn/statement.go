@@ -80,13 +80,13 @@ func (sd *StatementDescription) GetAffectedCount() int64 {
 }
 
 type Statement struct {
-	conn         *FbConn
-	Description  *StatementDescription
-	transaction  *FBTransaction
-	cursorOpened bool
-	closed       bool
-	timeout      int
-	cursorFlags  int
+	conn           *FbConn
+	Description    *StatementDescription
+	transaction    *FBTransaction
+	cursorOpened   bool
+	closed         bool
+	timeout        int
+	cursorFlags    int
 }
 
 // SetTimeout sets statement timeout (milliseconds).
@@ -97,6 +97,11 @@ func (st *Statement) SetTimeout(timeout int) {
 // SetCursorFlags sets cursor flags for this statement.
 func (st *Statement) SetCursorFlags(flags int) {
 	st.cursorFlags = flags
+}
+
+// SetInlineBlobSize sets inline blob size for this statement.
+func (st *Statement) SetInlineBlobSize(size int) {
+	st.conn.inlineBlobSize = size
 }
 
 // Exec executed a prepared statement inside bound transaction
@@ -127,7 +132,7 @@ func (st *Statement) Exec(ctx context.Context, paramValues [][]byte) *ResultRead
 
 	tx := st.transaction
 	if tx == nil {
-		if _, err := st.conn.ensureInternalTransaction(ctx, nil); err != nil {
+		if _, err := st.conn.ensureInternalTransaction(ctx, nil, false); err != nil {
 			rr := &ResultReader{
 				fbConn: st.conn,
 				ctx:    ctx,
@@ -217,6 +222,7 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 		Parameters:            paramValues,
 		Timeout:               st.timeout,
 		CursorFlags:           st.cursorFlags,
+		InlineBlobSize:        st.conn.inlineBlobSize,
 		ProtocolFeatures:      st.conn.protocolFeatures,
 	}); err != nil {
 		st.conn.asyncClose()

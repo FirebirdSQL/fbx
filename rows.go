@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"reflect"
 	"strings"
 	"sync"
@@ -55,13 +56,14 @@ type Rows interface {
 
 	// Scan reads the values from the current row into dest values positionally.
 	// dest can include pointers to core types, values implementing the Scanner
-	// interface, and nil. nil will skip the value entirely. It is an error to
-	// call Scan without first calling Next() and checking that it returned true.
+	// interface, and nil. nil will skip the value entirely. BLOB columns can be
+	// scanned into *[]byte, *string, or *io.ReadCloser. It is an error to call
+	// Scan without first calling Next() and checking that it returned true.
 	Scan(dest ...any) error
 
-	// Values returns the decoded row values. As with Scan(), it is an error to
-	// call Values without first calling Next() and checking that it returned
-	// true.
+	// Values returns the decoded row values. For BLOB columns, the value is an
+	// io.ReadCloser. As with Scan(), it is an error to call Values without first
+	// calling Next() and checking that it returned true.
 	Values() ([]any, error)
 
 	// RawValues returns the unparsed bytes of the row values. The returned data is only valid until the next Next
@@ -116,8 +118,12 @@ func (r *connRow) Scan(dest ...any) (err error) {
 		return rows.Err()
 	}
 
+	rows.fieldDescs = append(rows.fieldDescs[:0], rows.FieldDescriptions()...)
+	values := rows.values
 	rows.Scan(dest...)
 	rows.Close()
+	rows.resultReader = nil
+	rows.values = values
 	return rows.Err()
 }
 
@@ -125,6 +131,7 @@ func (r *connRow) Scan(dest ...any) (err error) {
 type baseRows struct {
 	typeMap      *fbtype.Map
 	resultReader *fbconn.ResultReader
+	fieldDescs   []fbconn.FieldDescription
 
 	values [][]byte
 
@@ -135,7 +142,8 @@ type baseRows struct {
 	scanPlans []fbtype.ScanPlan
 	scanTypes []reflect.Type
 
-	conn *Conn
+	conn    *Conn
+	boundTx *fbconn.FBTransaction
 
 	queryTracer QueryTracer
 
@@ -149,7 +157,10 @@ type baseRows struct {
 }
 
 func (rows *baseRows) FieldDescriptions() []fbconn.FieldDescription {
-	return rows.resultReader.FieldDescriptions()
+	if rows.resultReader != nil {
+		return rows.resultReader.FieldDescriptions()
+	}
+	return rows.fieldDescs
 }
 
 func (rows *baseRows) Close() {
@@ -267,6 +278,15 @@ func (rows *baseRows) Scan(dest ...any) error {
 		if dst == nil {
 			continue
 		}
+		if fieldDescriptions[i].IsBlob() {
+			err := rows.scanBlobValue(&fieldDescriptions[i], values[i], dst)
+			if err != nil {
+				err = ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: err}
+				rows.fatal(err)
+				return err
+			}
+			continue
+		}
 
 		if rows.scanTypes[i] != reflect.TypeOf(dst) {
 			rows.scanPlans[i] = m.PlanScan(fieldDescriptions[i].Type, fieldDescriptions[i].Subtype, fieldDescriptions[i].Length, fieldDescriptions[i].Scale, fieldDescriptions[i].Format, dest[i])
@@ -297,6 +317,31 @@ func (rows *baseRows) Values() ([]any, error) {
 
 		if buf == nil {
 			values = append(values, nil)
+			continue
+		}
+
+		if fd.IsBlob() {
+			rawID, err := fbconn.DecodeBlobID(buf)
+			if err != nil {
+				rows.fatal(err)
+				return nil, rows.Err()
+			}
+			id := blobID(rawID)
+			if rows.conn == nil {
+				rows.fatal(errors.New("cannot read blob without connection"))
+				return nil, rows.Err()
+			}
+			cfg, err := blobConfigFromField(rows.conn, fd)
+			if err != nil {
+				rows.fatal(err)
+				return nil, rows.Err()
+			}
+			blob := newInputBlob(rows.conn, rows.boundTx, cfg, id)
+			if rows.resultReader != nil {
+				blob.allowBusy = true
+			}
+			reader := newBlobLazyReader(rows.ctx, blob)
+			values = append(values, io.ReadCloser(reader))
 			continue
 		}
 
@@ -335,6 +380,62 @@ func (rows *baseRows) Conn() *Conn {
 	return rows.conn
 }
 
+func (rows *baseRows) scanBlobValue(fd *fbconn.FieldDescription, src []byte, dst any) error {
+	if src == nil {
+		switch d := dst.(type) {
+		case *io.ReadCloser:
+			*d = nil
+			return nil
+		case *[]byte:
+			*d = nil
+			return nil
+		default:
+			return fmt.Errorf("cannot scan NULL into %T", dst)
+		}
+	}
+	rawID, err := fbconn.DecodeBlobID(src)
+	if err != nil {
+		return err
+	}
+	id := blobID(rawID)
+	if rows.conn == nil {
+		return errors.New("cannot scan blob without connection")
+	}
+	cfg, err := blobConfigFromField(rows.conn, fd)
+	if err != nil {
+		return err
+	}
+	blob := newInputBlob(rows.conn, rows.boundTx, cfg, id)
+	if rows.resultReader != nil {
+		blob.allowBusy = true
+	}
+	switch d := dst.(type) {
+	case *io.ReadCloser:
+		*d = newBlobLazyReader(rows.ctx, blob)
+	case *[]byte:
+		if err := blob.openForRead(rows.ctx); err != nil {
+			return err
+		}
+		data, err := blob.GetBytes(rows.ctx)
+		if err != nil {
+			return err
+		}
+		*d = data
+	case *string:
+		if err := blob.openForRead(rows.ctx); err != nil {
+			return err
+		}
+		data, err := blob.GetString(rows.ctx)
+		if err != nil {
+			return err
+		}
+		*d = data
+	default:
+		return fmt.Errorf("cannot scan blob into %T", dst)
+	}
+	return nil
+}
+
 type ScanArgError struct {
 	ColumnIndex int
 	FieldName   string
@@ -371,6 +472,9 @@ func ScanRow(typeMap *fbtype.Map, fieldDescriptions []fbconn.FieldDescription, v
 		if d == nil {
 			continue
 		}
+		if fieldDescriptions[i].IsBlob() {
+			return ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: errors.New("cannot scan blob without connection")}
+		}
 
 		err := typeMap.Scan(fieldDescriptions[i].Type, fieldDescriptions[i].Subtype, fieldDescriptions[i].Length, fieldDescriptions[i].Scale, fieldDescriptions[i].Format, values[i], d)
 		if err != nil {
@@ -382,7 +486,7 @@ func ScanRow(typeMap *fbtype.Map, fieldDescriptions []fbconn.FieldDescription, v
 }
 
 // RowsFromResultReader returns a Rows that will read from values resultReader and decode with typeMap. It can be used
-// to read from the lower level fbconn interface.
+// to read from the lower level fbconn interface. BLOB columns require a *Conn and cannot be read via this helper.
 func RowsFromResultReader(typeMap *fbtype.Map, resultReader *fbconn.ResultReader) Rows {
 	return &baseRows{
 		typeMap:      typeMap,

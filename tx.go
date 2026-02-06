@@ -134,8 +134,6 @@ type Tx interface {
 	// being closed.
 	Rollback(ctx context.Context) error
 
-	LargeObjects() LargeObjects
-
 	Prepare(ctx context.Context, name, sql string) (*fbconn.StatementDescription, error)
 
 	Exec(ctx context.Context, sql string, arguments ...any) (commandTag fbconn.QueryStatus, err error)
@@ -242,11 +240,6 @@ func (tx *dbTx) QueryRow(ctx context.Context, sql string, args ...any) Row {
 	return (*connRow)(rows.(*baseRows))
 }
 
-// LargeObjects returns a LargeObjects instance for the transaction.
-func (tx *dbTx) LargeObjects() LargeObjects {
-	return LargeObjects{tx: tx}
-}
-
 func (tx *dbTx) Conn() *Conn {
 	return tx.conn
 }
@@ -324,10 +317,6 @@ func (sp *dbSimulatedNestedTx) Query(ctx context.Context, sql string, args ...an
 func (sp *dbSimulatedNestedTx) QueryRow(ctx context.Context, sql string, args ...any) Row {
 	rows, _ := sp.Query(ctx, sql, args...)
 	return (*connRow)(rows.(*baseRows))
-}
-
-func (sp *dbSimulatedNestedTx) LargeObjects() LargeObjects {
-	return LargeObjects{tx: sp}
 }
 
 func (sp *dbSimulatedNestedTx) Conn() *Conn {

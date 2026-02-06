@@ -8,6 +8,8 @@ import (
 
 // https://firebirdsql.org/file/documentation/html/en/firebirddocs/wireprotocol/firebird-wire-protocol.html#wireprotocol-responses-generic
 
+const opResponseDataCapMax = 64*1024
+
 type OpResponse struct {
 	Encoding    *Encoding
 	BlobId      int64
@@ -33,8 +35,9 @@ func (op *OpResponse) resetForRead() {
 	// Note: this limits retained capacity, not the segment size that can be read.
 	if cap(op.Data) <= 0 {
 		op.Data = make([]byte, 0, 512)
-	} else if cap(op.Data) > 8192 {
-		op.Data = make([]byte, 0, 8192)
+	} else if cap(op.Data) > opResponseDataCapMax {
+		// Cap retained buffer size to a maximum 64KB to avoid keeping large allocations.
+		op.Data = make([]byte, 0, opResponseDataCapMax)
 	} else {
 		op.Data = op.Data[:0]
 	}
@@ -62,8 +65,27 @@ func (op *OpResponse) Read(x *XDRReader) error {
 	}
 
 	// p_resp_data
-	if op.Data, err = x.ReadBufferInto(&op.Data); err != nil {
+	dataLen, err := x.ReadInt32()
+	if err != nil {
 		return err
+	}
+	if dataLen < 0 {
+		return fmt.Errorf("invalid response data length: %d", dataLen)
+	}
+	if dataLen == 0 {
+		op.Data = op.Data[:0]
+	} else {
+		if cap(op.Data) < dataLen {
+			op.Data = make([]byte, dataLen)
+		} else {
+			op.Data = op.Data[:dataLen]
+		}
+		if err := x.ReadBytesInto(op.Data); err != nil {
+			return err
+		}
+		if err := x.SkipPadding(int64(dataLen)); err != nil {
+			return err
+		}
 	}
 
 	// p_resp_status_vector

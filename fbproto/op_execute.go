@@ -2,11 +2,15 @@ package fbproto
 
 // https://firebirdsql.org/file/documentation/html/en/firebirddocs/wireprotocol/firebird-wire-protocol.html#wireprotocol-op-cont-auth
 
+// ProtocolFeatures describes server protocol capabilities relevant to op_execute.
 type ProtocolFeatures struct {
-	OpExecuteHaveTimeout     bool
-	OpExecuteHaveCursorFlags bool
+	OpExecuteHaveTimeout         bool
+	OpExecuteHaveCursorFlags     bool
+	OpExecuteHaveBlobInlineSize  bool
+	OpExecuteHaveBlobInlineCache bool
 }
 
+// OpExecute represents the op_execute/op_execute2 request.
 type OpExecute struct {
 	Kind                  int
 	StatementHandle       int
@@ -17,6 +21,7 @@ type OpExecute struct {
 	ParametersDescriptors []FieldDescriptor
 	Timeout               int
 	CursorFlags           int
+	InlineBlobSize        int
 	ProtocolFeatures      ProtocolFeatures
 }
 
@@ -87,6 +92,11 @@ func (op *OpExecute) Write(x *XDRWriter) error {
 
 	if op.ProtocolFeatures.OpExecuteHaveCursorFlags {
 		if err = x.WriteInt32(op.CursorFlags); err != nil {
+			return err
+		}
+	}
+	if op.ProtocolFeatures.OpExecuteHaveBlobInlineSize {
+		if err = x.WriteInt32(op.InlineBlobSize); err != nil {
 			return err
 		}
 	}

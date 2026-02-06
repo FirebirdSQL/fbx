@@ -27,6 +27,7 @@ const (
 	PROTOCOL_VERSION16 = 16
 	PROTOCOL_VERSION17 = 17
 	PROTOCOL_VERSION18 = 18
+	PROTOCOL_VERSION19 = 19
 
 	ProtocolFlag = 0x8000
 	ProtocolMask = ^ProtocolFlag & 0xFFFF
@@ -48,6 +49,11 @@ const (
 	Isc_info_data_not_ready = 4
 	Isc_info_length         = 126
 	Isc_info_flag_end       = 127
+
+	Isc_info_blob_num_segments = 4
+	Isc_info_blob_max_segment  = 5
+	Isc_info_blob_total_length = 6
+	Isc_info_blob_type         = 7
 
 	Isc_info_db_id                 = 4
 	Isc_info_reads                 = 5
@@ -249,6 +255,8 @@ const (
 	Isc_dpb_reset_icu             = 89
 	Isc_dpb_map_attach            = 90
 	Isc_dpb_session_time_zone     = 91
+	Isc_dpb_max_blob_cache_size   = 103
+	Isc_dpb_max_inline_blob_size  = 104
 
 	// backup
 	Isc_spb_bkp_file               = 5
@@ -476,6 +484,18 @@ const (
 	Isc_arg_warning     = 18
 	Isc_arg_sql_state   = 19
 
+	Isc_bpb_version1      = 1
+	Isc_bpb_source_type   = 1
+	Isc_bpb_target_type   = 2
+	Isc_bpb_type          = 3
+	Isc_bpb_source_interp = 4
+	Isc_bpb_target_interp = 5
+	Isc_bpb_filter_param  = 6
+
+	Isc_bpb_type_segmented = 0
+	Isc_bpb_type_stream    = 1
+	Isc_bpb_storage_temp   = 2
+
 	Op_connect            = 1
 	Op_exit               = 2
 	Op_accept             = 3
@@ -489,11 +509,14 @@ const (
 	Op_transaction        = 29
 	Op_commit             = 30
 	Op_rollback           = 31
+	Op_create_blob        = 34
 	Op_open_blob          = 35
 	Op_get_segment        = 36
 	Op_put_segment        = 37
+	Op_cancel_blob        = 38
 	Op_close_blob         = 39
 	Op_info_database      = 40
+	Op_info_blob          = 43
 	Op_info_transaction   = 42
 	Op_batch_segments     = 44
 	Op_que_events         = 48
@@ -512,6 +535,7 @@ const (
 	Op_prepare_statement  = 68
 	Op_info_sql           = 70
 	Op_dummy              = 71
+	Op_seek_blob          = 61
 	Op_execute2           = 76
 	Op_sql_response       = 78
 	Op_drop_database      = 81
@@ -533,6 +557,7 @@ const (
 	Op_crypt                = 96
 	Op_crypt_key_callback   = 97
 	Op_cond_accept          = 98
+	Op_inline_blob          = 114
 )
 
 const (

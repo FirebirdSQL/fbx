@@ -50,6 +50,22 @@ func (t *tracer) traceRequest(sender byte, msg ClientMessage) {
 		t.traceFetchMessage(sender, msg)
 	case *OpInfoSQL:
 		t.traceInfoSQLMessage(sender, msg)
+	case *OpOpenBlob:
+		t.traceOpenBlobMessage(sender, msg)
+	case *OpCreateBlob:
+		t.traceCreateBlobMessage(sender, msg)
+	case *OpGetSegment:
+		t.traceGetSegmentMessage(sender, msg)
+	case *OpPutSegment:
+		t.tracePutSegmentMessage(sender, msg)
+	case *OpCloseBlob:
+		t.traceCloseBlobMessage(sender, msg)
+	case *OpCancelBlob:
+		t.traceCancelBlobMessage(sender, msg)
+	case *OpSeekBlob:
+		t.traceSeekBlobMessage(sender, msg)
+	case *OpInfoBlob:
+		t.traceInfoBlobMessage(sender, msg)
 	case *OpDisconnect:
 		t.writeTrace(sender, "Disconnect", nil)
 	case *OpDetach:
@@ -81,6 +97,8 @@ func (t *tracer) traceResponse(sender byte, msg ServerMessage) {
 		t.traceDataAcceptMessage(sender, msg)
 	case *OpDummy:
 		t.writeTrace(sender, "Dummy", nil)
+	case *OpInlineBlob:
+		t.traceInlineBlobMessage(sender, msg)
 	default:
 		t.writeTrace(sender, fmt.Sprintf("Unknown message type: %T", msg), nil)
 	}
@@ -117,6 +135,66 @@ func (t *tracer) traceInfoSQLMessage(sender byte, msg *OpInfoSQL) {
 		fmt.Fprintf(t.buf, " lenItems=%d", len(msg.StatementInformationItems))
 		if t.FullLogMode && len(msg.StatementInformationItems) > 0 {
 			fmt.Fprintf(t.buf, " items=%s", traceSingleQuotedString(msg.StatementInformationItems))
+		}
+	})
+}
+
+func (t *tracer) traceOpenBlobMessage(sender byte, msg *OpOpenBlob) {
+	t.writeTrace(sender, "OpenBlob", func() {
+		fmt.Fprintf(t.buf, " tx=%d blob=%d bpbLen=%d", msg.TransactionHandle, msg.BlobId, len(msg.Bpb))
+		if t.FullLogMode && len(msg.Bpb) > 0 {
+			fmt.Fprintf(t.buf, " bpb=%s", traceSingleQuotedString(msg.Bpb))
+		}
+	})
+}
+
+func (t *tracer) traceCreateBlobMessage(sender byte, msg *OpCreateBlob) {
+	t.writeTrace(sender, "CreateBlob", func() {
+		fmt.Fprintf(t.buf, " tx=%d bpbLen=%d", msg.TransactionHandle, len(msg.Bpb))
+		if t.FullLogMode && len(msg.Bpb) > 0 {
+			fmt.Fprintf(t.buf, " bpb=%s", traceSingleQuotedString(msg.Bpb))
+		}
+	})
+}
+
+func (t *tracer) traceGetSegmentMessage(sender byte, msg *OpGetSegment) {
+	t.writeTrace(sender, "GetSegment", func() {
+		fmt.Fprintf(t.buf, " handle=%d len=%d", msg.BlobHandle, msg.Length)
+	})
+}
+
+func (t *tracer) tracePutSegmentMessage(sender byte, msg *OpPutSegment) {
+	t.writeTrace(sender, "PutSegment", func() {
+		fmt.Fprintf(t.buf, " handle=%d len=%d", msg.BlobHandle, len(msg.Segment))
+		if t.FullLogMode && len(msg.Segment) > 0 {
+			fmt.Fprintf(t.buf, " seg=%s", traceSingleQuotedString(msg.Segment))
+		}
+	})
+}
+
+func (t *tracer) traceCloseBlobMessage(sender byte, msg *OpCloseBlob) {
+	t.writeTrace(sender, "CloseBlob", func() {
+		fmt.Fprintf(t.buf, " handle=%d", msg.BlobHandle)
+	})
+}
+
+func (t *tracer) traceCancelBlobMessage(sender byte, msg *OpCancelBlob) {
+	t.writeTrace(sender, "CancelBlob", func() {
+		fmt.Fprintf(t.buf, " handle=%d", msg.BlobHandle)
+	})
+}
+
+func (t *tracer) traceSeekBlobMessage(sender byte, msg *OpSeekBlob) {
+	t.writeTrace(sender, "SeekBlob", func() {
+		fmt.Fprintf(t.buf, " handle=%d mode=%d offset=%d", msg.BlobHandle, msg.SeekMode, msg.Offset)
+	})
+}
+
+func (t *tracer) traceInfoBlobMessage(sender byte, msg *OpInfoBlob) {
+	t.writeTrace(sender, "InfoBlob", func() {
+		fmt.Fprintf(t.buf, " handle=%d maxBuf=%d lenItems=%d", msg.BlobHandle, msg.BufferLength, len(msg.Items))
+		if t.FullLogMode && len(msg.Items) > 0 {
+			fmt.Fprintf(t.buf, " items=%s", traceSingleQuotedString(msg.Items))
 		}
 	})
 }
@@ -174,12 +252,14 @@ func (t *tracer) traceExecuteMessage(sender byte, op *OpExecute) {
 					traceDoubleQuotedString([]byte(v.OriginalTableName)), v.Nullable)
 			}
 		}
-
 		if op.ProtocolFeatures.OpExecuteHaveTimeout {
 			fmt.Fprintf(t.buf, " timeout=%d", op.Timeout)
 		}
 		if op.ProtocolFeatures.OpExecuteHaveCursorFlags {
 			fmt.Fprintf(t.buf, " cursorFlags=%d", op.CursorFlags)
+		}
+		if op.ProtocolFeatures.OpExecuteHaveBlobInlineSize {
+			fmt.Fprintf(t.buf, " inlineBlobSize=%d", op.InlineBlobSize)
 		}
 	}
 
@@ -261,6 +341,12 @@ func (t *tracer) traceCondAcceptMessage(sender byte, op *OpCondAccept) {
 
 func (t *tracer) traceDataAcceptMessage(sender byte, op *OpDataAccept) {
 	t.traceCondAcceptMessage(sender, &op.OpCondAccept)
+}
+
+func (t *tracer) traceInlineBlobMessage(sender byte, op *OpInlineBlob) {
+	t.writeTrace(sender, "InlineBlob", func() {
+		fmt.Fprintf(t.buf, " tx=%d blob=%d infoLen=%d dataLen=%d", op.TransactionHandle, op.BlobId, len(op.Info), len(op.Data))
+	})
 }
 
 func (t *tracer) traceCryptMessage(sender byte, _ *OpCrypt) {

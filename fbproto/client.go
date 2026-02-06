@@ -7,18 +7,22 @@ import (
 )
 
 type Client struct {
-	Encoding    *Encoding
-	reader      io.Reader
-	writer      io.Writer
-	plugin      string
-	codec       StreamCodec
-	xdrReader   *XDRReader
-	xdrWriter   *XDRWriter
-	rowScratch  rowScratch
-	tracer      *tracer
-	lazyCounter int
-	reusable    reusableServerMessages
-	
+	Encoding          *Encoding
+	reader            io.Reader
+	writer            io.Writer
+	plugin            string
+	codec             StreamCodec
+	xdrReader         *XDRReader
+	xdrWriter         *XDRWriter
+	rowScratch        rowScratch
+	tracer            *tracer
+	lazyCounter       int
+	reusable          reusableServerMessages
+	inlineBlobHandler func(*OpInlineBlob)
+	inlineBlobAlloc   func(int) []byte
+	inlineBlobCache   *inlineBlobCache
+	inlineBlobPool    *inlineBlobPool
+
 	writeScratch []byte
 }
 
@@ -31,6 +35,7 @@ type reusableServerMessages struct {
 	fetchResponse OpFetchResponse
 	sqlResponse   OpSqlResponse
 	contAuth      OpContAuth
+	inlineBlob    OpInlineBlob
 }
 
 // StreamCodec is a minimal interface for symmetric wire encryption.
@@ -61,6 +66,95 @@ func (c *Client) SetCodec(plugin string, codec StreamCodec) {
 	if codec != nil && cap(c.writeScratch) < cryptoChunkSize {
 		c.writeScratch = make([]byte, cryptoChunkSize)
 	}
+}
+
+// SetInlineBlobHandler sets a handler for op_inline_blob messages.
+func (c *Client) SetInlineBlobHandler(handler func(*OpInlineBlob)) {
+	c.inlineBlobHandler = handler
+}
+
+// SetInlineBlobDataAllocator sets a buffer allocator for inline blob payloads.
+func (c *Client) SetInlineBlobDataAllocator(alloc func(int) []byte) {
+	c.inlineBlobAlloc = alloc
+}
+
+// ConfigureInlineBlobCache enables client-side inline blob caching.
+func (c *Client) ConfigureInlineBlobCache(maxInlineBlobSize, maxCacheSize int) {
+	c.inlineBlobPool = newInlineBlobPool(maxInlineBlobSize)
+	c.inlineBlobCache = newInlineBlobCache(maxCacheSize, c.inlineBlobPool)
+	if c.inlineBlobPool != nil {
+		c.inlineBlobAlloc = c.inlineBlobPool.Get
+	} else {
+		c.inlineBlobAlloc = nil
+	}
+}
+
+func (c *Client) handleInlineBlob(msg *OpInlineBlob) {
+	if c.inlineBlobCache == nil {
+		if c.inlineBlobPool != nil {
+			c.inlineBlobPool.Put(msg.Data)
+		}
+		if c.inlineBlobHandler != nil {
+			c.inlineBlobHandler(msg)
+		}
+		return
+	}
+	data := msg.Data
+	if data == nil {
+		data = []byte{}
+	}
+	if !c.inlineBlobCache.add(msg.TransactionHandle, msg.BlobId, data) {
+		if c.inlineBlobPool != nil {
+			c.inlineBlobPool.Put(data)
+		}
+	}
+	if c.inlineBlobHandler != nil {
+		c.inlineBlobHandler(msg)
+	}
+}
+
+// ConsumeInlineBlob returns cached inline blob data for the transaction and removes it from the cache.
+func (c *Client) ConsumeInlineBlob(txHandle int, blobId int64) ([]byte, bool) {
+	if c == nil {
+		panic("client is nil")
+	}
+	if c.inlineBlobCache == nil {
+		return nil, false
+	}
+	return c.inlineBlobCache.getAndRemove(txHandle, blobId)
+}
+
+// ClearInlineBlobCache removes all cached inline blobs for a transaction.
+func (c *Client) ClearInlineBlobCache(txHandle int) {
+	if c == nil {
+		panic("client is nil")
+	}
+	if c.inlineBlobCache == nil {
+		return
+	}
+	c.inlineBlobCache.clearTx(txHandle)
+}
+
+// ClearAllInlineBlobCache removes all cached inline blobs.
+func (c *Client) ClearAllInlineBlobCache() {
+	if c == nil {
+		panic("client is nil")
+	}
+	if c.inlineBlobCache == nil {
+		return
+	}
+	c.inlineBlobCache.clearAll()
+}
+
+// ReleaseInlineBlobData returns inline blob data to the pool.
+func (c *Client) ReleaseInlineBlobData(data []byte) {
+	if c == nil {
+		panic("client is nil")
+	}
+	if c.inlineBlobPool == nil || data == nil {
+		return
+	}
+	c.inlineBlobPool.Put(data)
 }
 
 func (c *Client) Read(buf []byte) (n int, err error) {
@@ -173,6 +267,10 @@ func (c *Client) ReadMessage() (ServerMessage, error) {
 	case Op_cont_auth:
 		c.reusable.contAuth.Encoding = c.Encoding
 		msg = &c.reusable.contAuth
+	case Op_inline_blob:
+		inline := &c.reusable.inlineBlob
+		err = inline.ReadWithAllocator(c.xdrReader, c.inlineBlobAlloc)
+		return inline, err
 	default:
 		return nil, fmt.Errorf("unknown opcode: %d", opcode)
 	}
@@ -195,6 +293,9 @@ func (c *Client) ReceiveMessage() (ServerMessage, error) {
 
 		switch m := msg.(type) {
 		case *OpDummy:
+			continue
+		case *OpInlineBlob:
+			c.handleInlineBlob(m)
 			continue
 		case *OpResponse:
 			if c.lazyCounter == 0 {

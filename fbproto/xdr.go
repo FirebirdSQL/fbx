@@ -29,13 +29,27 @@ func (x *XDRReader) SkipPadding(len int64) error {
 }
 
 func (x *XDRReader) SkipBytes(n int64) error {
+	if n <= 0 {
+		return nil
+	}
 	switch r := x.reader.(type) {
 	case io.Seeker:
 		_, err := r.Seek(n, io.SeekCurrent)
 		return err
 	default:
-		_, err := io.CopyN(io.Discard, r, n)
-		return err
+		var tmp [4096]byte
+		for n > 0 {
+			toRead := int64(len(tmp))
+			if n < toRead {
+				toRead = n
+			}
+			_, err := io.ReadFull(r, tmp[:toRead])
+			if err != nil {
+				return err
+			}
+			n -= toRead
+		}
+		return nil
 	}
 }
 

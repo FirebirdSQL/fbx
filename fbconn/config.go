@@ -22,6 +22,8 @@ type AfterConnectFunc func(ctx context.Context, fbconn *FbConn) error
 type ValidateConnectFunc func(ctx context.Context, fbconn *FbConn) error
 type GetSSLPasswordFunc func(ctx context.Context) string
 
+const DefaultBlobBufferSize = 16384
+
 // Config is the settings used to establish a connection to a PostgreSQL server. It must be created by [ParseConfig]. A
 // manually initialized Config will cause ConnectConfig to panic.
 type Config struct {
@@ -44,6 +46,10 @@ type Config struct {
 	ClientVersion              string
 	DefaultTransactionReadOnly bool
 	Autocommit                 bool
+	BlobBufferSize             int
+	UseStreamBlobs             bool
+	MaxInlineBlobSize          int
+	MaxBlobCacheSize           int
 
 	// BuildContextWatcherHandler is called to create a ContextWatcherHandler for a connection. The handler is called
 	// when a context passed to a FbConn method is canceled.
@@ -300,6 +306,32 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		Encoding:                   settings["encoding"],
 		DefaultTransactionReadOnly: convertToBool(settings["default_transaction_read_only"], false),
 		Autocommit:                 convertToBool(settings["autocommit"], true),
+		UseStreamBlobs:             convertToBool(settings["use_stream_blobs"], true),
+	}
+	if s, ok := settings["max_inline_blob_size"]; ok {
+		value, err := parsePositiveIntSetting(s)
+		if err != nil {
+			return nil, &ParseConfigError{ConnString: connString, msg: "invalid max_inline_blob_size", err: err}
+		}
+		config.MaxInlineBlobSize = value
+	}
+	config.BlobBufferSize = DefaultBlobBufferSize
+	if s, ok := settings["blob_buffer_size"]; ok {
+		value, err := parsePositiveIntSetting(s)
+		if err != nil {
+			return nil, &ParseConfigError{ConnString: connString, msg: "invalid blob_buffer_size", err: err}
+		}
+		if value <= 0 || value > blobSegmentSizeMax {
+			return nil, &ParseConfigError{ConnString: connString, msg: "invalid blob_buffer_size", err: fmt.Errorf("outside range 1..%d", blobSegmentSizeMax)}
+		}
+		config.BlobBufferSize = value
+	}
+	if s, ok := settings["max_blob_cache_size"]; ok {
+		value, err := parsePositiveIntSetting(s)
+		if err != nil {
+			return nil, &ParseConfigError{ConnString: connString, msg: "invalid max_blob_cache_size", err: err}
+		}
+		config.MaxBlobCacheSize = value
 	}
 
 	if connectTimeoutSetting, present := settings["connect_timeout"]; present {
@@ -333,6 +365,10 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		"encoding":                      {},
 		"default_transaction_read_only": {},
 		"autotommit":                    {},
+		"blob_buffer_size":              {},
+		"use_stream_blobs":              {},
+		"max_inline_blob_size":          {},
+		"max_blob_cache_size":           {},
 		"target_session_attrs":          {},
 	}
 
@@ -534,7 +570,14 @@ func parseURLSettings(connString string) (map[string]string, error) {
 	}
 
 	nameMap := map[string]string{
-		"dbname": "database",
+		"dbname":                       "database",
+		"blob_buffer_size":             "blob_buffer_size",
+		"use_stream_blobs":             "use_stream_blobs",
+		"useStreamBlobs":               "use_stream_blobs",
+		"max_inline_blob_size":         "max_inline_blob_size",
+		"max_blob_cache_size":          "max_blob_cache_size",
+		"isc_dpb_max_inline_blob_size": "max_inline_blob_size",
+		"isc_dpb_max_blob_cache_size":  "max_blob_cache_size",
 	}
 
 	for k, v := range parsedURL.Query() {
@@ -558,7 +601,14 @@ func parseKeywordValueSettings(s string) (map[string]string, error) {
 	settings := make(map[string]string)
 
 	nameMap := map[string]string{
-		"dbname": "database",
+		"dbname":                       "database",
+		"blob_buffer_size":             "blob_buffer_size",
+		"use_stream_blobs":             "use_stream_blobs",
+		"useStreamBlobs":               "use_stream_blobs",
+		"max_inline_blob_size":         "max_inline_blob_size",
+		"max_blob_cache_size":          "max_blob_cache_size",
+		"isc_dpb_max_inline_blob_size": "max_inline_blob_size",
+		"isc_dpb_max_blob_cache_size":  "max_blob_cache_size",
 	}
 
 	for len(s) > 0 {
@@ -682,6 +732,20 @@ func parseConnectTimeoutSetting(s string) (time.Duration, error) {
 		return 0, errors.New("negative timeout")
 	}
 	return time.Duration(timeout) * time.Second, nil
+}
+
+func parsePositiveIntSetting(s string) (int, error) {
+	if s == "" {
+		return 0, nil
+	}
+	value, err := strconv.ParseInt(s, 10, 32)
+	if err != nil {
+		return 0, err
+	}
+	if value < 0 {
+		return 0, errors.New("negative value")
+	}
+	return int(value), nil
 }
 
 func makeConnectTimeoutDialFunc(timeout time.Duration) DialFunc {

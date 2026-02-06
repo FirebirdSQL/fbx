@@ -98,8 +98,11 @@ type FbConn struct {
 
 	config *Config
 
-	status        byte // One of connStatus* constants
+	status           byte // One of connStatus* constants
 	protocolFeatures ProtocolFeatures
+
+	protocolVersion int
+	inlineBlobSize  int
 
 	bufferingReceive    bool
 	bufferingReceiveMux sync.Mutex
@@ -197,6 +200,9 @@ func (fbConn *FbConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *a
 	}
 	authPrintf("[AUTHDBG] cond_accept: plugin=%s data_len=%d\n", msg.PluginName, len(msg.Data))
 	authPrintf("%#v\n", msg)
+	if msg.Version != 0 {
+		fbConn.protocolVersion = msg.Version & fbproto.ProtocolMask
+	}
 
 	if fbConn.wireCrypt != nil {
 		if err := fbConn.wireCrypt.AddServerKeys(msg.ServerKeys); err != nil {
@@ -473,6 +479,8 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 	fbConn.bgReaderStarted = make(chan struct{})
 	fbConn.writer = bufio.NewWriter(fbConn.conn)
 	fbConn.client = fbproto.NewClient(fbConn.bgReader, fbConn.writer, fbConn.Encoding)
+	fbConn.inlineBlobSize = config.MaxInlineBlobSize
+	fbConn.client.ConfigureInlineBlobCache(config.MaxInlineBlobSize, config.MaxBlobCacheSize)
 	fbConn.wireCrypt = wirecrypt.NewDefaultManager()
 
 	authManager, err := auth.NewAuthManager(config.User, config.Password, config.AuthPluginList)
@@ -614,6 +622,10 @@ connectLoop:
 		dpb.PutString(fbproto.Isc_dpb_auth_plugin_name, plugin.Name())
 	}
 	dpb.PutInt32(fbproto.Isc_dpb_utf8_filename, 1)
+	if fbConn.protocolFeatures.OpExecuteHaveBlobInlineCache {
+		dpb.PutInt32(fbproto.Isc_dpb_max_inline_blob_size, int32(config.MaxInlineBlobSize))
+		dpb.PutInt32(fbproto.Isc_dpb_max_blob_cache_size, int32(config.MaxBlobCacheSize))
+	}
 	if authSpecific := authManager.AuthSpecificData(); len(authSpecific) > 0 {
 		// For SRP, clientData historically was ASCII-hex, and servers accept
 		// that in specific_auth_data. For GSS, sends raw token bytes.
@@ -792,6 +804,7 @@ func (fbConn *FbConn) Close(ctx context.Context) error {
 		return nil
 	}
 	fbConn.status = connStatusClosed
+	fbConn.clearAllInlineBlobCache()
 
 	defer close(fbConn.cleanupDone)
 	defer fbConn.conn.Close()
@@ -824,6 +837,7 @@ func (fbConn *FbConn) asyncClose() {
 		return
 	}
 	fbConn.status = connStatusClosed
+	fbConn.clearAllInlineBlobCache()
 
 	go func() {
 		defer close(fbConn.cleanupDone)
@@ -991,7 +1005,7 @@ func (fbConn *FbConn) convertRowDescription(src []fbproto.FieldDescriptor) []Fie
 
 // Prepare creates a prepared statement inside current internal transaction
 func (fbConn *FbConn) Prepare(ctx context.Context, sql string) (*Statement, error) {
-	tx, err := fbConn.ensureInternalTransaction(ctx, nil)
+	tx, err := fbConn.ensureInternalTransaction(ctx, nil, false)
 	if err != nil {
 		return nil, err
 	}
@@ -1085,8 +1099,8 @@ func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 	}
 
 	st := &Statement{
-		conn:        fbConn,
-		Description: desc,
+		conn:           fbConn,
+		Description:    desc,
 	}
 	if tx != fbConn.internalTransaction {
 		st.transaction = tx
@@ -1121,7 +1135,7 @@ func (fbConn *FbConn) CancelRequest(ctx context.Context) error {
 
 // ExecImmediate executes statement immediate inside internal transaction
 func (fbConn *FbConn) ExecImmediate(ctx context.Context, sql string) error {
-	tx, err := fbConn.ensureInternalTransaction(ctx, nil)
+	tx, err := fbConn.ensureInternalTransaction(ctx, nil, false)
 	if err != nil {
 		fbConn.asyncClose()
 		return err
@@ -1224,7 +1238,7 @@ func (fbConn *FbConn) ExecTx(ctx context.Context, tx *FBTransaction, sql string)
 //
 // ResultReader must be closed before FbConn can be used again.
 func (fbConn *FbConn) ExecParams(ctx context.Context, sql string, paramValues [][]byte) *ResultReader {
-	tx, err := fbConn.ensureInternalTransaction(ctx, nil)
+	tx, err := fbConn.ensureInternalTransaction(ctx, nil, false)
 	if err != nil {
 		// early check lock state and do not close connection
 		closeConn := true
@@ -1838,8 +1852,9 @@ func Construct(hc *HijackedConn) (*FbConn, error) {
 	panic("implement me")
 }
 
-// ensureInternalTransaction starts internal transaction if not started yet and bind it to connection
-func (fbConn *FbConn) ensureInternalTransaction(ctx context.Context, tpb []byte) (*FBTransaction, error) {
+// ensureInternalTransaction starts internal transaction if not started yet and bind it to connection.
+// If locked is true, the caller must already hold the connection lock.
+func (fbConn *FbConn) ensureInternalTransaction(ctx context.Context, tpb []byte, locked bool) (*FBTransaction, error) {
 	if fbConn.internalTransaction == nil || fbConn.internalTransaction.Closed {
 
 		var txTpb []byte
@@ -1852,7 +1867,7 @@ func (fbConn *FbConn) ensureInternalTransaction(ctx context.Context, tpb []byte)
 				txTpb = w.Bytes()
 			}
 		}
-		tx, err := fbConn.StartTransactionTPB(ctx, txTpb)
+		tx, err := fbConn.startTransactionTPB(ctx, txTpb, locked)
 		if err != nil {
 			return nil, err
 		}
@@ -1869,21 +1884,40 @@ func (fbConn *FbConn) StartTransaction(ctx context.Context) (*FBTransaction, err
 
 // StartTransaction starts new transaction not bound to connection with TPB block
 func (fbConn *FbConn) StartTransactionTPB(ctx context.Context, tpb []byte) (*FBTransaction, error) {
+	return fbConn.startTransactionTPB(ctx, tpb, false)
+}
+
+func (fbConn *FbConn) startTransactionTPB(ctx context.Context, tpb []byte, locked bool) (*FBTransaction, error) {
 	var err error
 
-	if err = fbConn.lock(); err != nil {
-		return nil, err
-	}
-	defer fbConn.unlock()
-
-	if ctx != context.Background() {
-		select {
-		case <-ctx.Done():
-			return nil, newContextAlreadyDoneError(ctx)
-		default:
+	if !locked {
+		if err = fbConn.lock(); err != nil {
+			return nil, err
 		}
-		fbConn.contextWatcher.Watch(ctx)
-		defer fbConn.contextWatcher.Unwatch()
+		defer fbConn.unlock()
+
+		if ctx != context.Background() {
+			select {
+			case <-ctx.Done():
+				return nil, newContextAlreadyDoneError(ctx)
+			default:
+			}
+			fbConn.contextWatcher.Watch(ctx)
+			defer fbConn.contextWatcher.Unwatch()
+		}
+	} else {
+		if !fbConn.IsBusy() {
+			return nil, &connLockError{status: "conn is not locked"}
+		}
+		if ctx == context.Background() {
+			// already locked, no context handling needed
+		} else {
+			select {
+			case <-ctx.Done():
+				return nil, newContextAlreadyDoneError(ctx)
+			default:
+			}
+		}
 	}
 
 	opTransaction := fbproto.OpTransaction{

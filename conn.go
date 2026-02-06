@@ -516,7 +516,7 @@ optionLoop:
 }
 
 func (c *Conn) execParams(ctx context.Context, tx *dbTx, sd *fbconn.StatementDescription, arguments []any) (fbconn.QueryStatus, error) {
-	err := c.eqb.Build(c.typeMap, sd, arguments)
+	err := c.eqb.Build(ctx, c, tx, c.typeMap, sd, arguments)
 	if err != nil {
 		return fbconn.QueryStatus{}, err
 	}
@@ -532,7 +532,7 @@ func (c *Conn) execParams(ctx context.Context, tx *dbTx, sd *fbconn.StatementDes
 }
 
 func (c *Conn) execPrepared(ctx context.Context, tx *dbTx, st *fbconn.Statement, arguments []any) (fbconn.QueryStatus, error) {
-	err := c.eqb.Build(c.typeMap, st.Description, arguments)
+	err := c.eqb.Build(ctx, c, tx, c.typeMap, st.Description, arguments)
 	if err != nil {
 		return fbconn.QueryStatus{}, err
 	}
@@ -548,7 +548,7 @@ func (c *Conn) execPrepared(ctx context.Context, tx *dbTx, st *fbconn.Statement,
 }
 
 func (c *Conn) execSQLParams(ctx context.Context, tx *dbTx, sql string, args []any) (fbconn.QueryStatus, error) {
-	err := c.eqb.Build(c.typeMap, nil, args)
+	err := c.eqb.Build(ctx, c, tx, c.typeMap, nil, args)
 	if err != nil {
 		return fbconn.QueryStatus{}, err
 	}
@@ -720,7 +720,7 @@ optionLoop:
 		rows.sql = st.Description.SQL
 		rows.boundStatement = st
 
-		err = c.eqb.Build(c.typeMap, st.Description, args)
+		err = c.eqb.Build(ctx, c, tx, c.typeMap, st.Description, args)
 		if err != nil {
 			rows.fatal(err)
 			return rows, rows.err
@@ -738,7 +738,7 @@ optionLoop:
 			return rows, err
 		}
 
-		err = c.eqb.Build(c.typeMap, st.Description, args)
+		err = c.eqb.Build(ctx, c, tx, c.typeMap, st.Description, args)
 		if err != nil {
 			st.Deallocate(ctx)
 			rows.fatal(err)
@@ -755,6 +755,10 @@ optionLoop:
 		err = fmt.Errorf("unknown QueryExecMode: %v", mode)
 		rows.fatal(err)
 		return rows, rows.err
+	}
+
+	if tx != nil {
+		rows.boundTx = tx.tx
 	}
 
 	c.eqb.reset() // Allow c.eqb internal memory to be GC'ed as soon as possible.

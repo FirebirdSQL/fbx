@@ -585,6 +585,8 @@ type Rows struct {
 	conn         *Conn
 	rows         fbx.Rows
 	valueFuncs   []rowValueFunc
+	blobColumns  []bool
+	hasBlobCols  bool
 	skipNext     bool
 	skipNextMore bool
 
@@ -654,6 +656,8 @@ func (r *Rows) ColumnTypeScanType(index int) reflect.Type {
 	fd := r.rows.FieldDescriptions()[index]
 
 	switch fd.Type {
+	case fbproto.SQL_TYPE_BLOB:
+		return reflect.TypeOf(Blob{})
 	case fbproto.SQL_TYPE_D_FLOAT:
 		return reflect.TypeOf(float64(0))
 	case fbproto.SQL_TYPE_FLOAT:
@@ -688,12 +692,17 @@ func (r *Rows) Next(dest []driver.Value) error {
 
 	if r.valueFuncs == nil {
 		r.valueFuncs = make([]rowValueFunc, len(fieldDescriptions))
+		r.blobColumns = make([]bool, len(fieldDescriptions))
 
 		for i, fd := range fieldDescriptions {
 			dataTypeOID := fd.Type
 			format := fd.Format
 
 			switch fd.Type {
+			case fbproto.SQL_TYPE_BLOB:
+				r.blobColumns[i] = true
+				r.hasBlobCols = true
+				continue
 			case fbproto.SQL_TYPE_BOOLEAN:
 				var d bool
 				scanPlan := m.PlanScan(dataTypeOID, fd.Subtype, fd.Length, fd.Scale, format, &d)
@@ -839,8 +848,35 @@ func (r *Rows) Next(dest []driver.Value) error {
 		}
 	}
 
+	var blobValues []any
+	if r.hasBlobCols {
+		values, err := r.rows.Values()
+		if err != nil {
+			return err
+		}
+		blobValues = values
+	}
+
 	for i, rv := range r.rows.RawValues() {
 		if rv != nil {
+			if r.blobColumns[i] {
+				value := blobValues[i]
+				if value == nil {
+					dest[i] = nil
+					continue
+				}
+				reader, ok := value.(io.ReadCloser)
+				if !ok {
+					return fmt.Errorf("blob column %d returned %T", i, value)
+				}
+				blobValue, err := buildBlobValue(reader, &fieldDescriptions[i], r.conn)
+				if err != nil {
+					_ = reader.Close()
+					return err
+				}
+				dest[i] = blobValue
+				continue
+			}
 			var err error
 			dest[i], err = r.valueFuncs[i](rv)
 			if err != nil {
