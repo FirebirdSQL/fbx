@@ -47,7 +47,7 @@ test:
         /etc/init.d/firebird start
       fi
   script:
-    - go run gotest.tools/gotestsum@latest $(go list ./... | grep -v /vendor/) -coverprofile cover.out
+    - go run gotest.tools/gotestsum@latest --format testname  -- -p 1 -coverprofile cover.out ./...
   after_script:
     - go tool cover -html cover.out -o cover.html
     - go tool cover -func cover.out
