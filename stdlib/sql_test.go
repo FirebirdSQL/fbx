@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"reflect"
 	"strconv"
@@ -978,7 +977,7 @@ func TestRowsColumnTypes(t *testing.T) {
 					Len int64
 					OK  bool
 				}{
-					Len: math.MaxInt64,
+					Len: 10,
 					OK:  true,
 				},
 				DecimalSize: struct {
@@ -1013,7 +1012,7 @@ func TestRowsColumnTypes(t *testing.T) {
 				ScanType: reflect.TypeOf(float64(0)),
 			}, {
 				Name:     "D",
-				TypeName: "1266",
+				TypeName: "32756",
 				Length: struct {
 					Len int64
 					OK  bool
@@ -1034,7 +1033,7 @@ func TestRowsColumnTypes(t *testing.T) {
 			},
 		}
 
-		rows, err := db.Query("SELECT cast(1 as bigint) AS a, cast('bar' as varchar) AS bar, cast(1.28 as numeric(9, 2)) AS de, cast('12:00:00' as time with time zone) as d from rdb$database")
+		rows, err := db.Query("SELECT cast(1 as bigint) AS a, cast('bar' as varchar(10)) AS bar, cast(1.28 as numeric(9, 2)) AS de, cast('12:00:00' as time with time zone) as d from rdb$database")
 		require.NoError(t, err)
 
 		columns, err := rows.ColumnTypes()
