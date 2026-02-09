@@ -992,6 +992,7 @@ func ExampleRowToStructByNameLax() {
 		fmt.Printf("Unable to establish connection: %v", err)
 		return
 	}
+	defer conn.Close(ctx)
 
 	if conn.FbConn().ParameterStatus("crdb_version") != "" {
 		// Skip test / example when running on CockroachDB. Since an example can't be skipped fake success instead.
