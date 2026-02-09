@@ -74,7 +74,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"math/rand"
 	"reflect"
 	"slices"
@@ -607,14 +606,13 @@ func (r *Rows) Columns() []string {
 
 // ColumnTypeDatabaseTypeName returns the database system type name. If the name is unknown the TypeID is returned.
 func (r *Rows) ColumnTypeDatabaseTypeName(index int) string {
-	if dt, ok := r.conn.conn.TypeMap().TypeForTypeID(r.rows.FieldDescriptions()[index].Type, r.rows.FieldDescriptions()[index].Subtype); ok {
+	fd := r.rows.FieldDescriptions()[index]
+	if dt, ok := r.conn.conn.TypeMap().TypeForTypeID(fd.Type, fd.Subtype); ok {
 		return strings.ToUpper(dt.Name)
 	}
 
-	return strconv.FormatInt(int64(r.rows.FieldDescriptions()[index].Type), 10)
+	return strconv.FormatInt(int64(fd.Type), 10)
 }
-
-const varHeaderSize = 4
 
 // ColumnTypeLength returns the length of the column type if the column is a
 // variable length type. If the column is not a variable length type ok
@@ -624,14 +622,33 @@ func (r *Rows) ColumnTypeLength(index int) (int64, bool) {
 
 	switch fd.Type {
 	case fbproto.SQL_TYPE_TEXT:
-		return math.MaxInt64, true
-	// case fbtype.VarcharTypeID, fbtype.BPCharArrayTypeID:
-	// 	// FIXME: fbx
-	// 	//return int64(fd.TypeModifier - varHeaderSize), true
-	// 	return 0, true
+		return characterLength(fd), true
+	case fbproto.SQL_TYPE_VARYING:
+		return characterLength(fd), true
 	default:
 		return 0, false
 	}
+}
+
+func characterLength(fd fbconn.FieldDescription) int64 {
+	charsetId := int32(fd.Subtype) & 0xFF
+	name, err := fbproto.CharacterSetIdIntoName(charsetId)
+	if err != nil {
+		return int64(fd.Length)
+	}
+	encoding, err := fbproto.NewEncoding(name)
+	if err != nil || encoding.MaxBytesPerChar == 0 {
+		return int64(fd.Length)
+	}
+
+	maxBytes := uint32(encoding.MaxBytesPerChar)
+	if maxBytes == 0 {
+		return int64(fd.Length)
+	}
+	if fd.Length%maxBytes == 0 {
+		return int64(fd.Length / maxBytes)
+	}
+	return int64(fd.Length)
 }
 
 // ColumnTypePrecisionScale should return the precision and scale for decimal
@@ -639,21 +656,53 @@ func (r *Rows) ColumnTypeLength(index int) (int64, bool) {
 func (r *Rows) ColumnTypePrecisionScale(index int) (precision, scale int64, ok bool) {
 	fd := r.rows.FieldDescriptions()[index]
 
-	switch fd.Type {
-	// case fbtype.NumericTypeID:
-	// 	// FIXME: fbx
-	// 	mod := 0 //fd.TypeModifier - varHeaderSize
-	// 	precision = int64((mod >> 16) & 0xffff)
-	// 	scale = int64(mod & 0xffff)
-	// 	return precision, scale, true
-	default:
+	if !isNumericSubtype(fd.Subtype) {
 		return 0, 0, false
+	}
+
+	precision, ok = numericPrecisionForField(fd)
+	if !ok {
+		return 0, 0, false
+	}
+
+	scale = int64(fd.Scale)
+	if scale < 0 {
+		scale = -scale
+	}
+
+	return precision, scale, true
+}
+
+func isNumericSubtype(subtype int32) bool {
+	return subtype == 1 || subtype == 2
+}
+
+func numericPrecisionForField(fd fbconn.FieldDescription) (int64, bool) {
+	switch fd.Type {
+	case fbproto.SQL_TYPE_SHORT:
+		return 4, true
+	case fbproto.SQL_TYPE_LONG:
+		return 9, true
+	case fbproto.SQL_TYPE_INT64:
+		return 18, true
+	case fbproto.SQL_TYPE_INT128:
+		return 38, true
+	case fbproto.SQL_TYPE_DEC64:
+		return 16, true
+	case fbproto.SQL_TYPE_DEC128:
+		return 34, true
+	default:
+		return 0, false
 	}
 }
 
 // ColumnTypeScanType returns the value type that can be used to scan types into.
 func (r *Rows) ColumnTypeScanType(index int) reflect.Type {
 	fd := r.rows.FieldDescriptions()[index]
+
+	if isNumericSubtype(fd.Subtype) {
+		return reflect.TypeOf(float64(0))
+	}
 
 	switch fd.Type {
 	case fbproto.SQL_TYPE_BLOB:
@@ -670,8 +719,6 @@ func (r *Rows) ColumnTypeScanType(index int) reflect.Type {
 		return reflect.TypeOf(int16(0))
 	case fbproto.SQL_TYPE_BOOLEAN:
 		return reflect.TypeOf(false)
-	// case fbtype.NumericTypeID:
-	// 	return reflect.TypeOf(float64(0))
 	case fbproto.SQL_TYPE_DATE, fbproto.SQL_TYPE_TIMESTAMP, fbproto.SQL_TYPE_TIMESTAMP_TZ:
 		return reflect.TypeOf(time.Time{})
 	// case fbtype.ByteaTypeID:
