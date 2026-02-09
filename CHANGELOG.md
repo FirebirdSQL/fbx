@@ -1,6 +1,6 @@
 # Change Log
 
-# [0.2] - Unreleased
+# [0.2] - 09.02.2026
 
 ### Added
 
@@ -10,7 +10,6 @@
 - RS-276843. Add support of named arguments
 - RS-261350. Add session validators ValidateConnectTargetSessionAttrsPrimary, ValidateConnectTargetSessionAttrsReplica and ValidateConnectTargetSessionAttrsPreferReplica.
              Respect target_session_attrs connection variable with values primary, replica, prefer-replica, read-only, read-write.
-- RS-275664. Respect wire protocol version for op_execute
 
 ### Improved
 
@@ -21,7 +20,9 @@
 - RS-272354. RS-264224. Multiple TIMESTAMP WITH TIMEZONE type scan/encode fixes
 - RS-270082. RS-270067. RS-270062. RS-270056. Multiple NUMERIC type encoding fixes
 - RS-268164. Return error if count of passed parameters do not match with count of placeholders in query
-- RS-264078. Fix crash on when passing go float64 into fb float 
+- RS-264078. Fix crash on when passing go float64 into fb float
+- RS-277296. Fix Rows.ColumnType* returning values for some types
+- RS-275664. Respect wire protocol version for op_execute
 
 # [0.1] - 11.12.2025
 
