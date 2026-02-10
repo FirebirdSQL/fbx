@@ -100,29 +100,15 @@ func (Float4Codec) PreferredFormat() int16 {
 }
 
 func (Float4Codec) PlanEncode(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
-	switch format {
-	case BinaryFormatCode:
-		switch value.(type) {
-		case float32:
-			return encodePlanFloat4CodecBinaryFloat32{}
-		case string:
-			return encodePlanFloat4CodecBinaryString{}
-		case Float64Valuer:
-			return encodePlanFloat4CodecBinaryFloat64Valuer{}
-		case Int64Valuer:
-			return encodePlanFloat4CodecBinaryInt64Valuer{}
-		}
-	case TextFormatCode:
-		switch value.(type) {
-		case float32:
-			return encodePlanTextFloat32{}
-		case string:
-			return encodePlanTextString{}
-		case Float64Valuer:
-			return encodePlanTextFloat64Valuer{}
-		case Int64Valuer:
-			return encodePlanTextInt64Valuer{}
-		}
+	switch value.(type) {
+	case float32:
+		return encodePlanFloat4CodecBinaryFloat32{}
+	case string:
+		return encodePlanFloat4CodecBinaryString{}
+	case Float64Valuer:
+		return encodePlanFloat4CodecBinaryFloat64Valuer{}
+	case Int64Valuer:
+		return encodePlanFloat4CodecBinaryInt64Valuer{}
 	}
 
 	return nil
@@ -192,28 +178,15 @@ func (encodePlanFloat4CodecBinaryInt64Valuer) Encode(value any, buf []byte) (new
 }
 
 func (Float4Codec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
-
-	switch format {
-	case BinaryFormatCode:
-		switch target.(type) {
-		case *float32:
-			return scanPlanBinaryFloat4ToFloat32{}
-		case Float64Scanner:
-			return scanPlanBinaryFloat4ToFloat64Scanner{}
-		case Int64Scanner:
-			return scanPlanBinaryFloat4ToInt64Scanner{}
-		case TextScanner:
-			return scanPlanBinaryFloat4ToTextScanner{}
-		}
-	case TextFormatCode:
-		switch target.(type) {
-		case *float32:
-			return scanPlanTextAnyToFloat32{}
-		case Float64Scanner:
-			return scanPlanTextAnyToFloat64Scanner{}
-		case Int64Scanner:
-			return scanPlanTextAnyToInt64Scanner{}
-		}
+	switch target.(type) {
+	case *float32:
+		return scanPlanBinaryFloat4ToFloat32{}
+	case Float64Scanner:
+		return scanPlanBinaryFloat4ToFloat64Scanner{}
+	case Int64Scanner:
+		return scanPlanBinaryFloat4ToInt64Scanner{}
+	case TextScanner:
+		return scanPlanBinaryFloat4ToTextScanner{}
 	}
 
 	return nil
@@ -294,24 +267,6 @@ func (scanPlanBinaryFloat4ToTextScanner) Scan(src []byte, dst any) error {
 	f32 := math.Float32frombits(uint32(ui32))
 
 	return s.ScanText(Text{String: strconv.FormatFloat(float64(f32), 'f', -1, 32), Valid: true})
-}
-
-type scanPlanTextAnyToFloat32 struct{}
-
-func (scanPlanTextAnyToFloat32) Scan(src []byte, dst any) error {
-	if src == nil {
-		return fmt.Errorf("cannot scan NULL into %T", dst)
-	}
-
-	n, err := strconv.ParseFloat(string(src), 32)
-	if err != nil {
-		return err
-	}
-
-	f := (dst).(*float32)
-	*f = float32(n)
-
-	return nil
 }
 
 func (c Float4Codec) DecodeDatabaseSQLValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {

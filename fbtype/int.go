@@ -1,5 +1,3 @@
-// Code generated from fbtype/int.go.erb. DO NOT EDIT.
-
 package fbtype
 
 import (
@@ -121,7 +119,7 @@ func (dst *Int2) UnmarshalJSON(b []byte) error {
 type Int2Codec struct{}
 
 func (Int2Codec) FormatSupported(format int16) bool {
-	return format == TextFormatCode || format == BinaryFormatCode
+	return format == BinaryFormatCode
 }
 
 func (Int2Codec) PreferredFormat() int16 {
@@ -129,23 +127,14 @@ func (Int2Codec) PreferredFormat() int16 {
 }
 
 func (Int2Codec) PlanEncode(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
-	switch format {
-	case BinaryFormatCode:
-		switch value.(type) {
-		case int16:
-			return encodePlanInt2CodecBinaryInt16{}
-		case Int64Valuer:
-			return encodePlanInt2CodecBinaryInt64Valuer{}
-		}
-	case TextFormatCode:
-		switch value.(type) {
-		case int16:
-			return encodePlanInt2CodecTextInt16{}
-		case Int64Valuer:
-			return encodePlanInt2CodecTextInt64Valuer{}
-		}
+	switch value.(type) {
+	case int16:
+		return encodePlanInt2CodecBinaryInt16{}
+	case Int64Valuer:
+		return encodePlanInt2CodecBinaryInt64Valuer{}
+	case string:
+		return encodePlanInt2CodecBinaryFromString{}
 	}
-
 	return nil
 }
 
@@ -154,13 +143,6 @@ type encodePlanInt2CodecBinaryInt16 struct{}
 func (encodePlanInt2CodecBinaryInt16) Encode(value any, buf []byte) (newBuf []byte, err error) {
 	n := value.(int16)
 	return pgio.AppendInt16(buf, int16(n)), nil
-}
-
-type encodePlanInt2CodecTextInt16 struct{}
-
-func (encodePlanInt2CodecTextInt16) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	n := value.(int16)
-	return append(buf, strconv.FormatInt(int64(n), 10)...), nil
 }
 
 type encodePlanInt2CodecBinaryInt64Valuer struct{}
@@ -185,83 +167,45 @@ func (encodePlanInt2CodecBinaryInt64Valuer) Encode(value any, buf []byte) (newBu
 	return pgio.AppendInt16(buf, int16(n.Int64)), nil
 }
 
-type encodePlanInt2CodecTextInt64Valuer struct{}
+type encodePlanInt2CodecBinaryFromString struct{}
 
-func (encodePlanInt2CodecTextInt64Valuer) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	n, err := value.(Int64Valuer).Int64Value()
+func (encodePlanInt2CodecBinaryFromString) Encode(value any, buf []byte) ([]byte, error) {
+	s := value.(string)
+
+	n, err := strconv.ParseInt(s, 10, 16)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("cannot parse %q as smallint: %w", s, err)
 	}
 
-	if !n.Valid {
-		return nil, nil
-	}
-
-	if n.Int64 > math.MaxInt16 {
-		return nil, fmt.Errorf("%d is greater than maximum value for int2", n.Int64)
-	}
-	if n.Int64 < math.MinInt16 {
-		return nil, fmt.Errorf("%d is less than minimum value for int2", n.Int64)
-	}
-
-	return append(buf, strconv.FormatInt(n.Int64, 10)...), nil
+	return pgio.AppendInt16(buf, int16(n)), nil
 }
 
 func (Int2Codec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
-
-	switch format {
-	case BinaryFormatCode:
-		switch target.(type) {
-		case *int8:
-			return scanPlanBinaryInt2ToInt8{}
-		case *int16:
-			return scanPlanBinaryInt2ToInt16{}
-		case *int32:
-			return scanPlanBinaryInt2ToInt32{}
-		case *int64:
-			return scanPlanBinaryInt2ToInt64{}
-		case *int:
-			return scanPlanBinaryInt2ToInt{}
-		case *uint8:
-			return scanPlanBinaryInt2ToUint8{}
-		case *uint16:
-			return scanPlanBinaryInt2ToUint16{}
-		case *uint32:
-			return scanPlanBinaryInt2ToUint32{}
-		case *uint64:
-			return scanPlanBinaryInt2ToUint64{}
-		case *uint:
-			return scanPlanBinaryInt2ToUint{}
-		case Int64Scanner:
-			return scanPlanBinaryInt2ToInt64Scanner{}
-		case TextScanner:
-			return scanPlanBinaryInt2ToTextScanner{}
-		}
-	case TextFormatCode:
-		switch target.(type) {
-		case *int8:
-			return scanPlanTextAnyToInt8{}
-		case *int16:
-			return scanPlanTextAnyToInt16{}
-		case *int32:
-			return scanPlanTextAnyToInt32{}
-		case *int64:
-			return scanPlanTextAnyToInt64{}
-		case *int:
-			return scanPlanTextAnyToInt{}
-		case *uint8:
-			return scanPlanTextAnyToUint8{}
-		case *uint16:
-			return scanPlanTextAnyToUint16{}
-		case *uint32:
-			return scanPlanTextAnyToUint32{}
-		case *uint64:
-			return scanPlanTextAnyToUint64{}
-		case *uint:
-			return scanPlanTextAnyToUint{}
-		case Int64Scanner:
-			return scanPlanTextAnyToInt64Scanner{}
-		}
+	switch target.(type) {
+	case *int8:
+		return scanPlanBinaryInt2ToInt8{}
+	case *int16:
+		return scanPlanBinaryInt2ToInt16{}
+	case *int32:
+		return scanPlanBinaryInt2ToInt32{}
+	case *int64:
+		return scanPlanBinaryInt2ToInt64{}
+	case *int:
+		return scanPlanBinaryInt2ToInt{}
+	case *uint8:
+		return scanPlanBinaryInt2ToUint8{}
+	case *uint16:
+		return scanPlanBinaryInt2ToUint16{}
+	case *uint32:
+		return scanPlanBinaryInt2ToUint32{}
+	case *uint64:
+		return scanPlanBinaryInt2ToUint64{}
+	case *uint:
+		return scanPlanBinaryInt2ToUint{}
+	case Int64Scanner:
+		return scanPlanBinaryInt2ToInt64Scanner{}
+	case TextScanner:
+		return scanPlanBinaryInt2ToTextScanner{}
 	}
 
 	return nil
@@ -681,7 +625,7 @@ func (dst *Int4) UnmarshalJSON(b []byte) error {
 type Int4Codec struct{}
 
 func (Int4Codec) FormatSupported(format int16) bool {
-	return format == TextFormatCode || format == BinaryFormatCode
+	return format == BinaryFormatCode
 }
 
 func (Int4Codec) PreferredFormat() int16 {
@@ -689,23 +633,14 @@ func (Int4Codec) PreferredFormat() int16 {
 }
 
 func (Int4Codec) PlanEncode(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
-	switch format {
-	case BinaryFormatCode:
-		switch value.(type) {
-		case int32:
-			return encodePlanInt4CodecBinaryInt32{}
-		case Int64Valuer:
-			return encodePlanInt4CodecBinaryInt64Valuer{}
-		}
-	case TextFormatCode:
-		switch value.(type) {
-		case int32:
-			return encodePlanInt4CodecTextInt32{}
-		case Int64Valuer:
-			return encodePlanInt4CodecTextInt64Valuer{}
-		}
+	switch value.(type) {
+	case int32:
+		return encodePlanInt4CodecBinaryInt32{}
+	case Int64Valuer:
+		return encodePlanInt4CodecBinaryInt64Valuer{}
+	case string:
+		return encodePlanInt4CodecBinaryFromString{}
 	}
-
 	return nil
 }
 
@@ -714,13 +649,6 @@ type encodePlanInt4CodecBinaryInt32 struct{}
 func (encodePlanInt4CodecBinaryInt32) Encode(value any, buf []byte) (newBuf []byte, err error) {
 	n := value.(int32)
 	return pgio.AppendInt32(buf, int32(n)), nil
-}
-
-type encodePlanInt4CodecTextInt32 struct{}
-
-func (encodePlanInt4CodecTextInt32) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	n := value.(int32)
-	return append(buf, strconv.FormatInt(int64(n), 10)...), nil
 }
 
 type encodePlanInt4CodecBinaryInt64Valuer struct{}
@@ -745,83 +673,43 @@ func (encodePlanInt4CodecBinaryInt64Valuer) Encode(value any, buf []byte) (newBu
 	return pgio.AppendInt32(buf, int32(n.Int64)), nil
 }
 
-type encodePlanInt4CodecTextInt64Valuer struct{}
+type encodePlanInt4CodecBinaryFromString struct{}
 
-func (encodePlanInt4CodecTextInt64Valuer) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	n, err := value.(Int64Valuer).Int64Value()
+func (encodePlanInt4CodecBinaryFromString) Encode(value any, buf []byte) ([]byte, error) {
+	s := value.(string)
+	n, err := strconv.ParseInt(s, 10, 32)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("cannot parse %q as int: %w", s, err)
 	}
-
-	if !n.Valid {
-		return nil, nil
-	}
-
-	if n.Int64 > math.MaxInt32 {
-		return nil, fmt.Errorf("%d is greater than maximum value for int4", n.Int64)
-	}
-	if n.Int64 < math.MinInt32 {
-		return nil, fmt.Errorf("%d is less than minimum value for int4", n.Int64)
-	}
-
-	return append(buf, strconv.FormatInt(n.Int64, 10)...), nil
+	return pgio.AppendInt32(buf, int32(n)), nil
 }
 
 func (Int4Codec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
-
-	switch format {
-	case BinaryFormatCode:
-		switch target.(type) {
-		case *int8:
-			return scanPlanBinaryInt4ToInt8{}
-		case *int16:
-			return scanPlanBinaryInt4ToInt16{}
-		case *int32:
-			return scanPlanBinaryInt4ToInt32{}
-		case *int64:
-			return scanPlanBinaryInt4ToInt64{}
-		case *int:
-			return scanPlanBinaryInt4ToInt{}
-		case *uint8:
-			return scanPlanBinaryInt4ToUint8{}
-		case *uint16:
-			return scanPlanBinaryInt4ToUint16{}
-		case *uint32:
-			return scanPlanBinaryInt4ToUint32{}
-		case *uint64:
-			return scanPlanBinaryInt4ToUint64{}
-		case *uint:
-			return scanPlanBinaryInt4ToUint{}
-		case Int64Scanner:
-			return scanPlanBinaryInt4ToInt64Scanner{}
-		case TextScanner:
-			return scanPlanBinaryInt4ToTextScanner{}
-		}
-	case TextFormatCode:
-		switch target.(type) {
-		case *int8:
-			return scanPlanTextAnyToInt8{}
-		case *int16:
-			return scanPlanTextAnyToInt16{}
-		case *int32:
-			return scanPlanTextAnyToInt32{}
-		case *int64:
-			return scanPlanTextAnyToInt64{}
-		case *int:
-			return scanPlanTextAnyToInt{}
-		case *uint8:
-			return scanPlanTextAnyToUint8{}
-		case *uint16:
-			return scanPlanTextAnyToUint16{}
-		case *uint32:
-			return scanPlanTextAnyToUint32{}
-		case *uint64:
-			return scanPlanTextAnyToUint64{}
-		case *uint:
-			return scanPlanTextAnyToUint{}
-		case Int64Scanner:
-			return scanPlanTextAnyToInt64Scanner{}
-		}
+	switch target.(type) {
+	case *int8:
+		return scanPlanBinaryInt4ToInt8{}
+	case *int16:
+		return scanPlanBinaryInt4ToInt16{}
+	case *int32:
+		return scanPlanBinaryInt4ToInt32{}
+	case *int64:
+		return scanPlanBinaryInt4ToInt64{}
+	case *int:
+		return scanPlanBinaryInt4ToInt{}
+	case *uint8:
+		return scanPlanBinaryInt4ToUint8{}
+	case *uint16:
+		return scanPlanBinaryInt4ToUint16{}
+	case *uint32:
+		return scanPlanBinaryInt4ToUint32{}
+	case *uint64:
+		return scanPlanBinaryInt4ToUint64{}
+	case *uint:
+		return scanPlanBinaryInt4ToUint{}
+	case Int64Scanner:
+		return scanPlanBinaryInt4ToInt64Scanner{}
+	case TextScanner:
+		return scanPlanBinaryInt4ToTextScanner{}
 	}
 
 	return nil
@@ -1252,7 +1140,7 @@ func (dst *Int8) UnmarshalJSON(b []byte) error {
 type Int8Codec struct{}
 
 func (Int8Codec) FormatSupported(format int16) bool {
-	return format == TextFormatCode || format == BinaryFormatCode
+	return format == BinaryFormatCode
 }
 
 func (Int8Codec) PreferredFormat() int16 {
@@ -1260,21 +1148,13 @@ func (Int8Codec) PreferredFormat() int16 {
 }
 
 func (Int8Codec) PlanEncode(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
-	switch format {
-	case BinaryFormatCode:
-		switch value.(type) {
-		case int64:
-			return encodePlanInt8CodecBinaryInt64{}
-		case Int64Valuer:
-			return encodePlanInt8CodecBinaryInt64Valuer{}
-		}
-	case TextFormatCode:
-		switch value.(type) {
-		case int64:
-			return encodePlanInt8CodecTextInt64{}
-		case Int64Valuer:
-			return encodePlanInt8CodecTextInt64Valuer{}
-		}
+	switch value.(type) {
+	case int64:
+		return encodePlanInt8CodecBinaryInt64{}
+	case Int64Valuer:
+		return encodePlanInt8CodecBinaryInt64Valuer{}
+	case string:
+		return encodePlanInt8CodecBinaryFromString{}
 	}
 
 	return nil
@@ -1285,13 +1165,6 @@ type encodePlanInt8CodecBinaryInt64 struct{}
 func (encodePlanInt8CodecBinaryInt64) Encode(value any, buf []byte) (newBuf []byte, err error) {
 	n := value.(int64)
 	return pgio.AppendInt64(buf, int64(n)), nil
-}
-
-type encodePlanInt8CodecTextInt64 struct{}
-
-func (encodePlanInt8CodecTextInt64) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	n := value.(int64)
-	return append(buf, strconv.FormatInt(int64(n), 10)...), nil
 }
 
 type encodePlanInt8CodecBinaryInt64Valuer struct{}
@@ -1316,83 +1189,44 @@ func (encodePlanInt8CodecBinaryInt64Valuer) Encode(value any, buf []byte) (newBu
 	return pgio.AppendInt64(buf, int64(n.Int64)), nil
 }
 
-type encodePlanInt8CodecTextInt64Valuer struct{}
+type encodePlanInt8CodecBinaryFromString struct{}
 
-func (encodePlanInt8CodecTextInt64Valuer) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	n, err := value.(Int64Valuer).Int64Value()
+func (encodePlanInt8CodecBinaryFromString) Encode(value any, buf []byte) ([]byte, error) {
+	s := value.(string)
+	n, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("cannot parse %q as bigint: %w", s, err)
 	}
-
-	if !n.Valid {
-		return nil, nil
-	}
-
-	if n.Int64 > math.MaxInt64 {
-		return nil, fmt.Errorf("%d is greater than maximum value for int8", n.Int64)
-	}
-	if n.Int64 < math.MinInt64 {
-		return nil, fmt.Errorf("%d is less than minimum value for int8", n.Int64)
-	}
-
-	return append(buf, strconv.FormatInt(n.Int64, 10)...), nil
+	return pgio.AppendInt64(buf, n), nil
 }
 
 func (Int8Codec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
 
-	switch format {
-	case BinaryFormatCode:
-		switch target.(type) {
-		case *int8:
-			return scanPlanBinaryInt8ToInt8{}
-		case *int16:
-			return scanPlanBinaryInt8ToInt16{}
-		case *int32:
-			return scanPlanBinaryInt8ToInt32{}
-		case *int64:
-			return scanPlanBinaryInt8ToInt64{}
-		case *int:
-			return scanPlanBinaryInt8ToInt{}
-		case *uint8:
-			return scanPlanBinaryInt8ToUint8{}
-		case *uint16:
-			return scanPlanBinaryInt8ToUint16{}
-		case *uint32:
-			return scanPlanBinaryInt8ToUint32{}
-		case *uint64:
-			return scanPlanBinaryInt8ToUint64{}
-		case *uint:
-			return scanPlanBinaryInt8ToUint{}
-		case Int64Scanner:
-			return scanPlanBinaryInt8ToInt64Scanner{}
-		case TextScanner:
-			return scanPlanBinaryInt8ToTextScanner{}
-		}
-	case TextFormatCode:
-		switch target.(type) {
-		case *int8:
-			return scanPlanTextAnyToInt8{}
-		case *int16:
-			return scanPlanTextAnyToInt16{}
-		case *int32:
-			return scanPlanTextAnyToInt32{}
-		case *int64:
-			return scanPlanTextAnyToInt64{}
-		case *int:
-			return scanPlanTextAnyToInt{}
-		case *uint8:
-			return scanPlanTextAnyToUint8{}
-		case *uint16:
-			return scanPlanTextAnyToUint16{}
-		case *uint32:
-			return scanPlanTextAnyToUint32{}
-		case *uint64:
-			return scanPlanTextAnyToUint64{}
-		case *uint:
-			return scanPlanTextAnyToUint{}
-		case Int64Scanner:
-			return scanPlanTextAnyToInt64Scanner{}
-		}
+	switch target.(type) {
+	case *int8:
+		return scanPlanBinaryInt8ToInt8{}
+	case *int16:
+		return scanPlanBinaryInt8ToInt16{}
+	case *int32:
+		return scanPlanBinaryInt8ToInt32{}
+	case *int64:
+		return scanPlanBinaryInt8ToInt64{}
+	case *int:
+		return scanPlanBinaryInt8ToInt{}
+	case *uint8:
+		return scanPlanBinaryInt8ToUint8{}
+	case *uint16:
+		return scanPlanBinaryInt8ToUint16{}
+	case *uint32:
+		return scanPlanBinaryInt8ToUint32{}
+	case *uint64:
+		return scanPlanBinaryInt8ToUint64{}
+	case *uint:
+		return scanPlanBinaryInt8ToUint{}
+	case Int64Scanner:
+		return scanPlanBinaryInt8ToInt64Scanner{}
+	case TextScanner:
+		return scanPlanBinaryInt8ToTextScanner{}
 	}
 
 	return nil
@@ -1743,239 +1577,4 @@ func (scanPlanBinaryInt8ToTextScanner) Scan(src []byte, dst any) error {
 	n := int64(int64(binary.BigEndian.Uint64(src)))
 
 	return s.ScanText(Text{String: strconv.FormatInt(n, 10), Valid: true})
-}
-
-type scanPlanTextAnyToInt8 struct{}
-
-func (scanPlanTextAnyToInt8) Scan(src []byte, dst any) error {
-	if src == nil {
-		return fmt.Errorf("cannot scan NULL into %T", dst)
-	}
-
-	p, ok := (dst).(*int8)
-	if !ok {
-		return ErrScanTargetTypeChanged
-	}
-
-	n, err := strconv.ParseInt(string(src), 10, 8)
-	if err != nil {
-		return err
-	}
-
-	*p = int8(n)
-	return nil
-}
-
-type scanPlanTextAnyToUint8 struct{}
-
-func (scanPlanTextAnyToUint8) Scan(src []byte, dst any) error {
-	if src == nil {
-		return fmt.Errorf("cannot scan NULL into %T", dst)
-	}
-
-	p, ok := (dst).(*uint8)
-	if !ok {
-		return ErrScanTargetTypeChanged
-	}
-
-	n, err := strconv.ParseUint(string(src), 10, 8)
-	if err != nil {
-		return err
-	}
-
-	*p = uint8(n)
-	return nil
-}
-
-type scanPlanTextAnyToInt16 struct{}
-
-func (scanPlanTextAnyToInt16) Scan(src []byte, dst any) error {
-	if src == nil {
-		return fmt.Errorf("cannot scan NULL into %T", dst)
-	}
-
-	p, ok := (dst).(*int16)
-	if !ok {
-		return ErrScanTargetTypeChanged
-	}
-
-	n, err := strconv.ParseInt(string(src), 10, 16)
-	if err != nil {
-		return err
-	}
-
-	*p = int16(n)
-	return nil
-}
-
-type scanPlanTextAnyToUint16 struct{}
-
-func (scanPlanTextAnyToUint16) Scan(src []byte, dst any) error {
-	if src == nil {
-		return fmt.Errorf("cannot scan NULL into %T", dst)
-	}
-
-	p, ok := (dst).(*uint16)
-	if !ok {
-		return ErrScanTargetTypeChanged
-	}
-
-	n, err := strconv.ParseUint(string(src), 10, 16)
-	if err != nil {
-		return err
-	}
-
-	*p = uint16(n)
-	return nil
-}
-
-type scanPlanTextAnyToInt32 struct{}
-
-func (scanPlanTextAnyToInt32) Scan(src []byte, dst any) error {
-	if src == nil {
-		return fmt.Errorf("cannot scan NULL into %T", dst)
-	}
-
-	p, ok := (dst).(*int32)
-	if !ok {
-		return ErrScanTargetTypeChanged
-	}
-
-	n, err := strconv.ParseInt(string(src), 10, 32)
-	if err != nil {
-		return err
-	}
-
-	*p = int32(n)
-	return nil
-}
-
-type scanPlanTextAnyToUint32 struct{}
-
-func (scanPlanTextAnyToUint32) Scan(src []byte, dst any) error {
-	if src == nil {
-		return fmt.Errorf("cannot scan NULL into %T", dst)
-	}
-
-	p, ok := (dst).(*uint32)
-	if !ok {
-		return ErrScanTargetTypeChanged
-	}
-
-	n, err := strconv.ParseUint(string(src), 10, 32)
-	if err != nil {
-		return err
-	}
-
-	*p = uint32(n)
-	return nil
-}
-
-type scanPlanTextAnyToInt64 struct{}
-
-func (scanPlanTextAnyToInt64) Scan(src []byte, dst any) error {
-	if src == nil {
-		return fmt.Errorf("cannot scan NULL into %T", dst)
-	}
-
-	p, ok := (dst).(*int64)
-	if !ok {
-		return ErrScanTargetTypeChanged
-	}
-
-	n, err := strconv.ParseInt(string(src), 10, 64)
-	if err != nil {
-		return err
-	}
-
-	*p = int64(n)
-	return nil
-}
-
-type scanPlanTextAnyToUint64 struct{}
-
-func (scanPlanTextAnyToUint64) Scan(src []byte, dst any) error {
-	if src == nil {
-		return fmt.Errorf("cannot scan NULL into %T", dst)
-	}
-
-	p, ok := (dst).(*uint64)
-	if !ok {
-		return ErrScanTargetTypeChanged
-	}
-
-	n, err := strconv.ParseUint(string(src), 10, 64)
-	if err != nil {
-		return err
-	}
-
-	*p = uint64(n)
-	return nil
-}
-
-type scanPlanTextAnyToInt struct{}
-
-func (scanPlanTextAnyToInt) Scan(src []byte, dst any) error {
-	if src == nil {
-		return fmt.Errorf("cannot scan NULL into %T", dst)
-	}
-
-	p, ok := (dst).(*int)
-	if !ok {
-		return ErrScanTargetTypeChanged
-	}
-
-	n, err := strconv.ParseInt(string(src), 10, 0)
-	if err != nil {
-		return err
-	}
-
-	*p = int(n)
-	return nil
-}
-
-type scanPlanTextAnyToUint struct{}
-
-func (scanPlanTextAnyToUint) Scan(src []byte, dst any) error {
-	if src == nil {
-		return fmt.Errorf("cannot scan NULL into %T", dst)
-	}
-
-	p, ok := (dst).(*uint)
-	if !ok {
-		return ErrScanTargetTypeChanged
-	}
-
-	n, err := strconv.ParseUint(string(src), 10, 0)
-	if err != nil {
-		return err
-	}
-
-	*p = uint(n)
-	return nil
-}
-
-type scanPlanTextAnyToInt64Scanner struct{}
-
-func (scanPlanTextAnyToInt64Scanner) Scan(src []byte, dst any) error {
-	s, ok := (dst).(Int64Scanner)
-	if !ok {
-		return ErrScanTargetTypeChanged
-	}
-
-	if src == nil {
-		return s.ScanInt64(Int8{})
-	}
-
-	n, err := strconv.ParseInt(string(src), 10, 64)
-	if err != nil {
-		return err
-	}
-
-	err = s.ScanInt64(Int8{Int64: n, Valid: true})
-	if err != nil {
-		return err
-	}
-
-	return nil
 }

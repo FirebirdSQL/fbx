@@ -108,29 +108,15 @@ func (Float8Codec) PreferredFormat() int16 {
 }
 
 func (Float8Codec) PlanEncode(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
-	switch format {
-	case BinaryFormatCode:
-		switch value.(type) {
-		case float64:
-			return encodePlanFloat8CodecBinaryFloat64{}
-		case string:
-			return encodePlanFloat8CodecBinaryString{}
-		case Float64Valuer:
-			return encodePlanFloat8CodecBinaryFloat64Valuer{}
-		case Int64Valuer:
-			return encodePlanFloat8CodecBinaryInt64Valuer{}
-		}
-	case TextFormatCode:
-		switch value.(type) {
-		case float64:
-			return encodePlanTextFloat64{}
-		case string:
-			return encodePlanTextString64{}
-		case Float64Valuer:
-			return encodePlanTextFloat64Valuer{}
-		case Int64Valuer:
-			return encodePlanTextInt64Valuer{}
-		}
+	switch value.(type) {
+	case float64:
+		return encodePlanFloat8CodecBinaryFloat64{}
+	case string:
+		return encodePlanFloat8CodecBinaryString{}
+	case Float64Valuer:
+		return encodePlanFloat8CodecBinaryFloat64Valuer{}
+	case Int64Valuer:
+		return encodePlanFloat8CodecBinaryInt64Valuer{}
 	}
 
 	return nil
@@ -154,20 +140,6 @@ func (encodePlanFloat8CodecBinaryString) Encode(value any, buf []byte) ([]byte, 
 	return pgio.AppendUint64(buf, math.Float64bits(n)), nil
 }
 
-type encodePlanTextFloat64 struct{}
-
-func (encodePlanTextFloat64) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	n := value.(float64)
-	return append(buf, strconv.FormatFloat(n, 'f', -1, 64)...), nil
-}
-
-type encodePlanTextString64 struct{}
-
-func (encodePlanTextString64) Encode(value any, buf []byte) ([]byte, error) {
-	s := value.(string)
-	return append(buf, s...), nil
-}
-
 type encodePlanFloat8CodecBinaryFloat64Valuer struct{}
 
 func (encodePlanFloat8CodecBinaryFloat64Valuer) Encode(value any, buf []byte) (newBuf []byte, err error) {
@@ -181,21 +153,6 @@ func (encodePlanFloat8CodecBinaryFloat64Valuer) Encode(value any, buf []byte) (n
 	}
 
 	return pgio.AppendUint64(buf, math.Float64bits(n.Float64)), nil
-}
-
-type encodePlanTextFloat64Valuer struct{}
-
-func (encodePlanTextFloat64Valuer) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	n, err := value.(Float64Valuer).Float64Value()
-	if err != nil {
-		return nil, err
-	}
-
-	if !n.Valid {
-		return nil, nil
-	}
-
-	return append(buf, strconv.FormatFloat(n.Float64, 'f', -1, 64)...), nil
 }
 
 type encodePlanFloat8CodecBinaryInt64Valuer struct{}
@@ -214,44 +171,16 @@ func (encodePlanFloat8CodecBinaryInt64Valuer) Encode(value any, buf []byte) (new
 	return pgio.AppendUint64(buf, math.Float64bits(f)), nil
 }
 
-type encodePlanTextInt64Valuer struct{}
-
-func (encodePlanTextInt64Valuer) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	n, err := value.(Int64Valuer).Int64Value()
-	if err != nil {
-		return nil, err
-	}
-
-	if !n.Valid {
-		return nil, nil
-	}
-
-	return append(buf, strconv.FormatInt(n.Int64, 10)...), nil
-}
-
 func (Float8Codec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
-
-	switch format {
-	case BinaryFormatCode:
-		switch target.(type) {
-		case *float64:
-			return scanPlanBinaryFloat8ToFloat64{}
-		case Float64Scanner:
-			return scanPlanBinaryFloat8ToFloat64Scanner{}
-		case Int64Scanner:
-			return scanPlanBinaryFloat8ToInt64Scanner{}
-		case TextScanner:
-			return scanPlanBinaryFloat8ToTextScanner{}
-		}
-	case TextFormatCode:
-		switch target.(type) {
-		case *float64:
-			return scanPlanTextAnyToFloat64{}
-		case Float64Scanner:
-			return scanPlanTextAnyToFloat64Scanner{}
-		case Int64Scanner:
-			return scanPlanTextAnyToInt64Scanner{}
-		}
+	switch target.(type) {
+	case *float64:
+		return scanPlanBinaryFloat8ToFloat64{}
+	case Float64Scanner:
+		return scanPlanBinaryFloat8ToFloat64Scanner{}
+	case Int64Scanner:
+		return scanPlanBinaryFloat8ToInt64Scanner{}
+	case TextScanner:
+		return scanPlanBinaryFloat8ToTextScanner{}
 	}
 
 	return nil
@@ -332,41 +261,6 @@ func (scanPlanBinaryFloat8ToTextScanner) Scan(src []byte, dst any) error {
 	f64 := math.Float64frombits(uint64(ui64))
 
 	return s.ScanText(Text{String: strconv.FormatFloat(f64, 'f', -1, 64), Valid: true})
-}
-
-type scanPlanTextAnyToFloat64 struct{}
-
-func (scanPlanTextAnyToFloat64) Scan(src []byte, dst any) error {
-	if src == nil {
-		return fmt.Errorf("cannot scan NULL into %T", dst)
-	}
-
-	n, err := strconv.ParseFloat(string(src), 64)
-	if err != nil {
-		return err
-	}
-
-	f := (dst).(*float64)
-	*f = n
-
-	return nil
-}
-
-type scanPlanTextAnyToFloat64Scanner struct{}
-
-func (scanPlanTextAnyToFloat64Scanner) Scan(src []byte, dst any) error {
-	s := (dst).(Float64Scanner)
-
-	if src == nil {
-		return s.ScanFloat64(Float8{})
-	}
-
-	n, err := strconv.ParseFloat(string(src), 64)
-	if err != nil {
-		return err
-	}
-
-	return s.ScanFloat64(Float8{Float64: n, Valid: true})
 }
 
 func (c Float8Codec) DecodeDatabaseSQLValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {

@@ -109,24 +109,35 @@ func (BoolCodec) PreferredFormat() int16 {
 }
 
 func (BoolCodec) PlanEncode(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
-	switch format {
-	case BinaryFormatCode:
-		switch value.(type) {
-		case bool:
-			return encodePlanBoolCodecBinaryBool{}
-		case BoolValuer:
-			return encodePlanBoolCodecBinaryBoolValuer{}
-		}
-	case TextFormatCode:
-		switch value.(type) {
-		case bool:
-			return encodePlanBoolCodecTextBool{}
-		case BoolValuer:
-			return encodePlanBoolCodecTextBoolValuer{}
-		}
+	switch value.(type) {
+	case bool:
+		return encodePlanBoolCodecBinaryBool{}
+	case BoolValuer:
+		return encodePlanBoolCodecBinaryBoolValuer{}
+	case string:
+		return encodePlanBoolCodecBinaryFromString{}
 	}
 
 	return nil
+}
+
+type encodePlanBoolCodecBinaryFromString struct{}
+
+func (encodePlanBoolCodecBinaryFromString) Encode(value any, buf []byte) (newBuf []byte, err error) {
+	str := value.(string)
+
+	b, err := planTextToBool([]byte(str))
+	if err != nil {
+		return nil, err
+	}
+
+	if b {
+		buf = append(buf, 1)
+	} else {
+		buf = append(buf, 0)
+	}
+
+	return buf, nil
 }
 
 type encodePlanBoolCodecBinaryBool struct{}
@@ -200,22 +211,11 @@ func (encodePlanBoolCodecTextBool) Encode(value any, buf []byte) (newBuf []byte,
 }
 
 func (BoolCodec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
-
-	switch format {
-	case BinaryFormatCode:
-		switch target.(type) {
-		case *bool:
-			return scanPlanBinaryBoolToBool{}
-		case BoolScanner:
-			return scanPlanBinaryBoolToBoolScanner{}
-		}
-	case TextFormatCode:
-		switch target.(type) {
-		case *bool:
-			return scanPlanTextAnyToBool{}
-		case BoolScanner:
-			return scanPlanTextAnyToBoolScanner{}
-		}
+	switch target.(type) {
+	case *bool:
+		return scanPlanBinaryBoolToBool{}
+	case BoolScanner:
+		return scanPlanBinaryBoolToBoolScanner{}
 	}
 
 	return nil
@@ -330,6 +330,10 @@ func (scanPlanTextAnyToBoolScanner) Scan(src []byte, dst any) error {
 
 func planTextToBool(src []byte) (bool, error) {
 	s := string(bytes.ToLower(bytes.TrimSpace(src)))
+
+	if len(s) == 0 {
+		return false, fmt.Errorf("unknown boolean string representation %q", src)
+	}
 
 	switch {
 	case strings.HasPrefix("true", s), strings.HasPrefix("yes", s), s == "on", s == "1":

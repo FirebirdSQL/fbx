@@ -87,23 +87,34 @@ func (n Numeric) Int64Value() (Int8, error) {
 	return Int8{Int64: bi.Int64(), Valid: true}, nil
 }
 
-func (n *Numeric) ScanScientific(src string) error {
-	if !strings.ContainsAny(src, "eE") {
-		return scanPlanTextAnyToNumericScanner{}.Scan([]byte(src), n)
+func (n Numeric) String() string {
+	if !n.Valid {
+		return ""
 	}
 
-	if bigF, ok := new(big.Float).SetString(string(src)); ok {
+	buf, err := encodeNumericText(n, nil)
+	if err != nil {
+		return ""
+	}
+
+	return string(buf)
+}
+
+func (n *Numeric) ScanScientific(src string) error {
+	if strings.ContainsAny(src, "eE") {
+		bigF, ok := new(big.Float).SetString(src)
+		if !ok {
+			return fmt.Errorf("invalid scientific notation: %s", src)
+		}
 		smallF, _ := bigF.Float64()
 		src = strconv.FormatFloat(smallF, 'f', -1, 64)
 	}
 
-	num, exp, err := parseNumericString(src)
+	parsed, err := ParseNumeric(src)
 	if err != nil {
 		return err
 	}
-
-	*n = Numeric{Int: num, Exp: exp, Valid: true}
-
+	*n = parsed
 	return nil
 }
 
@@ -161,7 +172,12 @@ func (n *Numeric) Scan(src any) error {
 
 	switch src := src.(type) {
 	case string:
-		return scanPlanTextAnyToNumericScanner{}.Scan([]byte(src), n)
+		parsed, err := ParseNumeric(src)
+		if err != nil {
+			return err
+		}
+		*n = parsed
+		return nil
 	}
 
 	return fmt.Errorf("cannot scan %T", src)
@@ -194,7 +210,13 @@ func (n *Numeric) UnmarshalJSON(src []byte) error {
 		return nil
 	}
 
-	return scanPlanTextAnyToNumericScanner{}.Scan(src, n)
+	parsed, err := ParseNumeric(string(src))
+	if err != nil {
+		return err
+	}
+	*n = parsed
+
+	return nil
 }
 
 func (n Numeric) numberTextBytes() []byte {
@@ -347,43 +369,31 @@ func encodeNumericText(n Numeric, buf []byte) (newBuf []byte, err error) {
 }
 
 func (NumericCodec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
-	switch format {
-	case BinaryFormatCode:
-		switch target.(type) {
-		case *Numeric:
-			return scanPlanBinaryNumericToNumeric{
-				scale:  scale,
-				length: length,
-			}
-		case NumericScanner:
-			return scanPlanBinaryNumericToNumericScanner{
-				scale:  scale,
-				length: length,
-			}
-		case Float64Scanner:
-			return scanPlanBinaryNumericToFloat64Scanner{
-				scale:  scale,
-				length: length,
-			}
-		case Int64Scanner:
-			return scanPlanBinaryNumericToInt64Scanner{
-				scale:  scale,
-				length: length,
-			}
-		case TextScanner:
-			return scanPlanBinaryNumericToTextScanner{
-				scale:  scale,
-				length: length,
-			}
+	switch target.(type) {
+	case *Numeric:
+		return scanPlanBinaryNumericToNumeric{
+			scale:  scale,
+			length: length,
 		}
-	case TextFormatCode:
-		switch target.(type) {
-		case NumericScanner:
-			return scanPlanTextAnyToNumericScanner{}
-		case Float64Scanner:
-			return scanPlanTextAnyToFloat64Scanner{}
-		case Int64Scanner:
-			return scanPlanTextAnyToInt64Scanner{}
+	case NumericScanner:
+		return scanPlanBinaryNumericToNumericScanner{
+			scale:  scale,
+			length: length,
+		}
+	case Float64Scanner:
+		return scanPlanBinaryNumericToFloat64Scanner{
+			scale:  scale,
+			length: length,
+		}
+	case Int64Scanner:
+		return scanPlanBinaryNumericToInt64Scanner{
+			scale:  scale,
+			length: length,
+		}
+	case TextScanner:
+		return scanPlanBinaryNumericToTextScanner{
+			scale:  scale,
+			length: length,
 		}
 	}
 
@@ -518,23 +528,6 @@ func (p scanPlanBinaryNumericToTextScanner) Scan(src []byte, dst any) error {
 	}
 
 	return scanner.ScanText(Text{String: string(sbuf), Valid: true})
-}
-
-type scanPlanTextAnyToNumericScanner struct{}
-
-func (scanPlanTextAnyToNumericScanner) Scan(src []byte, dst any) error {
-	scanner := (dst).(NumericScanner)
-
-	if src == nil {
-		return scanner.ScanNumeric(Numeric{})
-	}
-
-	num, exp, err := parseNumericString(string(src))
-	if err != nil {
-		return err
-	}
-
-	return scanner.ScanNumeric(Numeric{Int: num, Exp: exp, Valid: true})
 }
 
 func (c NumericCodec) DecodeDatabaseSQLValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {

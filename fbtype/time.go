@@ -89,15 +89,11 @@ func (TimeCodec) PreferredFormat() int16 {
 }
 
 func (TimeCodec) PlanEncode(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
-	if _, ok := value.(TimeValuer); !ok {
-		return nil
-	}
-
-	switch format {
-	case BinaryFormatCode:
+	switch value.(type) {
+	case TimeValuer:
 		return encodePlanTimeCodecBinary{}
-	case TextFormatCode:
-		return encodePlanTimeCodecText{}
+	case string:
+		return encodePlanTimeCodecBinaryString{}
 	}
 
 	return nil
@@ -121,6 +117,70 @@ func (encodePlanTimeCodecBinary) Encode(value any, buf []byte) ([]byte, error) {
 
 	ticks := uint32(usec / 100)
 
+	buf = append(buf, utils.Bint32_to_bytes(int32(ticks))...)
+
+	return buf, nil
+}
+
+type encodePlanTimeCodecBinaryString struct{}
+
+func (encodePlanTimeCodecBinaryString) Encode(value any, buf []byte) ([]byte, error) {
+	str := value.(string)
+
+	if len(str) < 8 || str[2] != ':' || str[5] != ':' {
+		return nil, fmt.Errorf("invalid TIME format: %q (expected HH:MM:SS or HH:MM:SS.ffffff)", str)
+	}
+
+	hours, err := strconv.ParseInt(str[0:2], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("cannot parse hours from %q: %w", str, err)
+	}
+	if hours < 0 || hours > 23 {
+		return nil, fmt.Errorf("hours out of range (0-23): %d", hours)
+	}
+	usec := hours * microsecondsPerHour
+
+	minutes, err := strconv.ParseInt(str[3:5], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("cannot parse minutes from %q: %w", str, err)
+	}
+	if minutes < 0 || minutes > 59 {
+		return nil, fmt.Errorf("minutes out of range (0-59): %d", minutes)
+	}
+	usec += minutes * microsecondsPerMinute
+
+	seconds, err := strconv.ParseInt(str[6:8], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("cannot parse seconds from %q: %w", str, err)
+	}
+	if seconds < 0 || seconds > 59 {
+		return nil, fmt.Errorf("seconds out of range (0-59): %d", seconds)
+	}
+	usec += seconds * microsecondsPerSecond
+
+	if len(str) > 9 {
+		if str[8] != '.' || len(str) > 15 {
+			return nil, fmt.Errorf("invalid TIME format: %q (expected HH:MM:SS.ffffff)", str)
+		}
+
+		fraction := str[9:]
+		n, err := strconv.ParseInt(fraction, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("cannot parse microseconds from %q: %w", str, err)
+		}
+
+		for i := len(fraction); i < 6; i++ {
+			n *= 10
+		}
+
+		usec += n
+	}
+
+	if usec < 0 || usec >= microsecondsPerDay {
+		return nil, fmt.Errorf("fbtype: TIME value out of range for Firebird (µs since midnight: %d)", usec)
+	}
+
+	ticks := uint32(usec / 100)
 	buf = append(buf, utils.Bint32_to_bytes(int32(ticks))...)
 
 	return buf, nil
@@ -152,20 +212,11 @@ func (encodePlanTimeCodecText) Encode(value any, buf []byte) (newBuf []byte, err
 }
 
 func (TimeCodec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
-
-	switch format {
-	case BinaryFormatCode:
-		switch target.(type) {
-		case TimeScanner:
-			return scanPlanBinaryTimeToTimeScanner{}
-		case TextScanner:
-			return scanPlanBinaryTimeToTextScanner{}
-		}
-	case TextFormatCode:
-		switch target.(type) {
-		case TimeScanner:
-			return scanPlanTextAnyToTimeScanner{}
-		}
+	switch target.(type) {
+	case TimeScanner:
+		return scanPlanBinaryTimeToTimeScanner{}
+	case TextScanner:
+		return scanPlanBinaryTimeToTextScanner{}
 	}
 
 	return nil
@@ -212,14 +263,16 @@ func (scanPlanBinaryTimeToTextScanner) Scan(src []byte, dst any) error {
 	ticks := uint32(utils.Bytes_to_bint32(src))
 	usec := int64(ticks) * 100
 
-	tim := Time{Microseconds: usec, Valid: true}
+	hours := usec / microsecondsPerHour
+	usec -= hours * microsecondsPerHour
+	minutes := usec / microsecondsPerMinute
+	usec -= minutes * microsecondsPerMinute
+	seconds := usec / microsecondsPerSecond
+	usec -= seconds * microsecondsPerSecond
 
-	buf, err := TimeCodec{}.PlanEncode(nil, 0, 0, 0, 0, TextFormatCode, tim).Encode(tim, nil)
-	if err != nil {
-		return err
-	}
+	s := fmt.Sprintf("%02d:%02d:%02d.%06d", hours, minutes, seconds, usec)
 
-	return ts.ScanText(Text{String: string(buf), Valid: true})
+	return ts.ScanText(Text{String: s, Valid: true})
 }
 
 type scanPlanTextAnyToTimeScanner struct{}

@@ -125,17 +125,14 @@ func (*TimestampCodec) PreferredFormat() int16 {
 }
 
 func (*TimestampCodec) PlanEncode(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
-	if _, ok := value.(TimestampValuer); !ok {
-		return nil
-	}
-
-	switch format {
-	case BinaryFormatCode:
+	switch value.(type) {
+	case TimestampValuer:
 		return encodePlanTimestampCodecBinary{}
-	case TextFormatCode:
-		return encodePlanTimestampCodecText{}
+	case time.Time:
+		return encodePlanTimestampCodecBinaryTime{}
+	case string:
+		return encodePlanTimestampCodecBinaryString{}
 	}
-
 	return nil
 }
 
@@ -150,27 +147,46 @@ func (encodePlanTimestampCodecBinary) Encode(value any, buf []byte) ([]byte, err
 		return nil, nil
 	}
 
-	t := ts.Time
+	return encodeTimestampBinary(ts.Time, buf)
+}
 
-	tMidnightUTC := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+type encodePlanTimestampCodecBinaryTime struct{}
 
-	days := int32((tMidnightUTC.Unix() - firebirdDateEpoch.Unix()) / secondsPerDay)
+func (encodePlanTimestampCodecBinaryTime) Encode(value any, buf []byte) ([]byte, error) {
+	t := value.(time.Time)
 
-	usec := int64(t.Hour())*microsecondsPerHour +
-		int64(t.Minute())*microsecondsPerMinute +
-		int64(t.Second())*microsecondsPerSecond +
-		int64(t.Nanosecond())/1000
+	return encodeTimestampBinary(t, buf)
+}
 
-	if usec < 0 || usec >= microsecondsPerDay {
-		return nil, fmt.Errorf("fbtype: TIMESTAMP time-of-day out of range (µs since midnight: %d)", usec)
+type encodePlanTimestampCodecBinaryString struct{}
+
+func (encodePlanTimestampCodecBinaryString) Encode(value any, buf []byte) ([]byte, error) {
+	str := value.(string)
+
+	// Try multiple formats
+	var t time.Time
+	var err error
+
+	// Try RFC3339Nano first (ISO format with timezone)
+	t, err = time.Parse(time.RFC3339Nano, str)
+	if err != nil {
+		// Try RFC3339
+		t, err = time.Parse(time.RFC3339, str)
+		if err != nil {
+			// Try jsonTimestampFormat
+			t, err = time.ParseInLocation(jsonTimestampFormat, str, time.UTC)
+			if err != nil {
+				// Try firebirdTimestampFormat
+				t, err = time.ParseInLocation(firebirdTimestampFormat, str, time.UTC)
+				if err != nil {
+					return nil, fmt.Errorf("cannot parse %q as timestamp (tried RFC3339, %s, %s)",
+						str, jsonTimestampFormat, firebirdTimestampFormat)
+				}
+			}
+		}
 	}
 
-	ticks := uint32(usec / 100)
-
-	buf = pgio.AppendInt32(buf, days)
-	buf = pgio.AppendInt32(buf, int32(ticks))
-
-	return buf, nil
+	return encodeTimestampBinary(t, buf)
 }
 
 type encodePlanTimestampCodecText struct{}
@@ -194,17 +210,9 @@ func (encodePlanTimestampCodecText) Encode(value any, buf []byte) (newBuf []byte
 }
 
 func (c *TimestampCodec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
-	switch format {
-	case BinaryFormatCode:
-		switch target.(type) {
-		case TimestampScanner:
-			return &scanPlanBinaryTimestampToTimestampScanner{location: c.ScanLocation}
-		}
-	case TextFormatCode:
-		switch target.(type) {
-		case TimestampScanner:
-			return &scanPlanTextTimestampToTimestampScanner{location: c.ScanLocation}
-		}
+	switch target.(type) {
+	case TimestampScanner:
+		return &scanPlanBinaryTimestampToTimestampScanner{location: c.ScanLocation}
 	}
 
 	return nil
@@ -305,4 +313,25 @@ func (c *TimestampCodec) DecodeValue(m *Map, typeid uint32, subType int32, lengt
 	}
 
 	return ts.Time, nil
+}
+
+func encodeTimestampBinary(t time.Time, buf []byte) ([]byte, error) {
+	tMidnightUTC := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+	days := int32((tMidnightUTC.Unix() - firebirdDateEpoch.Unix()) / secondsPerDay)
+
+	usec := int64(t.Hour())*microsecondsPerHour +
+		int64(t.Minute())*microsecondsPerMinute +
+		int64(t.Second())*microsecondsPerSecond +
+		int64(t.Nanosecond())/1000
+
+	if usec < 0 || usec >= microsecondsPerDay {
+		return nil, fmt.Errorf("fbtype: TIMESTAMP time-of-day out of range (µs since midnight: %d)", usec)
+	}
+
+	ticks := uint32(usec / 100)
+
+	buf = pgio.AppendInt32(buf, days)
+	buf = pgio.AppendInt32(buf, int32(ticks))
+
+	return buf, nil
 }

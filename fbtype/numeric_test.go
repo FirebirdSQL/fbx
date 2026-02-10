@@ -47,9 +47,7 @@ func isExpectedEqNumeric(a any) func(any) bool {
 
 func mustParseNumeric(t *testing.T, src string) fbtype.Numeric {
 	var n fbtype.Numeric
-	plan := fbtype.NumericCodec{}.PlanScan(nil, fbproto.SQL_TYPE_INT64, 0, 0, 0, fbtype.TextFormatCode, &n)
-	require.NotNil(t, plan)
-	err := plan.Scan([]byte(src), &n)
+	err := n.Scan(src)
 	require.NoError(t, err)
 	return n
 }
@@ -513,13 +511,12 @@ func TestInt128Overflow(t *testing.T) {
 		if i == 3 {
 			scale = -30
 		}
-		
+
 		_, err := fbtype.EncodeNumericBinaryFB(nil, n, scale, 16)
 		require.Errorf(t, err, "overflow case %d", i)
 		assert.Containsf(t, err.Error(), "out of range for int128", "case %d: %v", i, n)
 	}
 }
-
 
 func TestNumericEncodeFromFloat64_DB(t *testing.T) {
 	t.Parallel()
