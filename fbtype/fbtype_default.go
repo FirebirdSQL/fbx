@@ -78,6 +78,7 @@ func initDefaultMap() {
 	defaultMap.RegisterType(&Type{Name: "octets", TypeID: MakeTypeSubtype(fbproto.SQL_TYPE_VARYING, 1), Codec: &ByteaCodec{}})
 	defaultMap.RegisterType(&Type{Name: "decfloat16", TypeID: fbproto.SQL_TYPE_DEC64, Codec: DecFloat16Codec{}})
 	defaultMap.RegisterType(&Type{Name: "decfloat34", TypeID: fbproto.SQL_TYPE_DEC128, Codec: DecFloat34Codec{}})
+	defaultMap.RegisterType(&Type{Name: "null", TypeID: fbproto.SQL_TYPE_NULL, Codec: NullCodec{}})
 
 	// Integer types that directly map to a Firebird type
 	registerDefaultFbTypeVariants[int16](defaultMap, "smallint")

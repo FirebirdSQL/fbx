@@ -541,3 +541,28 @@ func TestScanIntoByteSlice(t *testing.T) {
 		})
 	}
 }
+
+func TestEncodeIntoNullField(t *testing.T) {
+	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+	defer closeConn(t, conn)
+
+	rows, err := conn.Query(context.Background(), "select first_name from phone_list where ? is null", nil)
+	require.NoError(t, err)
+	res, err := fbx.CollectRows(rows, func(row fbx.CollectableRow) (string, error) {
+		var s string
+		err := row.Scan(&s)
+		return s, err
+	})
+	require.NoError(t, err)
+	assert.NotZero(t, len(res))
+
+	rows, err = conn.Query(context.Background(), "select first_name from phone_list where ? is null", 1)
+	require.NoError(t, err)
+	res, err = fbx.CollectRows(rows, func(row fbx.CollectableRow) (string, error) {
+		var s string
+		err := row.Scan(&s)
+		return s, err
+	})
+	require.NoError(t, err)
+	assert.Zero(t, len(res))
+}
