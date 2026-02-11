@@ -257,6 +257,11 @@ func (p *StatementInfo) CalculateBlr(descriptors []fbproto.FieldDescriptor, valu
 		case fbproto.SQL_TYPE_TIMESTAMP_TZ:
 			blr[n] = 29
 			n++
+		case fbproto.SQL_TYPE_NULL:
+			blr[n] = 14
+			blr[n+1] = 0
+			blr[n+2] = 0
+			n += 3
 		default:
 			panic(fmt.Sprintf("unknown SQL type %d", x.Type))
 		}
