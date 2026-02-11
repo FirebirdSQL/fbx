@@ -556,7 +556,7 @@ func TestEncodeIntoNullField(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotZero(t, len(res))
 
-	rows, err = conn.Query(context.Background(), "select first_name from phone_list where ? is null", 1)
+	rows, err = conn.Query(context.Background(), "select first_name from phone_list where 1 = ? and ? is null and 3 = ?", 1, 2, 3)
 	require.NoError(t, err)
 	res, err = fbx.CollectRows(rows, func(row fbx.CollectableRow) (string, error) {
 		var s string

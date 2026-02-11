@@ -26,7 +26,7 @@ func (NullCodec) PlanEncode(m *Map, typeid uint32, subType int32, length uint32,
 type encodePlanNullValuer struct{}
 
 func (encodePlanNullValuer) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	return []byte{}, nil
+	return buf, nil
 }
 
 func (NullCodec) PlanScan(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
