@@ -1,5 +1,11 @@
 # Change Log
 
+# [0.3] - TBD
+
+### Fixed
+
+- RS-277802. Panic when passing argument as SQL_NULL type.
+
 # [0.2] - 09.02.2026
 
 ### Added
