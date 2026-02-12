@@ -179,6 +179,8 @@ func (Int128Codec) PlanEncode(m *Map, typeid uint32, subType int32, length uint3
 			return encodePlanInt128CodecBinaryInt64{}
 		case int:
 			return encodePlanInt128CodecBinaryInt{}
+		case string:
+			return &encodePlanInt128CodecBinaryString{}
 		case big.Int:
 			return encodePlanInt128CodecBinaryBigInt{}
 		case *big.Int:
@@ -207,6 +209,24 @@ func (encodePlanInt128CodecBinaryInt64) Encode(value any, buf []byte) ([]byte, e
 	binary.BigEndian.PutUint64(buf[start+8:start+16], uint64(v))
 
 	return buf, nil
+}
+
+type encodePlanInt128CodecBinaryString struct{}
+
+func (encodePlanInt128CodecBinaryString) Encode(value any, buf []byte) ([]byte, error) {
+	s := value.(string)
+
+	z := new(big.Int)
+	_, ok := z.SetString(s, 10)
+	if !ok {
+		return nil, fmt.Errorf("cannot parse %q as int128", s)
+	}
+
+	if err := checkInt128Range(z); err != nil {
+		return nil, err
+	}
+
+	return appendInt128BinaryFromBig(buf, z)
 }
 
 type encodePlanInt128CodecBinaryInt32 struct{}
@@ -281,6 +301,8 @@ func (Int128Codec) PlanScan(m *Map, typeId uint32, subType int32, length uint32,
 			return scanPlanBinaryInt128ToUint64{}
 		case *uint:
 			return scanPlanBinaryInt128ToUint{}
+		case *string:
+			return &scanPlanBinaryInt128ToString{}
 		case *big.Int:
 			return scanPlanBinaryInt128ToBigInt{}
 		case Int128Scanner:
@@ -289,6 +311,27 @@ func (Int128Codec) PlanScan(m *Map, typeId uint32, subType int32, length uint32,
 			return scanPlanBinaryInt128ToTextScanner{}
 		}
 	}
+	return nil
+}
+
+type scanPlanBinaryInt128ToString struct{}
+
+func (scanPlanBinaryInt128ToString) Scan(src []byte, dst any) error {
+	if src == nil {
+		return fmt.Errorf("cannot scan NULL into *string")
+	}
+
+	p, ok := dst.(*string)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
+	var z big.Int
+	if err := int128SetFromBinary(&z, src); err != nil {
+		return err
+	}
+
+	*p = z.String()
 	return nil
 }
 

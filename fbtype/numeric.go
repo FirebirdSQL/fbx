@@ -395,6 +395,11 @@ func (NumericCodec) PlanScan(m *Map, typeId uint32, subType int32, length uint32
 			scale:  scale,
 			length: length,
 		}
+	case *string:
+		return scanPlanBinaryNumericToString{
+			scale:  scale,
+			length: length,
+		}
 	}
 
 	return nil
@@ -528,6 +533,31 @@ func (p scanPlanBinaryNumericToTextScanner) Scan(src []byte, dst any) error {
 	}
 
 	return scanner.ScanText(Text{String: string(sbuf), Valid: true})
+}
+
+type scanPlanBinaryNumericToString struct {
+	scale  int32
+	length uint32
+}
+
+func (p scanPlanBinaryNumericToString) Scan(src []byte, dst any) error {
+	s, ok := dst.(*string)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
+	if src == nil {
+		*s = ""
+		return nil
+	}
+
+	var n Numeric
+	if err := DecodeNumericBinaryFB(&n, src, p.scale); err != nil {
+		return err
+	}
+
+	*s = n.String()
+	return nil
 }
 
 func (c NumericCodec) DecodeDatabaseSQLValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {

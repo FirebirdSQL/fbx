@@ -213,6 +213,10 @@ func (c *TimestampCodec) PlanScan(m *Map, typeId uint32, subType int32, length u
 	switch target.(type) {
 	case TimestampScanner:
 		return &scanPlanBinaryTimestampToTimestampScanner{location: c.ScanLocation}
+	case *time.Time:
+		return &scanPlanBinaryTimestampToTime{location: c.ScanLocation}
+	case *string:
+		return &scanPlanBinaryTimestampToString{location: c.ScanLocation}
 	}
 
 	return nil
@@ -226,39 +230,48 @@ func (plan *scanPlanBinaryTimestampToTimestampScanner) Scan(src []byte, dst any)
 	if src == nil {
 		return scanner.ScanTimestamp(Timestamp{})
 	}
-	if len(src) != 8 {
-		return fmt.Errorf("invalid length for TIMESTAMP: %d", len(src))
+	t, err := decodeTimestampBinary(src, plan.location)
+	if err != nil {
+		return err
 	}
-
-	dayOffset := int32(binary.BigEndian.Uint32(src[0:4]))
-	ticks := binary.BigEndian.Uint32(src[4:8])
-
-	tDate := firebirdDateEpoch.AddDate(0, 0, int(dayOffset))
-
-	usec := int64(ticks) * 100
-	if usec < 0 || usec >= microsecondsPerDay {
-		return fmt.Errorf("TIMESTAMP time-of-day out of range in decode (µs since midnight: %d)", usec)
-	}
-
-	hour := usec / microsecondsPerHour
-	usec -= hour * microsecondsPerHour
-	min := usec / microsecondsPerMinute
-	usec -= min * microsecondsPerMinute
-	sec := usec / microsecondsPerSecond
-	usec -= sec * microsecondsPerSecond
-
-	loc := time.UTC
-	if plan.location != nil {
-		loc = plan.location
-	}
-
-	t := time.Date(
-		tDate.Year(), tDate.Month(), tDate.Day(),
-		int(hour), int(min), int(sec), int(usec)*1000,
-		loc,
-	)
 
 	return scanner.ScanTimestamp(Timestamp{Time: t, Valid: true})
+}
+
+type scanPlanBinaryTimestampToTime struct{ location *time.Location }
+
+func (plan *scanPlanBinaryTimestampToTime) Scan(src []byte, dst any) error {
+	target := dst.(*time.Time)
+
+	if src == nil {
+		return fmt.Errorf("cannot scan NULL into *time.Time")
+	}
+	t, err := decodeTimestampBinary(src, plan.location)
+	if err != nil {
+		return err
+	}
+
+	*target = t
+	return nil
+}
+
+type scanPlanBinaryTimestampToString struct{ location *time.Location }
+
+func (plan *scanPlanBinaryTimestampToString) Scan(src []byte, dst any) error {
+	target := dst.(*string)
+
+	if src == nil {
+		return fmt.Errorf("cannot scan NULL into *string")
+	}
+
+	t, err := decodeTimestampBinary(src, plan.location)
+	if err != nil {
+		return err
+	}
+
+	*target = t.In(time.UTC).Format(firebirdTimestampFormat)
+
+	return nil
 }
 
 type scanPlanTextTimestampToTimestampScanner struct{ location *time.Location }
@@ -334,4 +347,40 @@ func encodeTimestampBinary(t time.Time, buf []byte) ([]byte, error) {
 	buf = pgio.AppendInt32(buf, int32(ticks))
 
 	return buf, nil
+}
+
+func decodeTimestampBinary(src []byte, location *time.Location) (time.Time, error) {
+	if len(src) != 8 {
+		return time.Time{}, fmt.Errorf("invalid length for TIMESTAMP: %d", len(src))
+	}
+
+	dayOffset := int32(binary.BigEndian.Uint32(src[0:4]))
+	ticks := binary.BigEndian.Uint32(src[4:8])
+
+	tDate := firebirdDateEpoch.AddDate(0, 0, int(dayOffset))
+
+	usec := int64(ticks) * 100
+	if usec < 0 || usec >= microsecondsPerDay {
+		return time.Time{}, fmt.Errorf("TIMESTAMP time-of-day out of range in decode (µs since midnight: %d)", usec)
+	}
+
+	hour := usec / microsecondsPerHour
+	usec -= hour * microsecondsPerHour
+	min := usec / microsecondsPerMinute
+	usec -= min * microsecondsPerMinute
+	sec := usec / microsecondsPerSecond
+	usec -= sec * microsecondsPerSecond
+
+	loc := time.UTC
+	if location != nil {
+		loc = location
+	}
+
+	t := time.Date(
+		tDate.Year(), tDate.Month(), tDate.Day(),
+		int(hour), int(min), int(sec), int(usec)*1000,
+		loc,
+	)
+
+	return t, nil
 }

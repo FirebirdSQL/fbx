@@ -220,6 +220,10 @@ func (DateCodec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, s
 	switch target.(type) {
 	case DateScanner:
 		return scanPlanBinaryDateToDateScanner{}
+	case *time.Time:
+		return scanPlanBinaryDateToTime{}
+	case *string:
+		return scanPlanBinaryDateToString{}
 	}
 
 	return nil
@@ -243,6 +247,53 @@ func (scanPlanBinaryDateToDateScanner) Scan(src []byte, dst any) error {
 	t := firebirdDateEpoch.AddDate(0, 0, int(dayOffset))
 
 	return scanner.ScanDate(Date{Time: t, Valid: true})
+}
+
+type scanPlanBinaryDateToTime struct{}
+
+func (scanPlanBinaryDateToTime) Scan(src []byte, dst any) error {
+	t, ok := dst.(*time.Time)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
+	if src == nil {
+		return fmt.Errorf("cannot scan NULL into *time.Time")
+	}
+
+	if len(src) != 4 {
+		return fmt.Errorf("fbtype: invalid length for Firebird DATE: %d", len(src))
+	}
+
+	dayOffset := int32(binary.BigEndian.Uint32(src))
+	*t = firebirdDateEpoch.AddDate(0, 0, int(dayOffset))
+
+	return nil
+}
+
+type scanPlanBinaryDateToString struct{}
+
+func (scanPlanBinaryDateToString) Scan(src []byte, dst any) error {
+	s, ok := dst.(*string)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
+	if src == nil {
+		*s = ""
+		return nil
+	}
+
+	if len(src) != 4 {
+		return fmt.Errorf("fbtype: invalid length for Firebird DATE: %d", len(src))
+	}
+
+	dayOffset := int32(binary.BigEndian.Uint32(src))
+	date := firebirdDateEpoch.AddDate(0, 0, int(dayOffset))
+
+	*s = date.Format("2006-01-02")
+
+	return nil
 }
 
 type scanPlanTextAnyToDateScanner struct{}

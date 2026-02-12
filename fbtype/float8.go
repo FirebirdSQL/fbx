@@ -181,6 +181,8 @@ func (Float8Codec) PlanScan(m *Map, typeId uint32, subType int32, length uint32,
 		return scanPlanBinaryFloat8ToInt64Scanner{}
 	case TextScanner:
 		return scanPlanBinaryFloat8ToTextScanner{}
+	case string:
+		return scanPlanBinaryFloat8ToString{}
 	}
 
 	return nil
@@ -242,6 +244,26 @@ func (scanPlanBinaryFloat8ToInt64Scanner) Scan(src []byte, dst any) error {
 	}
 
 	return s.ScanInt64(Int8{Int64: i64, Valid: true})
+}
+
+type scanPlanBinaryFloat8ToString struct{}
+
+func (scanPlanBinaryFloat8ToString) Scan(src []byte, dst any) error {
+	target := dst.(*string)
+
+	if src == nil {
+		return fmt.Errorf("cannot scan NULL into *string")
+	}
+
+	if len(src) != 8 {
+		return fmt.Errorf("invalid length for float8: %v", len(src))
+	}
+
+	ui64 := binary.BigEndian.Uint64(src)
+	f64 := math.Float64frombits(ui64)
+
+	*target = strconv.FormatFloat(f64, 'f', -1, 64)
+	return nil
 }
 
 type scanPlanBinaryFloat8ToTextScanner struct{}

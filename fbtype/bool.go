@@ -216,6 +216,8 @@ func (BoolCodec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, s
 		return scanPlanBinaryBoolToBool{}
 	case BoolScanner:
 		return scanPlanBinaryBoolToBoolScanner{}
+	case *string:
+		return scanPlanBinaryBoolToString{}
 	}
 
 	return nil
@@ -302,6 +304,32 @@ func (scanPlanBinaryBoolToBoolScanner) Scan(src []byte, dst any) error {
 	}
 
 	return s.ScanBool(Bool{Bool: src[0] == 1, Valid: true})
+}
+
+type scanPlanBinaryBoolToString struct{}
+
+func (scanPlanBinaryBoolToString) Scan(src []byte, dst any) error {
+	s, ok := dst.(*string)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
+	if src == nil {
+		*s = ""
+		return nil
+	}
+
+	if len(src) != 1 {
+		return fmt.Errorf("invalid length for bool: %v", len(src))
+	}
+
+	if src[0] == 1 {
+		*s = "true"
+	} else {
+		*s = "false"
+	}
+
+	return nil
 }
 
 type scanPlanTextAnyToBoolScanner struct{}

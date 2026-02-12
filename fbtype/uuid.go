@@ -149,11 +149,16 @@ func (UUIDCodec) PreferredFormat() int16 {
 }
 
 func (UUIDCodec) PlanEncode(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
-	switch value.(type) {
-	case UUIDValuer:
-		return encodePlanUUIDCodecBinaryUUIDValuer{}
-	case string:
-		return encodePlanUUIDCodecBinaryString{}
+	switch format {
+	case BinaryFormatCode:
+		switch value.(type) {
+		case UUIDValuer:
+			return encodePlanUUIDCodecBinaryUUIDValuer{}
+		case string:
+			return encodePlanUUIDCodecBinaryString{}
+		}
+	case TextFormatCode:
+		return encodePlanUUIDCodecTextUUIDValuer{}
 	}
 
 	return nil
@@ -201,11 +206,19 @@ func (encodePlanUUIDCodecTextUUIDValuer) Encode(value any, buf []byte) (newBuf [
 }
 
 func (UUIDCodec) PlanScan(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
-	switch target.(type) {
-	case UUIDScanner:
-		return scanPlanBinaryUUIDToUUIDScanner{}
-	case TextScanner:
-		return scanPlanBinaryUUIDToTextScanner{}
+	switch format {
+	case BinaryFormatCode:
+		switch target.(type) {
+		case UUIDScanner:
+			return scanPlanBinaryUUIDToUUIDScanner{}
+		case TextScanner:
+			return scanPlanBinaryUUIDToTextScanner{}
+		}
+	case TextFormatCode:
+		switch target.(type) {
+		case UUIDScanner:
+			return scanPlanTextAnyToUUIDScanner{}
+		}
 	}
 
 	return nil
@@ -247,6 +260,23 @@ func (scanPlanBinaryUUIDToTextScanner) Scan(src []byte, dst any) error {
 	copy(buf[:], src)
 
 	return scanner.ScanText(Text{String: encodeUUID(buf), Valid: true})
+}
+
+type scanPlanTextAnyToUUIDScanner struct{}
+
+func (scanPlanTextAnyToUUIDScanner) Scan(src []byte, dst any) error {
+	scanner := (dst).(UUIDScanner)
+
+	if src == nil {
+		return scanner.ScanUUID(UUID{})
+	}
+
+	buf, err := parseUUID(string(src))
+	if err != nil {
+		return err
+	}
+
+	return scanner.ScanUUID(UUID{Bytes: buf, Valid: true})
 }
 
 func (c UUIDCodec) DecodeDatabaseSQLValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {

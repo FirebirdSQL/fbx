@@ -204,6 +204,8 @@ func (Int2Codec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, s
 		return scanPlanBinaryInt2ToUint{}
 	case Int64Scanner:
 		return scanPlanBinaryInt2ToInt64Scanner{}
+	case *string:
+		return scanPlanBinaryInt2ToString{}
 	case TextScanner:
 		return scanPlanBinaryInt2ToTextScanner{}
 	}
@@ -504,6 +506,24 @@ func (scanPlanBinaryInt2ToInt64Scanner) Scan(src []byte, dst any) error {
 	return s.ScanInt64(Int8{Int64: n, Valid: true})
 }
 
+type scanPlanBinaryInt2ToString struct{}
+
+func (scanPlanBinaryInt2ToString) Scan(src []byte, dst any) error {
+	target := dst.(*string)
+
+	if src == nil {
+		return fmt.Errorf("cannot scan NULL into *string")
+	}
+
+	if len(src) != 2 {
+		return fmt.Errorf("invalid length for int2: %v", len(src))
+	}
+
+	n := int16(binary.BigEndian.Uint16(src))
+	*target = strconv.FormatInt(int64(n), 10)
+	return nil
+}
+
 type scanPlanBinaryInt2ToTextScanner struct{}
 
 func (scanPlanBinaryInt2ToTextScanner) Scan(src []byte, dst any) error {
@@ -708,6 +728,8 @@ func (Int4Codec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, s
 		return scanPlanBinaryInt4ToUint{}
 	case Int64Scanner:
 		return scanPlanBinaryInt4ToInt64Scanner{}
+	case *string:
+		return scanPlanBinaryInt4ToString{}
 	case TextScanner:
 		return scanPlanBinaryInt4ToTextScanner{}
 	}
@@ -1019,6 +1041,24 @@ func (scanPlanBinaryInt4ToInt64Scanner) Scan(src []byte, dst any) error {
 	return s.ScanInt64(Int8{Int64: n, Valid: true})
 }
 
+type scanPlanBinaryInt4ToString struct{}
+
+func (scanPlanBinaryInt4ToString) Scan(src []byte, dst any) error {
+	target := dst.(*string)
+
+	if src == nil {
+		return fmt.Errorf("cannot scan NULL into *string")
+	}
+
+	if len(src) != 4 {
+		return fmt.Errorf("invalid length for int4: %v", len(src))
+	}
+
+	n := int32(binary.BigEndian.Uint32(src))
+	*target = strconv.FormatInt(int64(n), 10)
+	return nil
+}
+
 type scanPlanBinaryInt4ToTextScanner struct{}
 
 func (scanPlanBinaryInt4ToTextScanner) Scan(src []byte, dst any) error {
@@ -1225,6 +1265,8 @@ func (Int8Codec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, s
 		return scanPlanBinaryInt8ToUint{}
 	case Int64Scanner:
 		return scanPlanBinaryInt8ToInt64Scanner{}
+	case *string:
+		return scanPlanBinaryInt8ToString{}
 	case TextScanner:
 		return scanPlanBinaryInt8ToTextScanner{}
 	}
@@ -1556,6 +1598,24 @@ func (scanPlanBinaryInt8ToInt64Scanner) Scan(src []byte, dst any) error {
 	n := int64(int64(binary.BigEndian.Uint64(src)))
 
 	return s.ScanInt64(Int8{Int64: n, Valid: true})
+}
+
+type scanPlanBinaryInt8ToString struct{}
+
+func (scanPlanBinaryInt8ToString) Scan(src []byte, dst any) error {
+	target := dst.(*string)
+
+	if src == nil {
+		return fmt.Errorf("cannot scan NULL into *string")
+	}
+
+	if len(src) != 8 {
+		return fmt.Errorf("invalid length for int8: %v", len(src))
+	}
+
+	n := int64(binary.BigEndian.Uint64(src))
+	*target = strconv.FormatInt(n, 10)
+	return nil
 }
 
 type scanPlanBinaryInt8ToTextScanner struct{}

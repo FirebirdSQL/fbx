@@ -187,6 +187,8 @@ func (Float4Codec) PlanScan(m *Map, typeId uint32, subType int32, length uint32,
 		return scanPlanBinaryFloat4ToInt64Scanner{}
 	case TextScanner:
 		return scanPlanBinaryFloat4ToTextScanner{}
+	case *string:
+		return scanPlanBinaryFloat4ToString{}
 	}
 
 	return nil
@@ -267,6 +269,26 @@ func (scanPlanBinaryFloat4ToTextScanner) Scan(src []byte, dst any) error {
 	f32 := math.Float32frombits(uint32(ui32))
 
 	return s.ScanText(Text{String: strconv.FormatFloat(float64(f32), 'f', -1, 32), Valid: true})
+}
+
+type scanPlanBinaryFloat4ToString struct{}
+
+func (scanPlanBinaryFloat4ToString) Scan(src []byte, dst any) error {
+	target := dst.(*string)
+
+	if src == nil {
+		return fmt.Errorf("cannot scan NULL into *string")
+	}
+
+	if len(src) != 4 {
+		return fmt.Errorf("invalid length for float4: %v", len(src))
+	}
+
+	ui32 := binary.BigEndian.Uint32(src)
+	f32 := math.Float32frombits(ui32)
+
+	*target = strconv.FormatFloat(float64(f32), 'f', -1, 32)
+	return nil
 }
 
 func (c Float4Codec) DecodeDatabaseSQLValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {

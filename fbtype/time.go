@@ -217,6 +217,8 @@ func (TimeCodec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, s
 		return scanPlanBinaryTimeToTimeScanner{}
 	case TextScanner:
 		return scanPlanBinaryTimeToTextScanner{}
+	case *string:
+		return scanPlanBinaryTimeToString{}
 	}
 
 	return nil
@@ -256,23 +258,31 @@ func (scanPlanBinaryTimeToTextScanner) Scan(src []byte, dst any) error {
 		return ts.ScanText(Text{})
 	}
 
-	if len(src) != 4 {
-		return fmt.Errorf("fbtype: invalid length for Firebird TIME: %d", len(src))
+	_, formatted, err := decodeTimeBinary(src)
+	if err != nil {
+		return err
 	}
 
-	ticks := uint32(utils.Bytes_to_bint32(src))
-	usec := int64(ticks) * 100
+	return ts.ScanText(Text{String: formatted, Valid: true})
+}
 
-	hours := usec / microsecondsPerHour
-	usec -= hours * microsecondsPerHour
-	minutes := usec / microsecondsPerMinute
-	usec -= minutes * microsecondsPerMinute
-	seconds := usec / microsecondsPerSecond
-	usec -= seconds * microsecondsPerSecond
+// Scan TIME to *string
+type scanPlanBinaryTimeToString struct{}
 
-	s := fmt.Sprintf("%02d:%02d:%02d.%06d", hours, minutes, seconds, usec)
+func (scanPlanBinaryTimeToString) Scan(src []byte, dst any) error {
+	target := dst.(*string)
 
-	return ts.ScanText(Text{String: s, Valid: true})
+	if src == nil {
+		return fmt.Errorf("cannot scan NULL into *string")
+	}
+
+	_, formatted, err := decodeTimeBinary(src)
+	if err != nil {
+		return err
+	}
+
+	*target = formatted
+	return nil
 }
 
 type scanPlanTextAnyToTimeScanner struct{}
@@ -344,4 +354,26 @@ func (c TimeCodec) DecodeValue(m *Map, typeid uint32, subType int32, length uint
 		return nil, err
 	}
 	return t, nil
+}
+
+func decodeTimeBinary(src []byte) (int64, string, error) {
+	if len(src) != 4 {
+		return 0, "", fmt.Errorf("fbtype: invalid length for Firebird TIME: %d", len(src))
+	}
+
+	ticks := uint32(utils.Bytes_to_bint32(src))
+	usec := int64(ticks) * 100
+
+	hours := usec / microsecondsPerHour
+	usec -= hours * microsecondsPerHour
+	minutes := usec / microsecondsPerMinute
+	usec -= minutes * microsecondsPerMinute
+	seconds := usec / microsecondsPerSecond
+	usec -= seconds * microsecondsPerSecond
+
+	totalUsec := hours*microsecondsPerHour + minutes*microsecondsPerMinute + seconds*microsecondsPerSecond + usec
+
+	formatted := fmt.Sprintf("%02d:%02d:%02d.%06d", hours, minutes, seconds, usec)
+
+	return totalUsec, formatted, nil
 }
