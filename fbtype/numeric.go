@@ -400,8 +400,82 @@ func (NumericCodec) PlanScan(m *Map, typeId uint32, subType int32, length uint32
 			scale:  scale,
 			length: length,
 		}
+	case *float64:
+		return scanPlanBinaryNumericToFloat64Ptr{
+			scale:  scale,
+			length: length,
+		}
+	case *int64:
+		return scanPlanBinaryNumericToInt64Ptr{
+			scale:  scale,
+			length: length,
+		}
 	}
 
+	return nil
+}
+
+type scanPlanBinaryNumericToFloat64Ptr struct {
+	scale  int32
+	length uint32
+}
+
+func (p scanPlanBinaryNumericToFloat64Ptr) Scan(src []byte, dst any) error {
+	fPtr, ok := dst.(*float64)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
+	if src == nil {
+		*fPtr = 0
+		return nil
+	}
+
+	var n Numeric
+	if err := DecodeNumericBinaryFB(&n, src, p.scale); err != nil {
+		return err
+	}
+
+	f8, err := n.Float64Value()
+	if err != nil {
+		return err
+	}
+
+	*fPtr = f8.Float64
+	return nil
+}
+
+type scanPlanBinaryNumericToInt64Ptr struct {
+	scale  int32
+	length uint32
+}
+
+func (p scanPlanBinaryNumericToInt64Ptr) Scan(src []byte, dst any) error {
+	iPtr, ok := dst.(*int64)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
+	if src == nil {
+		*iPtr = 0
+		return nil
+	}
+
+	var n Numeric
+	if err := DecodeNumericBinaryFB(&n, src, p.scale); err != nil {
+		return err
+	}
+
+	bigInt, err := n.toBigInt()
+	if err != nil {
+		return err
+	}
+
+	if !bigInt.IsInt64() {
+		return fmt.Errorf("%v is out of range for int64", bigInt)
+	}
+
+	*iPtr = bigInt.Int64()
 	return nil
 }
 
@@ -565,21 +639,28 @@ func (c NumericCodec) DecodeDatabaseSQLValue(m *Map, typeid uint32, subType int3
 		return nil, nil
 	}
 
-	if format == TextFormatCode {
-		return string(src), nil
-	}
-
 	var n Numeric
 	err := codecScan(c, m, typeid, subType, length, scale, format, src, &n)
 	if err != nil {
 		return nil, err
 	}
 
-	buf, err := m.Encode(typeid, subType, length, scale, TextFormatCode, n, nil)
+	if !n.Valid {
+		return nil, nil
+	}
+
+	f64, err := n.Float64Value()
 	if err != nil {
 		return nil, err
 	}
-	return string(buf), nil
+
+	if !f64.Valid {
+		return nil, nil
+	}
+
+	fmt.Printf("DEBUG: Converting NUMERIC to float64: %v\n", f64.Float64)
+
+	return f64.Float64, nil
 }
 
 func (c NumericCodec) DecodeValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error) {
