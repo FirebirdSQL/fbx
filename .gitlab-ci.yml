@@ -8,6 +8,7 @@ variables:
   RDB50_VERSION: 5.0.8
   RDB51_VERSION: 5.1.4
   RDB60_VERSION: 6.0.0-SNAPSHOT.1274
+  FB50_VERSION: 5.0.3.1683-0
   PGX_TEST_DATABASE: database=employee host=localhost port=3050 user=sysdba password=masterkey
   PGX_TEST_TCP_CONN_STRING: database=employee host=localhost port=3050 user=sysdba password=masterkey
 
@@ -29,10 +30,24 @@ format:
     - go fmt $(go list ./... | grep -v /vendor/)
     - go vet $(go list ./... | grep -v /vendor/)
 
-test:
+.test_template:
   stage: test
   tags: [docker, linux, x86_64]
   extends: .go-cache
+  script:
+    - go run gotest.tools/gotestsum@latest --format testname  -- -p 1 -coverprofile cover.out ./...
+  after_script:
+    - go tool cover -html cover.out -o cover.html
+    - go tool cover -func cover.out
+  artifacts:
+    when: always
+    paths:
+      - cover.html
+      - /tmp/fbtrace.log
+  coverage: '/total:\s+\(statements\)\s+\d+.\d+%/'
+
+test:rdb:
+  extends: .test_template
   before_script:
     - wget -q ${RDB_DOWNLOAD_URL} -O installer
     - chmod +x ./installer
@@ -46,24 +61,34 @@ test:
       else
         /etc/init.d/firebird start
       fi
-  script:
-    - go run gotest.tools/gotestsum@latest --format testname  -- -p 1 -coverprofile cover.out ./...
-  after_script:
-    - go tool cover -html cover.out -o cover.html
-    - go tool cover -func cover.out
-  artifacts:
-    when: always
-    paths:
-      - cover.html
-      - /tmp/fbtrace.log
-  coverage: '/total:\s+\(statements\)\s+\d+.\d+%/'
   parallel:
     matrix:
-      - RDB_VERSION: "3.0"
+      - RDB_VERSION: "${RDB30_VERSION}"
         RDB_DOWNLOAD_URL: "http://builds.red-soft.biz/release_hub/rdb30/${RDB30_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB30_VERSION}:bin"
-      - RDB_VERSION: "5.0"
+      - RDB_VERSION: "${RDB50_VERSION}"
         RDB_DOWNLOAD_URL: "http://builds.red-soft.biz/release_hub/rdb50/${RDB50_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB50_VERSION}:bin"
-      - RDB_VERSION: "5.1"
+      - RDB_VERSION: "${RDB51_VERSION}"
         RDB_DOWNLOAD_URL: "http://builds.red-soft.biz/release_hub/rdb50/${RDB51_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB51_VERSION}:bin"
-#      - RDB_VERSION: "6.0"
-#        RDB_DOWNLOAD_URL: "http://builds.red-soft.biz/release_hub/rdb60/${RDB60_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB60_VERSION}:bin"
+  #      - RDB_VERSION: "6.0"
+  #        RDB_DOWNLOAD_URL: "http://builds.red-soft.biz/release_hub/rdb60/${RDB60_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB60_VERSION}:bin"
+
+
+test:fb:
+  extends: .test_template
+  before_script:
+    - apt update && apt install -y libtommath1 libicu76
+    - wget -q ${FB_DOWNLOAD_URL} -O fb.tar.gz
+    - tar xf fb.tar.gz
+    - cd Firebird-${FB_VERSION}-linux-x64
+    - ./install.sh -silent
+    - . /opt/firebird/SYSDBA.password
+    - export ISC_PASSWORD
+    - echo "alter user sysdba set password 'masterkey';" | /opt/firebird/bin/isql -u sysdba localhost:employee
+    - cd ..
+    - cp ci/firebird.conf /opt/firebird
+    - g++ -o /opt/firebird/plugins/udr/libfbxci.so -shared -fPIC ci/udrs.cpp -I_tools/msgs/include
+    - /etc/init.d/firebird restart
+  parallel:
+    matrix:
+      - FB_VERSION: ${FB50_VERSION}
+        FB_DOWNLOAD_URL: "http://minio.red-soft.biz/3rdparty/firebird/Firebird-${FB50_VERSION}-linux-x64.tar.gz"
