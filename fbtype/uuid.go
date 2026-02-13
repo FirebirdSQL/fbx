@@ -149,13 +149,14 @@ func (UUIDCodec) PreferredFormat() int16 {
 }
 
 func (UUIDCodec) PlanEncode(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
-	if _, ok := value.(UUIDValuer); !ok {
-		return nil
-	}
-
 	switch format {
 	case BinaryFormatCode:
-		return encodePlanUUIDCodecBinaryUUIDValuer{}
+		switch value.(type) {
+		case UUIDValuer:
+			return encodePlanUUIDCodecBinaryUUIDValuer{}
+		case string:
+			return encodePlanUUIDCodecBinaryString{}
+		}
 	case TextFormatCode:
 		return encodePlanUUIDCodecTextUUIDValuer{}
 	}
@@ -176,6 +177,17 @@ func (encodePlanUUIDCodecBinaryUUIDValuer) Encode(value any, buf []byte) (newBuf
 	}
 
 	return append(buf, uuid.Bytes[:]...), nil
+}
+
+type encodePlanUUIDCodecBinaryString struct{}
+
+func (encodePlanUUIDCodecBinaryString) Encode(value any, buf []byte) ([]byte, error) {
+	str := value.(string)
+	uuid, err := parseUUID(str)
+	if err != nil {
+		return nil, err
+	}
+	return append(buf, uuid[:]...), nil
 }
 
 type encodePlanUUIDCodecTextUUIDValuer struct{}
@@ -266,6 +278,7 @@ func (scanPlanTextAnyToUUIDScanner) Scan(src []byte, dst any) error {
 
 	return scanner.ScanUUID(UUID{Bytes: buf, Valid: true})
 }
+
 func (c UUIDCodec) DecodeDatabaseSQLValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil

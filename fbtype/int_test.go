@@ -5,6 +5,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
 )
@@ -46,6 +47,11 @@ func TestInt2Codec(t *testing.T) {
 		{Param: 1, Result: new(fbtype.Int2), Test: isExpectedEq(fbtype.Int2{Int16: 1, Valid: true})},
 		{Param: fbtype.Int2{}, Result: new(fbtype.Int2), Test: isExpectedEq(fbtype.Int2{})},
 		{Param: nil, Result: new(*int16), Test: isExpectedEq((*int16)(nil))},
+		{Param: "11", Result: new(int16), Test: isExpectedEq(int16(11))},
+		{Param: "-5", Result: new(int16), Test: isExpectedEq(int16(-5))},
+		{Param: "0", Result: new(int16), Test: isExpectedEq(int16(0))},
+		{Param: "32767", Result: new(int16), Test: isExpectedEq(int16(math.MaxInt16))},
+		{Param: "-32768", Result: new(int16), Test: isExpectedEq(int16(math.MinInt16))},
 	})
 }
 
@@ -127,6 +133,11 @@ func TestInt4Codec(t *testing.T) {
 		{Param: 1, Result: new(fbtype.Int4), Test: isExpectedEq(fbtype.Int4{Int32: 1, Valid: true})},
 		{Param: fbtype.Int4{}, Result: new(fbtype.Int4), Test: isExpectedEq(fbtype.Int4{})},
 		{Param: nil, Result: new(*int32), Test: isExpectedEq((*int32)(nil))},
+		{Param: "123", Result: new(int32), Test: isExpectedEq(int32(123))},
+		{Param: "-456", Result: new(int32), Test: isExpectedEq(int32(-456))},
+		{Param: "0", Result: new(int32), Test: isExpectedEq(int32(0))},
+		{Param: "2147483647", Result: new(int32), Test: isExpectedEq(int32(math.MaxInt32))},
+		{Param: "-2147483648", Result: new(int32), Test: isExpectedEq(int32(math.MinInt32))},
 	})
 }
 
@@ -208,6 +219,11 @@ func TestInt8Codec(t *testing.T) {
 		{Param: 1, Result: new(fbtype.Int8), Test: isExpectedEq(fbtype.Int8{Int64: 1, Valid: true})},
 		{Param: fbtype.Int8{}, Result: new(fbtype.Int8), Test: isExpectedEq(fbtype.Int8{})},
 		{Param: nil, Result: new(*int64), Test: isExpectedEq((*int64)(nil))},
+		{Param: "999", Result: new(int64), Test: isExpectedEq(int64(999))},
+		{Param: "-999", Result: new(int64), Test: isExpectedEq(int64(-999))},
+		{Param: "0", Result: new(int64), Test: isExpectedEq(int64(0))},
+		{Param: "9223372036854775807", Result: new(int64), Test: isExpectedEq(int64(math.MaxInt64))},
+		{Param: "-9223372036854775808", Result: new(int64), Test: isExpectedEq(int64(math.MinInt64))},
 	})
 }
 
@@ -249,5 +265,28 @@ func TestInt8UnmarshalJSON(t *testing.T) {
 		if r != tt.result {
 			t.Errorf("%d: expected %v to convert to %v, but it was %v", i, tt.source, tt.result, r)
 		}
+	}
+}
+
+func TestInt2CodecStringErrors(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"non-numeric", "abc"},
+		{"too large", "99999"},
+		{"too small", "-99999"},
+		{"float", "123.45"},
+		{"empty", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plan := fbtype.Int2Codec{}.PlanEncode(nil, 0, 0, 0, 0, 0, tt.value)
+			require.NotNil(t, plan)
+
+			_, err := plan.Encode(tt.value, nil)
+			require.Error(t, err, "expected error for value: %s", tt.value)
+		})
 	}
 }
