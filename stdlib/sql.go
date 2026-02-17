@@ -467,7 +467,8 @@ func (c *Conn) ExecContext(ctx context.Context, query string, argsV []driver.Nam
 		return nil, driver.ErrBadConn
 	}
 
-	args := namedValueToInterface(argsV)
+	args := make([]any, len(argsV))
+	convertNamedArguments(args, argsV)
 
 	commandTag, err := c.conn.Exec(ctx, query, args...)
 	// if we got a network error before we had a chance to send the query, retry
@@ -484,7 +485,11 @@ func (c *Conn) QueryContext(ctx context.Context, query string, argsV []driver.Na
 		return nil, driver.ErrBadConn
 	}
 
-	rows, err := c.conn.Query(ctx, query, namedValueToInterface(argsV)...)
+	args := make([]any, 1+len(argsV))
+	args[0] = databaseSQLResultFormats
+	convertNamedArguments(args[1:], argsV)
+
+	rows, err := c.conn.Query(ctx, query, args...)
 	if err != nil {
 		if fbconn.SafeToRetry(err) {
 			return nil, driver.ErrBadConn
@@ -967,28 +972,14 @@ func (r *Rows) Next(dest []driver.Value) error {
 	return nil
 }
 
-func valueToInterface(argsV []driver.Value) []any {
-	args := make([]any, 0, len(argsV))
-	for _, v := range argsV {
-		if v != nil {
-			args = append(args, v.(any))
-		} else {
-			args = append(args, nil)
-		}
-	}
-	return args
-}
-
-func namedValueToInterface(argsV []driver.NamedValue) []any {
-	args := make([]any, 0, len(argsV))
-	for _, v := range argsV {
+func convertNamedArguments(args []any, argsV []driver.NamedValue) {
+	for i, v := range argsV {
 		if v.Value != nil {
-			args = append(args, v.Value.(any))
+			args[i] = v.Value.(any)
 		} else {
-			args = append(args, nil)
+			args[i] = nil
 		}
 	}
-	return args
 }
 
 type wrapTx struct {
