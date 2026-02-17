@@ -1,9 +1,21 @@
 # Change Log
 
-# [0.3] - TBD
+# [0.3]
+
+### Added
+
+- RS-278082. Port pgx v5.7.5..v5.7.6 pool API updates: add fbxpool hooks PrepareConn and ShouldPing.
+- RS-278082. Add Int64Valuer support for zeronull.Int2 / zeronull.Int4 / zeronull.Int8.
+
+### Improved
+
+- RS-278082. Decrease allocations in stdlib ExecContext / QueryContext argument conversion path.
+- RS-278082. Protect fbxpool Acquire from infinite retry loops by capping attempts to MaxConns + 1.
 
 ### Fixed
 
+- RS-278082. Return fbconn.ParseConfigError from fbx.ParseConfig / fbxpool.ParseConfig using fbconn.NewParseConfigError.
+- RS-278082. Align zeronull.Int2 / Int4 / Int8 ScanInt64 signature with fbtype.Int64Scanner.
 - RS-277802. Panic when passing argument as SQL_NULL type.
 
 # [0.2] - 09.02.2026

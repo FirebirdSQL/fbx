@@ -15,21 +15,29 @@ type Int2 int16
 func (Int2) SkipUnderlyingTypePlan() {}
 
 // ScanInt64 implements the Int64Scanner interface.
-func (dst *Int2) ScanInt64(n int64, valid bool) error {
-	if !valid {
+func (dst *Int2) ScanInt64(n fbtype.Int8) error {
+	if !n.Valid {
 		*dst = 0
 		return nil
 	}
 
-	if n < math.MinInt16 {
-		return fmt.Errorf("%d is greater than maximum value for Int2", n)
+	if n.Int64 < math.MinInt16 {
+		return fmt.Errorf("%d is less than minimum value for Int2", n.Int64)
 	}
-	if n > math.MaxInt16 {
-		return fmt.Errorf("%d is greater than maximum value for Int2", n)
+	if n.Int64 > math.MaxInt16 {
+		return fmt.Errorf("%d is greater than maximum value for Int2", n.Int64)
 	}
-	*dst = Int2(n)
+	*dst = Int2(n.Int64)
 
 	return nil
+}
+
+// Int64Value implements the [fbtype.Int64Valuer] interface.
+func (src Int2) Int64Value() (fbtype.Int8, error) {
+	if src == 0 {
+		return fbtype.Int8{}, nil
+	}
+	return fbtype.Int8{Int64: int64(src), Valid: true}, nil
 }
 
 // Scan implements the database/sql Scanner interface.
@@ -63,21 +71,29 @@ type Int4 int32
 func (Int4) SkipUnderlyingTypePlan() {}
 
 // ScanInt64 implements the Int64Scanner interface.
-func (dst *Int4) ScanInt64(n int64, valid bool) error {
-	if !valid {
+func (dst *Int4) ScanInt64(n fbtype.Int8) error {
+	if !n.Valid {
 		*dst = 0
 		return nil
 	}
 
-	if n < math.MinInt32 {
-		return fmt.Errorf("%d is greater than maximum value for Int4", n)
+	if n.Int64 < math.MinInt32 {
+		return fmt.Errorf("%d is less than minimum value for Int4", n.Int64)
 	}
-	if n > math.MaxInt32 {
-		return fmt.Errorf("%d is greater than maximum value for Int4", n)
+	if n.Int64 > math.MaxInt32 {
+		return fmt.Errorf("%d is greater than maximum value for Int4", n.Int64)
 	}
-	*dst = Int4(n)
+	*dst = Int4(n.Int64)
 
 	return nil
+}
+
+// Int64Value implements the [fbtype.Int64Valuer] interface.
+func (src Int4) Int64Value() (fbtype.Int8, error) {
+	if src == 0 {
+		return fbtype.Int8{}, nil
+	}
+	return fbtype.Int8{Int64: int64(src), Valid: true}, nil
 }
 
 // Scan implements the database/sql Scanner interface.
@@ -111,21 +127,29 @@ type Int8 int64
 func (Int8) SkipUnderlyingTypePlan() {}
 
 // ScanInt64 implements the Int64Scanner interface.
-func (dst *Int8) ScanInt64(n int64, valid bool) error {
-	if !valid {
+func (dst *Int8) ScanInt64(n fbtype.Int8) error {
+	if !n.Valid {
 		*dst = 0
 		return nil
 	}
 
-	if n < math.MinInt64 {
-		return fmt.Errorf("%d is greater than maximum value for Int8", n)
+	if n.Int64 < math.MinInt64 {
+		return fmt.Errorf("%d is less than minimum value for Int8", n.Int64)
 	}
-	if n > math.MaxInt64 {
-		return fmt.Errorf("%d is greater than maximum value for Int8", n)
+	if n.Int64 > math.MaxInt64 {
+		return fmt.Errorf("%d is greater than maximum value for Int8", n.Int64)
 	}
-	*dst = Int8(n)
+	*dst = Int8(n.Int64)
 
 	return nil
+}
+
+// Int64Value implements the [fbtype.Int64Valuer] interface.
+func (src Int8) Int64Value() (fbtype.Int8, error) {
+	if src == 0 {
+		return fbtype.Int8{}, nil
+	}
+	return fbtype.Int8{Int64: int64(src), Valid: true}, nil
 }
 
 // Scan implements the database/sql Scanner interface.

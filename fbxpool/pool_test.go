@@ -207,6 +207,47 @@ func TestPoolAcquireChecksIdleConns(t *testing.T) {
 	require.NotContains(t, connIds, id)
 }
 
+func TestPoolAcquireChecksIdleConnsWithShouldPing(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	controllerConn, err := fbx.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	require.NoError(t, err)
+	defer controllerConn.Close(ctx)
+
+	config, err := fbxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	require.NoError(t, err)
+
+	// Replace the default ShouldPing func
+	var shouldPingLastCalledWith *fbxpool.ShouldPingParams
+	config.ShouldPing = func(ctx context.Context, params fbxpool.ShouldPingParams) bool {
+		shouldPingLastCalledWith = &params
+		return false
+	}
+
+	pool, err := fbxpool.NewWithConfig(ctx, config)
+	require.NoError(t, err)
+	defer pool.Close()
+
+	c, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+	c.Release()
+
+	time.Sleep(time.Millisecond * 200)
+
+	c, err = pool.Acquire(ctx)
+	require.NoError(t, err)
+	conn := c.Conn()
+
+	require.NotNil(t, shouldPingLastCalledWith)
+	assert.Equal(t, conn, shouldPingLastCalledWith.Conn)
+	assert.InDelta(t, time.Millisecond*200, shouldPingLastCalledWith.IdleDuration, float64(time.Millisecond*100))
+
+	c.Release()
+}
+
 func TestPoolAcquireFunc(t *testing.T) {
 	t.Parallel()
 
@@ -334,6 +375,64 @@ func TestPoolBeforeAcquire(t *testing.T) {
 	waitForReleaseToComplete()
 
 	assert.EqualValues(t, 12, acquireAttempts)
+}
+
+func TestPoolPrepareConn(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	config, err := fbxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	require.NoError(t, err)
+
+	acquireAttempts := 0
+
+	config.PrepareConn = func(context.Context, *fbx.Conn) (bool, error) {
+		acquireAttempts++
+		var err error
+		if acquireAttempts%3 == 0 {
+			err = errors.New("PrepareConn error")
+		}
+		return acquireAttempts%2 == 0, err
+	}
+
+	db, err := fbxpool.NewWithConfig(ctx, config)
+	require.NoError(t, err)
+	t.Cleanup(db.Close)
+
+	var errorCount int
+	conns := make([]*fbxpool.Conn, 0, 4)
+	for {
+		conn, err := db.Acquire(ctx)
+		if err != nil {
+			errorCount++
+			continue
+		}
+		conns = append(conns, conn)
+		if len(conns) == 4 {
+			break
+		}
+	}
+	const wantErrorCount = 3
+	assert.Equal(t, wantErrorCount, errorCount, "Acquire() should have failed %d times", wantErrorCount)
+
+	for _, c := range conns {
+		c.Release()
+	}
+	waitForReleaseToComplete()
+
+	assert.EqualValues(t, len(conns)*2+wantErrorCount-1, acquireAttempts)
+
+	conns = db.AcquireAllIdle(ctx)
+	assert.Len(t, conns, 1)
+
+	for _, c := range conns {
+		c.Release()
+	}
+	waitForReleaseToComplete()
+
+	assert.EqualValues(t, 14, acquireAttempts)
 }
 
 func TestPoolAfterRelease(t *testing.T) {
@@ -1055,9 +1154,9 @@ func TestConnectEagerlyReachesMinPoolSize(t *testing.T) {
 	acquireAttempts := int64(0)
 	connectAttempts := int64(0)
 
-	config.BeforeAcquire = func(ctx context.Context, conn *fbx.Conn) bool {
+	config.PrepareConn = func(ctx context.Context, conn *fbx.Conn) (bool, error) {
 		atomic.AddInt64(&acquireAttempts, 1)
-		return true
+		return true, nil
 	}
 	config.BeforeConnect = func(ctx context.Context, cfg *fbx.ConnConfig) error {
 		atomic.AddInt64(&connectAttempts, 1)
