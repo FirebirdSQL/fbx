@@ -38,9 +38,9 @@ func TestNamedArgsRewriteQuery(t *testing.T) {
 			expectedArgs: []any{int32(42), "foo"},
 		},
 		{
-			sql:          "select cast(@Abc as int), cast(@b_4 as varchar), cast(@_c as int) from rdb$database",
+			sql:          "select cast(@Abc as int), cast(@b_4 as varchar(255)), cast(@_c as int) from rdb$database",
 			namedArgs:    fbx.NamedArgs{"Abc": int32(42), "b_4": "foo", "_c": int32(1)},
-			expectedSQL:  "select cast(? as int), cast(? as varchar), cast(? as int) from rdb$database",
+			expectedSQL:  "select cast(? as int), cast(? as varchar(255)), cast(? as int) from rdb$database",
 			expectedArgs: []any{int32(42), "foo", int32(1)},
 		},
 		{

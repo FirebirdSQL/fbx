@@ -208,18 +208,17 @@ func TestExec(t *testing.T) {
 	defer cancel()
 
 	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		table := strings.ReplaceAll(t.Name(), "/", "_") + "_conn_test"
-		results := mustExec(t, conn, "recreate table "+table+" (id integer primary key)")
+		results := mustExec(t, conn, "recreate table conn_exec_test (id integer primary key)")
 		assert.Equal(t, "DDL", results.String())
 
 		// Accept parameters
-		results = mustExec(t, conn, "insert into "+table+"(id) values(?)", 1)
+		results = mustExec(t, conn, "insert into conn_exec_test (id) values(?)", 1)
 		assert.Equal(t, "INSERT", results.String())
 
 		err := conn.DeallocateAll(ctx)
 		assert.NoError(t, err)
 
-		results = mustExec(t, conn, "drop table "+table)
+		results = mustExec(t, conn, "drop table conn_exec_test")
 		assert.Equal(t, "DDL", results.String())
 	})
 }
@@ -290,11 +289,10 @@ func TestExecContextWithoutCancelation(t *testing.T) {
 	defer cancel()
 
 	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		table := strings.ReplaceAll(t.Name(), "/", "_")
 		ctx, cancelFunc := context.WithCancel(ctx)
 		defer cancelFunc()
 
-		commandTag, err := conn.Exec(ctx, "recreate table "+table+"(id integer primary key);")
+		commandTag, err := conn.Exec(ctx, "recreate table conn_exec_context_test (id integer primary key);")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -366,7 +364,7 @@ func TestPrepare(t *testing.T) {
 	defer closeConn(t, conn)
 
 	//select $1::varchar
-	_, err := conn.Prepare(context.Background(), "test", "select cast(? as varchar) from rdb$database")
+	_, err := conn.Prepare(context.Background(), "test", "select cast(? as varchar(255)) from rdb$database")
 	if err != nil {
 		t.Errorf("Unable to prepare statement: %v", err)
 		return
@@ -449,7 +447,7 @@ func TestPrepareIdempotency(t *testing.T) {
 			}
 		}
 
-		_, err := conn.Prepare(context.Background(), "test", "select cast('fail' as varchar) from rdb$database")
+		_, err := conn.Prepare(context.Background(), "test", "select cast('fail' as varchar(255)) from rdb$database")
 		if err == nil {
 			t.Fatalf("Prepare statement with same name but different SQL should have failed but it didn't")
 			return
@@ -464,7 +462,7 @@ func TestPrepareStatementCacheModes(t *testing.T) {
 	defer cancel()
 
 	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		_, err := conn.Prepare(context.Background(), "test", "select cast(? as varchar) from rdb$database")
+		_, err := conn.Prepare(context.Background(), "test", "select cast(? as varchar(255)) from rdb$database")
 		require.NoError(t, err)
 
 		var s string
@@ -481,10 +479,10 @@ func TestPrepareWithDigestedName(t *testing.T) {
 	defer cancel()
 
 	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		sql := "select cast(? as varchar) from rdb$database"
+		sql := "select cast(? as varchar(255)) from rdb$database"
 		sd, err := conn.Prepare(ctx, sql, sql)
 		require.NoError(t, err)
-		require.Equal(t, "stmt_da3e336d81d8925213324f4b1730faf9486903ab1095eb76", sd.Name)
+		require.Equal(t, "stmt_efcb7247499c7e1936769a619e6a36c23049b0171aa4d5cb", sd.Name)
 
 		var s string
 		err = conn.QueryRow(ctx, sql, "hello").Scan(&s)
@@ -507,10 +505,10 @@ func TestDeallocateInAbortedTransaction(t *testing.T) {
 		tx, err := conn.Begin(ctx)
 		require.NoError(t, err)
 
-		sql := "select cast(? as varchar) from rdb$database"
+		sql := "select cast(? as varchar(255)) from rdb$database"
 		sd, err := tx.Prepare(ctx, sql, sql)
 		require.NoError(t, err)
-		require.Equal(t, "stmt_da3e336d81d8925213324f4b1730faf9486903ab1095eb76", sd.Name)
+		require.Equal(t, "stmt_efcb7247499c7e1936769a619e6a36c23049b0171aa4d5cb", sd.Name)
 
 		var s string
 		err = tx.QueryRow(ctx, sql, "hello").Scan(&s)
@@ -528,7 +526,7 @@ func TestDeallocateInAbortedTransaction(t *testing.T) {
 
 		sd, err = conn.Prepare(ctx, sql, sql)
 		require.NoError(t, err)
-		require.Equal(t, "stmt_da3e336d81d8925213324f4b1730faf9486903ab1095eb76", sd.Name)
+		require.Equal(t, "stmt_efcb7247499c7e1936769a619e6a36c23049b0171aa4d5cb", sd.Name)
 	})
 }
 
@@ -539,13 +537,13 @@ func TestDeallocateMissingPreparedStatementStillClearsFromPreparedStatementMap(t
 	defer cancel()
 
 	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		_, err := conn.Prepare(ctx, "ps", "select cast(? as varchar) from rdb$database")
+		_, err := conn.Prepare(ctx, "ps", "select cast(? as varchar(255)) from rdb$database")
 		require.NoError(t, err)
 
 		err = conn.Deallocate(ctx, "ps")
 		require.NoError(t, err)
 
-		_, err = conn.Prepare(ctx, "ps", "select  cast(? as varchar), cast(? as varchar) from rdb$database")
+		_, err = conn.Prepare(ctx, "ps", "select  cast(? as varchar(255)), cast(? as varchar(255)) from rdb$database")
 		require.NoError(t, err)
 
 		var s1, s2 string

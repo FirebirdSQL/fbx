@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"regexp"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -265,18 +263,6 @@ func engineVersionSupportsInlineBlobs(version string) bool {
 	return ok && major >= 4
 }
 
-func parseEngineMajorVersion(version string) (int, bool) {
-	match := regexp.MustCompile(`\d+`).FindString(version)
-	if match == "" {
-		return 0, false
-	}
-	major, err := strconv.Atoi(match)
-	if err != nil {
-		return 0, false
-	}
-	return major, true
-}
-
 func TestBlobExecParamFromFile(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
@@ -334,7 +320,7 @@ func runWithBlobStreamModes(
 
 func createBlobTestTable(ctx context.Context, t testing.TB, conn *fbx.Conn) string {
 	t.Helper()
-	table := fmt.Sprintf("FBX_BLOB_TEST_%d", time.Now().UnixNano())
+	table := fmt.Sprintf("FBXB_%x", time.Now().UnixNano())
 	_, err := conn.Exec(ctx, fmt.Sprintf(
 		"create table %s (id integer not null primary key, bin_blob blob sub_type 0, txt_blob blob sub_type 1)",
 		table,

@@ -569,13 +569,13 @@ func TestConnExec(t *testing.T) {
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
-	res := fbConn.Exec(ctx, "select cast('Hello, world' as varchar) from rdb$database").Read()
+	res := fbConn.Exec(ctx, "select cast('Hello, world' as varchar(255)) from rdb$database").Read()
 	assert.NoError(t, res.Err)
 
 	assert.Len(t, res.Rows, 1)
 	assert.Equal(t, "Hello, world", string(res.Rows[0][0]))
 
-	results, err := fbConn.Exec(ctx, "select cast('Hello, world' as varchar) from rdb$database").ReadAll()
+	results, err := fbConn.Exec(ctx, "select cast('Hello, world' as varchar(255)) from rdb$database").ReadAll()
 	assert.NoError(t, err)
 	assert.Len(t, results, 1)
 	assert.Len(t, results[0].Rows, 1)
@@ -677,7 +677,7 @@ func TestConnExecParams(t *testing.T) {
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
-	result := fbConn.ExecParams(ctx, "select cast(? as varchar) as msg from rdb$database", [][]byte{[]byte("Hello, world")})
+	result := fbConn.ExecParams(ctx, "select cast(? as varchar(255)) as msg from rdb$database", [][]byte{[]byte("Hello, world")})
 	require.Len(t, result.FieldDescriptions(), 1)
 	assert.Equal(t, "MSG", result.FieldDescriptions()[0].Name)
 
@@ -766,7 +766,7 @@ func TestConnExecParamsPrecanceled(t *testing.T) {
 	defer closeConn(t, fbConn)
 
 	cancel()
-	result := fbConn.ExecParams(ctx, "select cast(? as varchar) from rdb$database", [][]byte{[]byte("Hello, world")}).Read()
+	result := fbConn.ExecParams(ctx, "select cast(? as varchar(255)) from rdb$database", [][]byte{[]byte("Hello, world")}).Read()
 	require.Error(t, result.Err)
 	assert.True(t, errors.Is(result.Err, context.Canceled))
 	assert.True(t, fbconn.SafeToRetry(result.Err))
@@ -833,7 +833,7 @@ func TestResultReaderReadNil(t *testing.T) {
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
-	result := fbConn.ExecParams(ctx, "select cast(null as varchar) from rdb$database", nil).Read()
+	result := fbConn.ExecParams(ctx, "select cast(null as varchar(255)) from rdb$database", nil).Read()
 	require.NoError(t, result.Err)
 	require.Nil(t, result.Rows[0][0])
 
@@ -1590,7 +1590,7 @@ func testConnContextCanceledCancelsRunningQueryOnServer(t *testing.T, connString
 
 	for {
 		result := otherConn.ExecParams(ctx,
-			`select 1, cast(mon$sql_text as varchar) from mon$statements where cast(mon$sql_text as varchar) like ?`,
+			`select 1, cast(mon$sql_text as varchar(255)) from mon$statements where cast(mon$sql_text as varchar(255)) like ?`,
 			[][]byte{[]byte("%" + queryID + "%")}).Read()
 		require.NoError(t, result.Err)
 

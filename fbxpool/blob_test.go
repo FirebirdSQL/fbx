@@ -64,7 +64,7 @@ func TestPoolBlobTextCharsets(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			table := fmt.Sprintf("FBXPOOL_BLOB_TEXT_%s_%d", tc.name, time.Now().UnixNano())
+			table := fmt.Sprintf("FBXPB_%x", time.Now().UnixNano())
 			_, err := conn.Exec(ctx, fmt.Sprintf("recreate table %s(id integer primary key, data blob sub_type 1 character set %s)", table, tc.charset))
 			if err != nil {
 				t.Skipf("charset %s not supported: %v", tc.charset, err)
@@ -86,7 +86,7 @@ func TestPoolBlobTextCharsets(t *testing.T) {
 
 func createPoolBlobTable(t testing.TB, ctx context.Context, conn *fbxpool.Conn, columns string) string {
 	t.Helper()
-	table := fmt.Sprintf("FBXPOOL_BLOB_%d", time.Now().UnixNano())
+	table := fmt.Sprintf("FBXPB_%x", time.Now().UnixNano())
 	_, err := conn.Exec(ctx, fmt.Sprintf("recreate table %s (%s)", table, columns))
 	require.NoError(t, err)
 	t.Cleanup(func() {
