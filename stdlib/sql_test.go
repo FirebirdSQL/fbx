@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"regexp"
 	"strconv"
 	"sync"
 	"testing"
@@ -26,10 +27,42 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var (
+	serverMajorVersionCheckOnce sync.Once
+	serverMajorVersionValue     int
+	engineMajorRegexp           = regexp.MustCompile(`\d+`)
+)
+
 func openDB(t testing.TB) *sql.DB {
 	config, err := fbx.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	return stdlib.OpenDB(*config)
+}
+
+func getServerMajorVersion(t testing.TB, db *sql.DB) int {
+	t.Helper()
+	serverMajorVersionCheckOnce.Do(func() {
+		var version string
+		err := db.QueryRow("select rdb$get_context('SYSTEM','ENGINE_VERSION') from rdb$database").Scan(&version)
+		require.NoError(t, err)
+
+		major, ok := parseEngineMajorVersion(version)
+		require.Truef(t, ok, "failed to parse engine version: %q", version)
+		serverMajorVersionValue = major
+	})
+	return serverMajorVersionValue
+}
+
+func parseEngineMajorVersion(version string) (int, bool) {
+	match := engineMajorRegexp.FindString(version)
+	if match == "" {
+		return 0, false
+	}
+	major, err := strconv.Atoi(match)
+	if err != nil {
+		return 0, false
+	}
+	return major, true
 }
 
 func closeDB(t testing.TB, db *sql.DB) {
@@ -259,7 +292,7 @@ func TestStmtExec(t *testing.T) {
 	tx, err := db.Begin()
 	require.NoError(t, err)
 
-	createStmt := prepareStmt(t, tx, "recreate table t(a varchar not null)")
+	createStmt := prepareStmt(t, tx, "recreate table t(a varchar(255) not null)")
 	_, err = createStmt.Exec()
 	require.NoError(t, err)
 	closeStmt(t, createStmt)
@@ -270,7 +303,7 @@ func TestStmtExec(t *testing.T) {
 	tx, err = db.Begin()
 	require.NoError(t, err)
 
-	insertStmt := prepareStmt(t, tx, "insert into t values(cast(? as varchar))")
+	insertStmt := prepareStmt(t, tx, "insert into t values(cast(? as varchar(255)))")
 	result, err := insertStmt.Exec("foo")
 	require.NoError(t, err)
 
@@ -328,7 +361,7 @@ func TestQueryCloseRowsEarly(t *testing.T) {
 
 func TestConnExec(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		_, err := db.Exec("recreate table t(a varchar not null)")
+		_, err := db.Exec("recreate table t(a varchar(255) not null)")
 		require.NoError(t, err)
 
 		result, err := db.Exec("insert into t values('hey')")
@@ -371,7 +404,7 @@ func TestConnQuery(t *testing.T) {
 
 func TestConnConcurrency(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		_, err := db.Exec("recreate table t (id integer primary key, str varchar, dur_str bigint)")
+		_, err := db.Exec("recreate table t (id integer primary key, str varchar(255), dur_str bigint)")
 		require.NoError(t, err)
 
 		var wg sync.WaitGroup
@@ -636,7 +669,7 @@ func TestConnExecInsertByteSliceIntoJSON(t *testing.T) {
 
 func TestTransactionLifeCycle(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		_, err := db.Exec("recreate table t(a varchar not null)")
+		_, err := db.Exec("recreate table t(a varchar(255) not null)")
 		require.NoError(t, err)
 
 		tx, err := db.Begin()
@@ -816,14 +849,14 @@ func TestConnMultiplePrepareAndDeallocate(t *testing.T) {
 		require.NoError(t, err)
 
 		var preparedStmtCount int64
-		err = db.QueryRowContext(context.Background(), "select count(*) from mon$statements where mon$attachment_id = current_connection and cast(mon$sql_text as varchar) = ?", sql).Scan(&preparedStmtCount)
+		err = db.QueryRowContext(context.Background(), "select count(*) from mon$statements where mon$attachment_id = current_connection and cast(mon$sql_text as varchar(255)) = ?", sql).Scan(&preparedStmtCount)
 		require.NoError(t, err)
 		require.EqualValues(t, 1, preparedStmtCount)
 
 		err = stmt2.Close() // err isn't as useful as it should be as database/sql will ignore errors from Deallocate.
 		require.NoError(t, err)
 
-		err = db.QueryRowContext(context.Background(), "select count(*) from mon$statements where mon$attachment_id = current_connection and cast(mon$sql_text as varchar) = ?", sql).Scan(&preparedStmtCount)
+		err = db.QueryRowContext(context.Background(), "select count(*) from mon$statements where mon$attachment_id = current_connection and cast(mon$sql_text as varchar(255)) = ?", sql).Scan(&preparedStmtCount)
 		require.NoError(t, err)
 		require.EqualValues(t, 0, preparedStmtCount)
 	})

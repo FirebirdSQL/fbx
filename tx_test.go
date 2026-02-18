@@ -210,37 +210,38 @@ func TestTxCommitSerializationFailure(t *testing.T) {
 func TestTransactionSuccessfulRollback(t *testing.T) {
 	//t.Parallel()
 
+	ctx := context.Background()
 	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 
 	createSql := `
-    recreate table ` + t.Name() + `(
-      id integer,
-      unique (id)
-    );
-  `
+	    recreate table ` + "tx_success_rollback_test" + `(
+	      id integer,
+	      unique (id)
+	    );
+	  `
 
-	if _, err := conn.Exec(context.Background(), createSql); err != nil {
+	if _, err := conn.Exec(ctx, createSql); err != nil {
 		t.Fatalf("Failed to create table: %v", err)
 	}
 
-	tx, err := conn.Begin(context.Background())
+	tx, err := conn.Begin(ctx)
 	if err != nil {
 		t.Fatalf("conn.Begin failed: %v", err)
 	}
 
-	_, err = tx.Exec(context.Background(), "insert into "+t.Name()+"(id) values (1)")
+	_, err = tx.Exec(ctx, "insert into "+"tx_success_rollback_test"+"(id) values (1)")
 	if err != nil {
 		t.Fatalf("tx.Exec failed: %v", err)
 	}
 
-	err = tx.Rollback(context.Background())
+	err = tx.Rollback(ctx)
 	if err != nil {
 		t.Fatalf("tx.Rollback failed: %v", err)
 	}
 
 	var n int64
-	err = conn.QueryRow(context.Background(), "select count(*) from "+t.Name()).Scan(&n)
+	err = conn.QueryRow(ctx, "select count(*) from "+"tx_success_rollback_test").Scan(&n)
 	if err != nil {
 		t.Fatalf("QueryRow Scan failed: %v", err)
 	}
@@ -517,27 +518,28 @@ func TestTxBeginFuncNestedTransactionCommit(t *testing.T) {
 
 	db := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	defer closeConn(t, db)
+	ctx := context.Background()
 
 	createSql := `
-    recreate table ` + t.Name() + `(
-      id integer,
-      unique (id)
-    );
-  `
+	    recreate table tx_beginfunc_nested_commit_test (
+	      id integer,
+	      unique (id)
+	    );
+	  `
 
-	_, err := db.Exec(context.Background(), createSql)
+	_, err := db.Exec(ctx, createSql)
 	require.NoError(t, err)
 
-	err = fbx.BeginFunc(context.Background(), db, func(db fbx.Tx) error {
-		_, err := db.Exec(context.Background(), "insert into "+t.Name()+"(id) values (1)")
+	err = fbx.BeginFunc(ctx, db, func(db fbx.Tx) error {
+		_, err := db.Exec(ctx, "insert into tx_beginfunc_nested_commit_test (id) values (1)")
 		require.NoError(t, err)
 
-		err = fbx.BeginFunc(context.Background(), db, func(db fbx.Tx) error {
-			_, err := db.Exec(context.Background(), "insert into "+t.Name()+"(id) values (2)")
+		err = fbx.BeginFunc(ctx, db, func(db fbx.Tx) error {
+			_, err := db.Exec(ctx, "insert into tx_beginfunc_nested_commit_test (id) values (2)")
 			require.NoError(t, err)
 
-			err = fbx.BeginFunc(context.Background(), db, func(db fbx.Tx) error {
-				_, err := db.Exec(context.Background(), "insert into "+t.Name()+"(id) values (3)")
+			err = fbx.BeginFunc(ctx, db, func(db fbx.Tx) error {
+				_, err := db.Exec(ctx, "insert into tx_beginfunc_nested_commit_test (id) values (3)")
 				require.NoError(t, err)
 				return nil
 			})
@@ -551,7 +553,7 @@ func TestTxBeginFuncNestedTransactionCommit(t *testing.T) {
 	require.NoError(t, err)
 
 	var n int64
-	err = db.QueryRow(context.Background(), "select count(*) from "+t.Name()).Scan(&n)
+	err = db.QueryRow(ctx, "select count(*) from tx_beginfunc_nested_commit_test").Scan(&n)
 	require.NoError(t, err)
 	require.EqualValues(t, 3, n)
 }
@@ -561,29 +563,30 @@ func TestTxBeginFuncNestedTransactionRollback(t *testing.T) {
 
 	db := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	defer closeConn(t, db)
+	ctx := context.Background()
 
 	createSql := `
-    recreate table ` + t.Name() + `(
-      id integer,
-      unique (id)
-    );
-  `
+	    recreate table tx_beginfunc_nested_rb_test (
+	      id integer,
+	      unique (id)
+	    );
+	  `
 
-	_, err := db.Exec(context.Background(), createSql)
+	_, err := db.Exec(ctx, createSql)
 	require.NoError(t, err)
 
-	err = fbx.BeginFunc(context.Background(), db, func(db fbx.Tx) error {
-		_, err := db.Exec(context.Background(), "insert into "+t.Name()+"(id) values (1)")
+	err = fbx.BeginFunc(ctx, db, func(db fbx.Tx) error {
+		_, err := db.Exec(ctx, "insert into tx_beginfunc_nested_rb_test (id) values (1)")
 		require.NoError(t, err)
 
-		err = fbx.BeginFunc(context.Background(), db, func(db fbx.Tx) error {
-			_, err := db.Exec(context.Background(), "insert into "+t.Name()+"(id) values (2)")
+		err = fbx.BeginFunc(ctx, db, func(db fbx.Tx) error {
+			_, err := db.Exec(ctx, "insert into tx_beginfunc_nested_rb_test (id) values (2)")
 			require.NoError(t, err)
 			return errors.New("do a rollback")
 		})
 		require.EqualError(t, err, "do a rollback")
 
-		_, err = db.Exec(context.Background(), "insert into "+t.Name()+"(id) values (3)")
+		_, err = db.Exec(ctx, "insert into tx_beginfunc_nested_rb_test (id) values (3)")
 		require.NoError(t, err)
 
 		return nil
@@ -591,7 +594,7 @@ func TestTxBeginFuncNestedTransactionRollback(t *testing.T) {
 	require.NoError(t, err)
 
 	var n int64
-	err = db.QueryRow(context.Background(), "select count(*) from "+t.Name()).Scan(&n)
+	err = db.QueryRow(ctx, "select count(*) from tx_beginfunc_nested_rb_test").Scan(&n)
 	require.NoError(t, err)
 	require.EqualValues(t, 2, n)
 }

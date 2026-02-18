@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -87,12 +86,11 @@ func TestForEachRow(t *testing.T) {
 
 func TestRowsAffectedAggregatesSqlCounts(t *testing.T) {
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		tableName := fmt.Sprintf("counts_%s", strings.ToLower(t.Name()))
-		_, err := conn.Exec(ctx, fmt.Sprintf(`recreate table %s (id int)`, tableName))
+		_, err := conn.Exec(ctx, fmt.Sprintf(`recreate table %s (id int)`, "rows_counts_test"))
 		require.NoError(t, err)
-		defer conn.Exec(ctx, fmt.Sprintf(`drop table %s`, tableName))
+		defer conn.Exec(ctx, fmt.Sprintf(`drop table %s`, "rows_counts_test"))
 
-		_, err = conn.Exec(ctx, fmt.Sprintf(`insert into %s (id) values (1)`, tableName))
+		_, err = conn.Exec(ctx, fmt.Sprintf(`insert into %s (id) values (1)`, "rows_counts_test"))
 		require.NoError(t, err)
 
 		ct, err := conn.Exec(ctx, fmt.Sprintf(`
@@ -101,7 +99,7 @@ begin
 	insert into %s (id) values (2);
 	update %s set id = id + 10 where id = 1;
 	delete from %s where id = 2;
-end`, tableName, tableName, tableName))
+end`, "rows_counts_test", "rows_counts_test", "rows_counts_test"))
 		require.NoError(t, err)
 
 		// Firebird reports counts for all operations inside the block (including internal reads),
@@ -290,7 +288,7 @@ func TestCollectOneRowIgnoresExtraRows(t *testing.T) {
 // https://github.com/jackc/pgx/issues/1334
 func TestCollectOneRowPrefersPostgreSQLErrorOverErrNoRows(t *testing.T) {
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		_, err := conn.Exec(ctx, `recreate table "+t.Name()+" (name varchar not null)`)
+		_, err := conn.Exec(ctx, `recreate table "+t.Name()+" (name varchar(255) not null)`)
 		require.NoError(t, err)
 
 		var name string

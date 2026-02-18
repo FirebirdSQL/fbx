@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbxtest"
-	"github.com/stretchr/testify/require"
 )
 
 type testTracer struct {
@@ -79,7 +79,7 @@ func TestTraceExec(t *testing.T) {
 		traceQueryStartCalled := false
 		tracer.traceQueryStart = func(ctx context.Context, conn *fbx.Conn, data fbx.TraceQueryStartData) context.Context {
 			traceQueryStartCalled = true
-			require.Equal(t, `select cast(? as varchar) from rdb$database`, data.SQL)
+			require.Equal(t, `select cast(? as varchar(255)) from rdb$database`, data.SQL)
 			require.Len(t, data.Args, 1)
 			require.Equal(t, `testing`, data.Args[0])
 			return context.WithValue(ctx, ctxKey(ctxKey("fromTraceQueryStart")), "foo")
@@ -93,7 +93,7 @@ func TestTraceExec(t *testing.T) {
 			require.NoError(t, data.Err)
 		}
 
-		_, err := conn.Exec(ctx, `select cast(? as varchar) from rdb$database`, "testing")
+		_, err := conn.Exec(ctx, `select cast(? as varchar(255)) from rdb$database`, "testing")
 		require.NoError(t, err)
 		require.True(t, traceQueryStartCalled)
 		require.True(t, traceQueryEndCalled)
@@ -119,7 +119,7 @@ func TestTraceQuery(t *testing.T) {
 		traceQueryStartCalled := false
 		tracer.traceQueryStart = func(ctx context.Context, conn *fbx.Conn, data fbx.TraceQueryStartData) context.Context {
 			traceQueryStartCalled = true
-			require.Equal(t, `select cast(? as varchar) from rdb$database`, data.SQL)
+			require.Equal(t, `select cast(? as varchar(255)) from rdb$database`, data.SQL)
 			require.Len(t, data.Args, 1)
 			require.Equal(t, `testing`, data.Args[0])
 			return context.WithValue(ctx, ctxKey("fromTraceQueryStart"), "foo")
@@ -134,7 +134,7 @@ func TestTraceQuery(t *testing.T) {
 		}
 
 		var s string
-		err := conn.QueryRow(ctx, `select cast(? as varchar) from rdb$database`, "testing").Scan(&s)
+		err := conn.QueryRow(ctx, `select cast(? as varchar(255)) from rdb$database`, "testing").Scan(&s)
 		require.NoError(t, err)
 		require.Equal(t, "testing", s)
 		require.True(t, traceQueryStartCalled)
@@ -162,7 +162,7 @@ func TestTracePrepare(t *testing.T) {
 		tracer.tracePrepareStart = func(ctx context.Context, conn *fbx.Conn, data fbx.TracePrepareStartData) context.Context {
 			tracePrepareStartCalled = true
 			require.Equal(t, `ps`, data.Name)
-			require.Equal(t, `select cast(? as varchar) from rdb$database`, data.SQL)
+			require.Equal(t, `select cast(? as varchar(255)) from rdb$database`, data.SQL)
 			return context.WithValue(ctx, ctxKey("fromTracePrepareStart"), "foo")
 		}
 
@@ -173,7 +173,7 @@ func TestTracePrepare(t *testing.T) {
 			require.NoError(t, data.Err)
 		}
 
-		_, err := conn.Prepare(ctx, "ps", `select cast(? as varchar) from rdb$database`)
+		_, err := conn.Prepare(ctx, "ps", `select cast(? as varchar(255)) from rdb$database`)
 		require.NoError(t, err)
 		require.True(t, tracePrepareStartCalled)
 		require.True(t, tracePrepareEndCalled)
@@ -186,7 +186,7 @@ func TestTracePrepare(t *testing.T) {
 			require.NoError(t, data.Err)
 		}
 
-		_, err = conn.Prepare(ctx, "ps", `select cast(? as varchar) from rdb$database`)
+		_, err = conn.Prepare(ctx, "ps", `select cast(? as varchar(255)) from rdb$database`)
 		require.NoError(t, err)
 		require.True(t, tracePrepareStartCalled)
 		require.True(t, tracePrepareEndCalled)
@@ -268,12 +268,12 @@ func TestTraceWithinTx(t *testing.T) {
 		tx, err := conn.Begin(ctx)
 		require.NoError(t, err)
 		defer tx.Rollback(ctx)
-		_, err = tx.Exec(ctx, `select cast(? as varchar) from rdb$database`, "testing")
+		_, err = tx.Exec(ctx, `select cast(? as varchar(255)) from rdb$database`, "testing")
 		require.NoError(t, err)
 		err = tx.Commit(ctx)
 		require.NoError(t, err)
 
 		require.Len(t, queries, 1)
-		require.Equal(t, `select cast(? as varchar) from rdb$database`, queries[0])
+		require.Equal(t, `select cast(? as varchar(255)) from rdb$database`, queries[0])
 	})
 }

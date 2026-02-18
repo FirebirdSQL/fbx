@@ -293,8 +293,8 @@ func TestPointerPointer(t *testing.T) {
 			scanArgs  []any
 			expected  allTypes
 		}{
-			{"select cast(? as varchar) from rdb$database", []any{expected.s}, []any{&actual.s}, allTypes{s: expected.s}},
-			{"select cast(? as varchar) from rdb$database", []any{zero.s}, []any{&actual.s}, allTypes{}},
+			{"select cast(? as varchar(255)) from rdb$database", []any{expected.s}, []any{&actual.s}, allTypes{s: expected.s}},
+			{"select cast(? as varchar(255)) from rdb$database", []any{zero.s}, []any{&actual.s}, allTypes{}},
 			{"select cast(? as smallint) from rdb$database", []any{expected.i16}, []any{&actual.i16}, allTypes{i16: expected.i16}},
 			{"select cast(? as smallint) from rdb$database", []any{zero.i16}, []any{&actual.i16}, allTypes{}},
 			{"select cast(? as integer) from rdb$database", []any{expected.i32}, []any{&actual.i32}, allTypes{i32: expected.i32}},
@@ -346,7 +346,7 @@ func TestPointerPointerNonZero(t *testing.T) {
 		f := "foo"
 		dest := &f
 
-		err := conn.QueryRow(ctx, "select cast(? as varchar) from rdb$database", nil).Scan(&dest)
+		err := conn.QueryRow(ctx, "select cast(? as varchar(255)) from rdb$database", nil).Scan(&dest)
 		if err != nil {
 			t.Errorf("Unexpected failure scanning: %v", err)
 		}
@@ -425,7 +425,7 @@ func TestEncodeTypeRename(t *testing.T) {
 		conn.TypeMap().RegisterDefaultFbType(inString, "varchar")
 		conn.TypeMap().RegisterDefaultFbType(inBool, "boolean")
 
-		err := conn.QueryRow(ctx, "select cast(? as bigint), cast(? as bigint), cast(? as smallint), cast(? as integer), cast(? as bigint), cast(? as bigint), cast(? as bigint), cast(? as bigint), cast(? as bigint), cast(? as bigint), cast(? as varchar), cast(? as boolean) from rdb$database",
+		err := conn.QueryRow(ctx, "select cast(? as bigint), cast(? as bigint), cast(? as smallint), cast(? as integer), cast(? as bigint), cast(? as bigint), cast(? as bigint), cast(? as bigint), cast(? as bigint), cast(? as bigint), cast(? as varchar(255)), cast(? as boolean) from rdb$database",
 			inInt, inInt8, inInt16, inInt32, inInt64, inUint, inUint8, inUint16, inUint32, inUint64, inString, inBool,
 		).Scan(&outInt, &outInt8, &outInt16, &outInt32, &outInt64, &outUint, &outUint8, &outUint16, &outUint32, &outUint64, &outString, &outBool)
 		if err != nil {

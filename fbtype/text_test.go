@@ -15,7 +15,7 @@ func (someFmtStringer) String() string {
 }
 
 func TestTextCodec(t *testing.T) {
-	for _, fbTypeName := range []string{"varchar"} {
+	for _, fbTypeName := range []string{"varchar(255)"} {
 		fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, fbTypeName, []fbxtest.ValueRoundTripTest{
 			{Param: fbtype.Text{String: "", Valid: true}, Result: new(fbtype.Text), Test: isExpectedEq(fbtype.Text{String: "", Valid: true})},
 			{Param: fbtype.Text{String: "foo", Valid: true}, Result: new(fbtype.Text), Test: isExpectedEq(fbtype.Text{String: "foo", Valid: true})},

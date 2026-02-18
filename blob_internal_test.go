@@ -16,6 +16,8 @@ import (
 	"rdb.red-soft.ru/fbx/fbproto"
 )
 
+var engineMajorRegexp = regexp.MustCompile(`\d+`)
+
 func TestBlobExplicitTxTextLengthAndEncoding(t *testing.T) {
 	ctx := context.Background()
 	runWithBlobStreamModesInternal(ctx, t, nil, func(ctx context.Context, t testing.TB, conn *Conn) {
@@ -162,7 +164,7 @@ func engineVersionSupportsInlineBlobs(version string) bool {
 }
 
 func parseEngineMajorVersion(version string) (int, bool) {
-	match := regexp.MustCompile(`\d+`).FindString(version)
+	match := engineMajorRegexp.FindString(version)
 	if match == "" {
 		return 0, false
 	}
@@ -204,7 +206,7 @@ func runWithBlobStreamModesInternal(
 
 func createBlobTestTableInternal(ctx context.Context, t testing.TB, conn *Conn, columns string) string {
 	t.Helper()
-	table := fmt.Sprintf("FBX_BLOB_TX_TEST_%d", time.Now().UnixNano())
+	table := fmt.Sprintf("FBXBTX_%x", time.Now().UnixNano())
 	_, err := conn.Exec(ctx, fmt.Sprintf("create table %s (%s)", table, columns))
 	require.NoError(t, err)
 	t.Cleanup(func() {

@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbconn"
 	"rdb.red-soft.ru/fbx/fbxpool"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // Conn.Release is an asynchronous process that returns immediately. There is no signal when the actual work is
@@ -58,7 +58,7 @@ type queryRower interface {
 
 func testQueryRow(t *testing.T, ctx context.Context, db queryRower) {
 	var what, who string
-	err := db.QueryRow(ctx, "select 'hello', cast(? as varchar) from rdb$database", "world").Scan(&what, &who)
+	err := db.QueryRow(ctx, "select 'hello', cast(? as varchar(255)) from rdb$database", "world").Scan(&what, &who)
 	assert.NoError(t, err)
 	assert.Equal(t, "hello", what)
 	assert.Equal(t, "world", who)

@@ -3,6 +3,9 @@ package fbconn_test
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,6 +18,12 @@ var generateSeriesTemplate = `WITH RECURSIVE generate_series(%[3]s)
 AS (SELECT %[1]d FROM RDB$DATABASE UNION ALL SELECT (%[3]s + 1)
 FROM generate_series WHERE %[3]s < %[2]d)
 SELECT %[3]s FROM generate_series`
+
+var (
+	serverMajorVersionCheckOnce sync.Once
+	serverMajorVersionValue     int
+	engineMajorRegexp           = regexp.MustCompile(`\d+`)
+)
 
 func generateSeriesQuery(begin, end int, fieldName string) string {
 	if len(fieldName) == 0 {
@@ -47,4 +56,33 @@ func ensureConnValid(t *testing.T, fbConn *fbconn.FbConn) {
 	assert.Equal(t, []byte{0x0, 0x0, 0x0, 0x1}, result.Rows[0][0])
 	assert.Equal(t, []byte{0x0, 0x0, 0x0, 0x2}, result.Rows[1][0])
 	assert.Equal(t, []byte{0x0, 0x0, 0x0, 0x3}, result.Rows[2][0])
+}
+
+func getServerMajorVersion(ctx context.Context, t testing.TB, conn *fbconn.FbConn) int {
+	t.Helper()
+	serverMajorVersionCheckOnce.Do(func() {
+		result := conn.Exec(ctx, "select rdb$get_context('SYSTEM','ENGINE_VERSION') from rdb$database").Read()
+		require.NoError(t, result.Err)
+		require.NotEmpty(t, result.Rows)
+		require.NotEmpty(t, result.Rows[0])
+		require.NotNil(t, result.Rows[0][0])
+
+		version := string(result.Rows[0][0])
+		major, ok := parseEngineMajorVersion(version)
+		require.Truef(t, ok, "failed to parse engine version: %q", version)
+		serverMajorVersionValue = major
+	})
+	return serverMajorVersionValue
+}
+
+func parseEngineMajorVersion(version string) (int, bool) {
+	match := engineMajorRegexp.FindString(version)
+	if match == "" {
+		return 0, false
+	}
+	major, err := strconv.Atoi(match)
+	if err != nil {
+		return 0, false
+	}
+	return major, true
 }
