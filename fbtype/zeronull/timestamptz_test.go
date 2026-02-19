@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbtype/zeronull"
 	"rdb.red-soft.ru/fbx/fbxtest"
 )
@@ -19,6 +20,12 @@ func isExpectedEqTimestamptz(a any) func(any) bool {
 }
 
 func TestTimestamptzTranscode(t *testing.T) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
+		if getServerMajorVersionForConn(ctx, tb, conn) <= 3 {
+			t.Skip("timestamp with time zone is not supported by server engine version <= 3")
+		}
+	})
+
 	fbxtest.RunValueRoundTripTests(context.Background(), t, defaultConnTestRunner, nil, "timestamp with time zone", []fbxtest.ValueRoundTripTest{
 		{
 			Param:  (zeronull.Timestamptz)(time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)),

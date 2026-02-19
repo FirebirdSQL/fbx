@@ -976,6 +976,10 @@ func TestStmtQueryContextSuccess(t *testing.T) {
 
 func TestRowsColumnTypes(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		if getServerMajorVersion(t, db) <= 3 {
+			t.Skip("time with time zone is not supported by server engine version <= 3")
+		}
+
 		columnTypesTests := []struct {
 			Name     string
 			TypeName string

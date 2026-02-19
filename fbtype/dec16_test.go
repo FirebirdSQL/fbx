@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
 )
@@ -70,6 +71,11 @@ func isExpectedEqString(want string) func(any) bool {
 
 func TestDecFloat16Codec_RoundTrip_DB(t *testing.T) {
 	t.Parallel()
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
+		if getServerMajorVersionForConn(ctx, tb, conn) <= 3 {
+			t.Skip("decfloat(16) is not supported by server engine version <= 3")
+		}
+	})
 
 	type tv struct {
 		in  string

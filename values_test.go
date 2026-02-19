@@ -63,6 +63,10 @@ func TestTimestampTzTranscode(t *testing.T) {
 	defer cancel()
 
 	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		if getServerMajorVersionForConn(ctx, t, conn) <= 3 {
+			t.Skip("timestamp with time zone is not supported by server engine version <= 3")
+		}
+
 		inputTime := time.Date(2013, 1, 2, 3, 4, 5, 600000, time.Local)
 
 		var outputTime time.Time

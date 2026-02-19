@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
 )
@@ -95,6 +96,11 @@ func isExpectedEqFloat64(want float64) func(any) bool {
 
 func TestDecFloat34Codec_RoundTrip_DB(t *testing.T) {
 	t.Parallel()
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
+		if getServerMajorVersionForConn(ctx, tb, conn) <= 3 {
+			t.Skip("decfloat(34) is not supported by server engine version <= 3")
+		}
+	})
 
 	type tc struct {
 		label     string

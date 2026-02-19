@@ -8,11 +8,18 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
 )
 
 func TestInt128Transcode(t *testing.T) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
+		if getServerMajorVersionForConn(ctx, tb, conn) <= 3 {
+			t.Skip("int128 is not supported by server engine version <= 3")
+		}
+	})
+
 	max := new(big.Int).Lsh(big.NewInt(1), 127)
 	max.Sub(max, big.NewInt(1))
 
