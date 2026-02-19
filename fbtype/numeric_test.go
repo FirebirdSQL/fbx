@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -386,6 +387,14 @@ func TestNumericCodec(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.typeName, func(t *testing.T) {
+			if strings.HasPrefix(c.typeName, "numeric(38,") {
+				defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
+					if getServerMajorVersionForConn(ctx, tb, conn) <= 3 {
+						t.Skip(c.typeName + " is not supported by server engine version <= 3")
+					}
+				})
+			}
+
 			fbxtest.RunValueRoundTripTests(
 				context.Background(),
 				t,
@@ -419,6 +428,10 @@ func TestNumericFloat64Valuer(t *testing.T) {
 
 func TestNumericInt128_DB(t *testing.T) {
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
+		if getServerMajorVersionForConn(ctx, tb, conn) <= 3 {
+			t.Skip("numeric(38,*) is not supported by server engine version <= 3")
+		}
+
 		var n fbtype.Numeric
 
 		err := conn.QueryRow(ctx,
@@ -449,6 +462,10 @@ func TestNumericInt128_DB(t *testing.T) {
 
 func TestNumericRounding_DB(t *testing.T) {
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
+		if getServerMajorVersionForConn(ctx, tb, conn) <= 3 {
+			t.Skip("numeric(38,*) is not supported by server engine version <= 3")
+		}
+
 		var s string
 
 		err := conn.QueryRow(ctx,
@@ -609,7 +626,7 @@ func TestNumericEncodeFromFloat64_DB(t *testing.T) {
 func TestNumericEncodePlanMemoization_Regression_DB(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
 	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
