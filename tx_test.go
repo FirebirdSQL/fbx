@@ -275,6 +275,12 @@ func TestBeginIsoLevels(t *testing.T) {
 	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 
+	serverMajorVersion := getServerMajorVersionForConn(context.Background(), t, conn)
+	readCommittedIsoLevel := 4
+	if serverMajorVersion <= 3 {
+		readCommittedIsoLevel = 2
+	}
+
 	isoLevels := []fbx.TxIsoLevel{fbx.Serializable, fbx.RepeatableRead, fbx.ReadCommitted}
 	for _, iso := range isoLevels {
 		tx, err := conn.BeginTx(context.Background(), fbx.TxOptions{IsoLevel: iso})
@@ -289,7 +295,7 @@ func TestBeginIsoLevels(t *testing.T) {
 		levels := map[fbx.TxIsoLevel]int{
 			fbx.Serializable:   0,
 			fbx.RepeatableRead: 1,
-			fbx.ReadCommitted:  4,
+			fbx.ReadCommitted:  readCommittedIsoLevel,
 		}
 
 		if level != levels[iso] {

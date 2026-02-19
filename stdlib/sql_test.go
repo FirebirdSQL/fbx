@@ -707,12 +707,18 @@ func TestConnBeginTxIsolation(t *testing.T) {
 		err := db.QueryRow("select mon$isolation_mode from mon$transactions where mon$transaction_id = current_transaction").Scan(&defaultMode)
 		require.NoError(t, err)
 
+		serverMajorVersion := getServerMajorVersion(t, db)
+		readCommittedFbIso := 4
+		if serverMajorVersion <= 3 {
+			readCommittedFbIso = 2
+		}
+
 		supportedTests := []struct {
 			sqlIso sql.IsolationLevel
 			fbIso  int
 		}{
 			{sqlIso: sql.LevelDefault, fbIso: defaultMode},
-			{sqlIso: sql.LevelReadCommitted, fbIso: 4},
+			{sqlIso: sql.LevelReadCommitted, fbIso: readCommittedFbIso},
 			{sqlIso: sql.LevelRepeatableRead, fbIso: 1},
 			{sqlIso: sql.LevelSnapshot, fbIso: 1},
 			{sqlIso: sql.LevelSerializable, fbIso: 0},
