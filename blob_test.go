@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +16,8 @@ import (
 	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbproto"
 )
+
+var engineVersionRegexp = regexp.MustCompile(`^\s*(\d+)\.(\d+)\.(\d+)`)
 
 func TestBlobReadBytesAndReader(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -259,8 +263,28 @@ func skipIfInlineBlobsUnsupported(ctx context.Context, t testing.TB, conn *fbx.C
 }
 
 func engineVersionSupportsInlineBlobs(version string) bool {
-	major, ok := parseEngineMajorVersion(version)
-	return ok && major >= 4
+	return parseEngineVersionNumber(version) >= 50003
+}
+
+func parseEngineVersionNumber(version string) int {
+	matches := engineVersionRegexp.FindStringSubmatch(version)
+	if len(matches) != 4 {
+		panic(fmt.Sprintf("failed to parse server engine version %q: expected semantic version major.minor.patch", version))
+	}
+	major := mustAtoiOrPanic("major", matches[1], version)
+	minor := mustAtoiOrPanic("minor", matches[2], version)
+	patch := mustAtoiOrPanic("patch", matches[3], version)
+
+	// Normalize as MAJOR*10000 + MINOR*100 + PATCH for stable numeric comparisons.
+	return major*10000 + minor*100 + patch
+}
+
+func mustAtoiOrPanic(partName, value, version string) int {
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse %s version part %q from engine version %q: %v", partName, value, version, err))
+	}
+	return n
 }
 
 func TestBlobExecParamFromFile(t *testing.T) {
