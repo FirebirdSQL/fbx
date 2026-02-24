@@ -13,7 +13,7 @@ middlename would be stored as a NULL.
 		lastname := "Smith"
 		_, err := conn.Exec(
 			ctx,
-			"insert into people(firstname, middlename, lastname) values($1, $2, $3)",
+			"insert into people(firstname, middlename, lastname) values(?, ?, ?)",
 			zeronull.Text(firstname),
 			zeronull.Text(middlename),
 			zeronull.Text(lastname),

@@ -1,5 +1,3 @@
-// Code generated from pgtype/zeronull/int.go.erb. DO NOT EDIT.
-
 package zeronull
 
 import (
