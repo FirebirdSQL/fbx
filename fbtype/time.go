@@ -4,8 +4,10 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"strconv"
+	"time"
 
 	"rdb.red-soft.ru/fbx/fbproto/utils"
+	"rdb.red-soft.ru/fbx/internal/pgio"
 )
 
 const (
@@ -54,12 +56,22 @@ func (t *Time) Scan(src any) error {
 
 	switch src := src.(type) {
 	case string:
-		err := scanPlanTextAnyToTimeScanner{}.Scan([]byte(src), t)
+		usec, err := parseTimeString(src)
 		if err != nil {
 			t.Microseconds = 0
 			t.Valid = false
+			return err
 		}
-		return err
+		t.Microseconds = usec
+		t.Valid = true
+		return nil
+	case time.Time:
+		t.Microseconds = int64(src.Hour())*microsecondsPerHour +
+			int64(src.Minute())*microsecondsPerMinute +
+			int64(src.Second())*microsecondsPerSecond +
+			int64(src.Nanosecond())/1000
+		t.Valid = true
+		return nil
 	}
 
 	return fmt.Errorf("cannot scan %T", src)
@@ -94,6 +106,8 @@ func (TimeCodec) PlanEncode(m *Map, typeid uint32, subType int32, length uint32,
 		return encodePlanTimeCodecBinary{}
 	case string:
 		return encodePlanTimeCodecBinaryString{}
+	case time.Time:
+		return encodePlanTimeCodecBinaryTime{}
 	}
 
 	return nil
@@ -211,6 +225,27 @@ func (encodePlanTimeCodecText) Encode(value any, buf []byte) (newBuf []byte, err
 	return append(buf, s...), nil
 }
 
+type encodePlanTimeCodecBinaryTime struct{}
+
+func (encodePlanTimeCodecBinaryTime) Encode(value any, buf []byte) ([]byte, error) {
+	t := value.(time.Time)
+
+	usec := int64(t.Hour())*microsecondsPerHour +
+		int64(t.Minute())*microsecondsPerMinute +
+		int64(t.Second())*microsecondsPerSecond +
+		int64(t.Nanosecond())/1000
+
+	if usec < 0 || usec >= microsecondsPerDay {
+		return nil, fmt.Errorf("fbtype: TIME value out of range (µs since midnight: %d)", usec)
+	}
+
+	ticks := uint32(usec / 100)
+
+	buf = pgio.AppendInt32(buf, int32(ticks))
+
+	return buf, nil
+}
+
 func (TimeCodec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
 	switch target.(type) {
 	case TimeScanner:
@@ -219,7 +254,41 @@ func (TimeCodec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, s
 		return scanPlanBinaryTimeToTextScanner{}
 	case *string:
 		return scanPlanBinaryTimeToString{}
+	case *time.Time:
+		return scanPlanBinaryTimeToTime{}
 	}
+
+	return nil
+}
+
+type scanPlanBinaryTimeToTime struct{}
+
+func (scanPlanBinaryTimeToTime) Scan(src []byte, dst any) error {
+	target := dst.(*time.Time)
+
+	if src == nil {
+		return fmt.Errorf("cannot scan NULL into *time.Time")
+	}
+
+	ticks := utils.Bytes_to_bint32(src)
+	usec := int64(ticks) * 100
+
+	if usec < 0 || usec >= microsecondsPerDay {
+		return fmt.Errorf("TIME value out of range: %d microseconds", usec)
+	}
+
+	hours := usec / microsecondsPerHour
+	usec %= microsecondsPerHour
+
+	minutes := usec / microsecondsPerMinute
+	usec %= microsecondsPerMinute
+
+	seconds := usec / microsecondsPerSecond
+	usec %= microsecondsPerSecond
+
+	nanos := usec * 1000
+
+	*target = time.Date(2000, 1, 1, int(hours), int(minutes), int(seconds), int(nanos), time.UTC)
 
 	return nil
 }
@@ -285,60 +354,6 @@ func (scanPlanBinaryTimeToString) Scan(src []byte, dst any) error {
 	return nil
 }
 
-type scanPlanTextAnyToTimeScanner struct{}
-
-func (scanPlanTextAnyToTimeScanner) Scan(src []byte, dst any) error {
-	scanner := (dst).(TimeScanner)
-
-	if src == nil {
-		return scanner.ScanTime(Time{})
-	}
-
-	s := string(src)
-
-	if len(s) < 8 || s[2] != ':' || s[5] != ':' {
-		return fmt.Errorf("cannot decode %v into Time", s)
-	}
-
-	hours, err := strconv.ParseInt(s[0:2], 10, 64)
-	if err != nil {
-		return fmt.Errorf("cannot decode %v into Time", s)
-	}
-	usec := hours * microsecondsPerHour
-
-	minutes, err := strconv.ParseInt(s[3:5], 10, 64)
-	if err != nil {
-		return fmt.Errorf("cannot decode %v into Time", s)
-	}
-	usec += minutes * microsecondsPerMinute
-
-	seconds, err := strconv.ParseInt(s[6:8], 10, 64)
-	if err != nil {
-		return fmt.Errorf("cannot decode %v into Time", s)
-	}
-	usec += seconds * microsecondsPerSecond
-
-	if len(s) > 9 {
-		if s[8] != '.' || len(s) > 15 {
-			return fmt.Errorf("cannot decode %v into Time", s)
-		}
-
-		fraction := s[9:]
-		n, err := strconv.ParseInt(fraction, 10, 64)
-		if err != nil {
-			return fmt.Errorf("cannot decode %v into Time", s)
-		}
-
-		for i := len(fraction); i < 6; i++ {
-			n *= 10
-		}
-
-		usec += n
-	}
-
-	return scanner.ScanTime(Time{Microseconds: usec, Valid: true})
-}
-
 func (c TimeCodec) DecodeDatabaseSQLValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
 	return codecDecodeToTextFormat(c, m, typeid, subType, length, scale, format, src)
 }
@@ -376,4 +391,48 @@ func decodeTimeBinary(src []byte) (int64, string, error) {
 	formatted := fmt.Sprintf("%02d:%02d:%02d.%06d", hours, minutes, seconds, usec)
 
 	return totalUsec, formatted, nil
+}
+
+func parseTimeString(s string) (usec int64, err error) {
+	if len(s) < 8 || s[2] != ':' || s[5] != ':' {
+		return 0, fmt.Errorf("cannot decode %v into Time", s)
+	}
+
+	hours, err := strconv.ParseInt(s[0:2], 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("cannot decode %v into Time", s)
+	}
+	usec = hours * microsecondsPerHour
+
+	minutes, err := strconv.ParseInt(s[3:5], 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("cannot decode %v into Time", s)
+	}
+	usec += minutes * microsecondsPerMinute
+
+	seconds, err := strconv.ParseInt(s[6:8], 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("cannot decode %v into Time", s)
+	}
+	usec += seconds * microsecondsPerSecond
+
+	if len(s) > 9 {
+		if s[8] != '.' || len(s) > 15 {
+			return 0, fmt.Errorf("cannot decode %v into Time", s)
+		}
+
+		fraction := s[9:]
+		n, err := strconv.ParseInt(fraction, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("cannot decode %v into Time", s)
+		}
+
+		for i := len(fraction); i < 6; i++ {
+			n *= 10
+		}
+
+		usec += n
+	}
+
+	return usec, nil
 }

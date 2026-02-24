@@ -115,6 +115,10 @@ func init() {
 		fbproto.SQL_TYPE_INT64:        1,
 		fbproto.SQL_TYPE_TIMESTAMP:    1,
 		fbproto.SQL_TYPE_TIMESTAMP_TZ: 1,
+		fbproto.SQL_TYPE_TIME:         1,
+		fbproto.SQL_TYPE_INT128:       1,
+		fbproto.SQL_TYPE_DEC64:        1,
+		fbproto.SQL_TYPE_DEC128:       1,
 	}
 }
 
@@ -724,10 +728,8 @@ func (r *Rows) ColumnTypeScanType(index int) reflect.Type {
 		return reflect.TypeOf(int16(0))
 	case fbproto.SQL_TYPE_BOOLEAN:
 		return reflect.TypeOf(false)
-	case fbproto.SQL_TYPE_DATE, fbproto.SQL_TYPE_TIMESTAMP, fbproto.SQL_TYPE_TIMESTAMP_TZ:
+	case fbproto.SQL_TYPE_DATE, fbproto.SQL_TYPE_TIMESTAMP, fbproto.SQL_TYPE_TIMESTAMP_TZ, fbproto.SQL_TYPE_TIME:
 		return reflect.TypeOf(time.Time{})
-	// case fbtype.ByteaTypeID:
-	// 	return reflect.TypeOf([]byte(nil))
 	default:
 		return reflect.TypeOf("")
 	}
@@ -762,23 +764,6 @@ func (r *Rows) Next(dest []driver.Value) error {
 					err := scanPlan.Scan(src, &d)
 					return d, err
 				}
-			// case fbtype.ByteaTypeID:
-			// 	var d []byte
-			// 	scanPlan := m.PlanScan(dataTypeTypeID, fd.Subtype, fd.Length, fd.Scale, format, &d)
-			// 	r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
-			// 		err := scanPlan.Scan(src, &d)
-			// 		return d, err
-			// 	}
-			// case fbtype.CIDOID, fbtype.OIDOID, fbtype.XIDOID:
-			// 	var d fbtype.Uint32
-			// 	scanPlan := m.PlanScan(dataTypeTypeID, fd.Subtype, fd.Length, fd.Scale, format, &d)
-			// 	r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
-			// 		err := scanPlan.Scan(src, &d)
-			// 		if err != nil {
-			// 			return nil, err
-			// 		}
-			// 		return d.Value()
-			// 	}
 			case fbproto.SQL_TYPE_DATE:
 				var d fbtype.Date
 				scanPlan := m.PlanScan(dataTypeTypeID, fd.Subtype, fd.Length, fd.Scale, format, &d)
@@ -853,17 +838,6 @@ func (r *Rows) Next(dest []driver.Value) error {
 						return d, err
 					}
 				}
-
-			// case fbtype.JSONOID, fbtype.JSONBOID:
-			// 	var d []byte
-			// 	scanPlan := m.PlanScan(dataTypeTypeID, fd.Subtype, fd.Length, fd.Scale, format, &d)
-			// 	r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
-			// 		err := scanPlan.Scan(src, &d)
-			// 		if err != nil {
-			// 			return nil, err
-			// 		}
-			// 		return d, nil
-			// 	}
 			case fbproto.SQL_TYPE_TIMESTAMP:
 				var d fbtype.Timestamp
 				scanPlan := m.PlanScan(dataTypeTypeID, fd.Subtype, fd.Length, fd.Scale, format, &d)
@@ -884,16 +858,36 @@ func (r *Rows) Next(dest []driver.Value) error {
 					}
 					return d.Value()
 				}
-			// case fbtype.XMLOID:
-			// 	var d []byte
-			// 	scanPlan := m.PlanScan(dataTypeTypeID, fd.Subtype, fd.Length, fd.Scale, format, &d)
-			// 	r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
-			// 		err := scanPlan.Scan(src, &d)
-			// 		if err != nil {
-			// 			return nil, err
-			// 		}
-			// 		return d, nil
-			// 	}
+			case fbproto.SQL_TYPE_TIME:
+				var d time.Time
+				scanPlan := m.PlanScan(dataTypeTypeID, fd.Subtype, fd.Length, fd.Scale, format, &d)
+				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
+					err := scanPlan.Scan(src, &d)
+					return d, err
+				}
+			case fbproto.SQL_TYPE_INT128:
+				if isNumericSubtype(fd.Subtype) {
+					var d float64
+					scanPlan := m.PlanScan(dataTypeTypeID, fd.Subtype, fd.Length, fd.Scale, format, &d)
+					r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
+						err := scanPlan.Scan(src, &d)
+						return d, err
+					}
+				} else {
+					var d string
+					scanPlan := m.PlanScan(dataTypeTypeID, fd.Subtype, fd.Length, fd.Scale, format, &d)
+					r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
+						err := scanPlan.Scan(src, &d)
+						return d, err
+					}
+				}
+			case fbproto.SQL_TYPE_DEC64, fbproto.SQL_TYPE_DEC128:
+				var d string
+				scanPlan := m.PlanScan(dataTypeTypeID, fd.Subtype, fd.Length, fd.Scale, format, &d)
+				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
+					err := scanPlan.Scan(src, &d)
+					return d, err
+				}
 			default:
 				if fd.Subtype != fbproto.CS_BINARY {
 					var d string
