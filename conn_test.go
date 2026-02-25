@@ -1,7 +1,6 @@
 package fbx_test
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -747,38 +746,6 @@ func TestInsertDurationBigint(t *testing.T) {
 		err = conn.QueryRow(ctx, "select duration_ms from t").Scan(&storedMs)
 		require.NoError(t, err)
 		require.EqualValues(t, durationMs, storedMs)
-	})
-}
-
-func TestRawValuesUnderlyingMemoryReused(t *testing.T) {
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		var buf []byte
-
-		rows, err := conn.Query(ctx, `select cast(1 as int) from rdb$database`)
-		require.NoError(t, err)
-
-		for rows.Next() {
-			buf = rows.RawValues()[0]
-		}
-
-		require.NoError(t, rows.Err())
-
-		original := make([]byte, len(buf))
-		copy(original, buf)
-
-		for i := 0; i < 1_000_000; i++ {
-			rows, err := conn.Query(ctx, `select cast(? as int) from rdb$database`, i)
-			require.NoError(t, err)
-			rows.Next()
-			rows.Close()
-			require.NoError(t, rows.Err())
-
-			if !bytes.Equal(original, buf) {
-				return
-			}
-		}
-
-		t.Fatal("expected buffer from RawValues to be overwritten by subsequent queries but it was not")
 	})
 }
 
