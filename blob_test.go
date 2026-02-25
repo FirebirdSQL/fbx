@@ -23,7 +23,11 @@ func TestBlobReadBytesAndReader(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	runWithBlobStreamModes(ctx, t, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+	runWithBlobStreamModes(ctx, t, func(ctx context.Context, t testing.TB, config *fbx.ConnConfig) {
+		// Disable inline blob path so seek behavior is determined only by stream/segmented mode.
+		config.MaxInlineBlobSize = 0
+		config.MaxBlobCacheSize = 0
+	}, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		table := createBlobTestTable(ctx, t, conn)
 		dataA := makeBlobData(16384*2 + 17)
 		dataB := makeBlobData(16384 + 9)
@@ -64,13 +68,19 @@ func TestBlobReadBytesAndReader(t *testing.T) {
 
 		seeker, ok := binReader.(io.Seeker)
 		require.True(t, ok)
+		readOffset := 0
 		_, err = seeker.Seek(10, io.SeekStart)
-		require.NoError(t, err)
+		if conn.Config().UseStreamBlobs {
+			require.NoError(t, err)
+			readOffset = 10
+		} else {
+			require.ErrorContains(t, err, "invalid BLOB type for operation")
+		}
 		buf := make([]byte, 25)
 		n, err := binReader.Read(buf)
 		require.NoError(t, err)
 		require.Equal(t, 25, n)
-		require.Equal(t, dataB[10:35], buf)
+		require.Equal(t, dataB[readOffset:readOffset+25], buf)
 		require.NoError(t, binReader.Close())
 		_, err = binReader.Read(make([]byte, 1))
 		require.EqualError(t, err, "blob is closed")

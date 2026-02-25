@@ -1370,6 +1370,10 @@ type ResultReader struct {
 
 	fieldDescriptions []FieldDescription
 	rowValues         [][]byte
+	bufferedRows      []bufferedRow
+	bufferedCols      []bufferedCol
+	bufferedArena     []byte
+	bufferedNext      int
 	queryStatus       QueryStatus
 	commandConcluded  bool
 	closed            bool
@@ -1385,6 +1389,17 @@ type ResultReader struct {
 	rowsInfoPopulated    bool
 
 	boundTransaction *FBTransaction
+}
+
+const bufferedColNullLength = -1
+
+type bufferedRow struct {
+	colStart int
+}
+
+type bufferedCol struct {
+	start  int
+	length int
 }
 
 // Result is the saved query response that is returned by calling Read on a ResultReader.
@@ -1438,6 +1453,9 @@ func (rr *ResultReader) NextRow() bool {
 		}
 		rr.rowValues = rr.singleton.RowData
 		rr.singleton = nil
+		return true
+	}
+	if rr.popBufferedRow() {
 		return true
 	}
 
@@ -1496,28 +1514,97 @@ func (rr *ResultReader) NextRow() bool {
 			return false
 		}
 	}
+	if !rr.bufferCurrentFetchRows() {
+		return false
+	}
+	return rr.popBufferedRow()
+}
 
-	row, msg, err := rr.fbConn.client.ReceiveSQLData(rr.statementDescription.StatementInfo.FieldDescriptors)
-	if err != nil {
-		rr.fbConn.asyncClose()
-		rr.concludeCommand(QueryStatus{}, err)
+func (rr *ResultReader) popBufferedRow() bool {
+	if rr.bufferedNext >= len(rr.bufferedRows) {
 		return false
 	}
-	switch m := msg.(type) {
-	case *fbproto.OpFetchResponse:
-		rr.fetchResp = m
-	case *fbproto.ErrorResponse:
-		rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(m))
-		return false
-	default:
-		panic(fmt.Sprintf("wrong response message type %T instead expected OpFetchResponse or ErrorResponse", m))
+
+	colCount := len(rr.fieldDescriptions)
+	if cap(rr.rowValues) < colCount {
+		rr.rowValues = make([][]byte, colCount)
+	} else {
+		rr.rowValues = rr.rowValues[:colCount]
 	}
-	rr.rowValues = row.RowData
+
+	row := rr.bufferedRows[rr.bufferedNext]
+	cols := rr.bufferedCols[row.colStart : row.colStart+colCount]
+	for i := 0; i < colCount; i++ {
+		col := cols[i]
+		if col.length == bufferedColNullLength {
+			rr.rowValues[i] = nil
+			continue
+		}
+		if col.length == 0 {
+			// Keep non-NULL empty values distinguishable from NULL.
+			rr.rowValues[i] = []byte{}
+			continue
+		}
+		end := col.start + col.length
+		rr.rowValues[i] = rr.bufferedArena[col.start:end:end]
+	}
+
+	rr.bufferedNext++
+	if rr.bufferedNext == len(rr.bufferedRows) {
+		rr.clearBufferedFetch()
+	}
+	return true
+}
+
+func (rr *ResultReader) bufferCurrentFetchRows() bool {
+	rr.clearBufferedFetch()
+	colCount := len(rr.fieldDescriptions)
+
+	for rr.fetchResp.MoreRows() {
+		row, msg, err := rr.fbConn.client.ReceiveSQLData(rr.statementDescription.StatementInfo.FieldDescriptors)
+		if err != nil {
+			rr.fbConn.asyncClose()
+			rr.concludeCommand(QueryStatus{}, err)
+			return false
+		}
+		switch m := msg.(type) {
+		case *fbproto.OpFetchResponse:
+			rr.fetchResp = m
+		case *fbproto.ErrorResponse:
+			rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(m))
+			return false
+		default:
+			panic(fmt.Sprintf("wrong response message type %T instead expected OpFetchResponse or ErrorResponse", m))
+		}
+
+		rowStart := len(rr.bufferedCols)
+		for i := 0; i < colCount; i++ {
+			col := row.RowData[i]
+			if col == nil {
+				rr.bufferedCols = append(rr.bufferedCols, bufferedCol{length: bufferedColNullLength})
+				continue
+			}
+			start := len(rr.bufferedArena)
+			rr.bufferedArena = append(rr.bufferedArena, col...)
+			rr.bufferedCols = append(rr.bufferedCols, bufferedCol{start: start, length: len(col)})
+		}
+		rr.bufferedRows = append(rr.bufferedRows, bufferedRow{colStart: rowStart})
+
+		if rr.fetchResp.EndOfCursor() {
+			rr.eoc = true
+		}
+	}
 	if rr.fetchResp.EndOfCursor() {
 		rr.eoc = true
 	}
-
 	return true
+}
+
+func (rr *ResultReader) clearBufferedFetch() {
+	rr.bufferedRows = rr.bufferedRows[:0]
+	rr.bufferedCols = rr.bufferedCols[:0]
+	rr.bufferedArena = rr.bufferedArena[:0]
+	rr.bufferedNext = 0
 }
 
 func (rr *ResultReader) drainCurrentFetch() {
@@ -1571,6 +1658,7 @@ func (rr *ResultReader) Close() (QueryStatus, error) {
 				}
 			}
 		}
+		rr.clearBufferedFetch()
 		rr.closed = true
 		rr.fbConn.unlock()
 		rr.fbConn.contextWatcher.Unwatch()
