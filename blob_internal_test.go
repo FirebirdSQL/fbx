@@ -167,15 +167,15 @@ func parseEngineVersionNumber(version string) int {
 	if len(matches) != 4 {
 		panic(fmt.Sprintf("failed to parse server engine version %q: expected semantic version major.minor.patch", version))
 	}
-	major := mustAtoiOrPanic("major", matches[1], version)
-	minor := mustAtoiOrPanic("minor", matches[2], version)
-	patch := mustAtoiOrPanic("patch", matches[3], version)
+	major := mustAtoi("major", matches[1], version)
+	minor := mustAtoi("minor", matches[2], version)
+	patch := mustAtoi("patch", matches[3], version)
 
 	// Normalize as MAJOR*10000 + MINOR*100 + PATCH for stable numeric comparisons.
 	return major*10000 + minor*100 + patch
 }
 
-func mustAtoiOrPanic(partName, value, version string) int {
+func mustAtoi(partName, value, version string) int {
 	n, err := strconv.Atoi(value)
 	if err != nil {
 		panic(fmt.Sprintf("failed to parse %s version part %q from engine version %q: %v", partName, value, version, err))
