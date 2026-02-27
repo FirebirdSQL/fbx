@@ -162,7 +162,7 @@ func TestUUIDtoFB(t *testing.T) {
 
 		var u2 fbtype.UUID
 		var s2 string
-		err = conn.QueryRow(ctx, "select uuid_to_char(u), ? from u", &u).Scan(&s2, &u2)
+		err = conn.QueryRow(ctx, "select uuid_to_char(u), cast(? as varchar(36)) from u", &u).Scan(&s2, &u2)
 		require.NoError(t, err)
 		assert.Equal(t, u2.String(), strings.ToLower(s2))
 	})
