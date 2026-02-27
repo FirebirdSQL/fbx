@@ -165,6 +165,11 @@ func TestParseConfigExtractsStatementCacheOptions(t *testing.T) {
 	config, err = fbx.ParseConfig("default_query_exec_mode=exec")
 	require.NoError(t, err)
 	require.Equal(t, fbx.QueryExecModeExec, config.DefaultQueryExecMode)
+
+	config, err = fbx.ParseConfig("fetch_batch_size=42")
+	require.NoError(t, err)
+	require.EqualValues(t, 42, config.FetchBatchSize)
+	require.Empty(t, config.RuntimeParams["fetch_batch_size"])
 }
 
 func TestParseConfigExtractsDefaultQueryExecMode(t *testing.T) {

@@ -90,6 +90,19 @@ func TestParseConfig(t *testing.T) {
 			},
 		},
 		{
+			name:       "database url fetch batch size",
+			connString: "firebird://jack:secret@localhost:5432/mydb?fetch_batch_size=123",
+			config: &fbconn.Config{
+				User:           "jack",
+				Password:       "secret",
+				Host:           "localhost",
+				Port:           5432,
+				Database:       "mydb",
+				FetchBatchSize: 123,
+				RuntimeParams:  map[string]string{},
+			},
+		},
+		{
 			name:       "database url missing password",
 			connString: "firebird://jack@localhost:5432/mydb",
 			config: &fbconn.Config{
@@ -227,6 +240,19 @@ func TestParseConfig(t *testing.T) {
 					"application_name": "fbxtest",
 					"search_path":      "myschema",
 				},
+			},
+		},
+		{
+			name:       "Key/value fetch batch size",
+			connString: "user=jack password=secret host=localhost port=5432 dbname=mydb fetch_batch_size=77",
+			config: &fbconn.Config{
+				User:           "jack",
+				Password:       "secret",
+				Host:           "localhost",
+				Port:           5432,
+				Database:       "mydb",
+				FetchBatchSize: 77,
+				RuntimeParams:  map[string]string{},
 			},
 		},
 		{
@@ -414,6 +440,14 @@ func TestParseConfigKVTrailingBackslash(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid backslash")
 }
 
+func TestParseConfigInvalidFetchBatchSize(t *testing.T) {
+	t.Parallel()
+
+	_, err := fbconn.ParseConfig("fetch_batch_size=0")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid fetch_batch_size")
+}
+
 func TestConfigCopyReturnsEqualConfig(t *testing.T) {
 	connString := "postgres://jack:secret@localhost:5432/mydb?application_name=fbxtest&search_path=myschema&connect_timeout=5"
 	original, err := fbconn.ParseConfig(connString)
@@ -494,6 +528,11 @@ func assertConfigsEqual(t *testing.T, expected, actual *fbconn.Config, testName 
 	assert.Equalf(t, expected.Password, actual.Password, "%s - Password", testName)
 	assert.Equalf(t, expected.ConnectTimeout, actual.ConnectTimeout, "%s - ConnectTimeout", testName)
 	assert.Equalf(t, expected.RuntimeParams, actual.RuntimeParams, "%s - RuntimeParams", testName)
+	expectedFetchBatchSize := expected.FetchBatchSize
+	if expectedFetchBatchSize == 0 {
+		expectedFetchBatchSize = fbconn.DefaultFetchBatchSize
+	}
+	assert.Equalf(t, expectedFetchBatchSize, actual.FetchBatchSize, "%s - FetchBatchSize", testName)
 	expectedPlugins := expected.AuthPluginList
 	if len(expectedPlugins) == 0 {
 		expectedPlugins = auth.DefaultPluginSequence()
@@ -525,7 +564,7 @@ func TestParseConfigEnv(t *testing.T) {
 		}
 	}
 
-	fbEnvvars := []string{"FBHOST", "FBPORT", "FBDATABASE", "FBUSER", "FBPASSWORD", "FBAPPNAME", "FBSSLMODE", "FBCONNECT_TIMEOUT", "FBSSLSNI", "FBTZ"}
+	fbEnvvars := []string{"FBHOST", "FBPORT", "FBDATABASE", "FBUSER", "FBPASSWORD", "FBAPPNAME", "FBSSLMODE", "FBCONNECT_TIMEOUT", "FBSSLSNI", "FBTZ", "FBFETCH_BATCH_SIZE"}
 
 	tests := []struct {
 		name    string
@@ -547,14 +586,15 @@ func TestParseConfigEnv(t *testing.T) {
 		{
 			name: "All environment",
 			envvars: map[string]string{
-				"FBHOST":            "123.123.123.123",
-				"FBPORT":            "7777",
-				"FBDATABASE":        "foo",
-				"FBUSER":            "bar",
-				"FBPASSWORD":        "baz",
-				"FBCONNECT_TIMEOUT": "10",
-				"FBAPPNAME":         "fbxtest",
-				"FBTZ":              "America/New_York",
+				"FBHOST":             "123.123.123.123",
+				"FBPORT":             "7777",
+				"FBDATABASE":         "foo",
+				"FBUSER":             "bar",
+				"FBPASSWORD":         "baz",
+				"FBCONNECT_TIMEOUT":  "10",
+				"FBAPPNAME":          "fbxtest",
+				"FBFETCH_BATCH_SIZE": "64",
+				"FBTZ":               "America/New_York",
 			},
 			config: &fbconn.Config{
 				Host:           "123.123.123.123",
@@ -563,6 +603,7 @@ func TestParseConfigEnv(t *testing.T) {
 				User:           "bar",
 				Password:       "baz",
 				ConnectTimeout: 10 * time.Second,
+				FetchBatchSize: 64,
 				RuntimeParams:  map[string]string{"application_name": "fbxtest", "timezone": "America/New_York"},
 			},
 		},
