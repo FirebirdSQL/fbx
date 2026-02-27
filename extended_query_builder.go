@@ -26,7 +26,7 @@ func (pb *ExtendedQueryBuilder) Build(ctx context.Context, conn *Conn, tx *dbTx,
 
 	if sd == nil {
 		for i := range args {
-			err := pb.appendParam(ctx, conn, tx, m, 0, 0, 0, 0, fbtype.TextFormatCode, args[i])
+			err := pb.appendParam(ctx, conn, tx, m, "", "", 0, 0, 0, 0, fbtype.TextFormatCode, args[i])
 			if err != nil {
 				err = fmt.Errorf("failed to encode args[%d]: %w", i, err)
 				return err
@@ -40,7 +40,7 @@ func (pb *ExtendedQueryBuilder) Build(ctx context.Context, conn *Conn, tx *dbTx,
 	}
 
 	for i := range args {
-		err := pb.appendParam(ctx, conn, tx, m, sd.Parameters[i].Type, sd.Parameters[i].Subtype, sd.Parameters[i].Length, sd.Parameters[i].Scale, -1, args[i])
+		err := pb.appendParam(ctx, conn, tx, m, sd.Parameters[i].OriginalTableName, sd.Parameters[i].OriginalName, sd.Parameters[i].Type, sd.Parameters[i].Subtype, sd.Parameters[i].Length, sd.Parameters[i].Scale, -1, args[i])
 		if err != nil {
 			err = fmt.Errorf("failed to encode args[%d]: %w", i, err)
 			return err
@@ -52,11 +52,11 @@ func (pb *ExtendedQueryBuilder) Build(ctx context.Context, conn *Conn, tx *dbTx,
 
 // appendParam appends a parameter to the query. format may be -1 to automatically choose the format. If arg is nil it
 // must be an untyped nil.
-func (pb *ExtendedQueryBuilder) appendParam(ctx context.Context, conn *Conn, tx *dbTx, m *fbtype.Map, typeId uint32, subType int32, length uint32, scale int32, format int16, arg any) error {
+func (pb *ExtendedQueryBuilder) appendParam(ctx context.Context, conn *Conn, tx *dbTx, m *fbtype.Map, relation, field string, typeId uint32, subType int32, length uint32, scale int32, format int16, arg any) error {
 	format = 1
 	if format == -1 {
 		preferredFormat := pb.chooseParameterFormatCode(m, typeId, arg)
-		preferredErr := pb.appendParam(ctx, conn, tx, m, typeId, subType, length, scale, preferredFormat, arg)
+		preferredErr := pb.appendParam(ctx, conn, tx, m, relation, field, typeId, subType, length, scale, preferredFormat, arg)
 		if preferredErr == nil {
 			return nil
 		}
@@ -68,7 +68,7 @@ func (pb *ExtendedQueryBuilder) appendParam(ctx context.Context, conn *Conn, tx 
 			otherFormat = TextFormatCode
 		}
 
-		otherErr := pb.appendParam(ctx, conn, tx, m, typeId, subType, length, scale, otherFormat, arg)
+		otherErr := pb.appendParam(ctx, conn, tx, m, relation, field, typeId, subType, length, scale, otherFormat, arg)
 		if otherErr == nil {
 			return nil
 		}
@@ -76,7 +76,7 @@ func (pb *ExtendedQueryBuilder) appendParam(ctx context.Context, conn *Conn, tx 
 		return preferredErr // return the error from the preferred format
 	}
 
-	v, err := pb.encodeParamValue(ctx, conn, tx, m, typeId, subType, length, scale, format, arg)
+	v, err := pb.encodeParamValue(ctx, conn, tx, m, relation, field, typeId, subType, length, scale, format, arg)
 	if err != nil {
 		return err
 	}
@@ -115,7 +115,7 @@ func (pb *ExtendedQueryBuilder) reset() {
 	}
 }
 
-func (pb *ExtendedQueryBuilder) encodeParamValue(ctx context.Context, conn *Conn, tx *dbTx, m *fbtype.Map, typeId uint32, subType int32, length uint32, scale int32, formatCode int16, arg any) ([]byte, error) {
+func (pb *ExtendedQueryBuilder) encodeParamValue(ctx context.Context, conn *Conn, tx *dbTx, m *fbtype.Map, relation, field string, typeId uint32, subType int32, length uint32, scale int32, formatCode int16, arg any) ([]byte, error) {
 	if pb.paramValueBytes == nil {
 		pb.paramValueBytes = make([]byte, 0, 128)
 	}
@@ -131,6 +131,16 @@ func (pb *ExtendedQueryBuilder) encodeParamValue(ctx context.Context, conn *Conn
 			return nil, nil
 		}
 		pb.paramValueBytes = append(pb.paramValueBytes, buf...)
+		return pb.paramValueBytes[pos:], nil
+	}
+
+	if fbconn.IsArrayType(typeId) {
+		arrayId, err := fbtype.GetArrayId(conn.fbConn, ctx, m, relation, field, arg)
+
+		if err != nil {
+			return nil, err
+		}
+		pb.paramValueBytes = append(pb.paramValueBytes, arrayId...)
 		return pb.paramValueBytes[pos:], nil
 	}
 

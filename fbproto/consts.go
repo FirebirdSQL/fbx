@@ -390,6 +390,48 @@ const (
 	Isc_spb_rpr_kill_shadows     = 0x40
 	Isc_spb_rpr_full             = 0x80
 
+	// BLR params
+	Isc_blr_short           = 7
+	Isc_blr_long            = 8
+	Isc_blr_quad            = 9
+	Isc_blr_float           = 10
+	Isc_blr_d_float         = 11
+	Isc_blr_sql_date        = 12
+	Isc_blr_sql_time        = 13
+	Isc_blr_text            = 14
+	Isc_blr_text2           = 15
+	Isc_blr_int64           = 16
+	Isc_blr_bool            = 23
+	Isc_blr_dec64           = 24
+	Isc_blr_dec128          = 25
+	Isc_blr_int128          = 26
+	Isc_blr_double          = 27
+	Isc_blr_sql_time_tz     = 28
+	Isc_blr_timestamp_tz    = 29
+	Isc_blr_ex_time_tz      = 30
+	Isc_blr_ex_timestamp_tz = 31
+	Isc_blr_timestamp       = 35
+	Isc_blr_varaying        = 37
+	Isc_blr_varaying2       = 38
+	Isc_blr_cstring         = 40
+	Isc_blr_cstring2        = 41
+	Isc_blr_blob            = 261
+
+	// SDL params
+	Isc_sdl_version1      = 1
+	Isc_sdl_relation      = 2
+	Isc_sdl_field         = 4
+	Isc_sdl_struct        = 6
+	Isc_sdl_variable      = 7
+	Isc_sdl_scalar        = 8
+	Isc_sdl_tiny_integer  = 9
+	Isc_sdl_long_integer  = 11
+	Isc_sdl_do2           = 34
+	Isc_sdl_do1           = 35
+	Isc_sdl_short_integer = 10
+	Isc_sdl_element       = 36
+	Isc_sdl_eoc           = 255
+
 	// Service Action Items
 	Isc_action_svc_backup           = 1
 	Isc_action_svc_restore          = 2
@@ -526,6 +568,9 @@ const (
 	Op_connect_request    = 53
 	Op_open_blob2         = 56
 	Op_create_blob2       = 57
+	Op_get_slice          = 58
+	Op_put_slice          = 59
+	Op_slice_response     = 60
 	Op_allocate_statement = 62
 	Op_execute            = 63
 	Op_exec_immediate     = 64

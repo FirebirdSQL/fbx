@@ -630,14 +630,6 @@ type anySliceArrayReflect struct {
 	slice reflect.Value
 }
 
-func (a anySliceArrayReflect) Dimensions() []ArrayDimension {
-	if a.slice.IsNil() {
-		return nil
-	}
-
-	return []ArrayDimension{{Length: int32(a.slice.Len()), LowerBound: 1}}
-}
-
 func (a anySliceArrayReflect) Index(i int) any {
 	return a.slice.Index(i).Interface()
 }
@@ -646,15 +638,23 @@ func (a anySliceArrayReflect) IndexType() any {
 	return reflect.New(a.slice.Type().Elem()).Elem().Interface()
 }
 
-func (a *anySliceArrayReflect) SetDimensions(dimensions []ArrayDimension) error {
+func (a anySliceArrayReflect) Bounds() []Bound {
+	if a.slice.IsNil() {
+		return nil
+	}
+
+	return []Bound{{Lower: 1, Upper: a.slice.Len()}}
+}
+
+func (a *anySliceArrayReflect) SetBounds(bounds []Bound) error {
 	sliceType := a.slice.Type()
 
-	if dimensions == nil {
+	if bounds == nil {
 		a.slice.Set(reflect.Zero(sliceType))
 		return nil
 	}
 
-	elementCount := cardinality(dimensions)
+	elementCount := allElementsCount(bounds)
 	slice := reflect.MakeSlice(sliceType, elementCount, elementCount)
 	a.slice.Set(slice)
 	return nil
@@ -669,40 +669,18 @@ func (a *anySliceArrayReflect) ScanIndexType() any {
 }
 
 type anyMultiDimSliceArray struct {
-	slice reflect.Value
-	dims  []ArrayDimension
-}
-
-func (a *anyMultiDimSliceArray) Dimensions() []ArrayDimension {
-	if a.slice.IsNil() {
-		return nil
-	}
-
-	s := a.slice
-	for {
-		a.dims = append(a.dims, ArrayDimension{Length: int32(s.Len()), LowerBound: 1})
-		if s.Len() > 0 {
-			s = s.Index(0)
-		} else {
-			break
-		}
-		if s.Type().Kind() == reflect.Slice {
-		} else {
-			break
-		}
-	}
-
-	return a.dims
+	slice  reflect.Value
+	bounds []Bound
 }
 
 func (a *anyMultiDimSliceArray) Index(i int) any {
-	if len(a.dims) == 1 {
+	if len(a.bounds) == 1 {
 		return a.slice.Index(i).Interface()
 	}
 
-	indexes := make([]int, len(a.dims))
-	for j := len(a.dims) - 1; j >= 0; j-- {
-		dimLen := int(a.dims[j].Length)
+	indexes := make([]int, len(a.bounds))
+	for j := len(a.bounds) - 1; j >= 0; j-- {
+		dimLen := int(a.bounds[j].Upper - a.bounds[j].Lower + 1)
 		indexes[j] = i % dimLen
 		i = i / dimLen
 	}
@@ -722,22 +700,44 @@ func (a *anyMultiDimSliceArray) IndexType() any {
 	return reflect.New(lowestSliceType.Elem()).Elem().Interface()
 }
 
-func (a *anyMultiDimSliceArray) SetDimensions(dimensions []ArrayDimension) error {
+func (a *anyMultiDimSliceArray) Bounds() []Bound {
+	if a.slice.IsNil() {
+		return nil
+	}
+
+	s := a.slice
+	for {
+		a.bounds = append(a.bounds, Bound{Lower: 1, Upper: s.Len()})
+		if s.Len() > 0 {
+			s = s.Index(0)
+		} else {
+			break
+		}
+		if s.Type().Kind() == reflect.Slice {
+		} else {
+			break
+		}
+	}
+
+	return a.bounds
+}
+
+func (a *anyMultiDimSliceArray) SetBounds(bounds []Bound) error {
 	sliceType := a.slice.Type()
 
-	if dimensions == nil {
+	if bounds == nil {
 		a.slice.Set(reflect.Zero(sliceType))
 		return nil
 	}
 
-	switch len(dimensions) {
+	switch len(bounds) {
 	case 0:
 		// Empty, but non-nil array
 		slice := reflect.MakeSlice(sliceType, 0, 0)
 		a.slice.Set(slice)
 		return nil
 	case 1:
-		elementCount := cardinality(dimensions)
+		elementCount := allElementsCount(bounds)
 		slice := reflect.MakeSlice(sliceType, elementCount, elementCount)
 		a.slice.Set(slice)
 		return nil
@@ -748,14 +748,14 @@ func (a *anyMultiDimSliceArray) SetDimensions(dimensions []ArrayDimension) error
 			sliceDimensionCount++
 		}
 
-		if sliceDimensionCount != len(dimensions) {
-			return fmt.Errorf("Firebird array has %d dimensions but slice has %d dimensions", len(dimensions), sliceDimensionCount)
+		if sliceDimensionCount != len(bounds) {
+			return fmt.Errorf("Firebird array has %d bounds but slice has %d bounds", len(bounds), sliceDimensionCount)
 		}
 
-		elementCount := cardinality(dimensions)
+		elementCount := allElementsCount(bounds)
 		flatSlice := reflect.MakeSlice(lowestSliceType, elementCount, elementCount)
 
-		multiDimSlice := a.makeMultidimensionalSlice(sliceType, dimensions, flatSlice, 0)
+		multiDimSlice := a.makeMultidimensionalSlice(sliceType, bounds, flatSlice, 0)
 		a.slice.Set(multiDimSlice)
 
 		// Now that a.slice is a multi-dimensional slice with the underlying data pointed at flatSlice change a.slice to
@@ -767,16 +767,16 @@ func (a *anyMultiDimSliceArray) SetDimensions(dimensions []ArrayDimension) error
 
 }
 
-func (a *anyMultiDimSliceArray) makeMultidimensionalSlice(sliceType reflect.Type, dimensions []ArrayDimension, flatSlice reflect.Value, flatSliceIdx int) reflect.Value {
-	if len(dimensions) == 1 {
-		endIdx := flatSliceIdx + int(dimensions[0].Length)
+func (a *anyMultiDimSliceArray) makeMultidimensionalSlice(sliceType reflect.Type, bounds []Bound, flatSlice reflect.Value, flatSliceIdx int) reflect.Value {
+	if len(bounds) == 1 {
+		endIdx := flatSliceIdx + int(bounds[0].Upper-bounds[0].Lower+1)
 		return flatSlice.Slice3(flatSliceIdx, endIdx, endIdx)
 	}
 
-	sliceLen := int(dimensions[0].Length)
+	sliceLen := int(bounds[0].Upper - bounds[0].Lower + 1)
 	slice := reflect.MakeSlice(sliceType, sliceLen, sliceLen)
 	for i := 0; i < sliceLen; i++ {
-		subSlice := a.makeMultidimensionalSlice(sliceType.Elem(), dimensions[1:], flatSlice, flatSliceIdx+(i*int(dimensions[1].Length)))
+		subSlice := a.makeMultidimensionalSlice(sliceType.Elem(), bounds[1:], flatSlice, flatSliceIdx+(i*int(bounds[1].Upper-bounds[1].Lower+1)))
 		slice.Index(i).Set(subSlice)
 	}
 
@@ -798,10 +798,6 @@ type anyArrayArrayReflect struct {
 	array reflect.Value
 }
 
-func (a anyArrayArrayReflect) Dimensions() []ArrayDimension {
-	return []ArrayDimension{{Length: int32(a.array.Len()), LowerBound: 1}}
-}
-
 func (a anyArrayArrayReflect) Index(i int) any {
 	return a.array.Index(i).Interface()
 }
@@ -810,17 +806,21 @@ func (a anyArrayArrayReflect) IndexType() any {
 	return reflect.New(a.array.Type().Elem()).Elem().Interface()
 }
 
-func (a *anyArrayArrayReflect) SetDimensions(dimensions []ArrayDimension) error {
-	if dimensions == nil {
+func (a anyArrayArrayReflect) Bounds() []Bound {
+	return []Bound{{Lower: 1, Upper: a.array.Len()}}
+}
+
+func (a *anyArrayArrayReflect) SetBounds(bounds []Bound) error {
+	if bounds == nil {
 		return fmt.Errorf("anyArrayArrayReflect: cannot scan NULL into %v", a.array.Type().String())
 	}
 
-	if len(dimensions) != 1 {
+	if len(bounds) != 1 {
 		return fmt.Errorf("anyArrayArrayReflect: cannot scan multi-dimensional array into %v", a.array.Type().String())
 	}
 
-	if int(dimensions[0].Length) != a.array.Len() {
-		return fmt.Errorf("anyArrayArrayReflect: cannot scan array with length %v into %v", dimensions[0].Length, a.array.Type().String())
+	if int(bounds[0].Upper-bounds[0].Lower+1) != a.array.Len() {
+		return fmt.Errorf("anyArrayArrayReflect: cannot scan array with length %v into %v", bounds[0].Upper-bounds[0].Lower+1, a.array.Type().String())
 	}
 
 	return nil

@@ -3,6 +3,7 @@ package fbconn
 import (
 	"bufio"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -1099,8 +1100,8 @@ func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 	}
 
 	st := &Statement{
-		conn:           fbConn,
-		Description:    desc,
+		conn:        fbConn,
+		Description: desc,
 	}
 	if tx != fbConn.internalTransaction {
 		st.transaction = tx
@@ -1363,6 +1364,163 @@ func (fbConn *FbConn) Disconnect(ctx context.Context) error {
 	return nil
 }
 
+func (fbConn *FbConn) GetArrayMetadata(ctx context.Context, tableName, fieldName string) (map[string][]byte, error) {
+	if fbConn.status == connStatusBusy {
+		fbConn.unlock()
+		defer fbConn.lock()
+	}
+
+	fbConn.contextWatcher.Unwatch()
+	defer fbConn.contextWatcher.Watch(ctx)
+
+	result := fbConn.ExecParams(ctx, `SELECT Y.RDB$FIELD_TYPE, Y.RDB$FIELD_SCALE, Y.RDB$FIELD_LENGTH, 
+       	Y.RDB$FIELD_SUB_TYPE, X.RDB$FIELD_SOURCE 
+		FROM RDB$RELATION_FIELDS X, RDB$FIELDS Y 
+		WHERE X.RDB$FIELD_SOURCE = Y.RDB$FIELD_NAME 
+  		AND X.RDB$RELATION_NAME = ?
+  		AND X.RDB$FIELD_NAME = ?`,
+		[][]byte{[]byte(tableName),
+			[]byte(fieldName)}).ReadWithoutCommit()
+
+	if result.Err != nil {
+		return nil, result.Err
+	}
+
+	row := result.Rows[0]
+
+	metadata := make(map[string][]byte)
+
+	metadata["DATATYPE"] = row[0]
+	metadata["SCALE"] = row[1]
+	metadata["LENGTH"] = row[2]
+	if row[3] == nil {
+		metadata["SUBTYPE"] = make([]byte, 4)
+	} else {
+		metadata["SUBTYPE"] = row[3]
+	}
+
+	metadata["SOURCE"] = row[4]
+
+	metadata["TABLE"] = []byte(tableName)
+	metadata["FIELD"] = []byte(fieldName)
+
+	return metadata, nil
+}
+
+func (fbConn *FbConn) GetArrayBounds(ctx context.Context, source []byte) ([]map[string]int, error) {
+	if fbConn.status == connStatusBusy {
+		fbConn.unlock()
+		defer fbConn.lock()
+	}
+
+	fbConn.contextWatcher.Unwatch()
+	defer fbConn.contextWatcher.Watch(ctx)
+
+	result := fbConn.ExecParams(ctx, `SELECT X.RDB$LOWER_BOUND, X.RDB$UPPER_BOUND 
+		FROM RDB$FIELD_DIMENSIONS X 
+		WHERE X.RDB$FIELD_NAME = ? ORDER BY X.RDB$DIMENSION`,
+		[][]byte{source}).ReadWithoutCommit()
+
+	if result.Err != nil {
+		return nil, result.Err
+	}
+
+	bounds := []map[string]int{}
+	for _, val := range result.Rows {
+		bounds = append(bounds, map[string]int{
+			"Lower": int(binary.BigEndian.Uint32(val[0])),
+			"Upper": int(binary.BigEndian.Uint32(val[1])),
+		})
+	}
+
+	return bounds, nil
+}
+
+func (fbConn *FbConn) GetArray(ctx context.Context, arrayId int64, datatype uint32, length, l int, sdl []byte) ([]byte, error) {
+	if fbConn.status == connStatusBusy {
+		fbConn.unlock()
+		defer fbConn.lock()
+	}
+
+	tx, err := fbConn.ensureInternalTransaction(ctx, nil, false)
+
+	op_get_slice := fbproto.OpGetSlice{
+		TransactionHandle: tx.Handle,
+		ArrayHandle:       arrayId,
+		SliceLength:       length,
+		SliceDescriptor:   sdl,
+	}
+
+	if err = fbConn.client.WriteMessage(&op_get_slice); err != nil {
+		return nil, err
+	}
+
+	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+		return nil, err
+	}
+
+	msg, err := fbConn.client.ReadSlice(datatype, l)
+
+	if err != nil {
+		fbConn.asyncClose()
+		return nil, normalizeTimeoutError(ctx, err)
+	}
+
+	switch m := msg.(type) {
+	case *fbproto.OpSliceResponse:
+		return m.SliceData, nil
+	case *fbproto.ErrorResponse:
+		fbConn.conn.Close()
+		return nil, ErrorResponseToFbError(m)
+	}
+
+	return nil, err
+}
+
+func (fbConn *FbConn) PutArray(ctx context.Context, array []byte, datatype uint32, length int, sdl []byte) ([]byte, error) {
+	if fbConn.status == connStatusBusy {
+		fbConn.unlock()
+		defer fbConn.lock()
+	}
+
+	tx, err := fbConn.ensureInternalTransaction(ctx, nil, false)
+
+	op_put_slice := fbproto.OpPutSlice{
+		TransactionHandle: tx.Handle,
+		ArrayHandle:       0,
+		SliceLength:       length,
+		SliceDescriptor:   sdl,
+		Slice:             array,
+	}
+
+	if err = fbConn.client.WriteMessage(&op_put_slice); err != nil {
+		return nil, err
+	}
+
+	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+		return nil, err
+	}
+
+	msg, err := fbConn.client.ReadMessage()
+
+	if err != nil {
+		fbConn.asyncClose()
+		return nil, normalizeTimeoutError(ctx, err)
+	}
+
+	switch m := msg.(type) {
+	case *fbproto.OpResponse:
+		bufId := make([]byte, 8)
+		binary.BigEndian.PutUint64(bufId, uint64(m.BlobId))
+		return bufId, nil
+	case *fbproto.ErrorResponse:
+		fbConn.conn.Close()
+		return nil, ErrorResponseToFbError(m)
+	}
+
+	return nil, err
+}
+
 // ResultReader is a reader for the result of a single query.
 type ResultReader struct {
 	fbConn *FbConn
@@ -1432,6 +1590,32 @@ func (rr *ResultReader) Read() *Result {
 	}
 
 	br.QueryStatus, br.Err = rr.Close()
+
+	return br
+}
+
+// Read saves the query response to a Result without commit
+func (rr *ResultReader) ReadWithoutCommit() *Result {
+	br := &Result{}
+
+	for rr.NextRow() {
+		if br.FieldDescriptions == nil {
+			br.FieldDescriptions = make([]FieldDescription, len(rr.FieldDescriptions()))
+			copy(br.FieldDescriptions, rr.FieldDescriptions())
+		}
+
+		values := rr.Values()
+		row := make([][]byte, len(values))
+		for i := range row {
+			if values[i] != nil {
+				row[i] = make([]byte, len(values[i]))
+				copy(row[i], values[i])
+			}
+		}
+		br.Rows = append(br.Rows, row)
+	}
+
+	br.QueryStatus, br.Err = rr.CloseWithoutCommit()
 
 	return br
 }
@@ -1668,6 +1852,25 @@ func (rr *ResultReader) Close() (QueryStatus, error) {
 				rr.err = err
 			}
 		}
+	}
+	return rr.queryStatus, rr.err
+}
+
+// Close consumes any remaining result data and returns the command tag or
+// error without commit
+func (rr *ResultReader) CloseWithoutCommit() (QueryStatus, error) {
+	if !rr.closed {
+		if rr.err == nil {
+			rr.drainCurrentFetch()
+			if rr.err == nil {
+				if err := rr.populateRowsAffected(); err != nil {
+					rr.err = err
+				}
+			}
+		}
+		rr.closed = true
+		rr.fbConn.unlock()
+		rr.fbConn.contextWatcher.Unwatch()
 	}
 	return rr.queryStatus, rr.err
 }
