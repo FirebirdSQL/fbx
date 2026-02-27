@@ -703,7 +703,7 @@ func TestConnExecParamsExtraValuesError(t *testing.T) {
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
-	sql := "select ?, ?, ?, ? from rdb$database"
+	sql := "select cast(? as varchar(255)), cast(? as varchar(255)), cast(? as varchar(255)), cast(? as varchar(255)) from rdb$database"
 
 	args := [][]byte{
 		[]byte("0"),
