@@ -23,6 +23,7 @@ type ValidateConnectFunc func(ctx context.Context, fbconn *FbConn) error
 type GetSSLPasswordFunc func(ctx context.Context) string
 
 const DefaultBlobBufferSize = 16384
+const DefaultFetchBatchSize = 400
 
 // Config is the settings used to establish a connection to a PostgreSQL server. It must be created by [ParseConfig]. A
 // manually initialized Config will cause ConnectConfig to panic.
@@ -50,6 +51,7 @@ type Config struct {
 	UseStreamBlobs             bool
 	MaxInlineBlobSize          int
 	MaxBlobCacheSize           int
+	FetchBatchSize             int
 
 	// BuildContextWatcherHandler is called to create a ContextWatcherHandler for a connection. The handler is called
 	// when a context passed to a FbConn method is canceled.
@@ -307,6 +309,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		DefaultTransactionReadOnly: convertToBool(settings["default_transaction_read_only"], false),
 		Autocommit:                 convertToBool(settings["autocommit"], true),
 		UseStreamBlobs:             convertToBool(settings["use_stream_blobs"], true),
+		FetchBatchSize:             DefaultFetchBatchSize,
 	}
 	if s, ok := settings["max_inline_blob_size"]; ok {
 		value, err := parsePositiveIntSetting(s)
@@ -332,6 +335,16 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 			return nil, &ParseConfigError{ConnString: connString, msg: "invalid max_blob_cache_size", err: err}
 		}
 		config.MaxBlobCacheSize = value
+	}
+	if s, ok := settings["fetch_batch_size"]; ok {
+		value, err := parsePositiveIntSetting(s)
+		if err != nil {
+			return nil, &ParseConfigError{ConnString: connString, msg: "invalid fetch_batch_size", err: err}
+		}
+		if value <= 0 {
+			return nil, &ParseConfigError{ConnString: connString, msg: "invalid fetch_batch_size", err: errors.New("outside range 1..2147483647")}
+		}
+		config.FetchBatchSize = value
 	}
 
 	if connectTimeoutSetting, present := settings["connect_timeout"]; present {
@@ -369,6 +382,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		"use_stream_blobs":              {},
 		"max_inline_blob_size":          {},
 		"max_blob_cache_size":           {},
+		"fetch_batch_size":              {},
 		"target_session_attrs":          {},
 	}
 
@@ -467,6 +481,7 @@ func parseEnvSettings() map[string]string {
 		"FBSSLPASSWORD":        "sslpassword",
 		"FBSSLNEGOTIATION":     "sslnegotiation",
 		"FBTARGETSESSIONATTRS": "target_session_attrs",
+		"FBFETCH_BATCH_SIZE":   "fetch_batch_size",
 		"FBSERVICE":            "service",
 		"FBSERVICEFILE":        "servicefile",
 		"FBTZ":                 "timezone",
