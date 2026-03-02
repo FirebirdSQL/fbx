@@ -999,15 +999,33 @@ func (c *Conn) deallocateInvalidatedCachedStatements(ctx context.Context) error 
 	//defer pipeline.Close()
 
 	for _, st := range invalidatedStatements {
-		if err := c.Deallocate(ctx, st.Description.SQL); err != nil {
+		var key string
+
+		// Depending on execution path preparedStatements may be keyed either by SQL or by statement name.
+		if _, ok := c.preparedStatements[st.Description.SQL]; ok {
+			key = st.Description.SQL
+		} else if _, ok := c.preparedStatements[st.Description.Name]; ok {
+			key = st.Description.Name
+		} else {
+			// Fallback for edge cases where map key differs from description fields.
+			for k, prepared := range c.preparedStatements {
+				if prepared == st {
+					key = k
+					break
+				}
+			}
+		}
+
+		if key == "" {
+			continue
+		}
+
+		if err := c.Deallocate(ctx, key); err != nil {
 			return err
 		}
 	}
 
 	c.statementCache.RemoveInvalidated()
-	for _, st := range invalidatedStatements {
-		delete(c.preparedStatements, st.Description.Name)
-	}
 
 	return nil
 }

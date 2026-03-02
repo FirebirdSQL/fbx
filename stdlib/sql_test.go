@@ -1403,7 +1403,7 @@ func TestOptionShouldPing_HookCalledOnReuse(t *testing.T) {
 	require.NoError(t, db.Ping())
 
 	// Reuse the connection -> should trigger ResetSession -> ShouldPing
-	_, err := db.Exec("select 1")
+	_, err := db.Exec("select 1 from rdb$database")
 	require.NoError(t, err)
 
 	require.True(t, hookCalled, "hook should be called on reuse")

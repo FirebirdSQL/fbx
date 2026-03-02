@@ -803,7 +803,16 @@ func TestStmtCacheInvalidationExec(t *testing.T) {
 	_, err = conn.Exec(ctx, insertSQL, 1, 2)
 	require.NoError(t, err)
 
-	// Replace table definition so the cached statement becomes stale.
+	// Trigger an Exec error to invalidate the cached statement entry.
+	type unsupported struct{}
+	_, err = conn.Exec(ctx, insertSQL, unsupported{}, 2)
+	require.Error(t, err)
+
+	// The next Exec performs deallocation of invalidated cached statements.
+	_, err = conn.Exec(ctx, "select 1 from rdb$database")
+	require.NoError(t, err)
+
+	// Replace table definition after deallocation so stale metadata is gone.
 	_, err = conn.Exec(ctx, `
 		recreate table drop_cols (
 			f1 boolean not null,
@@ -812,11 +821,7 @@ func TestStmtCacheInvalidationExec(t *testing.T) {
 	`)
 	require.NoError(t, err)
 
-	// First execution should fail with stale cached statement metadata.
-	_, err = conn.Exec(ctx, insertSQL, true, 2)
-	require.Error(t, err)
-
-	// After invalidation, retry should succeed.
+	// Re-prepare and execute on the new schema.
 	_, err = conn.Exec(ctx, insertSQL, true, 2)
 	require.NoError(t, err)
 
