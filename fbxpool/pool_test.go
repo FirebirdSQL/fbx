@@ -1208,34 +1208,29 @@ func TestPoolAcquirePingTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	config, err := pgxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	// Set a very short ping timeout to force timeout during ping and destruction of the connection
 	config.PingTimeout = 1 * time.Nanosecond
 
-	var conID *uint32
-	// Only ping the connection with the original PID to force creation of a new connection
-	config.ShouldPing = func(_ context.Context, params pgxpool.ShouldPingParams) bool {
-		if conID != nil && params.Conn.PgConn().PID() == *conID {
-			return true
-		}
-
-		return false
+	var firstConn *fbx.Conn
+	// Only ping the initially acquired connection to force its destruction and replacement.
+	config.ShouldPing = func(_ context.Context, params fbxpool.ShouldPingParams) bool {
+		return firstConn != nil && params.Conn == firstConn
 	}
 	// Limit to a single connection to ensure the same connection is reused
 	config.MinConns = 1
 	config.MaxConns = 1
 
-	pool, err := pgxpool.NewWithConfig(ctx, config)
+	pool, err := fbxpool.NewWithConfig(ctx, config)
 	require.NoError(t, err)
 	defer pool.Close()
 
 	c, err := pool.Acquire(ctx)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, pool.Stat().TotalConns())
-	originalPID := c.Conn().PgConn().PID()
-	conID = &originalPID
+	firstConn = c.Conn()
 
 	c.Release()
 	require.EqualValues(t, 1, pool.Stat().TotalConns())
@@ -1243,12 +1238,13 @@ func TestPoolAcquirePingTimeout(t *testing.T) {
 	c, err = pool.Acquire(ctx)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, pool.Stat().TotalConns())
-	newPID := c.Conn().PgConn().PID()
+	newConn := c.Conn()
 
 	c.Release()
+	require.NotEqual(t, firstConn, newConn)
 
 	require.EqualValues(t, 1, pool.Stat().TotalConns())
 	assert.Nil(t, ctx.Err())
-	assert.NotEqualValues(t, originalPID, newPID,
-		"Expected new connection due to ping timeout, but got same connection")
+	assert.NotEqualValues(t, firstConn, newConn,
+		"Expected a new connection due to ping timeout, but got the same connection")
 }
