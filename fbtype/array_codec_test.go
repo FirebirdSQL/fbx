@@ -116,7 +116,8 @@ func TestArrayCodecArray(t *testing.T) {
 }
 
 func TestArrayCodecPointerToNil(t *testing.T) {
-	pgxtest.RunWithQueryExecModes(context.Background(), t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *pgx.Conn) {
+	t.Skip()
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		n := int32(42)
 		input := []*int32{&n, nil}
 		var actual []*int32

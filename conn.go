@@ -489,10 +489,6 @@ optionLoop:
 			if sc := c.statementCache; sc != nil {
 				sc.Invalidate(sql)
 			}
-
-			if sc := c.descriptionCache; sc != nil {
-				sc.Invalidate(sql)
-			}
 		}
 	}()
 
