@@ -634,10 +634,6 @@ func (a anySliceArrayReflect) Index(i int) any {
 	return a.slice.Index(i).Interface()
 }
 
-func (a anySliceArrayReflect) IndexType() any {
-	return reflect.New(a.slice.Type().Elem()).Elem().Interface()
-}
-
 func (a anySliceArrayReflect) Bounds() []Bound {
 	if a.slice.IsNil() {
 		return nil
@@ -664,10 +660,6 @@ func (a *anySliceArrayReflect) ScanIndex(i int) any {
 	return a.slice.Index(i).Addr().Interface()
 }
 
-func (a *anySliceArrayReflect) ScanIndexType() any {
-	return reflect.New(a.slice.Type().Elem()).Interface()
-}
-
 type anyMultiDimSliceArray struct {
 	slice  reflect.Value
 	bounds []Bound
@@ -691,13 +683,6 @@ func (a *anyMultiDimSliceArray) Index(i int) any {
 	}
 
 	return v.Interface()
-}
-
-func (a *anyMultiDimSliceArray) IndexType() any {
-	lowestSliceType := a.slice.Type()
-	for ; lowestSliceType.Elem().Kind() == reflect.Slice; lowestSliceType = lowestSliceType.Elem() {
-	}
-	return reflect.New(lowestSliceType.Elem()).Elem().Interface()
 }
 
 func (a *anyMultiDimSliceArray) Bounds() []Bound {
@@ -787,23 +772,12 @@ func (a *anyMultiDimSliceArray) ScanIndex(i int) any {
 	return a.slice.Index(i).Addr().Interface()
 }
 
-func (a *anyMultiDimSliceArray) ScanIndexType() any {
-	lowestSliceType := a.slice.Type()
-	for ; lowestSliceType.Elem().Kind() == reflect.Slice; lowestSliceType = lowestSliceType.Elem() {
-	}
-	return reflect.New(lowestSliceType.Elem()).Interface()
-}
-
 type anyArrayArrayReflect struct {
 	array reflect.Value
 }
 
 func (a anyArrayArrayReflect) Index(i int) any {
 	return a.array.Index(i).Interface()
-}
-
-func (a anyArrayArrayReflect) IndexType() any {
-	return reflect.New(a.array.Type().Elem()).Elem().Interface()
 }
 
 func (a anyArrayArrayReflect) Bounds() []Bound {
@@ -828,8 +802,4 @@ func (a *anyArrayArrayReflect) SetBounds(bounds []Bound) error {
 
 func (a *anyArrayArrayReflect) ScanIndex(i int) any {
 	return a.array.Index(i).Addr().Interface()
-}
-
-func (a *anyArrayArrayReflect) ScanIndexType() any {
-	return reflect.New(a.array.Type().Elem()).Interface()
 }

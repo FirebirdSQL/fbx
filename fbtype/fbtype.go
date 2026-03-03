@@ -1,7 +1,6 @@
 package fbtype
 
 import (
-	"context"
 	"database/sql"
 	"database/sql/driver"
 	"errors"
@@ -11,7 +10,6 @@ import (
 	"reflect"
 	"time"
 
-	"rdb.red-soft.ru/fbx/fbconn"
 	"rdb.red-soft.ru/fbx/fbproto"
 )
 
@@ -2019,12 +2017,4 @@ func CharacterSetForType(typeId uint32, subType int32, scale int32) int32 {
 		return fbproto.CS_BINARY
 	}
 	return fbproto.CS_dynamic
-}
-
-func SetArrayInfo(scanPlan ScanPlan, conn *fbconn.FbConn, ctx context.Context, table, field string) error {
-	if elem, ok := scanPlan.(*scanPlanArrayCodec); ok {
-		elem.SetInfo(conn, ctx, table, field)
-		return nil
-	}
-	return fmt.Errorf("Not array")
 }

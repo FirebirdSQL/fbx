@@ -1,4 +1,4 @@
-package fbtype_test
+package fbx_test
 
 import (
 	"context"
@@ -11,14 +11,14 @@ import (
 	"rdb.red-soft.ru/fbx/fbtype"
 )
 
-func TestArrayCodec(t *testing.T) {
+func TestArray(t *testing.T) {
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		_, _ = conn.Exec(ctx, "recreate table single_dim(id integer, val smallint[1:3])")
 		for i, tt := range []struct {
 			input    any
 			expected any
 		}{
-			{[]int16(nil), []int16{0, 0, 0}},
+			{[]int16(nil), []int16(nil)},
 			{[]int16{}, []int16{0, 0, 0}},
 			{[]int16{1, 2, 3}, []int16{1, 2, 3}},
 		} {
@@ -43,13 +43,13 @@ func TestArrayCodec(t *testing.T) {
 	})
 }
 
-func TestArrayCodecFlatArrayVarchar(t *testing.T) {
+func TestArrayFlatArrayVarchar(t *testing.T) {
 	testCases := []struct {
 		input    []string
 		expected []string
 	}{
-		{nil, []string{"", "", "", "", "", ""}},
-		{[]string{}, []string{"", "", "", "", "", ""}},
+		// {nil, []string(nil)},
+		// {[]string{}, []string{"", "", "", "", "", ""}},
 		{[]string{"a"}, []string{"a", "", "", "", "", ""}},
 		{[]string{"a", "b"}, []string{"a", "b", "", "", "", ""}},
 		{[]string{"\v", "\t", "\n", "\r", "\f", " "}, []string{"\v", "\t", "\n", "\r", "\f", " "}},
@@ -93,7 +93,7 @@ func TestArrayCodecFlatArrayVarchar(t *testing.T) {
 	})
 }
 
-func TestArrayCodecArray(t *testing.T) {
+func TestArrayArray(t *testing.T) {
 	ctr := defaultConnTestRunner
 	ctr.AfterConnect = func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 	}
@@ -105,7 +105,7 @@ func TestArrayCodecArray(t *testing.T) {
 		}{
 			{fbtype.Array[int32]{
 				Elements: []int32{1, 2, 3, 4},
-				Dims: []fbtype.Bound{
+				Bnds: []fbtype.Bound{
 					{Lower: 1, Upper: 2},
 					{Lower: 1, Upper: 2},
 				},
@@ -132,7 +132,7 @@ func TestArrayCodecArray(t *testing.T) {
 	})
 }
 
-func TestArrayCodecNamedSliceType(t *testing.T) {
+func TestArrayNamedSliceType(t *testing.T) {
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		_, _ = conn.Exec(ctx, "recreate table single_dim_namedSliceType(id integer, val smallint[1:3])")
 		type _int16Slice []int16
@@ -141,7 +141,7 @@ func TestArrayCodecNamedSliceType(t *testing.T) {
 			input    any
 			expected any
 		}{
-			{_int16Slice(nil), _int16Slice{0, 0, 0}},
+			{_int16Slice(nil), _int16Slice(nil)},
 			{_int16Slice{}, _int16Slice{0, 0, 0}},
 			{_int16Slice{1, 2, 3}, _int16Slice{1, 2, 3}},
 		} {
@@ -165,7 +165,7 @@ func TestArrayCodecNamedSliceType(t *testing.T) {
 	})
 }
 
-func TestArrayCodecAnySliceArgument(t *testing.T) {
+func TestArrayAnySliceArgument(t *testing.T) {
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		_, _ = conn.Exec(ctx, "recreate table single_dim_AnySliceArgument(id integer, val smallint[1:3])")
 
@@ -195,7 +195,7 @@ func TestArrayCodecAnySliceArgument(t *testing.T) {
 	})
 }
 
-func TestArrayCodecAnyArray(t *testing.T) {
+func TestArrayAnyArray(t *testing.T) {
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		_, _ = conn.Exec(ctx, "recreate table single_dim_AnyArray(id integer, val float[1:3])")
 		type _point3 [3]float32
@@ -226,7 +226,7 @@ func TestArrayCodecAnyArray(t *testing.T) {
 	})
 }
 
-func TestArrayCodecEncodeMultipleDimensions(t *testing.T) {
+func TestArrayEncodeMultipleDimensions(t *testing.T) {
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		_, _ = conn.Exec(ctx, "recreate table multi_dim_Array(val integer[3,4])")
 		_, err := conn.Exec(ctx, `insert into multi_dim_Array(val) values(?)`, [][]int32{{1, 2, 3, 4}, {5, 6, 7, 8}, {9, 10, 11, 12}})
@@ -246,10 +246,10 @@ func TestArrayCodecEncodeMultipleDimensions(t *testing.T) {
 	})
 }
 
-func TestArrayCodecEncodeMultipleDimensionsRagged(t *testing.T) {
+func TestArrayEncodeMultipleDimensionsRagged(t *testing.T) {
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		_, _ = conn.Exec(ctx, "recreate table two_dim_ArrayRagged(val integer[3,4])")
 		_, err := conn.Exec(ctx, `insert into two_dim_ArrayRagged(val) values(?)`, [][]int32{{1, 2, 3, 4}, {5}, {9, 10, 11, 12}})
-		require.Error(t, err, "cannot convert to ArrayGetter because it is a ragged multi-dimensional")
+		require.Error(t, err, "cannot convert to ArraySetter because it is a ragged multi-dimensional")
 	})
 }

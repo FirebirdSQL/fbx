@@ -979,6 +979,18 @@ type FieldDescription struct {
 	OriginalName      string
 	OriginalTableName string
 	Nullable          bool
+	ArrayData         *Array
+}
+
+type Array struct {
+	TableName string
+	FieldName string
+	SubType   int32
+	Length    uint32
+	Scale     int32
+	TypeId    uint32
+	Bounds    []map[string]int
+	Metadata  map[string][]byte
 }
 
 func (fbConn *FbConn) convertRowDescription(src []fbproto.FieldDescriptor) []FieldDescription {
@@ -1097,6 +1109,27 @@ func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 		Parameters:      fbConn.convertRowDescription(statementInfo.ParametersDescriptors),
 		StatementHandle: statementHandle,
 		StatementInfo:   &statementInfo,
+	}
+
+	// checking if arrays in fields and parameters and getting array metadata
+	for i, field := range desc.Fields {
+		if field.Type == fbproto.SQL_TYPE_ARRAY {
+			arr, err := getArrayInfo(fbConn, ctx, field.OriginalName, field.OriginalTableName)
+			if err != nil {
+				return nil, err
+			}
+			desc.Fields[i].ArrayData = arr
+		}
+	}
+
+	for i, param := range desc.Parameters {
+		if param.Type == fbproto.SQL_TYPE_ARRAY {
+			arr, err := getArrayInfo(fbConn, ctx, param.OriginalName, param.OriginalTableName)
+			if err != nil {
+				return nil, err
+			}
+			desc.Parameters[i].ArrayData = arr
+		}
 	}
 
 	st := &Statement{
@@ -1364,6 +1397,7 @@ func (fbConn *FbConn) Disconnect(ctx context.Context) error {
 	return nil
 }
 
+// GetArrayMetadata returns the information about coloumn
 func (fbConn *FbConn) GetArrayMetadata(ctx context.Context, tableName, fieldName string) (map[string][]byte, error) {
 	if fbConn.status == connStatusBusy {
 		fbConn.unlock()
@@ -1407,6 +1441,7 @@ func (fbConn *FbConn) GetArrayMetadata(ctx context.Context, tableName, fieldName
 	return metadata, nil
 }
 
+// GetArrayBounds returns the information about array bounds
 func (fbConn *FbConn) GetArrayBounds(ctx context.Context, source []byte) ([]map[string]int, error) {
 	if fbConn.status == connStatusBusy {
 		fbConn.unlock()
@@ -1436,6 +1471,7 @@ func (fbConn *FbConn) GetArrayBounds(ctx context.Context, source []byte) ([]map[
 	return bounds, nil
 }
 
+// GetArray gets the array id and returns the array
 func (fbConn *FbConn) GetArray(ctx context.Context, arrayId int64, datatype uint32, length, l int, sdl []byte) ([]byte, error) {
 	if fbConn.status == connStatusBusy {
 		fbConn.unlock()
@@ -1469,14 +1505,17 @@ func (fbConn *FbConn) GetArray(ctx context.Context, arrayId int64, datatype uint
 	switch m := msg.(type) {
 	case *fbproto.OpSliceResponse:
 		return m.SliceData, nil
+	case *fbproto.OpResponse:
+		return nil, fmt.Errorf("array getting error: %s", m.Message)
 	case *fbproto.ErrorResponse:
 		fbConn.conn.Close()
 		return nil, ErrorResponseToFbError(m)
+	default:
+		return nil, fmt.Errorf("unexpected response")
 	}
-
-	return nil, err
 }
 
+// PutArray sends the array to the server and returns the array id
 func (fbConn *FbConn) PutArray(ctx context.Context, array []byte, datatype uint32, length int, sdl []byte) ([]byte, error) {
 	if fbConn.status == connStatusBusy {
 		fbConn.unlock()
@@ -1510,15 +1549,18 @@ func (fbConn *FbConn) PutArray(ctx context.Context, array []byte, datatype uint3
 
 	switch m := msg.(type) {
 	case *fbproto.OpResponse:
+		if m.BlobId == 0 {
+			return nil, fmt.Errorf("array putting error: %s", m.Message)
+		}
 		bufId := make([]byte, 8)
 		binary.BigEndian.PutUint64(bufId, uint64(m.BlobId))
 		return bufId, nil
 	case *fbproto.ErrorResponse:
 		fbConn.conn.Close()
 		return nil, ErrorResponseToFbError(m)
+	default:
+		return nil, fmt.Errorf("unexpected response")
 	}
-
-	return nil, err
 }
 
 // ResultReader is a reader for the result of a single query.
@@ -2308,4 +2350,30 @@ func (h *CancelRequestContextWatcherHandler) HandleUnwatchAfterCancel() {
 	<-h.cancelFinishedChan
 
 	h.Conn.conn.SetDeadline(time.Time{})
+}
+
+func getArrayInfo(fbConn *FbConn, ctx context.Context, field, table string) (*Array, error) {
+	arr := new(Array)
+	metadata, err := fbConn.GetArrayMetadata(ctx, table, field)
+	if err != nil {
+		return nil, err
+	}
+
+	arr.FieldName = field
+	arr.TableName = table
+	arr.Scale = int32(binary.BigEndian.Uint32(metadata["SCALE"]))
+	arr.TypeId = binary.BigEndian.Uint32(metadata["DATATYPE"])
+	arr.SubType = int32(binary.BigEndian.Uint32(metadata["SUBTYPE"]))
+	arr.Length = binary.BigEndian.Uint32(metadata["LENGTH"])
+	if arr.TypeId == fbproto.Isc_blr_varaying || arr.TypeId == fbproto.Isc_blr_varaying2 ||
+		arr.TypeId == fbproto.Isc_blr_text || arr.TypeId == fbproto.Isc_blr_text2 {
+		arr.Length *= fbConn.Encoding.MaxBytesPerChar
+	}
+	bounds, err := fbConn.GetArrayBounds(ctx, metadata["SOURCE"])
+	if err != nil {
+		return nil, err
+	}
+	arr.Metadata = metadata
+	arr.Bounds = bounds
+	return arr, nil
 }

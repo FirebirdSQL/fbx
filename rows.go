@@ -119,8 +119,8 @@ func (r *connRow) Scan(dest ...any) (err error) {
 	}
 
 	rows.fieldDescs = append(rows.fieldDescs[:0], rows.FieldDescriptions()...)
-	rows.Scan(dest...)
 	values := rows.values
+	rows.Scan(dest...)
 	rows.Close()
 	rows.resultReader = nil
 	rows.values = values
@@ -290,17 +290,20 @@ func (rows *baseRows) Scan(dest ...any) error {
 			continue
 		}
 		if fieldDescriptions[i].IsArray() {
-			err := fbtype.SetArrayInfo(rows.scanPlans[i], rows.Conn().FbConn(), rows.ctx, fieldDescriptions[i].OriginalTableName, fieldDescriptions[i].OriginalName)
+			arr, err := getArray(rows.Conn().FbConn(), rows.ctx, *fieldDescriptions[i].ArrayData, values[i])
 			if err != nil {
 				err = ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: err}
 				rows.fatal(err)
 				return err
 			}
-			tmp = make([][]byte, len(values))
-
-			for j, x := range values {
-				tmp[j] = append([]byte{}, x...)
+			arrInf := fieldDescriptions[i].ArrayData
+			err = fbtype.ScanArray(m, arrInf.TypeId, arrInf.SubType, arrInf.Scale, arrInf.Length, arrInf.Bounds, arr, dst)
+			if err != nil {
+				err = ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: err}
+				rows.fatal(err)
+				return err
 			}
+			continue
 		}
 
 		if rows.scanTypes[i] != reflect.TypeOf(dst) {
