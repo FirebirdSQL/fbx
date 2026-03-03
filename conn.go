@@ -1006,14 +1006,6 @@ func (c *Conn) deallocateInvalidatedCachedStatements(ctx context.Context) error 
 			key = st.Description.SQL
 		} else if _, ok := c.preparedStatements[st.Description.Name]; ok {
 			key = st.Description.Name
-		} else {
-			// Fallback for edge cases where map key differs from description fields.
-			for k, prepared := range c.preparedStatements {
-				if prepared == st {
-					key = k
-					break
-				}
-			}
 		}
 
 		if key == "" {
