@@ -120,6 +120,21 @@ func TestMapScanBinaryFormatInterfacePtr(t *testing.T) {
 	assert.Equal(t, "foo", got)
 }
 
+func TestMapScanUnknownTypeIDToPtrToAny(t *testing.T) {
+	unknownTypeID := uint32(999999)
+	srcBuf := []byte("foo")
+	m := fbtype.NewMap()
+
+	var a any
+	err := m.Scan(unknownTypeID, 0, 3, 0, fbx.TextFormatCode, srcBuf, &a)
+	assert.NoError(t, err)
+	assert.Equal(t, "foo", a)
+
+	err = m.Scan(unknownTypeID, 0, 3, 0, fbx.BinaryFormatCode, srcBuf, &a)
+	assert.NoError(t, err)
+	assert.Equal(t, []byte("foo"), a)
+}
+
 func TestMapScanUnknownTypeIDToStringsAndBytes(t *testing.T) {
 	t.Skip("")
 	unknownTypeID := uint32(999999)

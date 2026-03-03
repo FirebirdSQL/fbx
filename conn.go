@@ -484,6 +484,14 @@ optionLoop:
 		}
 	}
 
+	defer func() {
+		if err != nil {
+			if sc := c.statementCache; sc != nil {
+				sc.Invalidate(sql)
+			}
+		}
+	}()
+
 	switch mode {
 	case QueryExecModeCacheStatement:
 		if sd, ok := c.preparedStatements[sql]; ok {
@@ -991,15 +999,25 @@ func (c *Conn) deallocateInvalidatedCachedStatements(ctx context.Context) error 
 	//defer pipeline.Close()
 
 	for _, st := range invalidatedStatements {
-		if err := c.Deallocate(ctx, st.Description.SQL); err != nil {
+		var key string
+
+		// Depending on execution path preparedStatements may be keyed either by SQL or by statement name.
+		if _, ok := c.preparedStatements[st.Description.SQL]; ok {
+			key = st.Description.SQL
+		} else if _, ok := c.preparedStatements[st.Description.Name]; ok {
+			key = st.Description.Name
+		}
+
+		if key == "" {
+			continue
+		}
+
+		if err := c.Deallocate(ctx, key); err != nil {
 			return err
 		}
 	}
 
 	c.statementCache.RemoveInvalidated()
-	for _, st := range invalidatedStatements {
-		delete(c.preparedStatements, st.Description.Name)
-	}
 
 	return nil
 }

@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"runtime"
 	"strconv"
 	"sync"
@@ -96,6 +96,10 @@ type Pool struct {
 	maxConnLifetimeJitter time.Duration
 	maxConnIdleTime       time.Duration
 	healthCheckPeriod     time.Duration
+	pingTimeout           time.Duration
+
+	healthCheckMu    sync.Mutex
+	healthCheckTimer *time.Timer
 
 	healthCheckChan chan struct{}
 
@@ -163,6 +167,10 @@ type Config struct {
 
 	// MaxConnIdleTime is the duration after which an idle connection will be automatically closed by the health check.
 	MaxConnIdleTime time.Duration
+
+	// PingTimeout is the maximum amount of time to wait for a connection to pong before considering it as unhealthy and
+	// destroying it. If zero, the default is no timeout.
+	PingTimeout time.Duration
 
 	// MaxConns is the maximum size of the pool. The default is the greater of 4 or runtime.NumCPU().
 	MaxConns int32
@@ -236,6 +244,7 @@ func NewWithConfig(ctx context.Context, config *Config) (*Pool, error) {
 		maxConnLifetime:       config.MaxConnLifetime,
 		maxConnLifetimeJitter: config.MaxConnLifetimeJitter,
 		maxConnIdleTime:       config.MaxConnIdleTime,
+		pingTimeout:           config.PingTimeout,
 		healthCheckPeriod:     config.HealthCheckPeriod,
 		healthCheckChan:       make(chan struct{}, 1),
 		closeChan:             make(chan struct{}),
@@ -456,15 +465,25 @@ func (p *Pool) isExpired(res *puddle.Resource[*connResource]) bool {
 }
 
 func (p *Pool) triggerHealthCheck() {
-	go func() {
+	const healthCheckDelay = 500 * time.Millisecond
+
+	p.healthCheckMu.Lock()
+	defer p.healthCheckMu.Unlock()
+
+	if p.healthCheckTimer == nil {
 		// Destroy is asynchronous so we give it time to actually remove itself from
 		// the pool otherwise we might try to check the pool size too soon
-		time.Sleep(500 * time.Millisecond)
-		select {
-		case p.healthCheckChan <- struct{}{}:
-		default:
-		}
-	}()
+		p.healthCheckTimer = time.AfterFunc(healthCheckDelay, func() {
+			select {
+			case <-p.closeChan:
+			case p.healthCheckChan <- struct{}{}:
+			default:
+			}
+		})
+		return
+	}
+
+	p.healthCheckTimer.Reset(healthCheckDelay)
 }
 
 func (p *Pool) backgroundHealthCheck() {
@@ -589,7 +608,7 @@ func (p *Pool) Acquire(ctx context.Context) (c *Conn, err error) {
 	// Try to acquire from the connection pool up to maxConns + 1 times, so that
 	// any that fatal errors would empty the pool and still at least try 1 fresh
 	// connection.
-	for range p.maxConns + 1 {
+	for range int(p.maxConns) + 1 {
 		res, err := p.p.Acquire(ctx)
 		if err != nil {
 			return nil, err
@@ -599,7 +618,14 @@ func (p *Pool) Acquire(ctx context.Context) (c *Conn, err error) {
 
 		shouldPingParams := ShouldPingParams{Conn: cr.conn, IdleDuration: res.IdleDuration()}
 		if p.shouldPing(ctx, shouldPingParams) {
-			err := cr.conn.Ping(ctx)
+			pingCtx := ctx
+			if p.pingTimeout > 0 {
+				var cancel context.CancelFunc
+				pingCtx, cancel = context.WithTimeout(ctx, p.pingTimeout)
+				defer cancel()
+			}
+
+			err := cr.conn.Ping(pingCtx)
 			if err != nil {
 				res.Destroy()
 				continue

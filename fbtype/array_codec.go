@@ -126,7 +126,7 @@ func (p *encodePlanArrayCodecText) Encode(value any, buf []byte) (newBuf []byte,
 
 		elem := array.Index(i)
 		var elemBuf []byte
-		if elem != nil {
+		if isNil, _ := isNilDriverValuer(elem); !isNil {
 			elemType := reflect.TypeOf(elem)
 			if lastElemType != elemType {
 				lastElemType = elemType
@@ -190,7 +190,7 @@ func (p *encodePlanArrayCodecBinary) Encode(value any, buf []byte) (newBuf []byt
 
 		elem := array.Index(i)
 		var elemBuf []byte
-		if elem != nil {
+		if isNil, _ := isNilDriverValuer(elem); !isNil {
 			elemType := reflect.TypeOf(elem)
 			if lastElemType != elemType {
 				lastElemType = elemType

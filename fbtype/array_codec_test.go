@@ -115,6 +115,22 @@ func TestArrayCodecArray(t *testing.T) {
 	})
 }
 
+func TestArrayCodecPointerToNil(t *testing.T) {
+	t.Skip()
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		n := int32(42)
+		input := []*int32{&n, nil}
+		var actual []*int32
+		err := conn.QueryRow(
+			ctx,
+			"select $1::int[]",
+			input,
+		).Scan(&actual)
+		require.NoError(t, err)
+		require.Equal(t, input, actual)
+	})
+}
+
 func TestArrayCodecNamedSliceType(t *testing.T) {
 	t.Skip()
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {

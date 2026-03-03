@@ -1090,10 +1090,18 @@ func (m *Map) planScan(typeid uint32, subType int32, length uint32, scale int32,
 		}
 	}
 
-	if dt != nil {
-		if _, ok := target.(*any); ok {
-			return &pointerEmptyInterfaceScanPlan{codec: dt.Codec, m: m, typeid: typeid, subType: subType, length: length, scale: scale, formatCode: formatCode}
+	if _, ok := target.(*any); ok {
+		var codec Codec
+		if dt != nil {
+			codec = dt.Codec
+		} else {
+			if formatCode == TextFormatCode {
+				codec = TextCodec{}
+			} else {
+				codec = ByteaCodec{}
+			}
 		}
+		return &pointerEmptyInterfaceScanPlan{codec: codec, m: m, typeid: typeid, subType: subType, length: length, scale: scale, formatCode: formatCode}
 	}
 
 	return &scanPlanFail{m: m, typeid: typeid, subType: subType, length: length, scale: scale, formatCode: formatCode}
