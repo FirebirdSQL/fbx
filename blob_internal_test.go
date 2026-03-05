@@ -159,7 +159,8 @@ func skipIfInlineBlobsUnsupported(ctx context.Context, t testing.TB, conn *Conn)
 }
 
 func engineVersionSupportsInlineBlobs(version string) bool {
-	return parseEngineVersionNumber(version) >= 50003
+	v := parseEngineVersionNumber(version)
+	return v >= 50003 && v < 50008
 }
 
 func parseEngineVersionNumber(version string) int {
