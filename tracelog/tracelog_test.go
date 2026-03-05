@@ -418,6 +418,9 @@ func TestLogPrepare(t *testing.T) {
 func TestConcurrentUsage(t *testing.T) {
 	t.Parallel()
 
+	if isRedDatabase50(t) {
+		t.Skip("Rdb 5.0 server crash")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
