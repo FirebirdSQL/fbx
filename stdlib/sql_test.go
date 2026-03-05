@@ -583,11 +583,11 @@ func TestConnQueryScanArray(t *testing.T) {
 		var a fbtype.Array[int64]
 		err := db.QueryRow("select '{1,2,3}'::bigint[]").Scan(m.SQLScanner(&a))
 		require.NoError(t, err)
-		assert.Equal(t, fbtype.Array[int64]{Elements: []int64{1, 2, 3}, Bnds: []fbtype.Bound{{Lower: 1, Upper: 3}}, Valid: true}, a)
+		assert.Equal(t, fbtype.Array[int64]{Elements: []int64{1, 2, 3}, Dims: []fbtype.Dimention{{Lower: 1, Upper: 3}}, Valid: true}, a)
 
 		err = db.QueryRow("select null::bigint[]").Scan(m.SQLScanner(&a))
 		require.NoError(t, err)
-		assert.Equal(t, fbtype.Array[int64]{Elements: nil, Bnds: nil, Valid: false}, a)
+		assert.Equal(t, fbtype.Array[int64]{Elements: nil, Dims: nil, Valid: false}, a)
 	})
 }
 

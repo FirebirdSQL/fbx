@@ -10,43 +10,37 @@ import (
 	"rdb.red-soft.ru/fbx/fbproto"
 )
 
-// Arr is a struct for sending encoded array to the server
-type Arr struct {
-	Buf    []byte
-	Bounds []Bound
-}
-
 // ArraySetter is the interface for sending the array to the server
 type ArraySetter interface {
 
 	// Index returns the element at i.
 	Index(i int) any
 
-	// Bounds returns the []Bounds of the array
-	Bounds() []Bound
+	// Dimensions returns the []Dimensions of the array
+	Dimensions() []Dimention
 }
 
-// Bound is a struct for storage one array dimension bounds
-type Bound struct {
+// Dimention is a struct for storage array dimensions
+type Dimention struct {
 	Lower int
 	Upper int
 }
 
 // ArrayGetter is the interface for getting the array from the server
 type ArrayGetter interface {
-	// SetBounds prepares the value such that ScanIndex can be called for each element. This will remove any existing
-	// elements. bounds may be nil to indicate a NULL array. If unable to exactly preserve bounds SetBounds
-	// may return an error or silently flatten the array bounds.
-	SetBounds(bounds []Bound) error
+	// SetDimentions prepares the value such that ScanIndex can be called for each element. This will remove any existing
+	// elements. dimentions may be nil to indicate a NULL array. If unable to exactly preserve dimentions SetDimentions
+	// may return an error or silently flatten the array dimentions.
+	SetDimentions(dimentions []Dimention) error
 
-	// ScanIndex returns a value usable as a scan target for i. SetBounds must be called before ScanIndex.
+	// ScanIndex returns a value usable as a scan target for i. SetDimentions must be called before ScanIndex.
 	ScanIndex(i int) any
 }
 
 // ArrayData is a atruct for any array type.
 type ArrayData struct {
 	ElementType *Type
-	Bounds      []Bound
+	Dimensions  []Dimention
 	SubType     int32
 	Length      uint32
 	Scale       int32
@@ -54,9 +48,8 @@ type ArrayData struct {
 }
 
 // EncodeArray gets an array of any type as input and encodes it in binary format
-func EncodeArray(m *Map, typeId uint32, subType int32, scale int32, length uint32, boundsMap []map[string]int, value any, buf []byte) (Arr, error) {
+func EncodeArray(m *Map, typeId uint32, subType int32, scale int32, length uint32, dimentionsMap []map[string]int, value any, buf []byte) ([]byte, []map[string]int, error) {
 
-	var output Arr
 	ac := new(ArrayData)
 	var err error
 
@@ -65,34 +58,34 @@ func EncodeArray(m *Map, typeId uint32, subType int32, scale int32, length uint3
 	ac.SubType = subType
 	ac.TypeId = typeId
 
-	b := []Bound{}
-	for _, elem := range boundsMap {
-		b = append(b, Bound{Lower: elem["Lower"], Upper: elem["Upper"]})
+	b := []Dimention{}
+	for _, elem := range dimentionsMap {
+		b = append(b, Dimention{Lower: elem["Lower"], Upper: elem["Upper"]})
 	}
-	ac.Bounds = b
+	ac.Dimensions = b
 
 	ac.ElementType, err = getTypeFromBlr(typeId)
 	if err != nil {
-		return output, err
+		return nil, nil, err
 	}
 
 	array, err := getArrayEncodeType(value)
 	if err != nil {
-		return output, err
+		return nil, nil, err
 	}
-	bounds := array.Bounds()
-	if bounds == nil {
-		return output, nil
+	dimentions := array.Dimensions()
+	if dimentions == nil {
+		return nil, nil, nil
 	}
 
-	argumentElementCount := allElementsCount(bounds)
-	fieldElementCount := allElementsCount(ac.Bounds)
+	argumentElementCount := allElementsCount(dimentions)
+	fieldElementCount := allElementsCount(ac.Dimensions)
 
 	if fieldElementCount < argumentElementCount {
-		return output, fmt.Errorf("Array to long")
+		return nil, nil, fmt.Errorf("Array to long")
 	}
 
-	ac.Bounds = bounds
+	ac.Dimensions = dimentions
 
 	var encodePlan EncodePlan
 	var lastElemType reflect.Type
@@ -108,7 +101,7 @@ func EncodeArray(m *Map, typeId uint32, subType int32, scale int32, length uint3
 			lastElemType = elemType
 			encodePlan = m.PlanEncode(elementTypeId, ac.SubType, lenElem, ac.Scale, BinaryFormatCode, elem)
 			if encodePlan == nil {
-				return output, fmt.Errorf("unable to encode %v", array.Index(i))
+				return nil, nil, fmt.Errorf("unable to encode %v", array.Index(i))
 			}
 		}
 
@@ -122,14 +115,18 @@ func EncodeArray(m *Map, typeId uint32, subType int32, scale int32, length uint3
 		}
 
 		if err != nil {
-			return output, err
+			return nil, nil, err
 		}
 		buf = append(buf, tmpBuf...)
 	}
 
-	output = Arr{Buf: buf, Bounds: ac.Bounds}
+	outputDimentionsMap := []map[string]int{}
 
-	return output, nil
+	for _, elem := range ac.Dimensions {
+		outputDimentionsMap = append(outputDimentionsMap, map[string]int{"Lower": elem.Lower, "Upper": elem.Upper})
+	}
+
+	return buf, outputDimentionsMap, nil
 }
 
 func (c *ArrayData) encodeStaticType(array ArraySetter, encodePlan EncodePlan, lastElemType reflect.Type, elem any) ([]byte, error) {
@@ -196,13 +193,13 @@ func (c *ArrayData) encodeVaryingType(array ArraySetter, encodePlan EncodePlan, 
 	return buf, nil
 }
 
-func allElementsCount(bounds []Bound) int {
-	if len(bounds) == 0 {
+func allElementsCount(dimentions []Dimention) int {
+	if len(dimentions) == 0 {
 		return 0
 	}
 
-	elementCount := int(bounds[0].Upper - bounds[0].Lower + 1)
-	for _, d := range bounds[1:] {
+	elementCount := int(dimentions[0].Upper - dimentions[0].Lower + 1)
+	for _, d := range dimentions[1:] {
 		elementCount *= int(d.Upper - d.Lower + 1)
 	}
 
@@ -211,7 +208,7 @@ func allElementsCount(bounds []Bound) int {
 
 func (c *ArrayData) decodeBinary(m *Map, arrayOID uint32, src []byte, length int, array ArrayGetter) error {
 
-	elementCount := allElementsCount(c.Bounds)
+	elementCount := allElementsCount(c.Dimensions)
 	if elementCount == 0 {
 		return nil
 	}
@@ -251,7 +248,7 @@ func (c *ArrayData) decodeBinary(m *Map, arrayOID uint32, src []byte, length int
 }
 
 // ScanArray gets an array in binary format, decodes, and writes it to dst
-func ScanArray(m *Map, typeId uint32, subType int32, scale int32, length uint32, boundsMap []map[string]int, src []byte, dst any) error {
+func ScanArray(m *Map, typeId uint32, subType int32, scale int32, length uint32, dimentionsMap []map[string]int, src []byte, dst any) error {
 
 	ac := new(ArrayData)
 	var err error
@@ -261,11 +258,11 @@ func ScanArray(m *Map, typeId uint32, subType int32, scale int32, length uint32,
 	ac.SubType = subType
 	ac.TypeId = typeId
 
-	b := []Bound{}
-	for _, elem := range boundsMap {
-		b = append(b, Bound{Lower: elem["Lower"], Upper: elem["Upper"]})
+	b := []Dimention{}
+	for _, elem := range dimentionsMap {
+		b = append(b, Dimention{Lower: elem["Lower"], Upper: elem["Upper"]})
 	}
-	ac.Bounds = b
+	ac.Dimensions = b
 
 	array, err := getArrayDecodeType(dst)
 	if err != nil {
@@ -273,11 +270,11 @@ func ScanArray(m *Map, typeId uint32, subType int32, scale int32, length uint32,
 	}
 
 	if src == nil {
-		array.SetBounds(nil)
+		array.SetDimentions(nil)
 		return nil
 	}
 
-	err = array.SetBounds(ac.Bounds)
+	err = array.SetDimentions(ac.Dimensions)
 	if err != nil {
 		return err
 	}
@@ -507,32 +504,28 @@ func isRagged(slice reflect.Value) bool {
 
 type Array[T any] struct {
 	Elements []T
-	Bnds     []Bound
+	Dims     []Dimention
 	Valid    bool
 }
 
-func (a Array[T]) Dimensions() []Bound {
-	return a.Bnds
+func (a Array[T]) Dimensions() []Dimention {
+	return a.Dims
 }
 
 func (a Array[T]) Index(i int) any {
 	return a.Elements[i]
 }
 
-func (a Array[T]) Bounds() []Bound {
-	return a.Bnds
-}
-
-func (a *Array[T]) SetBounds(bounds []Bound) error {
-	if bounds == nil {
+func (a *Array[T]) SetDimentions(dimentions []Dimention) error {
+	if dimentions == nil {
 		*a = Array[T]{}
 		return nil
 	}
 
-	elementCount := allElementsCount(bounds)
+	elementCount := allElementsCount(dimentions)
 	*a = Array[T]{
 		Elements: make([]T, elementCount),
-		Bnds:     bounds,
+		Dims:     dimentions,
 		Valid:    true,
 	}
 
@@ -549,21 +542,21 @@ func (a FlatArray[T]) Index(i int) any {
 	return a[i]
 }
 
-func (a FlatArray[T]) Bounds() []Bound {
+func (a FlatArray[T]) Dimensions() []Dimention {
 	if a == nil {
 		return nil
 	}
 
-	return []Bound{{Lower: 1, Upper: len(a)}}
+	return []Dimention{{Lower: 1, Upper: len(a)}}
 }
 
-func (a *FlatArray[T]) SetBounds(bounds []Bound) error {
-	if bounds == nil {
+func (a *FlatArray[T]) SetDimentions(dimentions []Dimention) error {
+	if dimentions == nil {
 		*a = nil
 		return nil
 	}
 
-	elementCount := allElementsCount(bounds)
+	elementCount := allElementsCount(dimentions)
 	*a = make(FlatArray[T], elementCount)
 	return nil
 }

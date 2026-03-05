@@ -1,28 +1,27 @@
-package fbx
+package fbconn
 
 import (
 	"context"
 	"encoding/binary"
 
-	"rdb.red-soft.ru/fbx/fbconn"
 	"rdb.red-soft.ru/fbx/fbproto"
-	"rdb.red-soft.ru/fbx/fbtype"
 )
 
-type array struct {
-	TableName string
-	FieldName string
-	Bounds    []fbtype.Bound
-	Length    uint32
-	Scale     int32
-	TypeId    uint32
-	Metadata  map[string][]byte
+type Array struct {
+	TableName  string
+	FieldName  string
+	Dimensions []map[string]int
+	Length     uint32
+	Scale      int32
+	TypeId     uint32
+	SubType    int32
+	Metadata   map[string][]byte
 }
 
-func (ac *array) getSliceLength() int {
+func (ac *Array) getSliceLength() int {
 	var elements int = 1
-	for _, elem := range ac.Bounds {
-		elements *= elem.Upper - elem.Lower + 1
+	for _, elem := range ac.Dimensions {
+		elements *= elem["Upper"] - elem["Lower"] + 1
 	}
 
 	length := elements * int(ac.Length)
@@ -34,10 +33,10 @@ func (ac *array) getSliceLength() int {
 	return length
 }
 
-func (ac *array) generateSDL() []byte {
+func (ac *Array) generateSDL() []byte {
 	sdl := []byte{}
 	metadata := ac.Metadata
-	bounds := ac.Bounds
+	dimentions := ac.Dimensions
 
 	data_type := trimBytes(metadata["DATATYPE"], 1)[0]
 	scale := trimBytes(metadata["SCALE"], 1)
@@ -71,8 +70,8 @@ func (ac *array) generateSDL() []byte {
 	}...)
 	sdl = append(sdl, metadata["FIELD"]...)
 
-	for i, b := range bounds {
-		if b.Lower == 1 {
+	for i, b := range dimentions {
+		if b["Lower"] == 1 {
 			sdl = append(sdl, []byte{
 				fbproto.Isc_sdl_do1,
 				byte(i),
@@ -82,9 +81,9 @@ func (ac *array) generateSDL() []byte {
 				fbproto.Isc_sdl_do2,
 				byte(i),
 			}...)
-			sdl = append(sdl, getLiteral(b.Lower)...)
+			sdl = append(sdl, getLiteral(b["Lower"])...)
 		}
-		sdl = append(sdl, getLiteral(b.Upper)...)
+		sdl = append(sdl, getLiteral(b["Upper"])...)
 	}
 
 	sdl = append(sdl, []byte{
@@ -92,10 +91,10 @@ func (ac *array) generateSDL() []byte {
 		1,
 		fbproto.Isc_sdl_scalar,
 		0,
-		byte(len(bounds)),
+		byte(len(dimentions)),
 	}...)
 
-	for i := 0; i < len(bounds); i++ {
+	for i := 0; i < len(dimentions); i++ {
 		sdl = append(sdl, []byte{
 			fbproto.Isc_sdl_variable,
 			byte(i),
@@ -140,53 +139,29 @@ func getLiteral(value int) []byte {
 	return out
 }
 
-func putArray(fbConn *fbconn.FbConn, ctx context.Context, arrayData *fbconn.Array, arr fbtype.Arr) ([]byte, error) {
+func PutArray(fbConn *FbConn, ctx context.Context, arrayData *Array, arr []byte) ([]byte, error) {
 
-	ac := new(array)
-	ac.Length = arrayData.Length
-	ac.Scale = arrayData.Scale
-	ac.FieldName = arrayData.FieldName
-	ac.TableName = arrayData.TableName
-	ac.TypeId = arrayData.TypeId
-	ac.Metadata = arrayData.Metadata
+	sdl := arrayData.generateSDL()
+	length := arrayData.getSliceLength()
 
-	ac.Bounds = arr.Bounds
-
-	sdl := ac.generateSDL()
-	length := ac.getSliceLength()
-
-	id, err := fbConn.PutArray(ctx, arr.Buf, ac.TypeId, length, sdl)
+	id, err := fbConn.putArray(ctx, arr, arrayData.TypeId, length, sdl)
 	if err != nil {
 		return nil, err
 	}
 	return id, nil
 }
 
-func getArray(fbConn *fbconn.FbConn, ctx context.Context, arr fbconn.Array, arrId []byte) ([]byte, error) {
+func GetArray(fbConn *FbConn, ctx context.Context, arrayData Array, arrId []byte) ([]byte, error) {
 	if len(arrId) == 0 {
 		return nil, nil
 	}
 
 	arrayId := int64(binary.BigEndian.Uint64(arrId))
 
-	ac := new(array)
-	ac.Length = arr.Length
-	ac.TypeId = arr.TypeId
-	ac.FieldName = arr.FieldName
-	ac.TableName = arr.TableName
-	ac.Metadata = arr.Metadata
+	sdl := arrayData.generateSDL()
+	length := arrayData.getSliceLength()
 
-	bounds := []fbtype.Bound{}
-	for _, elem := range arr.Bounds {
-		bounds = append(bounds, fbtype.Bound{Lower: elem["Lower"], Upper: elem["Upper"]})
-	}
-	ac.Bounds = bounds
-
-	sdl := ac.generateSDL()
-
-	length := ac.getSliceLength()
-
-	array, err := fbConn.GetArray(ctx, arrayId, ac.TypeId, length, int(ac.Length), sdl)
+	array, err := fbConn.getArray(ctx, arrayId, arrayData.TypeId, length, int(arrayData.Length), sdl)
 	if err != nil {
 		return nil, err
 	}

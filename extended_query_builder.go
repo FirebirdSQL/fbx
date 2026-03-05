@@ -135,12 +135,16 @@ func (pb *ExtendedQueryBuilder) encodeParamValue(ctx context.Context, conn *Conn
 	}
 
 	if fbconn.IsArrayType(typeId) {
-		array, err := fbtype.EncodeArray(m, arrayData.TypeId, arrayData.SubType, arrayData.Scale, arrayData.Length, arrayData.Bounds, arg, make([]byte, 0))
+		array, dimentions, err := fbtype.EncodeArray(m, arrayData.TypeId, arrayData.SubType, arrayData.Scale, arrayData.Length, arrayData.Dimensions, arg, make([]byte, 0))
 		if err != nil {
 			return nil, err
 		}
-		if array.Buf != nil {
-			arrayId, err := putArray(conn.fbConn, ctx, arrayData, array)
+		if array != nil {
+			tmpDims := arrayData.Dimensions
+			arrayData.Dimensions = dimentions
+			arrayId, err := fbconn.PutArray(conn.fbConn, ctx, arrayData, array)
+
+			arrayData.Dimensions = tmpDims
 
 			if err != nil {
 				return nil, err

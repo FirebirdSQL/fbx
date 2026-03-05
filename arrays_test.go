@@ -105,7 +105,7 @@ func TestArrayArray(t *testing.T) {
 		}{
 			{fbtype.Array[int32]{
 				Elements: []int32{1, 2, 3, 4},
-				Bnds: []fbtype.Bound{
+				Dims: []fbtype.Dimention{
 					{Lower: 1, Upper: 2},
 					{Lower: 1, Upper: 2},
 				},

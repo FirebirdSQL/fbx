@@ -19,7 +19,6 @@ func (op *OpSliceResponse) Read(x *XDRReader) error {
 		return err
 	}
 
-	// p_slr_length
 	if op.SliceLengthBytes, err = x.ReadInt32(); err != nil {
 		return err
 	}

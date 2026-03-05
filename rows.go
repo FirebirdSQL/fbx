@@ -290,14 +290,14 @@ func (rows *baseRows) Scan(dest ...any) error {
 			continue
 		}
 		if fieldDescriptions[i].IsArray() {
-			arr, err := getArray(rows.Conn().FbConn(), rows.ctx, *fieldDescriptions[i].ArrayData, values[i])
+			arr, err := fbconn.GetArray(rows.Conn().FbConn(), rows.ctx, *fieldDescriptions[i].ArrayData, values[i])
 			if err != nil {
 				err = ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: err}
 				rows.fatal(err)
 				return err
 			}
 			arrInf := fieldDescriptions[i].ArrayData
-			err = fbtype.ScanArray(m, arrInf.TypeId, arrInf.SubType, arrInf.Scale, arrInf.Length, arrInf.Bounds, arr, dst)
+			err = fbtype.ScanArray(m, arrInf.TypeId, arrInf.SubType, arrInf.Scale, arrInf.Length, arrInf.Dimensions, arr, dst)
 			if err != nil {
 				err = ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: err}
 				rows.fatal(err)

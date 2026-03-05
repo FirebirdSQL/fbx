@@ -10,6 +10,7 @@ import (
 	"math"
 	"net"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -982,17 +983,6 @@ type FieldDescription struct {
 	ArrayData         *Array
 }
 
-type Array struct {
-	TableName string
-	FieldName string
-	SubType   int32
-	Length    uint32
-	Scale     int32
-	TypeId    uint32
-	Bounds    []map[string]int
-	Metadata  map[string][]byte
-}
-
 func (fbConn *FbConn) convertRowDescription(src []fbproto.FieldDescriptor) []FieldDescription {
 	res := make([]FieldDescription, len(src))
 
@@ -1112,23 +1102,41 @@ func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 	}
 
 	// checking if arrays in fields and parameters and getting array metadata
-	for i, field := range desc.Fields {
+
+	var tables, fields []string
+
+	for _, field := range desc.Fields {
 		if field.Type == fbproto.SQL_TYPE_ARRAY {
-			arr, err := getArrayInfo(fbConn, ctx, field.OriginalName, field.OriginalTableName)
-			if err != nil {
-				return nil, err
+			if !slices.Contains(tables, field.OriginalTableName) {
+				tables = append(tables, field.OriginalTableName)
 			}
-			desc.Fields[i].ArrayData = arr
+			if !slices.Contains(fields, field.OriginalName) {
+				fields = append(fields, field.OriginalName)
+			}
 		}
 	}
 
-	for i, param := range desc.Parameters {
+	for _, param := range desc.Parameters {
 		if param.Type == fbproto.SQL_TYPE_ARRAY {
-			arr, err := getArrayInfo(fbConn, ctx, param.OriginalName, param.OriginalTableName)
-			if err != nil {
-				return nil, err
+			if !slices.Contains(tables, param.OriginalTableName) {
+				tables = append(tables, param.OriginalTableName)
 			}
-			desc.Parameters[i].ArrayData = arr
+			if !slices.Contains(fields, param.OriginalName) {
+				fields = append(fields, param.OriginalName)
+			}
+		}
+	}
+
+	if tables != nil {
+		arr, err := getArrayInfo(fbConn, ctx, fields, tables)
+		if err != nil {
+			return nil, err
+		}
+		for i := range desc.Fields {
+			desc.Fields[i].ArrayData = arr[desc.Fields[i].OriginalTableName][desc.Fields[i].OriginalName]
+		}
+		for i := range desc.Parameters {
+			desc.Parameters[i].ArrayData = arr[desc.Parameters[i].OriginalTableName][desc.Parameters[i].OriginalName]
 		}
 	}
 
@@ -1397,8 +1405,8 @@ func (fbConn *FbConn) Disconnect(ctx context.Context) error {
 	return nil
 }
 
-// GetArrayMetadata returns the information about coloumn
-func (fbConn *FbConn) GetArrayMetadata(ctx context.Context, tableName, fieldName string) (map[string][]byte, error) {
+// GetArrayMetadata returns the information about fields
+func (fbConn *FbConn) GetArrayMetadata(ctx context.Context, tableNames, fieldNames []string) ([]map[string][]byte, [][]byte, error) {
 	if fbConn.status == connStatusBusy {
 		fbConn.unlock()
 		defer fbConn.lock()
@@ -1407,42 +1415,54 @@ func (fbConn *FbConn) GetArrayMetadata(ctx context.Context, tableName, fieldName
 	fbConn.contextWatcher.Unwatch()
 	defer fbConn.contextWatcher.Watch(ctx)
 
-	result := fbConn.ExecParams(ctx, `SELECT Y.RDB$FIELD_TYPE, Y.RDB$FIELD_SCALE, Y.RDB$FIELD_LENGTH, 
-       	Y.RDB$FIELD_SUB_TYPE, X.RDB$FIELD_SOURCE 
+	tables := ""
+	for _, table := range tableNames {
+		tables += "'" + table + "',"
+	}
+	fields := ""
+	for _, field := range fieldNames {
+		fields += "'" + field + "',"
+	}
+
+	result := fbConn.Exec(ctx, fmt.Sprintf(`SELECT Y.RDB$FIELD_TYPE, Y.RDB$FIELD_SCALE, Y.RDB$FIELD_LENGTH, 
+       	Y.RDB$FIELD_SUB_TYPE, X.RDB$FIELD_SOURCE, X.RDB$RELATION_NAME, X.RDB$FIELD_NAME
 		FROM RDB$RELATION_FIELDS X, RDB$FIELDS Y 
 		WHERE X.RDB$FIELD_SOURCE = Y.RDB$FIELD_NAME 
-  		AND X.RDB$RELATION_NAME = ?
-  		AND X.RDB$FIELD_NAME = ?`,
-		[][]byte{[]byte(tableName),
-			[]byte(fieldName)}).ReadWithoutCommit()
+  		AND X.RDB$RELATION_NAME IN (%s)
+  		AND X.RDB$FIELD_NAME IN (%s)`, tables[:len(tables)-1], fields[:len(fields)-1])).ReadWithoutCommit()
 
 	if result.Err != nil {
-		return nil, result.Err
+		return nil, nil, result.Err
 	}
 
-	row := result.Rows[0]
+	metadataList := make([]map[string][]byte, 0)
+	sources := [][]byte{}
+	for _, row := range result.Rows {
 
-	metadata := make(map[string][]byte)
+		metadata := make(map[string][]byte)
 
-	metadata["DATATYPE"] = row[0]
-	metadata["SCALE"] = row[1]
-	metadata["LENGTH"] = row[2]
-	if row[3] == nil {
-		metadata["SUBTYPE"] = make([]byte, 4)
-	} else {
-		metadata["SUBTYPE"] = row[3]
+		metadata["DATATYPE"] = row[0]
+		metadata["SCALE"] = row[1]
+		metadata["LENGTH"] = row[2]
+		if row[3] == nil {
+			metadata["SUBTYPE"] = make([]byte, 4)
+		} else {
+			metadata["SUBTYPE"] = row[3]
+		}
+		metadata["SOURCE"] = row[4]
+		sources = append(sources, row[4])
+
+		metadata["TABLE"] = row[5]
+		metadata["FIELD"] = row[6]
+
+		metadataList = append(metadataList, metadata)
 	}
 
-	metadata["SOURCE"] = row[4]
-
-	metadata["TABLE"] = []byte(tableName)
-	metadata["FIELD"] = []byte(fieldName)
-
-	return metadata, nil
+	return metadataList, sources, nil
 }
 
-// GetArrayBounds returns the information about array bounds
-func (fbConn *FbConn) GetArrayBounds(ctx context.Context, source []byte) ([]map[string]int, error) {
+// GetArrayDimentions returns the information about arrays dimentions
+func (fbConn *FbConn) GetArrayDimentions(ctx context.Context, sources [][]byte) (map[string][][]int, error) {
 	if fbConn.status == connStatusBusy {
 		fbConn.unlock()
 		defer fbConn.lock()
@@ -1451,28 +1471,36 @@ func (fbConn *FbConn) GetArrayBounds(ctx context.Context, source []byte) ([]map[
 	fbConn.contextWatcher.Unwatch()
 	defer fbConn.contextWatcher.Watch(ctx)
 
-	result := fbConn.ExecParams(ctx, `SELECT X.RDB$LOWER_BOUND, X.RDB$UPPER_BOUND 
+	sourcesString := ""
+	for _, source := range sources {
+		sourcesString += "'" + string(source) + "',"
+	}
+
+	result := fbConn.Exec(ctx, fmt.Sprintf(`SELECT X.RDB$LOWER_BOUND, X.RDB$UPPER_BOUND, X.RDB$FIELD_NAME
 		FROM RDB$FIELD_DIMENSIONS X 
-		WHERE X.RDB$FIELD_NAME = ? ORDER BY X.RDB$DIMENSION`,
-		[][]byte{source}).ReadWithoutCommit()
+		WHERE X.RDB$FIELD_NAME IN (%s) 
+		ORDER BY X.RDB$FIELD_NAME, X.RDB$DIMENSION`, sourcesString[:len(sourcesString)-1])).ReadWithoutCommit()
 
 	if result.Err != nil {
 		return nil, result.Err
 	}
 
-	bounds := []map[string]int{}
+	dimentions := map[string][][]int{}
 	for _, val := range result.Rows {
-		bounds = append(bounds, map[string]int{
-			"Lower": int(binary.BigEndian.Uint32(val[0])),
-			"Upper": int(binary.BigEndian.Uint32(val[1])),
-		})
+		dimentions[string(val[2])] = append(
+			dimentions[string(val[2])], // val[2] - field name
+			[]int{
+				int(binary.BigEndian.Uint32(val[0])), // lower bound
+				int(binary.BigEndian.Uint32(val[1])), // upper bound
+			},
+		)
 	}
 
-	return bounds, nil
+	return dimentions, nil
 }
 
 // GetArray gets the array id and returns the array
-func (fbConn *FbConn) GetArray(ctx context.Context, arrayId int64, datatype uint32, length, l int, sdl []byte) ([]byte, error) {
+func (fbConn *FbConn) getArray(ctx context.Context, arrayId int64, datatype uint32, length, l int, sdl []byte) ([]byte, error) {
 	if fbConn.status == connStatusBusy {
 		fbConn.unlock()
 		defer fbConn.lock()
@@ -1516,7 +1544,7 @@ func (fbConn *FbConn) GetArray(ctx context.Context, arrayId int64, datatype uint
 }
 
 // PutArray sends the array to the server and returns the array id
-func (fbConn *FbConn) PutArray(ctx context.Context, array []byte, datatype uint32, length int, sdl []byte) ([]byte, error) {
+func (fbConn *FbConn) putArray(ctx context.Context, array []byte, datatype uint32, length int, sdl []byte) ([]byte, error) {
 	if fbConn.status == connStatusBusy {
 		fbConn.unlock()
 		defer fbConn.lock()
@@ -2352,28 +2380,46 @@ func (h *CancelRequestContextWatcherHandler) HandleUnwatchAfterCancel() {
 	h.Conn.conn.SetDeadline(time.Time{})
 }
 
-func getArrayInfo(fbConn *FbConn, ctx context.Context, field, table string) (*Array, error) {
-	arr := new(Array)
-	metadata, err := fbConn.GetArrayMetadata(ctx, table, field)
+func getArrayInfo(fbConn *FbConn, ctx context.Context, fields, tables []string) (map[string]map[string]*Array, error) {
+	metadataList, sources, err := fbConn.GetArrayMetadata(ctx, tables, fields)
+	if err != nil {
+		return nil, err
+	}
+	dimentions, err := fbConn.GetArrayDimentions(ctx, sources)
 	if err != nil {
 		return nil, err
 	}
 
-	arr.FieldName = field
-	arr.TableName = table
-	arr.Scale = int32(binary.BigEndian.Uint32(metadata["SCALE"]))
-	arr.TypeId = binary.BigEndian.Uint32(metadata["DATATYPE"])
-	arr.SubType = int32(binary.BigEndian.Uint32(metadata["SUBTYPE"]))
-	arr.Length = binary.BigEndian.Uint32(metadata["LENGTH"])
-	if arr.TypeId == fbproto.Isc_blr_varaying || arr.TypeId == fbproto.Isc_blr_varaying2 ||
-		arr.TypeId == fbproto.Isc_blr_text || arr.TypeId == fbproto.Isc_blr_text2 {
-		arr.Length *= fbConn.Encoding.MaxBytesPerChar
+	arrays := map[string]map[string]*Array{}
+
+	for _, metadata := range metadataList {
+		arr := Array{}
+		arr.FieldName = strings.TrimSpace(string(metadata["FIELD"]))
+		arr.TableName = strings.TrimSpace(string(metadata["TABLE"]))
+		arr.Scale = int32(binary.BigEndian.Uint32(metadata["SCALE"]))
+		arr.TypeId = binary.BigEndian.Uint32(metadata["DATATYPE"])
+		arr.SubType = int32(binary.BigEndian.Uint32(metadata["SUBTYPE"]))
+
+		arr.Length = binary.BigEndian.Uint32(metadata["LENGTH"])
+		if arr.TypeId == fbproto.Isc_blr_varaying || arr.TypeId == fbproto.Isc_blr_varaying2 ||
+			arr.TypeId == fbproto.Isc_blr_text || arr.TypeId == fbproto.Isc_blr_text2 {
+			arr.Length *= fbConn.Encoding.MaxBytesPerChar
+		}
+
+		arr.Metadata = metadata
+
+		if arrays[arr.TableName] == nil {
+			arrays[arr.TableName] = map[string]*Array{}
+		}
+		for _, dimention := range dimentions[string(metadata["SOURCE"])] {
+			arr.Dimensions = append(arr.Dimensions,
+				map[string]int{
+					"Lower": dimention[0],
+					"Upper": dimention[1],
+				},
+			)
+		}
+		arrays[arr.TableName][arr.FieldName] = &arr
 	}
-	bounds, err := fbConn.GetArrayBounds(ctx, metadata["SOURCE"])
-	if err != nil {
-		return nil, err
-	}
-	arr.Metadata = metadata
-	arr.Bounds = bounds
-	return arr, nil
+	return arrays, nil
 }

@@ -271,8 +271,6 @@ func (c *Client) ReadMessage() (ServerMessage, error) {
 		inline := &c.reusable.inlineBlob
 		err = inline.ReadWithAllocator(c.xdrReader, c.inlineBlobAlloc)
 		return inline, err
-	case Op_slice_response:
-		msg = &OpSliceResponse{}
 	default:
 		return nil, fmt.Errorf("unknown opcode: %d", opcode)
 	}
