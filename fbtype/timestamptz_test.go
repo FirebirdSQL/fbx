@@ -69,7 +69,8 @@ func TestTimestamptzCodec_RoundTrip_Time(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			planEnc := c.PlanEncode(nil, fbproto.SQL_TYPE_TIMESTAMP_TZ, 0, 0, 0, BinaryFormatCode, tt.time)
+			typeMetadata := SetTypeMetadata(fbproto.SQL_TYPE_TIMESTAMP_TZ, 0, 0, 0, BinaryFormatCode)
+			planEnc := c.PlanEncode(nil, typeMetadata, tt.time)
 			if planEnc == nil {
 				t.Fatalf("PlanEncode returned nil for time.Time")
 			}
@@ -80,7 +81,7 @@ func TestTimestamptzCodec_RoundTrip_Time(t *testing.T) {
 			}
 
 			var got time.Time
-			planScan := c.PlanScan(nil, fbproto.SQL_TYPE_TIMESTAMP_TZ, 0, 0, 0, BinaryFormatCode, &got)
+			planScan := c.PlanScan(nil, typeMetadata, &got)
 			if planScan == nil {
 				t.Fatalf("PlanScan returned nil for *time.Time")
 			}
@@ -118,7 +119,8 @@ func TestTimestamptzCodec_RoundTrip_String(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			planEnc := c.PlanEncode(nil, fbproto.SQL_TYPE_TIMESTAMP_TZ, 0, 0, 0, BinaryFormatCode, tt.str)
+			typeMetadata := SetTypeMetadata(fbproto.SQL_TYPE_TIMESTAMP_TZ, 0, 0, 0, BinaryFormatCode)
+			planEnc := c.PlanEncode(nil, typeMetadata, tt.str)
 			if planEnc == nil {
 				t.Fatalf("PlanEncode returned nil for string")
 			}
@@ -132,7 +134,7 @@ func TestTimestamptzCodec_RoundTrip_String(t *testing.T) {
 			}
 
 			var got time.Time
-			planScan := c.PlanScan(nil, fbproto.SQL_TYPE_TIMESTAMP_TZ, 0, 0, 0, BinaryFormatCode, &got)
+			planScan := c.PlanScan(nil, typeMetadata, &got)
 			if planScan == nil {
 				t.Fatalf("PlanScan returned nil for *time.Time")
 			}
@@ -188,7 +190,8 @@ func TestTimestamptzCodec_RoundTrip_TimestamptzStruct(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			planEnc := c.PlanEncode(nil, fbproto.SQL_TYPE_TIMESTAMP_TZ, 0, 0, 0, BinaryFormatCode, tt.in)
+			typeMetadata := SetTypeMetadata(fbproto.SQL_TYPE_TIMESTAMP_TZ, 0, 0, 0, BinaryFormatCode)
+			planEnc := c.PlanEncode(nil, typeMetadata, tt.in)
 			if planEnc == nil {
 				t.Fatalf("PlanEncode returned nil for TimestamptzValuer")
 			}
@@ -202,7 +205,7 @@ func TestTimestamptzCodec_RoundTrip_TimestamptzStruct(t *testing.T) {
 			}
 
 			var got Timestamptz
-			planScan := c.PlanScan(nil, fbproto.SQL_TYPE_TIMESTAMP_TZ, 0, 0, 0, BinaryFormatCode, &got)
+			planScan := c.PlanScan(nil, typeMetadata, &got)
 			if planScan == nil {
 				t.Fatalf("PlanScan returned nil for *Timestamptz")
 			}
@@ -225,7 +228,8 @@ func TestTimestamptzCodec_Encode_NullStruct(t *testing.T) {
 
 	in := Timestamptz{Valid: false}
 
-	planEnc := c.PlanEncode(nil, fbproto.SQL_TYPE_TIMESTAMP_TZ, 0, 0, 0, BinaryFormatCode, in)
+	typeMetadata := SetTypeMetadata(fbproto.SQL_TYPE_TIMESTAMP_TZ, 0, 0, 0, BinaryFormatCode)
+	planEnc := c.PlanEncode(nil, typeMetadata, in)
 	if planEnc == nil {
 		t.Fatalf("PlanEncode returned nil for TimestamptzValuer")
 	}

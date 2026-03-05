@@ -265,16 +265,16 @@ func (NumericCodec) PreferredFormat() int16 {
 	return BinaryFormatCode
 }
 
-func (NumericCodec) PlanEncode(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
+func (NumericCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	switch value.(type) {
 	case NumericValuer:
-		return encodePlanNumericCodecBinaryNumericValuer{scale: scale, length: length}
+		return encodePlanNumericCodecBinaryNumericValuer{scale: typeMetadata.Scale, length: typeMetadata.Length}
 	case Float64Valuer:
-		return encodePlanNumericCodecBinaryFloat64Valuer{scale: scale, length: length}
+		return encodePlanNumericCodecBinaryFloat64Valuer{scale: typeMetadata.Scale, length: typeMetadata.Length}
 	case Int64Valuer:
-		return encodePlanNumericCodecBinaryInt64Valuer{scale: scale, length: length}
+		return encodePlanNumericCodecBinaryInt64Valuer{scale: typeMetadata.Scale, length: typeMetadata.Length}
 	case string:
-		return encodePlanNumericCodecTextString{scale: scale, length: length}
+		return encodePlanNumericCodecTextString{scale: typeMetadata.Scale, length: typeMetadata.Length}
 	}
 
 	return nil
@@ -367,47 +367,47 @@ func encodeNumericText(n Numeric, buf []byte) (newBuf []byte, err error) {
 	return buf, nil
 }
 
-func (NumericCodec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
+func (NumericCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
 	switch target.(type) {
 	case *Numeric:
 		return scanPlanBinaryNumericToNumeric{
-			scale:  scale,
-			length: length,
+			scale:  typeMetadata.Scale,
+			length: typeMetadata.Length,
 		}
 	case NumericScanner:
 		return scanPlanBinaryNumericToNumericScanner{
-			scale:  scale,
-			length: length,
+			scale:  typeMetadata.Scale,
+			length: typeMetadata.Length,
 		}
 	case Float64Scanner:
 		return scanPlanBinaryNumericToFloat64Scanner{
-			scale:  scale,
-			length: length,
+			scale:  typeMetadata.Scale,
+			length: typeMetadata.Length,
 		}
 	case Int64Scanner:
 		return scanPlanBinaryNumericToInt64Scanner{
-			scale:  scale,
-			length: length,
+			scale:  typeMetadata.Scale,
+			length: typeMetadata.Length,
 		}
 	case TextScanner:
 		return scanPlanBinaryNumericToTextScanner{
-			scale:  scale,
-			length: length,
+			scale:  typeMetadata.Scale,
+			length: typeMetadata.Length,
 		}
 	case *string:
 		return scanPlanBinaryNumericToString{
-			scale:  scale,
-			length: length,
+			scale:  typeMetadata.Scale,
+			length: typeMetadata.Length,
 		}
 	case *float64:
 		return scanPlanBinaryNumericToFloat64Ptr{
-			scale:  scale,
-			length: length,
+			scale:  typeMetadata.Scale,
+			length: typeMetadata.Length,
 		}
 	case *int64:
 		return scanPlanBinaryNumericToInt64Ptr{
-			scale:  scale,
-			length: length,
+			scale:  typeMetadata.Scale,
+			length: typeMetadata.Length,
 		}
 	}
 
@@ -633,13 +633,13 @@ func (p scanPlanBinaryNumericToString) Scan(src []byte, dst any) error {
 	return nil
 }
 
-func (c NumericCodec) DecodeDatabaseSQLValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
+func (c NumericCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var n Numeric
-	err := codecScan(c, m, typeid, subType, length, scale, format, src, &n)
+	err := codecScan(c, m, typeMetadata, src, &n)
 	if err != nil {
 		return nil, err
 	}
@@ -662,13 +662,13 @@ func (c NumericCodec) DecodeDatabaseSQLValue(m *Map, typeid uint32, subType int3
 	return f64.Float64, nil
 }
 
-func (c NumericCodec) DecodeValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error) {
+func (c NumericCodec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var n Numeric
-	err := codecScan(c, m, typeid, subType, length, scale, format, src, &n)
+	err := codecScan(c, m, typeMetadata, src, &n)
 	if err != nil {
 		return nil, err
 	}

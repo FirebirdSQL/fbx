@@ -124,7 +124,7 @@ func (*TimestampCodec) PreferredFormat() int16 {
 	return BinaryFormatCode
 }
 
-func (*TimestampCodec) PlanEncode(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
+func (*TimestampCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	switch value.(type) {
 	case TimestampValuer:
 		return encodePlanTimestampCodecBinary{}
@@ -209,7 +209,7 @@ func (encodePlanTimestampCodecText) Encode(value any, buf []byte) (newBuf []byte
 	return buf, nil
 }
 
-func (c *TimestampCodec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
+func (c *TimestampCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
 	switch target.(type) {
 	case TimestampScanner:
 		return &scanPlanBinaryTimestampToTimestampScanner{location: c.ScanLocation}
@@ -300,13 +300,13 @@ func (plan *scanPlanTextTimestampToTimestampScanner) Scan(src []byte, dst any) e
 	return scanner.ScanTimestamp(Timestamp{Time: t, Valid: true})
 }
 
-func (c *TimestampCodec) DecodeDatabaseSQLValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
+func (c *TimestampCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var ts Timestamp
-	err := codecScan(c, m, typeid, subType, length, scale, format, src, &ts)
+	err := codecScan(c, m, typeMetadata, src, &ts)
 	if err != nil {
 		return nil, err
 	}
@@ -314,13 +314,13 @@ func (c *TimestampCodec) DecodeDatabaseSQLValue(m *Map, typeid uint32, subType i
 	return ts.Time, nil
 }
 
-func (c *TimestampCodec) DecodeValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error) {
+func (c *TimestampCodec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var ts Timestamp
-	err := codecScan(c, m, typeid, subType, length, scale, format, src, &ts)
+	err := codecScan(c, m, typeMetadata, src, &ts)
 	if err != nil {
 		return nil, err
 	}

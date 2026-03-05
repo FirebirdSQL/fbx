@@ -105,7 +105,7 @@ func (DateCodec) PreferredFormat() int16 {
 	return BinaryFormatCode
 }
 
-func (DateCodec) PlanEncode(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
+func (DateCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	switch value.(type) {
 	case DateValuer:
 		return encodePlanDateCodecBinary{}
@@ -216,7 +216,7 @@ func (encodePlanDateCodecText) Encode(value any, buf []byte) (newBuf []byte, err
 	return buf, nil
 }
 
-func (DateCodec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
+func (DateCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
 	switch target.(type) {
 	case DateScanner:
 		return scanPlanBinaryDateToDateScanner{}
@@ -337,13 +337,13 @@ func (scanPlanTextAnyToDateScanner) Scan(src []byte, dst any) error {
 	return fmt.Errorf("invalid date format")
 }
 
-func (c DateCodec) DecodeDatabaseSQLValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
+func (c DateCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var date Date
-	err := codecScan(c, m, typeid, subType, length, scale, format, src, &date)
+	err := codecScan(c, m, typeMetadata, src, &date)
 	if err != nil {
 		return nil, err
 	}
@@ -351,13 +351,13 @@ func (c DateCodec) DecodeDatabaseSQLValue(m *Map, typeid uint32, subType int32, 
 	return date.Time, nil
 }
 
-func (c DateCodec) DecodeValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error) {
+func (c DateCodec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var date Date
-	err := codecScan(c, m, typeid, subType, length, scale, format, src, &date)
+	err := codecScan(c, m, typeMetadata, src, &date)
 	if err != nil {
 		return nil, err
 	}

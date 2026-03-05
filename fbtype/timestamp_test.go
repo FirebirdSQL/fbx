@@ -37,9 +37,9 @@ func TestTimestampCodecWithScanLocationUTC(t *testing.T) {
 	connTestRunner := defaultConnTestRunner
 	connTestRunner.AfterConnect = func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		conn.TypeMap().RegisterType(&fbtype.Type{
-			Name:  "timestamp",
-			TypeID:   fbproto.SQL_TYPE_TIMESTAMP,
-			Codec: &fbtype.TimestampCodec{ScanLocation: time.UTC},
+			Name:   "timestamp",
+			TypeID: fbproto.SQL_TYPE_TIMESTAMP,
+			Codec:  &fbtype.TimestampCodec{ScanLocation: time.UTC},
 		})
 	}
 
@@ -52,9 +52,9 @@ func TestTimestampCodecWithScanLocationLocal(t *testing.T) {
 	connTestRunner := defaultConnTestRunner
 	connTestRunner.AfterConnect = func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		conn.TypeMap().RegisterType(&fbtype.Type{
-			Name:  "timestamp",
-			TypeID:   fbproto.SQL_TYPE_TIMESTAMP,
-			Codec: &fbtype.TimestampCodec{ScanLocation: time.Local},
+			Name:   "timestamp",
+			TypeID: fbproto.SQL_TYPE_TIMESTAMP,
+			Codec:  &fbtype.TimestampCodec{ScanLocation: time.Local},
 		})
 	}
 
@@ -81,7 +81,8 @@ func TestTimestampTranscodeBigTimeBinary(t *testing.T) {
 func TestTimestampCodecDecodeTextInvalid(t *testing.T) {
 	c := &fbtype.TimestampCodec{}
 	var ts fbtype.Timestamp
-	plan := c.PlanScan(nil, fbproto.SQL_TYPE_TIMESTAMP, 0, 0, 0, fbtype.TextFormatCode, &ts)
+	typeMetadata := fbtype.SetTypeMetadata(fbproto.SQL_TYPE_TIMESTAMP, 0, 0, 0, fbtype.TextFormatCode)
+	plan := c.PlanScan(nil, typeMetadata, &ts)
 	err := plan.Scan([]byte(`eeeee`), &ts)
 	require.Error(t, err)
 }

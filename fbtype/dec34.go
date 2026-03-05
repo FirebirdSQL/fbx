@@ -96,17 +96,21 @@ func (d *DecFloat34) UnmarshalJSON(b []byte) error {
 	return scanPlanTextAnyToDecFloat34Scanner{}.Scan([]byte(*s), d)
 }
 
-func (d DecFloat34) IsSpecial() bool  { return d.Special != SpecialNone }
-func (d DecFloat34) IsInfinity() bool { return d.Special == SpecialPosInf || d.Special == SpecialNegInf }
-func (d DecFloat34) IsNaN() bool      { return d.Special == SpecialQuietNaN || d.Special == SpecialSignalingNaN }
+func (d DecFloat34) IsSpecial() bool { return d.Special != SpecialNone }
+func (d DecFloat34) IsInfinity() bool {
+	return d.Special == SpecialPosInf || d.Special == SpecialNegInf
+}
+func (d DecFloat34) IsNaN() bool {
+	return d.Special == SpecialQuietNaN || d.Special == SpecialSignalingNaN
+}
 
 type DecFloat34Codec struct{}
 
 func (DecFloat34Codec) FormatSupported(format int16) bool { return format == BinaryFormatCode }
 func (DecFloat34Codec) PreferredFormat() int16            { return BinaryFormatCode }
 
-func (DecFloat34Codec) PlanEncode(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
-	if format != BinaryFormatCode {
+func (DecFloat34Codec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
+	if typeMetadata.FormatCode != BinaryFormatCode {
 		return nil
 	}
 
@@ -187,8 +191,8 @@ func (encodePlanDecFloat34CodecBinaryFromString) Encode(value any, buf []byte) (
 	return encodeDecFloat34Binary(buf, d)
 }
 
-func (DecFloat34Codec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
-	if format != BinaryFormatCode {
+func (DecFloat34Codec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
+	if typeMetadata.FormatCode != BinaryFormatCode {
 		return nil
 	}
 
@@ -319,25 +323,25 @@ func (scanPlanTextAnyToDecFloat34Scanner) Scan(src []byte, dst any) error {
 	return scanner.ScanDec34(d)
 }
 
-func (c DecFloat34Codec) DecodeDatabaseSQLValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
+func (c DecFloat34Codec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var d DecFloat34
-	if err := codecScan(c, m, typeid, subType, length, scale, format, src, &d); err != nil {
+	if err := codecScan(c, m, typeMetadata, src, &d); err != nil {
 		return nil, err
 	}
 	return d.String(), nil
 }
 
-func (c DecFloat34Codec) DecodeValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error) {
+func (c DecFloat34Codec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var d DecFloat34
-	if err := codecScan(c, m, typeid, subType, length, scale, format, src, &d); err != nil {
+	if err := codecScan(c, m, typeMetadata, src, &d); err != nil {
 		return nil, err
 	}
 	return d, nil

@@ -14,8 +14,8 @@ func (NullCodec) PreferredFormat() int16 {
 	return BinaryFormatCode
 }
 
-func (NullCodec) PlanEncode(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
-	switch format {
+func (NullCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
+	switch typeMetadata.FormatCode {
 	case BinaryFormatCode:
 		return encodePlanNullValuer{}
 	}
@@ -29,19 +29,19 @@ func (encodePlanNullValuer) Encode(value any, buf []byte) (newBuf []byte, err er
 	return buf, nil
 }
 
-func (NullCodec) PlanScan(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
+func (NullCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
 	//Looks like there is no case where null type can be scanned, so no need to emit scanners
 	return nil
 }
 
-func (c NullCodec) DecodeDatabaseSQLValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
+func (c NullCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
 	}
 	return "", nil
 }
 
-func (c NullCodec) DecodeValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error) {
+func (c NullCodec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
 	}

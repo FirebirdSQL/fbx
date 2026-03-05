@@ -1099,8 +1099,8 @@ func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 	}
 
 	st := &Statement{
-		conn:           fbConn,
-		Description:    desc,
+		conn:        fbConn,
+		Description: desc,
 	}
 	if tx != fbConn.internalTransaction {
 		st.transaction = tx
