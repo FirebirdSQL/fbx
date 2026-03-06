@@ -61,7 +61,7 @@ func (c *ArrayCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) En
 
 	elementType := arrayValuer.IndexType()
 
-	newTypeMetadata := SetTypeMetadata(c.ElementType.TypeID, c.SubType, c.Length, c.Scale, typeMetadata.FormatCode)
+	newTypeMetadata := NewTypeMetadata(c.ElementType.TypeID, c.SubType, c.Length, c.Scale, typeMetadata.FormatCode)
 	elementEncodePlan := m.PlanEncode(newTypeMetadata, elementType)
 	if elementEncodePlan == nil {
 		if reflect.TypeOf(elementType) != nil {
@@ -131,7 +131,7 @@ func (p *encodePlanArrayCodecText) Encode(value any, buf []byte) (newBuf []byte,
 			elemType := reflect.TypeOf(elem)
 			if lastElemType != elemType {
 				lastElemType = elemType
-				typeMetadata := SetTypeMetadata(p.ac.ElementType.TypeID, p.ac.SubType, p.ac.Length, p.ac.Scale, TextFormatCode)
+				typeMetadata := NewTypeMetadata(p.ac.ElementType.TypeID, p.ac.SubType, p.ac.Length, p.ac.Scale, TextFormatCode)
 				encodePlan = p.m.PlanEncode(typeMetadata, elem)
 				if encodePlan == nil {
 					return nil, fmt.Errorf("unable to encode %v", array.Index(i))
@@ -196,7 +196,7 @@ func (p *encodePlanArrayCodecBinary) Encode(value any, buf []byte) (newBuf []byt
 			elemType := reflect.TypeOf(elem)
 			if lastElemType != elemType {
 				lastElemType = elemType
-				typeMetadata := SetTypeMetadata(p.ac.ElementType.TypeID, p.ac.SubType, p.ac.Length, p.ac.Scale, BinaryFormatCode)
+				typeMetadata := NewTypeMetadata(p.ac.ElementType.TypeID, p.ac.SubType, p.ac.Length, p.ac.Scale, BinaryFormatCode)
 				encodePlan = p.m.PlanEncode(typeMetadata, elem)
 				if encodePlan == nil {
 					return nil, fmt.Errorf("unable to encode %v", array.Index(i))
@@ -265,7 +265,7 @@ func (c *ArrayCodec) decodeBinary(m *Map, arrayTypeID uint32, src []byte, array 
 		return nil
 	}
 
-	typeMetadata := SetTypeMetadata(c.ElementType.TypeID, c.SubType, c.Length, c.Scale, BinaryFormatCode)
+	typeMetadata := NewTypeMetadata(c.ElementType.TypeID, c.SubType, c.Length, c.Scale, BinaryFormatCode)
 	elementScanPlan := c.ElementType.Codec.PlanScan(m, typeMetadata, array.ScanIndex(0))
 	if elementScanPlan == nil {
 		elementScanPlan = m.PlanScan(typeMetadata, array.ScanIndex(0))
@@ -304,7 +304,7 @@ func (c *ArrayCodec) decodeText(m *Map, arrayTypeID uint32, src []byte, array Ar
 		return nil
 	}
 
-	typeMetadata := SetTypeMetadata(c.ElementType.TypeID, c.SubType, c.Length, c.Scale, TextFormatCode)
+	typeMetadata := NewTypeMetadata(c.ElementType.TypeID, c.SubType, c.Length, c.Scale, TextFormatCode)
 	elementScanPlan := c.ElementType.Codec.PlanScan(m, typeMetadata, array.ScanIndex(0))
 	if elementScanPlan == nil {
 		elementScanPlan = m.PlanScan(typeMetadata, array.ScanIndex(0))

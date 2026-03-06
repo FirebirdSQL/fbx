@@ -26,7 +26,7 @@ func (pb *ExtendedQueryBuilder) Build(ctx context.Context, conn *Conn, tx *dbTx,
 
 	if sd == nil {
 		for i := range args {
-			typeMetadata := fbtype.SetTypeMetadata(0, 0, 0, 0, fbtype.TextFormatCode)
+			typeMetadata := fbtype.NewTypeMetadata(0, 0, 0, 0, fbtype.TextFormatCode)
 			err := pb.appendParam(ctx, conn, tx, m, typeMetadata, args[i])
 			if err != nil {
 				err = fmt.Errorf("failed to encode args[%d]: %w", i, err)
@@ -41,7 +41,7 @@ func (pb *ExtendedQueryBuilder) Build(ctx context.Context, conn *Conn, tx *dbTx,
 	}
 
 	for i := range args {
-		typeMetadata := fbtype.SetTypeMetadata(sd.Parameters[i].Type, sd.Parameters[i].Subtype, sd.Parameters[i].Length, sd.Parameters[i].Scale, -1)
+		typeMetadata := fbtype.NewTypeMetadata(sd.Parameters[i].Type, sd.Parameters[i].Subtype, sd.Parameters[i].Length, sd.Parameters[i].Scale, -1)
 		err := pb.appendParam(ctx, conn, tx, m, typeMetadata, args[i])
 		if err != nil {
 			err = fmt.Errorf("failed to encode args[%d]: %w", i, err)
@@ -147,41 +147,38 @@ func (pb *ExtendedQueryBuilder) encodeParamValue(ctx context.Context, conn *Conn
 }
 
 func (pb *ExtendedQueryBuilder) encodeBlobParam(ctx context.Context, conn *Conn, tx *dbTx, typeMetadata fbtype.TypeMetadata, arg any) ([]byte, error) {
-	typeId := typeMetadata.TypeID
-	subType := typeMetadata.SubType
-	scale := typeMetadata.Scale
 
 	if isNilArg(arg) {
 		return nil, nil
 	}
-	if typeId != 0 && !fbconn.IsBlobType(typeId) {
-		return nil, fmt.Errorf("blob argument is not compatible with typeid %d", typeId)
+	if typeMetadata.TypeID != 0 && !fbconn.IsBlobType(typeMetadata.TypeID) {
+		return nil, fmt.Errorf("blob argument is not compatible with typeid %d", typeMetadata.TypeID)
 	}
 	switch v := arg.(type) {
 	case []byte:
-		if !fbconn.IsBlobType(typeId) {
+		if !fbconn.IsBlobType(typeMetadata.TypeID) {
 			return nil, fmt.Errorf("blob parameter expected, got raw bytes")
 		}
-		return pb.createBlobFromBytes(ctx, conn, tx, subType, scale, v)
+		return pb.createBlobFromBytes(ctx, conn, tx, typeMetadata.SubType, typeMetadata.Scale, v)
 	case string:
-		if !fbconn.IsBlobType(typeId) {
+		if !fbconn.IsBlobType(typeMetadata.TypeID) {
 			return nil, fmt.Errorf("blob parameter expected, got string")
 		}
-		return pb.createBlobFromString(ctx, conn, tx, subType, scale, v)
+		return pb.createBlobFromString(ctx, conn, tx, typeMetadata.SubType, typeMetadata.Scale, v)
 	case io.Reader:
-		if typeId != 0 && !fbconn.IsBlobType(typeId) {
+		if typeMetadata.TypeID != 0 && !fbconn.IsBlobType(typeMetadata.TypeID) {
 			return nil, fmt.Errorf("blob parameter expected, got reader")
 		}
-		id, err := pb.createBlobFromReader(ctx, conn, tx, subType, scale, v)
+		id, err := pb.createBlobFromReader(ctx, conn, tx, typeMetadata.SubType, typeMetadata.Scale, v)
 		if err != nil {
 			return nil, err
 		}
 		return fbconn.EncodeBlobID(int64(id)), nil
 	default:
-		if fbconn.IsBlobType(typeId) {
+		if fbconn.IsBlobType(typeMetadata.TypeID) {
 			return nil, fmt.Errorf("unsupported blob argument type %T", arg)
 		}
-		return nil, fmt.Errorf("blob argument type %T is not compatible with typeid %d", arg, typeId)
+		return nil, fmt.Errorf("blob argument type %T is not compatible with typeid %d", arg, typeMetadata.TypeID)
 	}
 }
 

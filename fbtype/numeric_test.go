@@ -65,7 +65,7 @@ func TestNumericBinaryScanToFloat64_Local(t *testing.T) {
 
 	var dst fbtype.Float8
 
-	typeMetadata := fbtype.SetTypeMetadata(fbproto.SQL_TYPE_D_FLOAT, 0, 4, -2, fbtype.BinaryFormatCode)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_D_FLOAT, 0, 4, -2, fbtype.BinaryFormatCode)
 	plan := fbtype.NumericCodec{}.PlanScan(
 		nil,
 		typeMetadata,
@@ -121,7 +121,7 @@ func TestNumericBinaryScanToInt64_Local(t *testing.T) {
 
 	var dst fbtype.Int8
 
-	typeMetadata := fbtype.SetTypeMetadata(fbproto.SQL_TYPE_INT64, 0, 8, 0, fbtype.BinaryFormatCode)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_INT64, 0, 8, 0, fbtype.BinaryFormatCode)
 	plan := fbtype.NumericCodec{}.PlanScan(
 		nil,
 		typeMetadata,

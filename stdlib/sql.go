@@ -780,9 +780,7 @@ func (r *Rows) Next(dest []driver.Value) error {
 		r.blobColumns = make([]bool, len(fieldDescriptions))
 
 		for i, fd := range fieldDescriptions {
-			dataTypeTypeID := fd.Type
-			format := fd.Format
-			typeMetadata := fbtype.SetTypeMetadata(dataTypeTypeID, fd.Subtype, fd.Length, fd.Scale, format)
+			typeMetadata := fbtype.NewTypeMetadata(fd.Type, fd.Subtype, fd.Length, fd.Scale, fd.Format)
 
 			switch fd.Type {
 			case fbproto.SQL_TYPE_BLOB:

@@ -54,7 +54,7 @@ func (u UUID) Value() (driver.Value, error) {
 		return nil, nil
 	}
 
-	typeMetadata := fbtype.SetTypeMetadata(fbproto.SQL_TYPE_VARYING, 0, 0, 0, fbtype.TextFormatCode)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_VARYING, 0, 0, 0, fbtype.TextFormatCode)
 	buf, err := fbtype.UUIDCodec{}.PlanEncode(nil, typeMetadata, u).Encode(u, nil)
 	if err != nil {
 		return nil, err

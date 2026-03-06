@@ -83,7 +83,7 @@ func (t Time) Value() (driver.Value, error) {
 		return nil, nil
 	}
 
-	typeMetadata := SetTypeMetadata(0, 0, 0, 0, TextFormatCode)
+	typeMetadata := NewTypeMetadata(0, 0, 0, 0, TextFormatCode)
 	buf, err := TimeCodec{}.PlanEncode(nil, typeMetadata, t).Encode(t, nil)
 	if err != nil {
 		return nil, err

@@ -65,7 +65,7 @@ type TypeMetadata struct {
 	FormatCode int16
 }
 
-func SetTypeMetadata(typeId uint32, subType int32, length uint32, scale int32, formatCode int16) TypeMetadata {
+func NewTypeMetadata(typeId uint32, subType int32, length uint32, scale int32, formatCode int16) TypeMetadata {
 	var tm TypeMetadata
 
 	tm.TypeID = typeId
@@ -75,10 +75,6 @@ func SetTypeMetadata(typeId uint32, subType int32, length uint32, scale int32, f
 	tm.FormatCode = formatCode
 
 	return tm
-}
-
-type encodePlanKey struct {
-	typeMetadata TypeMetadata
 }
 
 // Map is the mapping between Firebird server types and Go type handling logic. It can encode values for
@@ -91,7 +87,7 @@ type Map struct {
 
 	reflectTypeToType map[reflect.Type]*Type
 
-	memoizedEncodePlans map[encodePlanKey]map[reflect.Type][2]EncodePlan
+	memoizedEncodePlans map[TypeMetadata]map[reflect.Type][2]EncodePlan
 
 	// TryWrapEncodePlanFuncs is a slice of functions that will wrap a value that cannot be encoded by the Codec. Every
 	// time a wrapper is found the PlanEncode method will be recursively called with the new value. This allows several layers of wrappers
@@ -124,7 +120,7 @@ func NewMap() *Map {
 		reflectTypeToName:  make(map[reflect.Type]string),
 		typeidToFormatCode: make(map[uint32]int16),
 
-		memoizedEncodePlans: make(map[encodePlanKey]map[reflect.Type][2]EncodePlan),
+		memoizedEncodePlans: make(map[TypeMetadata]map[reflect.Type][2]EncodePlan),
 
 		TryWrapEncodePlanFuncs: []TryWrapEncodePlanFunc{
 			TryWrapDerefPointerEncodePlan,
@@ -1172,11 +1168,10 @@ func (m *Map) planEncodeDepth(typeMetadata TypeMetadata, value any, depth int) E
 	// 	typeidMemo = make(map[reflect.Type][2]EncodePlan)
 	// 	m.memoizedEncodePlans[memoId] = typeidMemo
 	// }
-	key := encodePlanKey{typeMetadata}
-	typeidMemo := m.memoizedEncodePlans[key]
+	typeidMemo := m.memoizedEncodePlans[typeMetadata]
 	if typeidMemo == nil {
 		typeidMemo = make(map[reflect.Type][2]EncodePlan)
-		m.memoizedEncodePlans[key] = typeidMemo
+		m.memoizedEncodePlans[typeMetadata] = typeidMemo
 	}
 
 	targetReflectType := reflect.TypeOf(value)

@@ -33,7 +33,7 @@ func initDefaultMap() {
 		reflectTypeToName:  make(map[reflect.Type]string),
 		typeidToFormatCode: make(map[uint32]int16),
 
-		memoizedEncodePlans: make(map[encodePlanKey]map[reflect.Type][2]EncodePlan),
+		memoizedEncodePlans: make(map[TypeMetadata]map[reflect.Type][2]EncodePlan),
 
 		TryWrapEncodePlanFuncs: []TryWrapEncodePlanFunc{
 			TryWrapDerefPointerEncodePlan,

@@ -282,7 +282,7 @@ func TestInt2CodecStringErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			typeMetadata := fbtype.SetTypeMetadata(0, 0, 0, 0, 0)
+			typeMetadata := fbtype.NewTypeMetadata(0, 0, 0, 0, 0)
 			plan := fbtype.Int2Codec{}.PlanEncode(nil, typeMetadata, tt.value)
 			require.NotNil(t, plan)
 
