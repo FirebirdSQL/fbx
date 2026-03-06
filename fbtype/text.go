@@ -91,8 +91,8 @@ func (TextCodec) PreferredFormat() int16 {
 	return TextFormatCode
 }
 
-func (TextCodec) PlanEncode(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
-	charsetId := CharacterSetForType(typeId, subType, scale)
+func (TextCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
+	charsetId := CharacterSetForType(typeMetadata.TypeID, typeMetadata.SubType, typeMetadata.Scale)
 	name, err := fbproto.CharacterSetIdIntoName(charsetId)
 	if err != nil {
 		return nil
@@ -102,17 +102,17 @@ func (TextCodec) PlanEncode(m *Map, typeId uint32, subType int32, length uint32,
 		return nil
 	}
 
-	switch format {
+	switch typeMetadata.FormatCode {
 	case TextFormatCode, BinaryFormatCode:
 		switch value.(type) {
 		case string:
-			return encodePlanTextCodecString{encoding: encoding, length: length}
+			return encodePlanTextCodecString{encoding: encoding, length: typeMetadata.Length}
 		case []byte:
-			return encodePlanTextCodecByteSlice{encoding: encoding, length: length}
+			return encodePlanTextCodecByteSlice{encoding: encoding, length: typeMetadata.Length}
 		case fmt.Stringer:
-			return encodePlanTextCodecStringer{encoding: encoding, length: length}
+			return encodePlanTextCodecStringer{encoding: encoding, length: typeMetadata.Length}
 		case TextValuer:
-			return encodePlanTextCodecTextValuer{encoding: encoding, length: length}
+			return encodePlanTextCodecTextValuer{encoding: encoding, length: typeMetadata.Length}
 		}
 	}
 
@@ -185,8 +185,8 @@ func (e encodePlanTextCodecTextValuer) Encode(value any, buf []byte) (newBuf []b
 	return buf, nil
 }
 
-func (TextCodec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
-	charsetId := CharacterSetForType(typeId, subType, scale)
+func (TextCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
+	charsetId := CharacterSetForType(typeMetadata.TypeID, typeMetadata.SubType, typeMetadata.Scale)
 	name, err := fbproto.CharacterSetIdIntoName(charsetId)
 	if err != nil {
 		return nil
@@ -196,33 +196,33 @@ func (TextCodec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, s
 		return nil
 	}
 
-	switch format {
+	switch typeMetadata.FormatCode {
 	case TextFormatCode, BinaryFormatCode:
 		switch target.(type) {
 		case *string:
-			return scanPlanTextAnyToString{encoding: encoding, length: length, typeId: typeId}
+			return scanPlanTextAnyToString{encoding: encoding, length: typeMetadata.Length, typeId: typeMetadata.TypeID}
 		case *[]byte:
-			return scanPlanAnyToNewByteSlice{encoding: encoding, length: length, typeId: typeId}
+			return scanPlanAnyToNewByteSlice{encoding: encoding, length: typeMetadata.Length, typeId: typeMetadata.TypeID}
 		case BytesScanner:
-			return scanPlanAnyToByteScanner{encoding: encoding, length: length, typeId: typeId}
+			return scanPlanAnyToByteScanner{encoding: encoding, length: typeMetadata.Length, typeId: typeMetadata.TypeID}
 		case TextScanner:
-			return scanPlanTextAnyToTextScanner{encoding: encoding, length: length, typeId: typeId}
+			return scanPlanTextAnyToTextScanner{encoding: encoding, length: typeMetadata.Length, typeId: typeMetadata.TypeID}
 		}
 	}
 
 	return nil
 }
 
-func (c TextCodec) DecodeDatabaseSQLValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
-	return c.DecodeValue(m, typeid, subType, length, scale, format, src)
+func (c TextCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
+	return c.DecodeValue(m, typeMetadata, src)
 }
 
-func (c TextCodec) DecodeValue(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error) {
+func (c TextCodec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
 	}
 
-	charsetId := CharacterSetForType(typeId, subType, scale)
+	charsetId := CharacterSetForType(typeMetadata.TypeID, typeMetadata.SubType, typeMetadata.Scale)
 	name, err := fbproto.CharacterSetIdIntoName(charsetId)
 	if err != nil {
 		return nil, err
@@ -233,7 +233,7 @@ func (c TextCodec) DecodeValue(m *Map, typeId uint32, subType int32, length uint
 	}
 
 	var res string
-	if err = decodeFBString(src, typeId == fbproto.SQL_TYPE_VARYING, length, encoding, &res); err != nil {
+	if err = decodeFBString(src, typeMetadata.TypeID == fbproto.SQL_TYPE_VARYING, typeMetadata.Length, encoding, &res); err != nil {
 		return nil, err
 	}
 
