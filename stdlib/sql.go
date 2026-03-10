@@ -919,7 +919,7 @@ func (r *Rows) Next(dest []driver.Value) error {
 					return d, err
 				}
 			default:
-				if fd.Subtype != fbproto.CS_BINARY {
+				if (fd.Subtype & 0xFF) != fbproto.CS_BINARY {
 					var d string
 					scanPlan := m.PlanScan(typeMetadata, &d)
 					r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
