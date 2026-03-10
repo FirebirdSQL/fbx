@@ -184,12 +184,28 @@ func (m *Map) TypeForTypeID(typeid uint32, subType int32) (*Type, bool) {
 		return dt, true
 	}
 
+	// Firebird may encode collation into high bits of subtype for TEXT/VARYING.
+	// For binary text (OCTETS), the low byte is sufficient to identify the codec.
+	if typeid == fbproto.SQL_TYPE_TEXT || typeid == fbproto.SQL_TYPE_VARYING {
+		idNoCollation := MakeTypeSubtype(typeid, subType&0xFF)
+		if dt, ok := m.typeidToType[idNoCollation]; ok {
+			return dt, true
+		}
+	}
+
 	if dt, ok := m.typeidToType[typeid]; ok {
 		return dt, true
 	}
 
 	if dt, ok := defaultMap.typeidToType[id]; ok {
 		return dt, true
+	}
+
+	if typeid == fbproto.SQL_TYPE_TEXT || typeid == fbproto.SQL_TYPE_VARYING {
+		idNoCollation := MakeTypeSubtype(typeid, subType&0xFF)
+		if dt, ok := defaultMap.typeidToType[idNoCollation]; ok {
+			return dt, true
+		}
 	}
 
 	dt, ok := defaultMap.typeidToType[typeid]
