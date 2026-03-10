@@ -1731,10 +1731,14 @@ func (rr *ResultReader) NextRow() bool {
 		if !rr.fetchExecuted {
 			rowBlr = rr.statementDescription.StatementInfo.GetRowBlr()
 		}
+		fetchBatchSize := DefaultFetchBatchSize
+		if rr.fbConn != nil && rr.fbConn.config != nil && rr.fbConn.config.FetchBatchSize > 0 {
+			fetchBatchSize = rr.fbConn.config.FetchBatchSize
+		}
 		if err = rr.fbConn.client.WriteMessage(&fbproto.OpFetch{
 			StatementHandle: rr.statementDescription.StatementHandle,
 			RowBlr:          rowBlr,
-			Messages:        400,
+			Messages:        fetchBatchSize,
 		}); err != nil {
 			return false
 		}

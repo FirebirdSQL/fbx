@@ -5,7 +5,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,7 +19,7 @@ import (
 
 const recursiveSeriesSQL = "WITH RECURSIVE generate_series(generate_series) AS (SELECT 1 FROM RDB$DATABASE UNION ALL SELECT (generate_series + 1) FROM generate_series WHERE generate_series < ?) SELECT generate_series FROM generate_series"
 
-var expectedTraceSnapshot = strings.ReplaceAll(`C\tBeginTx
+var expectedTraceSnapshotV5 = strings.ReplaceAll(`C\tBeginTx
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 gdsCodes=0
 C\tAllocateStatement
 C\tPrepare stmt=65535 tx=1 dialect=3 sql="WITH RECURSIVE generate_series(generate_series) AS (SELECT 1 FROM RDB$DATABASE UNION ALL SELECT (generate_series + 1) FROM generate_series WHERE generate_series < ?) SELECT generate_series FROM generate_series" lenItems=0 bufSize=0
@@ -41,7 +44,32 @@ S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlSta
 `,
 	`\t`, "\t")
 
-var expectedFullLogTraceSnapshot = strings.ReplaceAll(`C\tBeginTx tpb=''
+var expectedTraceSnapshotV50 = strings.ReplaceAll(`C\tBeginTx
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 gdsCodes=0
+C\tAllocateStatement
+C\tPrepare stmt=65535 tx=1 dialect=3 sql="WITH RECURSIVE generate_series(generate_series) AS (SELECT 1 FROM RDB$DATABASE UNION ALL SELECT (generate_series + 1) FROM generate_series WHERE generate_series < ?) SELECT generate_series FROM generate_series" lenItems=0 bufSize=0
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=2 blobId=0 lenData=0 gdsCodes=0
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=4 blobId=0 lenData=1 gdsCodes=0
+C\tInfoSQL stmt=2 maxBuf=524288 lenItems=26
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=2 blobId=0 lenData=138 gdsCodes=0
+C\tExecute kind=63 stmt=2 tx=1 inBLR=12 outBLR=0 lenParameters=1 lenParamDes=1 timeout=0 cursorFlags=0
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 gdsCodes=0
+C\tFetch stmt=2 msgs=400 lenRowBLR=12
+S\tFetchResponse status=0 msgs=1
+S\tRowData cols=1 nulls=0 [4]
+S\tFetchResponse status=0 msgs=1
+S\tRowData cols=1 nulls=0 [4]
+S\tFetchResponse status=0 msgs=1
+S\tRowData cols=1 nulls=0 [4]
+S\tFetchResponse status=100 msgs=0
+C\tInfoSQL stmt=2 maxBuf=64 lenItems=1
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=2 blobId=0 lenData=33 gdsCodes=0
+C\tCommit
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=0 blobId=0 lenData=0 gdsCodes=0
+`,
+	`\t`, "\t")
+
+var expectedFullLogTraceSnapshotV5 = strings.ReplaceAll(`C\tBeginTx tpb=''
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 data='' gdsCodes=0
 C\tAllocateStatement
 C\tPrepare stmt=65535 tx=1 dialect=3 sql="WITH RECURSIVE generate_series(generate_series) AS (SELECT 1 FROM RDB$DATABASE UNION ALL SELECT (generate_series + 1) FROM generate_series WHERE generate_series < ?) SELECT generate_series FROM generate_series" lenItems=0 bufSize=0
@@ -65,6 +93,113 @@ C\tCommit
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=0 blobId=0 lenData=0 data='' gdsCodes=0
 `, `\t`, "\t")
 
+var expectedFullLogTraceSnapshotV50 = strings.ReplaceAll(`C\tBeginTx tpb=''
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 data='' gdsCodes=0
+C\tAllocateStatement
+C\tPrepare stmt=65535 tx=1 dialect=3 sql="WITH RECURSIVE generate_series(generate_series) AS (SELECT 1 FROM RDB$DATABASE UNION ALL SELECT (generate_series + 1) FROM generate_series WHERE generate_series < ?) SELECT generate_series FROM generate_series" lenItems=0 bufSize=0
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=2 blobId=0 lenData=0 data='' gdsCodes=0
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=4 blobId=0 lenData=1 data='\x01' gdsCodes=0
+C\tInfoSQL stmt=2 maxBuf=524288 lenItems=26 items='\x14\x02\x00\x00\x15\x04\x07\x09\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x08\x05\x07\x09\x0b\x0c\x0d\x0e\x08'
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=2 blobId=0 lenData=138 data='\x15\x04\x00\x01\x00\x00\x00\x04\x07\x04\x00\x01\x00\x00\x00\x09\x04\x00\x01\x00\x00\x00\x0b\x04\x00\xf0\x01\x00\x00\x0c\x04\x00\x00\x00\x00\x00\x0d\x04\x00\x00\x00\x00\x00\x0e\x04\x00\x04\x00\x00\x00\x0f\x04\x00\x00\x00\x00\x00\x10\x08\x00CONSTANT\x11\x00\x00\x12\x00\x00\x13\x0f\x00GENERATE_SERIES\x08\x05\x07\x04\x00\x01\x00\x00\x00\x09\x04\x00\x01\x00\x00\x00\x0b\x04\x00\xf0\x01\x00\x00\x0c\x04\x00\x00\x00\x00\x00\x0d\x04\x00\x00\x00\x00\x00\x0e\x04\x00\x04\x00\x00\x00\x08\x01' gdsCodes=0
+C\tExecute kind=63 stmt=2 tx=1 inBLR=12 outBLR=0 lenParameters=1 sqldata:4 '\x00\x00\x00\x03' lenParamDes=1 paramsdesc:1 496 1 0 0 4 false "" "" "" "" "" "" false timeout=0 cursorFlags=0
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 data='' gdsCodes=0
+C\tFetch stmt=2 msgs=400 lenRowBLR=12 rowBLR='\x05\x02\x04\x00\x02\x00\x08\x00\x07\x00\xffL'
+S\tFetchResponse status=0 msgs=1
+S\tRowData cols=1 nulls=0 [col=0 name="GENERATE_SERIES" type=496 len=4 bytes=4 val='\x00\x00\x00\x01']
+S\tFetchResponse status=0 msgs=1
+S\tRowData cols=1 nulls=0 [col=0 name="GENERATE_SERIES" type=496 len=4 bytes=4 val='\x00\x00\x00\x02']
+S\tFetchResponse status=0 msgs=1
+S\tRowData cols=1 nulls=0 [col=0 name="GENERATE_SERIES" type=496 len=4 bytes=4 val='\x00\x00\x00\x03']
+S\tFetchResponse status=100 msgs=0
+C\tInfoSQL stmt=2 maxBuf=64 lenItems=1 items='\x17'
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=2 blobId=0 lenData=33 data='\x17\x1d\x00\x0f\x04\x00\x00\x00\x00\x00\x10\x04\x00\x00\x00\x00\x00\x0d\x04\x00\x03\x00\x00\x00\x0e\x04\x00\x00\x00\x00\x00\x01\x01' gdsCodes=0
+C\tCommit
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=0 blobId=0 lenData=0 data='' gdsCodes=0
+`, `\t`, "\t")
+
+var expectedTraceSnapshotV3 = strings.ReplaceAll(`C\tBeginTx
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 gdsCodes=0
+C\tAllocateStatement
+C\tPrepare stmt=65535 tx=1 dialect=3 sql="WITH RECURSIVE generate_series(generate_series) AS (SELECT 1 FROM RDB$DATABASE UNION ALL SELECT (generate_series + 1) FROM generate_series WHERE generate_series < ?) SELECT generate_series FROM generate_series" lenItems=0 bufSize=0
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=2 blobId=0 lenData=0 gdsCodes=0
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=4 blobId=0 lenData=1 gdsCodes=0
+C\tInfoSQL stmt=2 maxBuf=524288 lenItems=26
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=2 blobId=0 lenData=130 gdsCodes=0
+C\tExecute kind=63 stmt=2 tx=1 inBLR=12 outBLR=0 lenParameters=1 lenParamDes=1
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 gdsCodes=0
+C\tFetch stmt=2 msgs=400 lenRowBLR=12
+S\tFetchResponse status=0 msgs=1
+S\tRowData cols=1 nulls=0 [4]
+S\tFetchResponse status=0 msgs=1
+S\tRowData cols=1 nulls=0 [4]
+S\tFetchResponse status=0 msgs=1
+S\tRowData cols=1 nulls=0 [4]
+S\tFetchResponse status=100 msgs=0
+C\tInfoSQL stmt=2 maxBuf=64 lenItems=1
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=2 blobId=0 lenData=33 gdsCodes=0
+C\tCommit
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=0 blobId=0 lenData=0 gdsCodes=0
+`,
+	`\t`, "\t")
+
+var expectedFullLogTraceSnapshotV3 = strings.ReplaceAll(`C\tBeginTx tpb=''
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 data='' gdsCodes=0
+C\tAllocateStatement
+C\tPrepare stmt=65535 tx=1 dialect=3 sql="WITH RECURSIVE generate_series(generate_series) AS (SELECT 1 FROM RDB$DATABASE UNION ALL SELECT (generate_series + 1) FROM generate_series WHERE generate_series < ?) SELECT generate_series FROM generate_series" lenItems=0 bufSize=0
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=2 blobId=0 lenData=0 data='' gdsCodes=0
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=4 blobId=0 lenData=1 data='\x01' gdsCodes=0
+C\tInfoSQL stmt=2 maxBuf=524288 lenItems=26 items='\x14\x02\x00\x00\x15\x04\x07\x09\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x08\x05\x07\x09\x0b\x0c\x0d\x0e\x08'
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=2 blobId=0 lenData=130 data='\x15\x04\x00\x01\x00\x00\x00\x04\x07\x04\x00\x01\x00\x00\x00\x09\x04\x00\x01\x00\x00\x00\x0b\x04\x00\xf0\x01\x00\x00\x0c\x04\x00\x00\x00\x00\x00\x0d\x04\x00\x00\x00\x00\x00\x0e\x04\x00\x04\x00\x00\x00\x0f\x04\x00\x00\x00\x00\x00\x10\x00\x00\x11\x00\x00\x12\x00\x00\x13\x0f\x00GENERATE_SERIES\x08\x05\x07\x04\x00\x01\x00\x00\x00\x09\x04\x00\x01\x00\x00\x00\x0b\x04\x00\xf0\x01\x00\x00\x0c\x04\x00\x00\x00\x00\x00\x0d\x04\x00\x00\x00\x00\x00\x0e\x04\x00\x04\x00\x00\x00\x08\x01' gdsCodes=0
+C\tExecute kind=63 stmt=2 tx=1 inBLR=12 outBLR=0 lenParameters=1 sqldata:4 '\x00\x00\x00\x03' lenParamDes=1 paramsdesc:1 496 1 0 0 4 false "" "" "" "" "" "" false
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 data='' gdsCodes=0
+C\tFetch stmt=2 msgs=400 lenRowBLR=12 rowBLR='\x05\x02\x04\x00\x02\x00\x08\x00\x07\x00\xffL'
+S\tFetchResponse status=0 msgs=1
+S\tRowData cols=1 nulls=0 [col=0 name="GENERATE_SERIES" type=496 len=4 bytes=4 val='\x00\x00\x00\x01']
+S\tFetchResponse status=0 msgs=1
+S\tRowData cols=1 nulls=0 [col=0 name="GENERATE_SERIES" type=496 len=4 bytes=4 val='\x00\x00\x00\x02']
+S\tFetchResponse status=0 msgs=1
+S\tRowData cols=1 nulls=0 [col=0 name="GENERATE_SERIES" type=496 len=4 bytes=4 val='\x00\x00\x00\x03']
+S\tFetchResponse status=100 msgs=0
+C\tInfoSQL stmt=2 maxBuf=64 lenItems=1 items='\x17'
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=2 blobId=0 lenData=33 data='\x17\x1d\x00\x0f\x04\x00\x00\x00\x00\x00\x10\x04\x00\x00\x00\x00\x00\x0d\x04\x00\x03\x00\x00\x00\x0e\x04\x00\x00\x00\x00\x00\x01\x01' gdsCodes=0
+C\tCommit
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=0 blobId=0 lenData=0 data='' gdsCodes=0
+`, `\t`, "\t")
+
+var (
+	serverEngineVersionNumberCheckOnce sync.Once
+	serverEngineVersionNumberValue     int
+	engineVersionRegexp                = regexp.MustCompile(`^\s*(\d+)\.(\d+)\.(\d+)`)
+)
+
+type traceSnapshotProfile string
+
+const (
+	traceSnapshotProfileV3  traceSnapshotProfile = "v3"
+	traceSnapshotProfileV50 traceSnapshotProfile = "v5.0.x"
+	traceSnapshotProfileV5  traceSnapshotProfile = "v5.x"
+)
+
+type traceSnapshotSet struct {
+	trace   string
+	fullLog string
+}
+
+var traceSnapshotsByProfile = map[traceSnapshotProfile]traceSnapshotSet{
+	traceSnapshotProfileV3: {
+		trace:   expectedTraceSnapshotV3,
+		fullLog: expectedFullLogTraceSnapshotV3,
+	},
+	traceSnapshotProfileV50: {
+		trace:   expectedTraceSnapshotV50,
+		fullLog: expectedFullLogTraceSnapshotV50,
+	},
+	traceSnapshotProfileV5: {
+		trace:   expectedTraceSnapshotV5,
+		fullLog: expectedFullLogTraceSnapshotV5,
+	},
+}
+
 func requireTraceContainsInOrder(t *testing.T, trace string, seq ...string) {
 	t.Helper()
 	pos := 0
@@ -79,6 +214,83 @@ func requireTraceContainsInOrder(t *testing.T, trace string, seq ...string) {
 	}
 }
 
+func getTraceSnapshotProfileForServerEngineVersion(versionNumber int) (traceSnapshotProfile, bool) {
+	major := versionNumber / 10000
+	minor := (versionNumber % 10000) / 100
+	patch := versionNumber % 10000
+
+	switch major {
+	case 3:
+		return traceSnapshotProfileV3, true
+	case 5:
+		if minor == 0 && patch >= 8 {
+			return traceSnapshotProfileV50, true
+		}
+		return traceSnapshotProfileV5, true
+	}
+	return "", false
+}
+
+func getExpectedTraceSnapshotsForServerEngineVersion(t testing.TB, versionNumber int) traceSnapshotSet {
+	t.Helper()
+
+	profile, ok := getTraceSnapshotProfileForServerEngineVersion(versionNumber)
+	if !ok {
+		t.Fatalf("unsupported server engine version number %d", versionNumber)
+	}
+
+	snapshots, ok := traceSnapshotsByProfile[profile]
+	require.Truef(t, ok, "no trace snapshots defined for server engine version %d (profile %q)", versionNumber, profile)
+
+	return snapshots
+}
+
+func fetchEngineVersion(ctx context.Context, t testing.TB, conn *fbconn.FbConn) string {
+	t.Helper()
+
+	result := conn.Exec(ctx, "select rdb$get_context('SYSTEM','ENGINE_VERSION') from rdb$database").Read()
+	require.NoError(t, result.Err)
+	require.NotEmpty(t, result.Rows)
+	require.NotEmpty(t, result.Rows[0])
+	require.NotNil(t, result.Rows[0][0])
+
+	return string(result.Rows[0][0])
+}
+
+func getServerEngineVersionNumber(ctx context.Context, t testing.TB) int {
+	t.Helper()
+	serverEngineVersionNumberCheckOnce.Do(func() {
+		versionConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+		require.NoError(t, err)
+		defer versionConn.Close(ctx)
+
+		serverEngineVersionNumberValue = parseEngineVersionNumber(fetchEngineVersion(ctx, t, versionConn))
+	})
+
+	return serverEngineVersionNumberValue
+}
+
+func parseEngineVersionNumber(version string) int {
+	matches := engineVersionRegexp.FindStringSubmatch(version)
+	if len(matches) != 4 {
+		panic(fmt.Sprintf("failed to parse server engine version %q: expected semantic version major.minor.patch", version))
+	}
+	major := mustAtoi("major", matches[1], version)
+	minor := mustAtoi("minor", matches[2], version)
+	patch := mustAtoi("patch", matches[3], version)
+
+	// Normalize as MAJOR*10000 + MINOR*100 + PATCH for stable numeric comparisons.
+	return major*10000 + minor*100 + patch
+}
+
+func mustAtoi(partName, value, version string) int {
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse %s version part %q from engine version %q: %v", partName, value, version, err))
+	}
+	return n
+}
+
 func TestTrace(t *testing.T) {
 	t.Parallel()
 
@@ -88,6 +300,9 @@ func TestTrace(t *testing.T) {
 	conn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer conn.Close(ctx)
+
+	serverEngineVersionNumber := getServerEngineVersionNumber(ctx, t)
+	expectedSnapshots := getExpectedTraceSnapshotsForServerEngineVersion(t, serverEngineVersionNumber)
 
 	traceOutput := &bytes.Buffer{}
 
@@ -103,7 +318,7 @@ func TestTrace(t *testing.T) {
 	out := traceOutput.String()
 	fmt.Fprint(os.Stdout, out)
 
-	require.Equal(t, expectedTraceSnapshot, out)
+	require.Equal(t, expectedSnapshots.trace, out)
 }
 
 func TestFullLogTrace(t *testing.T) {
@@ -115,6 +330,9 @@ func TestFullLogTrace(t *testing.T) {
 	conn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer conn.Close(ctx)
+
+	serverEngineVersionNumber := getServerEngineVersionNumber(ctx, t)
+	expectedSnapshots := getExpectedTraceSnapshotsForServerEngineVersion(t, serverEngineVersionNumber)
 
 	traceOutput := &bytes.Buffer{}
 
@@ -129,7 +347,7 @@ func TestFullLogTrace(t *testing.T) {
 
 	out := traceOutput.String()
 	fmt.Fprint(os.Stdout, out)
-	require.Equal(t, expectedFullLogTraceSnapshot, out)
+	require.Equal(t, expectedSnapshots.fullLog, out)
 }
 
 func TestTrace_SuccessCTE(t *testing.T) {

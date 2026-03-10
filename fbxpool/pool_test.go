@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"sync/atomic"
 	"testing"
@@ -245,6 +246,27 @@ func TestPoolAcquireChecksIdleConnsWithShouldPing(t *testing.T) {
 	assert.Equal(t, conn, shouldPingLastCalledWith.Conn)
 	assert.InDelta(t, time.Millisecond*200, shouldPingLastCalledWith.IdleDuration, float64(time.Millisecond*100))
 
+	c.Release()
+}
+
+// https://github.com/jackc/pgx/issues/2379
+func TestPoolAcquireWithMaxConnsEqualsMaxInt32(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	config, err := fbxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	require.NoError(t, err)
+
+	config.MaxConns = math.MaxInt32
+
+	pool, err := fbxpool.NewWithConfig(ctx, config)
+	require.NoError(t, err)
+	defer pool.Close()
+
+	c, err := pool.Acquire(ctx)
+	require.NoError(t, err)
 	c.Release()
 }
 
@@ -1178,4 +1200,51 @@ func TestConnectEagerlyReachesMinPoolSize(t *testing.T) {
 
 	t.Fatal("did not reach min pool size")
 
+}
+
+func TestPoolAcquirePingTimeout(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	config, err := fbxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	require.NoError(t, err)
+
+	// Set a very short ping timeout to force timeout during ping and destruction of the connection
+	config.PingTimeout = 1 * time.Nanosecond
+
+	var firstConn *fbx.Conn
+	// Only ping the initially acquired connection to force its destruction and replacement.
+	config.ShouldPing = func(_ context.Context, params fbxpool.ShouldPingParams) bool {
+		return firstConn != nil && params.Conn == firstConn
+	}
+	// Limit to a single connection to ensure the same connection is reused
+	config.MinConns = 1
+	config.MaxConns = 1
+
+	pool, err := fbxpool.NewWithConfig(ctx, config)
+	require.NoError(t, err)
+	defer pool.Close()
+
+	c, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, pool.Stat().TotalConns())
+	firstConn = c.Conn()
+
+	c.Release()
+	require.EqualValues(t, 1, pool.Stat().TotalConns())
+
+	c, err = pool.Acquire(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, pool.Stat().TotalConns())
+	newConn := c.Conn()
+
+	c.Release()
+	require.NotEqual(t, firstConn, newConn)
+
+	require.EqualValues(t, 1, pool.Stat().TotalConns())
+	assert.Nil(t, ctx.Err())
+	assert.NotEqualValues(t, firstConn, newConn,
+		"Expected a new connection due to ping timeout, but got the same connection")
 }

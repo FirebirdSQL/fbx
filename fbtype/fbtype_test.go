@@ -99,14 +99,16 @@ func (f driverValuerFunc) Value() (driver.Value, error) {
 func TestMapScanNilIsNoOp(t *testing.T) {
 	m := fbtype.NewMap()
 
-	err := m.Scan(fbproto.SQL_TYPE_TEXT, 0, 3, 0, fbx.BinaryFormatCode, []byte("foo"), nil)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 0, 3, 0, fbx.BinaryFormatCode)
+	err := m.Scan(typeMetadata, []byte("foo"), nil)
 	assert.NoError(t, err)
 }
 
 func TestMapScanTextFormatInterfacePtr(t *testing.T) {
 	m := fbtype.NewMap()
 	var got any
-	err := m.Scan(fbproto.SQL_TYPE_TEXT, 0, 3, 0, fbx.BinaryFormatCode, []byte("foo"), &got)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 0, 3, 0, fbx.BinaryFormatCode)
+	err := m.Scan(typeMetadata, []byte("foo"), &got)
 	require.NoError(t, err)
 	assert.Equal(t, "foo", got)
 }
@@ -115,9 +117,27 @@ func TestMapScanBinaryFormatInterfacePtr(t *testing.T) {
 	t.Skip()
 	m := fbtype.NewMap()
 	var got any
-	err := m.Scan(fbproto.SQL_TYPE_TEXT, 0, 3, 0, fbx.BinaryFormatCode, []byte("foo"), &got)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 0, 3, 0, fbx.BinaryFormatCode)
+	err := m.Scan(typeMetadata, []byte("foo"), &got)
 	require.NoError(t, err)
 	assert.Equal(t, "foo", got)
+}
+
+func TestMapScanUnknownTypeIDToPtrToAny(t *testing.T) {
+	unknownTypeID := uint32(999999)
+	srcBuf := []byte("foo")
+	m := fbtype.NewMap()
+
+	var a any
+	typeMetadata := fbtype.NewTypeMetadata(unknownTypeID, 0, 3, 0, fbx.TextFormatCode)
+	err := m.Scan(typeMetadata, srcBuf, &a)
+	assert.NoError(t, err)
+	assert.Equal(t, "foo", a)
+
+	typeMetadata = fbtype.NewTypeMetadata(unknownTypeID, 0, 3, 0, fbx.BinaryFormatCode)
+	err = m.Scan(typeMetadata, srcBuf, &a)
+	assert.NoError(t, err)
+	assert.Equal(t, []byte("foo"), a)
 }
 
 func TestMapScanUnknownTypeIDToStringsAndBytes(t *testing.T) {
@@ -127,22 +147,24 @@ func TestMapScanUnknownTypeIDToStringsAndBytes(t *testing.T) {
 	m := fbtype.NewMap()
 
 	var s string
-	err := m.Scan(unknownTypeID, 0, 3, 0, fbx.TextFormatCode, srcBuf, &s)
+	typeMetadata := fbtype.NewTypeMetadata(unknownTypeID, 0, 3, 0, fbx.TextFormatCode)
+	err := m.Scan(typeMetadata, srcBuf, &s)
 	assert.NoError(t, err)
 	assert.Equal(t, "foo", s)
 
 	var rs _string
-	err = m.Scan(unknownTypeID, 0, 3, 0, fbx.TextFormatCode, srcBuf, &rs)
+	err = m.Scan(typeMetadata, srcBuf, &rs)
 	assert.NoError(t, err)
 	assert.Equal(t, "foo", string(rs))
 
 	var b []byte
-	err = m.Scan(unknownTypeID, 0, 3, 0, fbx.BinaryFormatCode, srcBuf, &b)
+	typeMetadata = fbtype.NewTypeMetadata(unknownTypeID, 0, 3, 0, fbx.BinaryFormatCode)
+	err = m.Scan(typeMetadata, srcBuf, &b)
 	assert.NoError(t, err)
 	assert.Equal(t, []byte("foo"), b)
 
 	var rb _byteSlice
-	err = m.Scan(unknownTypeID, 0, 3, 0, fbx.BinaryFormatCode, srcBuf, &rb)
+	err = m.Scan(typeMetadata, srcBuf, &rb)
 	assert.NoError(t, err)
 	assert.Equal(t, []byte("foo"), []byte(rb))
 }
@@ -152,7 +174,8 @@ func TestMapScanPointerToNilStructDoesNotCrash(t *testing.T) {
 
 	type myStruct struct{}
 	var p *myStruct
-	err := m.Scan(0, 0, 9, 0, fbx.BinaryFormatCode, []byte("(foo,bar)"), &p)
+	typeMetadata := fbtype.NewTypeMetadata(0, 0, 9, 0, fbx.BinaryFormatCode)
+	err := m.Scan(typeMetadata, []byte("(foo,bar)"), &p)
 	require.NotNil(t, err)
 }
 
@@ -160,7 +183,8 @@ func TestMapScanUnknownTypeIDIntoSQLScanner(t *testing.T) {
 	m := fbtype.NewMap()
 
 	var s sql.NullString
-	err := m.Scan(0, 0, 0, 0, fbx.BinaryFormatCode, []byte(nil), &s)
+	typeMetadata := fbtype.NewTypeMetadata(0, 0, 0, 0, fbx.BinaryFormatCode)
+	err := m.Scan(typeMetadata, []byte(nil), &s)
 	assert.NoError(t, err)
 	assert.Equal(t, "", s.String)
 	assert.False(t, s.Valid)
@@ -177,7 +201,8 @@ func TestMapScanUnregisteredTypeIDIntoRenamedStringSQLScanner(t *testing.T) {
 	m := fbtype.NewMap()
 
 	var s scannerString
-	err := m.Scan(unregisteredTypeID, 0, 0, 0, fbx.BinaryFormatCode, []byte(nil), &s)
+	typeMetadata := fbtype.NewTypeMetadata(unregisteredTypeID, 0, 0, 0, fbx.BinaryFormatCode)
+	err := m.Scan(typeMetadata, []byte(nil), &s)
 	assert.NoError(t, err)
 	assert.Equal(t, "scanned", string(s))
 }
@@ -194,13 +219,14 @@ func TestScanPlanBinaryInt32ScanScanner(t *testing.T) {
 	src := []byte{0, 0, 0, 42}
 	var v pgCustomInt
 
-	plan := m.PlanScan(fbproto.SQL_TYPE_SHORT, 0, 4, 0, fbtype.BinaryFormatCode, &v)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 0, 4, 0, fbtype.BinaryFormatCode)
+	plan := m.PlanScan(typeMetadata, &v)
 	err := plan.Scan(src, &v)
 	require.NoError(t, err)
 	require.EqualValues(t, 42, v)
 
 	ptr := new(pgCustomInt)
-	plan = m.PlanScan(fbproto.SQL_TYPE_SHORT, 0, 4, 0, fbtype.BinaryFormatCode, &ptr)
+	plan = m.PlanScan(typeMetadata, &ptr)
 	err = plan.Scan(src, &ptr)
 	require.NoError(t, err)
 	require.EqualValues(t, 42, *ptr)
@@ -211,13 +237,13 @@ func TestScanPlanBinaryInt32ScanScanner(t *testing.T) {
 	assert.Nil(t, ptr)
 
 	ptr = nil
-	plan = m.PlanScan(fbproto.SQL_TYPE_SHORT, 0, 4, 0, fbtype.BinaryFormatCode, &ptr)
+	plan = m.PlanScan(typeMetadata, &ptr)
 	err = plan.Scan(src, &ptr)
 	require.NoError(t, err)
 	require.EqualValues(t, 42, *ptr)
 
 	ptr = nil
-	plan = m.PlanScan(fbproto.SQL_TYPE_SHORT, 0, 4, 0, fbtype.BinaryFormatCode, &ptr)
+	plan = m.PlanScan(typeMetadata, &ptr)
 	err = plan.Scan(nil, &ptr)
 	require.NoError(t, err)
 	assert.Nil(t, ptr)
@@ -227,7 +253,8 @@ func TestScanPlanInterface(t *testing.T) {
 	m := fbtype.NewMap()
 	src := []byte{0, 42}
 	var v interface{}
-	plan := m.PlanScan(fbproto.SQL_TYPE_SHORT, 0, 4, 0, fbtype.BinaryFormatCode, v)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 0, 4, 0, fbtype.BinaryFormatCode)
+	plan := m.PlanScan(typeMetadata, v)
 	err := plan.Scan(src, v)
 	assert.Error(t, err)
 }
@@ -266,7 +293,8 @@ func TestMapScanPtrToPtrToSlice(t *testing.T) {
 	m := fbtype.NewMap()
 	src := []byte("{foo,bar}")
 	var v *[]string
-	plan := m.PlanScan(fbproto.SQL_TYPE_TEXT, 0, 0, 0, fbtype.BinaryFormatCode, &v)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 0, 0, 0, fbtype.BinaryFormatCode)
+	plan := m.PlanScan(typeMetadata, &v)
 	err := plan.Scan(src, &v)
 	require.NoError(t, err)
 	require.Equal(t, []string{"foo", "bar"}, *v)
@@ -298,7 +326,8 @@ func (s databaseValuerString) Value() (driver.Value, error) {
 func TestMapEncodeTextFormatDatabaseValuerThatIsRenamedSimpleType(t *testing.T) {
 	m := fbtype.NewMap()
 	src := databaseValuerString("foo")
-	buf, err := m.Encode(fbproto.SQL_TYPE_TEXT, 0, 3, 0, fbtype.BinaryFormatCode, src, nil)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 0, 3, 0, fbtype.BinaryFormatCode)
+	buf, err := m.Encode(typeMetadata, src, nil)
 	require.NoError(t, err)
 	require.Equal(t, "3", string(buf))
 }
@@ -317,7 +346,8 @@ func TestMapEncodeTextFormatDatabaseValuerThatIsFmtStringer(t *testing.T) {
 	t.Skip()
 	m := fbtype.NewMap()
 	src := databaseValuerFmtStringer("")
-	buf, err := m.Encode(fbproto.SQL_TYPE_TEXT, 0, 0, 0, fbtype.BinaryFormatCode, src, nil)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 0, 0, 0, fbtype.BinaryFormatCode)
+	buf, err := m.Encode(typeMetadata, src, nil)
 	require.NoError(t, err)
 	require.Nil(t, buf)
 }
@@ -333,7 +363,8 @@ func (v databaseValuerStringFormat) Value() (driver.Value, error) {
 func TestMapEncodeBinaryFormatDatabaseValuerThatReturnsString(t *testing.T) {
 	m := fbtype.NewMap()
 	src := databaseValuerStringFormat{n: 42}
-	buf, err := m.Encode(fbproto.SQL_TYPE_SHORT, 0, 0, 0, fbtype.BinaryFormatCode, src, nil)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 0, 0, 0, fbtype.BinaryFormatCode)
+	buf, err := m.Encode(typeMetadata, src, nil)
 	require.NoError(t, err)
 	require.Equal(t, []byte{0, 0, 0, 42}, buf)
 }
@@ -341,14 +372,16 @@ func TestMapEncodeBinaryFormatDatabaseValuerThatReturnsString(t *testing.T) {
 func TestMapEncodeDatabaseValuerThatReturnsStringIntoUnregisteredTypeTextFormat(t *testing.T) {
 	t.Skip()
 	m := fbtype.NewMap()
-	buf, err := m.Encode(unregisteredTypeID, 0, 0, 0, fbtype.BinaryFormatCode, driverValuerFunc(func() (driver.Value, error) { return "foo", nil }), nil)
+	typeMetadata := fbtype.NewTypeMetadata(unregisteredTypeID, 0, 0, 0, fbtype.BinaryFormatCode)
+	buf, err := m.Encode(typeMetadata, driverValuerFunc(func() (driver.Value, error) { return "foo", nil }), nil)
 	require.NoError(t, err)
 	require.Equal(t, []byte("foo"), buf)
 }
 
 func TestMapEncodeStringIntoUnregisteredTypeTextFormat(t *testing.T) {
 	m := fbtype.NewMap()
-	buf, err := m.Encode(unregisteredTypeID, 0, 3, 0, fbtype.BinaryFormatCode, "foo", nil)
+	typeMetadata := fbtype.NewTypeMetadata(unregisteredTypeID, 0, 3, 0, fbtype.BinaryFormatCode)
+	buf, err := m.Encode(typeMetadata, "foo", nil)
 	require.NoError(t, err)
 	require.Equal(t, []byte("foo"), buf)
 }
@@ -356,14 +389,16 @@ func TestMapEncodeStringIntoUnregisteredTypeTextFormat(t *testing.T) {
 func TestMapEncodeByteSliceIntoUnregisteredTypeTextFormat(t *testing.T) {
 	t.Skip()
 	m := fbtype.NewMap()
-	buf, err := m.Encode(unregisteredTypeID, 0, 4, 0, fbtype.BinaryFormatCode, []byte{0, 1, 2, 3}, nil)
+	typeMetadata := fbtype.NewTypeMetadata(unregisteredTypeID, 0, 4, 0, fbtype.BinaryFormatCode)
+	buf, err := m.Encode(typeMetadata, []byte{0, 1, 2, 3}, nil)
 	require.NoError(t, err)
 	require.Equal(t, []byte(`\x00010203`), buf)
 }
 
 func TestMapEncodeNamedTypeOfByteSliceIntoTextTextFormat(t *testing.T) {
 	m := fbtype.NewMap()
-	buf, err := m.Encode(fbproto.SQL_TYPE_TEXT, 0, 14, 0, fbtype.TextFormatCode, json.RawMessage(`{"foo": "bar"}`), nil)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 0, 14, 0, fbtype.TextFormatCode)
+	buf, err := m.Encode(typeMetadata, json.RawMessage(`{"foo": "bar"}`), nil)
 	require.NoError(t, err)
 	require.Equal(t, []byte(`{"foo": "bar"}`), buf)
 }
@@ -373,7 +408,8 @@ func TestMapScanPointerToRenamedType(t *testing.T) {
 	m := fbtype.NewMap()
 
 	var rs *_string
-	err := m.Scan(fbproto.SQL_TYPE_TEXT, 0, 3, 0, fbx.BinaryFormatCode, srcBuf, &rs)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 0, 3, 0, fbx.BinaryFormatCode)
+	err := m.Scan(typeMetadata, srcBuf, &rs)
 	assert.NoError(t, err)
 	require.NotNil(t, rs)
 	assert.Equal(t, "foo", string(*rs))
@@ -383,12 +419,13 @@ func TestMapScanNullToWrongType(t *testing.T) {
 	m := fbtype.NewMap()
 
 	var n *int32
-	err := m.Scan(fbproto.SQL_TYPE_TEXT, 0, 0, 0, fbx.BinaryFormatCode, nil, &n)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 0, 0, 0, fbx.BinaryFormatCode)
+	err := m.Scan(typeMetadata, nil, &n)
 	assert.NoError(t, err)
 	assert.Nil(t, n)
 
 	var pn fbtype.Int4
-	err = m.Scan(fbproto.SQL_TYPE_TEXT, 0, 0, 0, fbx.BinaryFormatCode, nil, &pn)
+	err = m.Scan(typeMetadata, nil, &pn)
 	assert.NoError(t, err)
 	assert.False(t, pn.Valid)
 }
@@ -397,7 +434,8 @@ func TestScanToSliceOfRenamedUint8(t *testing.T) {
 	t.Skip()
 	m := fbtype.NewMap()
 	var ruint8 []_uint8
-	err := m.Scan(fbproto.SQL_TYPE_SHORT, 0, 0, 0, fbx.BinaryFormatCode, []byte("{2,4}"), &ruint8)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 0, 0, 0, fbx.BinaryFormatCode)
+	err := m.Scan(typeMetadata, []byte("{2,4}"), &ruint8)
 	assert.NoError(t, err)
 	assert.Equal(t, []_uint8{2, 4}, ruint8)
 }
@@ -407,11 +445,12 @@ func TestMapScanBinaryToBool(t *testing.T) {
 
 	var b bool
 
-	err := m.Scan(fbproto.SQL_TYPE_BOOLEAN, 0, 1, 0, fbtype.BinaryFormatCode, []byte{1}, &b)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_BOOLEAN, 0, 1, 0, fbtype.BinaryFormatCode)
+	err := m.Scan(typeMetadata, []byte{1}, &b)
 	require.NoError(t, err)
 	require.True(t, b)
 
-	err = m.Scan(fbproto.SQL_TYPE_BOOLEAN, 0, 1, 0, fbtype.BinaryFormatCode, []byte{0}, &b)
+	err = m.Scan(typeMetadata, []byte{0}, &b)
 	require.NoError(t, err)
 	require.False(t, b)
 }
@@ -420,7 +459,8 @@ func TestMapScanBinaryToBoolError_InvalidLength(t *testing.T) {
 	m := fbtype.NewMap()
 	var b bool
 
-	err := m.Scan(fbproto.SQL_TYPE_BOOLEAN, 0, 1, 0, fbtype.BinaryFormatCode, []byte{0, 1}, &b)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_BOOLEAN, 0, 1, 0, fbtype.BinaryFormatCode)
+	err := m.Scan(typeMetadata, []byte{0, 1}, &b)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid length for bool")
 }
@@ -439,11 +479,13 @@ func TestCachedPlanScanConfusion(t *testing.T) {
 	var err error
 
 	var tags any
-	err = m.Scan(fbproto.SQL_TYPE_TEXT, 0, 14, 0, fbx.BinaryFormatCode, []byte("{foo,bar,baz}"), &tags)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 0, 14, 0, fbx.BinaryFormatCode)
+	err = m.Scan(typeMetadata, []byte("{foo,bar,baz}"), &tags)
 	require.NoError(t, err)
 
 	var cells [][]string
-	err = m.Scan(fbproto.SQL_TYPE_TEXT, 0, 21, 0, fbx.BinaryFormatCode, []byte("{{foo,bar},{baz,quz}}"), &cells)
+	typeMetadata = fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 0, 21, 0, fbx.BinaryFormatCode)
+	err = m.Scan(typeMetadata, []byte("{{foo,bar},{baz,quz}}"), &cells)
 	require.NoError(t, err)
 }
 
@@ -454,7 +496,8 @@ func BenchmarkMapScanInt4IntoBinaryDecoder(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		v = fbtype.Int4{}
-		err := m.Scan(fbproto.SQL_TYPE_LONG, 0, 4, 0, fbtype.BinaryFormatCode, src, &v)
+		typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 0, 4, 0, fbtype.BinaryFormatCode)
+		err := m.Scan(typeMetadata, src, &v)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -471,7 +514,8 @@ func BenchmarkMapScanInt4IntoGoInt32(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		v = 0
-		err := m.Scan(fbproto.SQL_TYPE_LONG, 0, 4, 0, fbtype.BinaryFormatCode, src, &v)
+		typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 0, 4, 0, fbtype.BinaryFormatCode)
+		err := m.Scan(typeMetadata, src, &v)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -486,7 +530,8 @@ func BenchmarkScanPlanScanInt4IntoBinaryDecoder(b *testing.B) {
 	src := []byte{0, 0, 0, 42}
 	var v fbtype.Int4
 
-	plan := m.PlanScan(fbproto.SQL_TYPE_LONG, 0, 4, 0, fbtype.BinaryFormatCode, &v)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 0, 4, 0, fbtype.BinaryFormatCode)
+	plan := m.PlanScan(typeMetadata, &v)
 
 	for i := 0; i < b.N; i++ {
 		v = fbtype.Int4{}
@@ -505,7 +550,8 @@ func BenchmarkScanPlanScanInt4IntoGoInt32(b *testing.B) {
 	src := []byte{0, 0, 0, 42}
 	var v int32
 
-	plan := m.PlanScan(fbproto.SQL_TYPE_LONG, 0, 4, 0, fbtype.BinaryFormatCode, &v)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 0, 4, 0, fbtype.BinaryFormatCode)
+	plan := m.PlanScan(typeMetadata, &v)
 
 	for i := 0; i < b.N; i++ {
 		v = 0

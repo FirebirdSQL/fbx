@@ -99,7 +99,7 @@ func (Float4Codec) PreferredFormat() int16 {
 	return BinaryFormatCode
 }
 
-func (Float4Codec) PlanEncode(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, value any) EncodePlan {
+func (Float4Codec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	switch value.(type) {
 	case float32:
 		return encodePlanFloat4CodecBinaryFloat32{}
@@ -177,7 +177,7 @@ func (encodePlanFloat4CodecBinaryInt64Valuer) Encode(value any, buf []byte) (new
 	return pgio.AppendUint32(buf, math.Float32bits(f)), nil
 }
 
-func (Float4Codec) PlanScan(m *Map, typeId uint32, subType int32, length uint32, scale int32, format int16, target any) ScanPlan {
+func (Float4Codec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
 	switch target.(type) {
 	case *float32:
 		return scanPlanBinaryFloat4ToFloat32{}
@@ -291,26 +291,26 @@ func (scanPlanBinaryFloat4ToString) Scan(src []byte, dst any) error {
 	return nil
 }
 
-func (c Float4Codec) DecodeDatabaseSQLValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (driver.Value, error) {
+func (c Float4Codec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var n float32
-	err := codecScan(c, m, typeid, subType, length, scale, format, src, &n)
+	err := codecScan(c, m, typeMetadata, src, &n)
 	if err != nil {
 		return nil, err
 	}
 	return float64(n), nil
 }
 
-func (c Float4Codec) DecodeValue(m *Map, typeid uint32, subType int32, length uint32, scale int32, format int16, src []byte) (any, error) {
+func (c Float4Codec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
 	}
 
 	var n float32
-	err := codecScan(c, m, typeid, subType, length, scale, format, src, &n)
+	err := codecScan(c, m, typeMetadata, src, &n)
 	if err != nil {
 		return nil, err
 	}

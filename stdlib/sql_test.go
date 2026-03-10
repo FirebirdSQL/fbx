@@ -33,10 +33,11 @@ var (
 	engineMajorRegexp           = regexp.MustCompile(`\d+`)
 )
 
-func openDB(t testing.TB) *sql.DB {
+func openDB(t testing.TB, opts ...stdlib.OptionOpenDB) *sql.DB {
+	t.Helper()
 	config, err := fbx.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
 	require.NoError(t, err)
-	return stdlib.OpenDB(*config)
+	return stdlib.OpenDB(*config, opts...)
 }
 
 func getServerMajorVersion(t testing.TB, db *sql.DB) int {
@@ -1380,4 +1381,30 @@ func TestCheckIdleConn(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NotContains(t, ids, cPID)
+}
+
+func TestOptionShouldPing_HookCalledOnReuse(t *testing.T) {
+	hookCalled := false
+
+	db := openDB(t,
+		stdlib.OptionShouldPing(func(context.Context, stdlib.ShouldPingParams) bool {
+			hookCalled = true
+			// Return false to avoid relying on actual ping behavior.
+			return false
+		}),
+	)
+	defer closeDB(t, db)
+
+	// Ensure reuse (so ResetSession runs)
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+
+	// Establish the connection
+	require.NoError(t, db.Ping())
+
+	// Reuse the connection -> should trigger ResetSession -> ShouldPing
+	_, err := db.Exec("select 1 from rdb$database")
+	require.NoError(t, err)
+
+	require.True(t, hookCalled, "hook should be called on reuse")
 }
