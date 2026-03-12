@@ -1108,10 +1108,14 @@ func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 	return st, nil
 }
 
-// CancelRequest sends a cancel request to the PostgreSQL server. It returns an error if unable to deliver the cancel
-// request, but lack of an error does not ensure that the query was canceled. As specified in the documentation, there
-// is no way to be sure a query was canceled. See https://www.postgresql.org/docs/11/protocol-flow.html#id-1.10.5.7.9
+// CancelRequest sends op_cancel(fb_cancel_raise) to the server.
+// It returns an error if unable to deliver the cancel request, but lack of an error does not ensure that
+// the running operation was already interrupted because Firebird cancel delivery is asynchronous.
 func (fbConn *FbConn) CancelRequest(ctx context.Context) error {
+	return fbConn.sendCancelOperation(ctx, fbproto.Fb_cancel_raise)
+}
+
+func (fbConn *FbConn) sendCancelOperation(ctx context.Context, kind int) error {
 	if ctx != context.Background() {
 		contextWatcher := ctxwatch.NewContextWatcher(&DeadlineContextWatcherHandler{Conn: fbConn.conn})
 		contextWatcher.Watch(ctx)
@@ -1119,7 +1123,7 @@ func (fbConn *FbConn) CancelRequest(ctx context.Context) error {
 	}
 
 	if err := fbConn.client.WriteMessage(&fbproto.OpCancel{
-		Kind: fbproto.Fb_cancel_raise,
+		Kind: kind,
 	}); err != nil {
 		fbConn.asyncClose()
 		return err
@@ -2094,19 +2098,17 @@ func (h *CancelRequestContextWatcherHandler) HandleCancel(context.Context) {
 		cancelRequestCtx, cancel := context.WithDeadline(handleUnwatchedAfterCancelCalledCtx, deadline)
 		defer cancel()
 		h.Conn.CancelRequest(cancelRequestCtx)
-
-		// CancelRequest is inherently racy. Even though the cancel request has been received by the server at this point,
-		// it hasn't necessarily been delivered to the other connection. If we immediately return and the connection is
-		// immediately used then it is possible the CancelRequest will actually cancel our next query. The
-		// TestCancelRequestContextWatcherHandler Stress test can produce this error without the sleep below. The sleep time
-		// is arbitrary, but should be sufficient to prevent this error case.
-		time.Sleep(100 * time.Millisecond)
 	}()
 }
 
 func (h *CancelRequestContextWatcherHandler) HandleUnwatchAfterCancel() {
 	h.handleUnwatchAfterCancelCalled()
 	<-h.cancelFinishedChan
+
+	// Firebird cancel is asynchronous and may be acknowledged after the interrupted call returns.
+	// Disable/enable clears a deferred cancel flag before this attachment is reused.
+	_ = h.Conn.sendCancelOperation(context.Background(), fbproto.Fb_cancel_disable)
+	_ = h.Conn.sendCancelOperation(context.Background(), fbproto.Fb_cancel_enable)
 
 	h.Conn.conn.SetDeadline(time.Time{})
 }
