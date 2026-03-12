@@ -1461,7 +1461,7 @@ func (fbConn *FbConn) GetArrayMetadata(ctx context.Context, tableNames, fieldNam
 	return metadataList, sources, nil
 }
 
-// GetArrayDimentions returns the information about arrays dimentions
+// GetArrayDimentions returns the information about arrays dimensions
 func (fbConn *FbConn) GetArrayDimentions(ctx context.Context, sources [][]byte) (map[string][][]int, error) {
 	if fbConn.status == connStatusBusy {
 		fbConn.unlock()
@@ -1485,10 +1485,10 @@ func (fbConn *FbConn) GetArrayDimentions(ctx context.Context, sources [][]byte) 
 		return nil, result.Err
 	}
 
-	dimentions := map[string][][]int{}
+	dimensions := map[string][][]int{}
 	for _, val := range result.Rows {
-		dimentions[string(val[2])] = append(
-			dimentions[string(val[2])], // val[2] - field name
+		dimensions[string(val[2])] = append(
+			dimensions[string(val[2])], // val[2] - field name
 			[]int{
 				int(binary.BigEndian.Uint32(val[0])), // lower bound
 				int(binary.BigEndian.Uint32(val[1])), // upper bound
@@ -1496,10 +1496,9 @@ func (fbConn *FbConn) GetArrayDimentions(ctx context.Context, sources [][]byte) 
 		)
 	}
 
-	return dimentions, nil
+	return dimensions, nil
 }
 
-// GetArray gets the array id and returns the array
 func (fbConn *FbConn) getArray(ctx context.Context, arrayId int64, datatype uint32, length, l int, sdl []byte) ([]byte, error) {
 	if fbConn.status == connStatusBusy {
 		fbConn.unlock()
@@ -1543,8 +1542,7 @@ func (fbConn *FbConn) getArray(ctx context.Context, arrayId int64, datatype uint
 	}
 }
 
-// PutArray sends the array to the server and returns the array id
-func (fbConn *FbConn) putArray(ctx context.Context, array []byte, datatype uint32, length int, sdl []byte) ([]byte, error) {
+func (fbConn *FbConn) putArray(ctx context.Context, array []byte, length int, sdl []byte) ([]byte, error) {
 	if fbConn.status == connStatusBusy {
 		fbConn.unlock()
 		defer fbConn.lock()
@@ -1838,6 +1836,15 @@ func (rr *ResultReader) bufferCurrentFetchRows() bool {
 		rowStart := len(rr.bufferedCols)
 		for i := 0; i < colCount; i++ {
 			col := row.RowData[i]
+			if IsArrayType(uint32(row.RowDescriptor[i].Type)) {
+				array, err := GetArray(rr.fbConn, rr.ctx, rr.fieldDescriptions[i].ArrayData, col)
+				if err != nil {
+					rr.fbConn.asyncClose()
+					rr.concludeCommand(QueryStatus{}, err)
+					return false
+				}
+				col = array
+			}
 			if col == nil {
 				rr.bufferedCols = append(rr.bufferedCols, bufferedCol{length: bufferedColNullLength})
 				continue
@@ -2389,7 +2396,7 @@ func getArrayInfo(fbConn *FbConn, ctx context.Context, fields, tables []string) 
 	if err != nil {
 		return nil, err
 	}
-	dimentions, err := fbConn.GetArrayDimentions(ctx, sources)
+	dimensions, err := fbConn.GetArrayDimentions(ctx, sources)
 	if err != nil {
 		return nil, err
 	}
@@ -2401,25 +2408,26 @@ func getArrayInfo(fbConn *FbConn, ctx context.Context, fields, tables []string) 
 		arr.FieldName = strings.TrimSpace(string(metadata["FIELD"]))
 		arr.TableName = strings.TrimSpace(string(metadata["TABLE"]))
 		arr.Scale = int32(binary.BigEndian.Uint32(metadata["SCALE"]))
-		arr.TypeId = binary.BigEndian.Uint32(metadata["DATATYPE"])
+		arr.BlrTypeId = binary.BigEndian.Uint32(metadata["DATATYPE"])
+		arr.TypeId, err = getSqlTypeFromBlr(binary.BigEndian.Uint32(metadata["DATATYPE"]))
+		if err != nil {
+			return nil, err
+		}
 		arr.SubType = int32(binary.BigEndian.Uint32(metadata["SUBTYPE"]))
 
 		arr.Length = binary.BigEndian.Uint32(metadata["LENGTH"])
-		if arr.TypeId == fbproto.Isc_blr_varaying || arr.TypeId == fbproto.Isc_blr_varaying2 ||
-			arr.TypeId == fbproto.Isc_blr_text || arr.TypeId == fbproto.Isc_blr_text2 {
+		if arr.TypeId == fbproto.SQL_TYPE_VARYING || arr.TypeId == fbproto.SQL_TYPE_TEXT {
 			arr.Length *= fbConn.Encoding.MaxBytesPerChar
 		}
-
-		arr.Metadata = metadata
 
 		if arrays[arr.TableName] == nil {
 			arrays[arr.TableName] = map[string]*Array{}
 		}
-		for _, dimention := range dimentions[string(metadata["SOURCE"])] {
+		for _, dimension := range dimensions[string(metadata["SOURCE"])] {
 			arr.Dimensions = append(arr.Dimensions,
 				map[string]int{
-					"Lower": dimention[0],
-					"Upper": dimention[1],
+					"Lower": dimension[0],
+					"Upper": dimension[1],
 				},
 			)
 		}

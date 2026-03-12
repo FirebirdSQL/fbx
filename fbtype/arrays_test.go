@@ -1,4 +1,4 @@
-package fbx_test
+package fbtype_test
 
 import (
 	"context"
@@ -48,8 +48,8 @@ func TestArrayFlatArrayVarchar(t *testing.T) {
 		input    []string
 		expected []string
 	}{
-		// {nil, []string(nil)},
-		// {[]string{}, []string{"", "", "", "", "", ""}},
+		{nil, []string(nil)},
+		{[]string{}, []string{"", "", "", "", "", ""}},
 		{[]string{"a"}, []string{"a", "", "", "", "", ""}},
 		{[]string{"a", "b"}, []string{"a", "b", "", "", "", ""}},
 		{[]string{"\v", "\t", "\n", "\r", "\f", " "}, []string{"\v", "\t", "\n", "\r", "\f", " "}},
@@ -105,7 +105,7 @@ func TestArrayArray(t *testing.T) {
 		}{
 			{fbtype.Array[int32]{
 				Elements: []int32{1, 2, 3, 4},
-				Dims: []fbtype.Dimention{
+				Dims: []fbtype.Dimension{
 					{Lower: 1, Upper: 2},
 					{Lower: 1, Upper: 2},
 				},

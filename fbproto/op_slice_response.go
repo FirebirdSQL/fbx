@@ -1,6 +1,9 @@
 package fbproto
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+	"fmt"
+)
 
 // https://firebirdsql.org/file/documentation/html/en/firebirddocs/wireprotocol/firebird-wire-protocol.html#wireprotocol-responses-slice
 
@@ -13,14 +16,19 @@ type OpSliceResponse struct {
 
 func (op *OpSliceResponse) Read(x *XDRReader) error {
 	var err error
+	var sliceLength int
 
 	// p_slr_length
 	if op.SliceLengthBytes, err = x.ReadInt32(); err != nil {
 		return err
 	}
 
-	if op.SliceLengthBytes, err = x.ReadInt32(); err != nil {
+	if sliceLength, err = x.ReadInt32(); err != nil {
 		return err
+	}
+
+	if op.SliceLengthBytes != sliceLength {
+		return fmt.Errorf("p_slr_length and Slice length are not equal")
 	}
 
 	isVariying := false
@@ -38,6 +46,7 @@ func (op *OpSliceResponse) Read(x *XDRReader) error {
 	}
 
 	var arrayElement []byte
+	op.SliceData = make([]byte, 0)
 	if isVariying {
 		for i := 0; i < elements; i++ {
 			if arrayElement, err = x.ReadBuffer(); err != nil {

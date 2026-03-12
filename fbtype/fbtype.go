@@ -63,6 +63,7 @@ type TypeMetadata struct {
 	Length     uint32
 	Scale      int32
 	FormatCode int16
+	ArrayData  *ArrayData
 }
 
 func NewTypeMetadata(typeId uint32, subType int32, length uint32, scale int32, formatCode int16) TypeMetadata {
@@ -75,6 +76,23 @@ func NewTypeMetadata(typeId uint32, subType int32, length uint32, scale int32, f
 	tm.FormatCode = formatCode
 
 	return tm
+}
+
+func NewTypeMetadataWithArrayData(typeId uint32, subType int32, length uint32, scale int32, formatCode int16, arrayData *ArrayData) TypeMetadata {
+	var tm TypeMetadata
+
+	tm.TypeID = typeId
+	tm.SubType = subType
+	tm.Length = length
+	tm.Scale = scale
+	tm.FormatCode = formatCode
+	tm.ArrayData = arrayData
+
+	return tm
+}
+
+func (tm *TypeMetadata) SetArrayMetadata(arrayData *ArrayData) {
+	tm.ArrayData = arrayData
 }
 
 // Map is the mapping between Firebird server types and Go type handling logic. It can encode values for

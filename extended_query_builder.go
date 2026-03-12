@@ -26,7 +26,8 @@ func (pb *ExtendedQueryBuilder) Build(ctx context.Context, conn *Conn, tx *dbTx,
 
 	if sd == nil {
 		for i := range args {
-			err := pb.appendParam(ctx, conn, tx, m, sd.Parameters[i].ArrayData, 0, 0, 0, 0, fbtype.TextFormatCode, args[i])
+			typeMetadata := fbtype.NewTypeMetadataWithArrayData(0, 0, 0, 0, fbtype.TextFormatCode, nil)
+			err := pb.appendParam(ctx, conn, tx, m, typeMetadata, args[i])
 			if err != nil {
 				err = fmt.Errorf("failed to encode args[%d]: %w", i, err)
 				return err
@@ -40,7 +41,23 @@ func (pb *ExtendedQueryBuilder) Build(ctx context.Context, conn *Conn, tx *dbTx,
 	}
 
 	for i := range args {
-		err := pb.appendParam(ctx, conn, tx, m, sd.Parameters[i].ArrayData, sd.Parameters[i].Type, sd.Parameters[i].Subtype, sd.Parameters[i].Length, sd.Parameters[i].Scale, -1, args[i])
+		arr := sd.Parameters[i].ArrayData
+		typeMetadata := fbtype.NewTypeMetadata(
+			sd.Parameters[i].Type,
+			sd.Parameters[i].Subtype,
+			sd.Parameters[i].Length,
+			sd.Parameters[i].Scale,
+			-1,
+		)
+		if arr != nil {
+			arrayData, err := fbtype.NewArrayData(arr.TypeId, arr.BlrTypeId, arr.SubType, arr.Length, arr.Scale,
+				arr.Dimensions, arr.TableName, arr.FieldName)
+			if err != nil {
+				return err
+			}
+			typeMetadata.SetArrayMetadata(arrayData)
+		}
+		err := pb.appendParam(ctx, conn, tx, m, typeMetadata, args[i])
 		if err != nil {
 			err = fmt.Errorf("failed to encode args[%d]: %w", i, err)
 			return err
@@ -52,11 +69,11 @@ func (pb *ExtendedQueryBuilder) Build(ctx context.Context, conn *Conn, tx *dbTx,
 
 // appendParam appends a parameter to the query. format may be -1 to automatically choose the format. If arg is nil it
 // must be an untyped nil.
-func (pb *ExtendedQueryBuilder) appendParam(ctx context.Context, conn *Conn, tx *dbTx, m *fbtype.Map, arrayData *fbconn.Array, typeId uint32, subType int32, length uint32, scale int32, format int16, arg any) error {
-	format = 1
-	if format == -1 {
-		preferredFormat := pb.chooseParameterFormatCode(m, typeId, arg)
-		preferredErr := pb.appendParam(ctx, conn, tx, m, arrayData, typeId, subType, length, scale, preferredFormat, arg)
+func (pb *ExtendedQueryBuilder) appendParam(ctx context.Context, conn *Conn, tx *dbTx, m *fbtype.Map, typeMetadata fbtype.TypeMetadata, arg any) error {
+	typeMetadata.FormatCode = 1
+	if typeMetadata.FormatCode == -1 {
+		preferredFormat := pb.chooseParameterFormatCode(m, typeMetadata.TypeID, arg)
+		preferredErr := pb.appendParam(ctx, conn, tx, m, typeMetadata, arg)
 		if preferredErr == nil {
 			return nil
 		}
@@ -67,7 +84,7 @@ func (pb *ExtendedQueryBuilder) appendParam(ctx context.Context, conn *Conn, tx 
 			typeMetadata.FormatCode = TextFormatCode
 		}
 
-		otherErr := pb.appendParam(ctx, conn, tx, m, arrayData, typeId, subType, length, scale, otherFormat, arg)
+		otherErr := pb.appendParam(ctx, conn, tx, m, typeMetadata, arg)
 		if otherErr == nil {
 			return nil
 		}
@@ -75,7 +92,7 @@ func (pb *ExtendedQueryBuilder) appendParam(ctx context.Context, conn *Conn, tx 
 		return preferredErr // return the error from the preferred format
 	}
 
-	v, err := pb.encodeParamValue(ctx, conn, tx, m, arrayData, typeId, subType, length, scale, format, arg)
+	v, err := pb.encodeParamValue(ctx, conn, tx, m, typeMetadata, arg)
 	if err != nil {
 		return err
 	}
@@ -105,7 +122,6 @@ func (pb *ExtendedQueryBuilder) reset() {
 	if cap(pb.paramValueBytes) > 256 {
 		pb.paramValueBytes = make([]byte, 0, 256)
 	}
-
 	if cap(pb.ParamFormats) > 64 {
 		pb.ParamFormats = make([]int16, 0, 64)
 	}
@@ -114,7 +130,7 @@ func (pb *ExtendedQueryBuilder) reset() {
 	}
 }
 
-func (pb *ExtendedQueryBuilder) encodeParamValue(ctx context.Context, conn *Conn, tx *dbTx, m *fbtype.Map, arrayData *fbconn.Array, typeId uint32, subType int32, length uint32, scale int32, formatCode int16, arg any) ([]byte, error) {
+func (pb *ExtendedQueryBuilder) encodeParamValue(ctx context.Context, conn *Conn, tx *dbTx, m *fbtype.Map, typeMetadata fbtype.TypeMetadata, arg any) ([]byte, error) {
 	if pb.paramValueBytes == nil {
 		pb.paramValueBytes = make([]byte, 0, 128)
 	}
@@ -133,27 +149,33 @@ func (pb *ExtendedQueryBuilder) encodeParamValue(ctx context.Context, conn *Conn
 		return pb.paramValueBytes[pos:], nil
 	}
 
-	if fbconn.IsArrayType(typeId) {
-		array, dimentions, err := fbtype.EncodeArray(m, arrayData.TypeId, arrayData.SubType, arrayData.Scale, arrayData.Length, arrayData.Dimensions, arg, make([]byte, 0))
+	buf, err := m.Encode(typeMetadata, arg, pb.paramValueBytes)
+
+	if fbconn.IsArrayType(typeMetadata.TypeID) && buf != nil {
+		dimensions, err := fbtype.Dimensions(arg)
 		if err != nil {
 			return nil, err
 		}
-		if array != nil {
-			tmpDims := arrayData.Dimensions
-			arrayData.Dimensions = dimentions
-			arrayId, err := fbconn.PutArray(conn.fbConn, ctx, arrayData, array)
-
-			arrayData.Dimensions = tmpDims
+		if dimensions != nil {
+			arrayData := fbconn.NewArray(
+				typeMetadata.ArrayData.Table,
+				typeMetadata.ArrayData.Field,
+				dimensions,
+				typeMetadata.ArrayData.Length,
+				typeMetadata.ArrayData.Scale,
+				typeMetadata.ArrayData.TypeId,
+				typeMetadata.ArrayData.BlrTypeId,
+				typeMetadata.ArrayData.SubType,
+			)
+			arrayId, err := fbconn.PutArray(conn.fbConn, ctx, arrayData, buf[pos:])
 
 			if err != nil {
 				return nil, err
 			}
-			pb.paramValueBytes = append(pb.paramValueBytes, arrayId...)
-			return pb.paramValueBytes[pos:], nil
+			buf = append(pb.paramValueBytes, arrayId...)
 		}
 	}
 
-	buf, err := m.Encode(typeId, subType, length, scale, formatCode, arg, pb.paramValueBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -324,6 +346,5 @@ func (pb *ExtendedQueryBuilder) chooseParameterFormatCode(m *fbtype.Map, typeid 
 	case string, *string:
 		return TextFormatCode
 	}
-
 	return m.FormatCodeForTypeID(typeid)
 }

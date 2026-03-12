@@ -269,13 +269,28 @@ func (rows *baseRows) Scan(dest ...any) error {
 		rows.scanPlans = make([]fbtype.ScanPlan, len(values))
 		rows.scanTypes = make([]reflect.Type, len(values))
 		for i := range dest {
-			typeMetadata := fbtype.NewTypeMetadata(fieldDescriptions[i].Type, fieldDescriptions[i].Subtype, fieldDescriptions[i].Length, fieldDescriptions[i].Scale, fieldDescriptions[i].Format)
+			typeMetadata := fbtype.NewTypeMetadata(
+				fieldDescriptions[i].Type,
+				fieldDescriptions[i].Subtype,
+				fieldDescriptions[i].Length,
+				fieldDescriptions[i].Scale,
+				fieldDescriptions[i].Format,
+			)
+			arr := fieldDescriptions[i].ArrayData
+			if arr != nil {
+				arrayData, err := fbtype.NewArrayData(arr.TypeId, arr.BlrTypeId, arr.SubType, arr.Length, arr.Scale,
+					arr.Dimensions, arr.TableName, arr.FieldName)
+				if err != nil {
+					err = ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: err}
+					rows.fatal(err)
+					return err
+				}
+				typeMetadata.SetArrayMetadata(arrayData)
+			}
 			rows.scanPlans[i] = m.PlanScan(typeMetadata, dest[i])
 			rows.scanTypes[i] = reflect.TypeOf(dest[i])
 		}
 	}
-
-	var tmp [][]byte
 
 	for i, dst := range dest {
 		if dst == nil {
@@ -290,35 +305,31 @@ func (rows *baseRows) Scan(dest ...any) error {
 			}
 			continue
 		}
-		if fieldDescriptions[i].IsArray() {
-			arr, err := fbconn.GetArray(rows.Conn().FbConn(), rows.ctx, *fieldDescriptions[i].ArrayData, values[i])
-			if err != nil {
-				err = ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: err}
-				rows.fatal(err)
-				return err
-			}
-			arrInf := fieldDescriptions[i].ArrayData
-			err = fbtype.ScanArray(m, arrInf.TypeId, arrInf.SubType, arrInf.Scale, arrInf.Length, arrInf.Dimensions, arr, dst)
-			if err != nil {
-				err = ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: err}
-				rows.fatal(err)
-				return err
-			}
-			continue
-		}
 
 		if rows.scanTypes[i] != reflect.TypeOf(dst) {
-			typeMetadata := fbtype.NewTypeMetadata(fieldDescriptions[i].Type, fieldDescriptions[i].Subtype, fieldDescriptions[i].Length, fieldDescriptions[i].Scale, fieldDescriptions[i].Format)
+			typeMetadata := fbtype.NewTypeMetadata(
+				fieldDescriptions[i].Type,
+				fieldDescriptions[i].Subtype,
+				fieldDescriptions[i].Length,
+				fieldDescriptions[i].Scale,
+				fieldDescriptions[i].Format,
+			)
+			arr := fieldDescriptions[i].ArrayData
+			if arr != nil {
+				arrayData, err := fbtype.NewArrayData(arr.TypeId, arr.BlrTypeId, arr.SubType, arr.Length, arr.Scale,
+					arr.Dimensions, arr.TableName, arr.FieldName)
+				if err != nil {
+					err = ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: err}
+					rows.fatal(err)
+					return err
+				}
+				typeMetadata.SetArrayMetadata(arrayData)
+			}
 			rows.scanPlans[i] = m.PlanScan(typeMetadata, dest[i])
 			rows.scanTypes[i] = reflect.TypeOf(dest[i])
 		}
 
 		err := rows.scanPlans[i].Scan(values[i], dst)
-
-		if fieldDescriptions[i].IsArray() {
-			values = tmp
-			rows.values = tmp
-		}
 
 		if err != nil {
 			err = ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: err}
