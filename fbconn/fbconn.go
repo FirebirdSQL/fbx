@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"rdb.red-soft.ru/fbx/fbconn/ctxwatch"
@@ -1150,6 +1151,7 @@ func (fbConn *FbConn) ExecImmediate(ctx context.Context, sql string) error {
 // ExecImmediateTx executes statement immediate inside specified transaction
 func (fbConn *FbConn) ExecImmediateTx(ctx context.Context, tx *FBTransaction, sql string) error {
 	var err error
+	watched := false
 
 	if err = fbConn.lock(); err != nil {
 		return err
@@ -1163,7 +1165,7 @@ func (fbConn *FbConn) ExecImmediateTx(ctx context.Context, tx *FBTransaction, sq
 		default:
 		}
 		fbConn.contextWatcher.Watch(ctx)
-		defer fbConn.contextWatcher.Unwatch()
+		watched = true
 	}
 
 	txHandle := 0
@@ -1176,17 +1178,29 @@ func (fbConn *FbConn) ExecImmediateTx(ctx context.Context, tx *FBTransaction, sq
 		Dialect:           3,
 		Query:             sql,
 	}); err != nil {
+		if watched {
+			fbConn.contextWatcher.Unwatch()
+		}
+		fbConn.unlock()
 		fbConn.asyncClose()
 		return err
 	}
 
 	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+		if watched {
+			fbConn.contextWatcher.Unwatch()
+		}
+		fbConn.unlock()
 		fbConn.asyncClose()
 		return err
 	}
 
 	msg, err := fbConn.receiveMessage()
 	if err != nil {
+		if watched {
+			fbConn.contextWatcher.Unwatch()
+		}
+		fbConn.unlock()
 		fbConn.asyncClose()
 		return normalizeTimeoutError(ctx, err)
 	}
@@ -1194,14 +1208,23 @@ func (fbConn *FbConn) ExecImmediateTx(ctx context.Context, tx *FBTransaction, sq
 	switch m := msg.(type) {
 	case *fbproto.OpResponse:
 	case *fbproto.ErrorResponse:
+		if watched {
+			fbConn.contextWatcher.Unwatch()
+		}
 		fbConn.unlock()
 		return ErrorResponseToFbError(m)
 	default:
+		if watched {
+			fbConn.contextWatcher.Unwatch()
+		}
+		fbConn.unlock()
 		panic(fmt.Sprintf("wrong response message type %T instead expected OpResponse or ErrorResponse", m))
 	}
 
+	if watched {
+		fbConn.contextWatcher.Unwatch()
+	}
 	fbConn.unlock()
-	fbConn.contextWatcher.Unwatch()
 	if tx != nil && tx == fbConn.internalTransaction && fbConn.config.Autocommit && !fbConn.explicitTransaction {
 		tx.Commit(ctx)
 	}
@@ -1668,8 +1691,8 @@ func (rr *ResultReader) Close() (QueryStatus, error) {
 		}
 		rr.clearBufferedFetch()
 		rr.closed = true
-		rr.fbConn.unlock()
 		rr.fbConn.contextWatcher.Unwatch()
+		rr.fbConn.unlock()
 
 		if rr.boundTransaction != nil && rr.boundTransaction == rr.fbConn.internalTransaction && rr.fbConn.config.Autocommit && !rr.fbConn.explicitTransaction {
 			if err := rr.boundTransaction.Commit(context.Background()); err != nil && rr.err == nil {
@@ -2074,12 +2097,18 @@ type CancelRequestContextWatcherHandler struct {
 	// DeadlineDelay is the delay to set on the deadline set on net.Conn when the context is canceled.
 	DeadlineDelay time.Duration
 
+	// CancelResetTimeout is the timeout for clearing deferred cancel state (disable/enable) before reuse.
+	CancelResetTimeout time.Duration
+
 	cancelFinishedChan             chan struct{}
 	handleUnwatchAfterCancelCalled func()
+	cancelRequestSent              atomic.Bool
+	sendCancelOperationFunc        func(context.Context, int) error
 }
 
 func (h *CancelRequestContextWatcherHandler) HandleCancel(context.Context) {
 	h.cancelFinishedChan = make(chan struct{})
+	h.cancelRequestSent.Store(false)
 	var handleUnwatchedAfterCancelCalledCtx context.Context
 	handleUnwatchedAfterCancelCalledCtx, h.handleUnwatchAfterCancelCalled = context.WithCancel(context.Background())
 
@@ -2097,7 +2126,9 @@ func (h *CancelRequestContextWatcherHandler) HandleCancel(context.Context) {
 
 		cancelRequestCtx, cancel := context.WithDeadline(handleUnwatchedAfterCancelCalledCtx, deadline)
 		defer cancel()
-		h.Conn.CancelRequest(cancelRequestCtx)
+		if err := h.Conn.CancelRequest(cancelRequestCtx); err == nil {
+			h.cancelRequestSent.Store(true)
+		}
 	}()
 }
 
@@ -2105,10 +2136,31 @@ func (h *CancelRequestContextWatcherHandler) HandleUnwatchAfterCancel() {
 	h.handleUnwatchAfterCancelCalled()
 	<-h.cancelFinishedChan
 
-	// Firebird cancel is asynchronous and may be acknowledged after the interrupted call returns.
-	// Disable/enable clears a deferred cancel flag before this attachment is reused.
-	_ = h.Conn.sendCancelOperation(context.Background(), fbproto.Fb_cancel_disable)
-	_ = h.Conn.sendCancelOperation(context.Background(), fbproto.Fb_cancel_enable)
+	if h.cancelRequestSent.Load() {
+		if err := h.sendCancelOperationWithTimeout(fbproto.Fb_cancel_disable); err != nil {
+			h.Conn.asyncClose()
+			return
+		}
+		if err := h.sendCancelOperationWithTimeout(fbproto.Fb_cancel_enable); err != nil {
+			h.Conn.asyncClose()
+			return
+		}
+	}
 
 	h.Conn.conn.SetDeadline(time.Time{})
+}
+
+func (h *CancelRequestContextWatcherHandler) sendCancelOperationWithTimeout(kind int) error {
+	timeout := h.CancelResetTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	if h.sendCancelOperationFunc != nil {
+		return h.sendCancelOperationFunc(ctx, kind)
+	}
+
+	return h.Conn.sendCancelOperation(ctx, kind)
 }

@@ -2444,6 +2444,30 @@ func TestCancelRequestContextWatcherHandler(t *testing.T) {
 		require.True(t, fbConn.IsClosed())
 	})
 
+	t.Run("Late cancel does not affect next query", func(t *testing.T) {
+		config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+		require.NoError(t, err)
+		config.BuildContextWatcherHandler = func(conn *fbconn.FbConn) ctxwatch.Handler {
+			return &fbconn.CancelRequestContextWatcherHandler{
+				Conn:               conn,
+				CancelRequestDelay: 5 * time.Millisecond,
+				DeadlineDelay:      1000 * time.Millisecond,
+			}
+		}
+		config.ConnectTimeout = 5 * time.Second
+
+		fbConn, err := fbconn.ConnectConfig(context.Background(), config)
+		require.NoError(t, err)
+		defer closeConn(t, fbConn)
+
+		for i := 0; i < 20; i++ {
+			ctx, cancel := context.WithTimeout(context.Background(), 4*time.Millisecond)
+			fbConn.Exec(ctx, "select 1, fbsleep(0.010) from rdb$database").Read()
+			cancel()
+			ensureConnValid(t, fbConn)
+		}
+	})
+
 	for i := 0; i < 10; i++ {
 		t.Run(fmt.Sprintf("Stress %d", i), func(t *testing.T) {
 			t.Parallel()
@@ -2468,7 +2492,6 @@ func TestCancelRequestContextWatcherHandler(t *testing.T) {
 					ctx, cancel := context.WithTimeout(context.Background(), 4*time.Millisecond)
 					defer cancel()
 					fbConn.Exec(ctx, "select 1, fbsleep(0.010) from rdb$database").Read()
-					time.Sleep(100 * time.Millisecond) // ensure a cancel request that was a little late doesn't interrupt ensureConnValid.
 					ensureConnValid(t, fbConn)
 				}()
 			}

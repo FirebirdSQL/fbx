@@ -3,6 +3,7 @@ package ctxwatch
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 )
 
 // ContextWatcher watches a context and performs an action when the context is canceled. It can watch one context at a
@@ -13,7 +14,7 @@ type ContextWatcher struct {
 
 	lock              sync.Mutex
 	watchInProgress   bool
-	onCancelWasCalled bool
+	onCancelWasCalled atomic.Bool
 }
 
 // NewContextWatcher returns a ContextWatcher. onCancel will be called when a watched context is canceled.
@@ -37,7 +38,7 @@ func (cw *ContextWatcher) Watch(ctx context.Context) {
 		panic("Watch already in progress")
 	}
 
-	cw.onCancelWasCalled = false
+	cw.onCancelWasCalled.Store(false)
 
 	if ctx.Done() != nil {
 		cw.watchInProgress = true
@@ -45,7 +46,7 @@ func (cw *ContextWatcher) Watch(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				cw.handler.HandleCancel(ctx)
-				cw.onCancelWasCalled = true
+				cw.onCancelWasCalled.Store(true)
 				<-cw.unwatchChan
 			case <-cw.unwatchChan:
 			}
@@ -63,7 +64,7 @@ func (cw *ContextWatcher) Unwatch() {
 
 	if cw.watchInProgress {
 		cw.unwatchChan <- struct{}{}
-		if cw.onCancelWasCalled {
+		if cw.onCancelWasCalled.Load() {
 			cw.handler.HandleUnwatchAfterCancel()
 		}
 		cw.watchInProgress = false
