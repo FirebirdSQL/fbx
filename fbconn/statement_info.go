@@ -121,7 +121,6 @@ func (p *StatementInfo) feedDescriptors(r *ServerInfoBufferReader) error {
 				return err
 			}
 		case fbproto.Isc_info_sql_describe_end:
-			field.Format = FbTypeIntoFormat(field.Type, field.Subtype)
 			*p.currentDescriptor = append(*p.currentDescriptor, field)
 		case fbproto.Isc_info_sql_null_ind:
 			var nullOk int

@@ -140,28 +140,8 @@ func (dst *UUID) UnmarshalJSON(src []byte) error {
 
 type UUIDCodec struct{}
 
-func (UUIDCodec) FormatSupported(format int16) bool {
-	return format == TextFormatCode || format == BinaryFormatCode
-}
-
-func (UUIDCodec) PreferredFormat() int16 {
-	return BinaryFormatCode
-}
-
 func (UUIDCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
-	switch typeMetadata.FormatCode {
-	case BinaryFormatCode:
-		switch value.(type) {
-		case UUIDValuer:
-			return encodePlanUUIDCodecBinaryUUIDValuer{}
-		case string:
-			return encodePlanUUIDCodecBinaryString{}
-		}
-	case TextFormatCode:
-		return encodePlanUUIDCodecTextUUIDValuer{}
-	}
-
-	return nil
+	return encodePlanUUIDCodecTextUUIDValuer{}
 }
 
 type encodePlanUUIDCodecBinaryUUIDValuer struct{}
@@ -206,19 +186,11 @@ func (encodePlanUUIDCodecTextUUIDValuer) Encode(value any, buf []byte) (newBuf [
 }
 
 func (UUIDCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
-	switch typeMetadata.FormatCode {
-	case BinaryFormatCode:
-		switch target.(type) {
-		case UUIDScanner:
-			return scanPlanBinaryUUIDToUUIDScanner{}
-		case TextScanner:
-			return scanPlanBinaryUUIDToTextScanner{}
-		}
-	case TextFormatCode:
-		switch target.(type) {
-		case UUIDScanner:
-			return scanPlanTextAnyToUUIDScanner{}
-		}
+	switch target.(type) {
+	case UUIDScanner:
+		return scanPlanBinaryUUIDToUUIDScanner{}
+	case TextScanner:
+		return scanPlanBinaryUUIDToTextScanner{}
 	}
 
 	return nil

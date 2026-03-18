@@ -13,19 +13,8 @@ import (
 	"rdb.red-soft.ru/fbx/fbproto"
 )
 
-// Firebird format codes
-const (
-	TextFormatCode   = 0
-	BinaryFormatCode = 1
-)
-
 // A Codec converts between Go and Firebird values. A Codec must not be mutated after it is registered with a Map.
 type Codec interface {
-	// FormatSupported returns true if the format is supported.
-	FormatSupported(int16) bool
-
-	// PreferredFormat returns the preferred format.
-	PreferredFormat() int16
 
 	// PlanEncode returns an EncodePlan for encoding value into Firebird format for typeid and format. If no plan can be
 	// found then nil is returned.
@@ -58,21 +47,19 @@ type Type struct {
 }
 
 type TypeMetadata struct {
-	TypeID     uint32
-	SubType    int32
-	Length     uint32
-	Scale      int32
-	FormatCode int16
+	TypeID  uint32
+	SubType int32
+	Length  uint32
+	Scale   int32
 }
 
-func NewTypeMetadata(typeId uint32, subType int32, length uint32, scale int32, formatCode int16) TypeMetadata {
+func NewTypeMetadata(typeId uint32, subType int32, length uint32, scale int32) TypeMetadata {
 	var tm TypeMetadata
 
 	tm.TypeID = typeId
 	tm.SubType = subType
 	tm.Length = length
 	tm.Scale = scale
-	tm.FormatCode = formatCode
 
 	return tm
 }
@@ -80,10 +67,9 @@ func NewTypeMetadata(typeId uint32, subType int32, length uint32, scale int32, f
 // Map is the mapping between Firebird server types and Go type handling logic. It can encode values for
 // transmission to a Firebird server and scan received values.
 type Map struct {
-	typeidToType       map[uint32]*Type
-	nameToType         map[string]*Type
-	reflectTypeToName  map[reflect.Type]string
-	typeidToFormatCode map[uint32]int16
+	typeidToType      map[uint32]*Type
+	nameToType        map[string]*Type
+	reflectTypeToName map[reflect.Type]string
 
 	reflectTypeToType map[reflect.Type]*Type
 
@@ -115,10 +101,9 @@ func NewMap() *Map {
 	defaultMapInitOnce.Do(initDefaultMap)
 
 	return &Map{
-		typeidToType:       make(map[uint32]*Type),
-		nameToType:         make(map[string]*Type),
-		reflectTypeToName:  make(map[reflect.Type]string),
-		typeidToFormatCode: make(map[uint32]int16),
+		typeidToType:      make(map[uint32]*Type),
+		nameToType:        make(map[string]*Type),
+		reflectTypeToName: make(map[reflect.Type]string),
 
 		memoizedEncodePlans: make(map[TypeMetadata]map[reflect.Type][2]EncodePlan),
 
@@ -155,7 +140,6 @@ func (m *Map) RegisterTypes(types []*Type) {
 func (m *Map) RegisterType(t *Type) {
 	m.typeidToType[t.TypeID] = t
 	m.nameToType[t.Name] = t
-	m.typeidToFormatCode[t.TypeID] = t.Codec.PreferredFormat()
 
 	// Invalidated by type registration
 	m.reflectTypeToType = nil
@@ -247,20 +231,6 @@ func (m *Map) TypeForValue(v any) (*Type, bool) {
 	return dt, ok
 }
 
-// FormatCodeForTypeID returns the preferred format code for type typeid. If the type is not registered it returns the text
-// format code.
-func (m *Map) FormatCodeForTypeID(typeid uint32) int16 {
-	if fc, ok := m.typeidToFormatCode[typeid]; ok {
-		return fc
-	}
-
-	if fc, ok := defaultMap.typeidToFormatCode[typeid]; ok {
-		return fc
-	}
-
-	return TextFormatCode
-}
-
 // EncodePlan is a precompiled plan to encode a particular type into a particular TypeID and format.
 type EncodePlan interface {
 	// Encode appends the encoded bytes of value to buf. If value is the SQL value NULL then append nothing and return
@@ -293,7 +263,6 @@ func (plan *scanPlanCodecSQLScanner) Scan(src []byte, dst any) error {
 }
 
 type scanPlanSQLScanner struct {
-	formatCode int16
 }
 
 func (plan *scanPlanSQLScanner) Scan(src []byte, dst any) error {
@@ -303,10 +272,8 @@ func (plan *scanPlanSQLScanner) Scan(src []byte, dst any) error {
 		// This is necessary because interface value []byte:nil does not equal nil:nil for the binary format path and the
 		// text format path would be converted to empty string.
 		return scanner.Scan(nil)
-	} else if plan.formatCode == BinaryFormatCode {
-		return scanner.Scan(src)
 	} else {
-		return scanner.Scan(string(src))
+		return scanner.Scan(src)
 	}
 }
 
@@ -417,16 +384,6 @@ func (plan *scanPlanFail) Scan(src []byte, dst any) error {
 		}
 	}
 
-	var format string
-	switch plan.typeMetadata.FormatCode {
-	case TextFormatCode:
-		format = "text"
-	case BinaryFormatCode:
-		format = "binary"
-	default:
-		format = fmt.Sprintf("unknown %d", plan.typeMetadata.FormatCode)
-	}
-
 	var dataTypeName string
 	if t, ok := plan.m.TypeForTypeID(plan.typeMetadata.TypeID, plan.typeMetadata.SubType); ok {
 		dataTypeName = t.Name
@@ -434,7 +391,7 @@ func (plan *scanPlanFail) Scan(src []byte, dst any) error {
 		dataTypeName = "unknown type"
 	}
 
-	return fmt.Errorf("cannot scan %s (type id %d) with subtype %d in %v format into %T", dataTypeName, plan.typeMetadata.TypeID, plan.typeMetadata.SubType, format, dst)
+	return fmt.Errorf("cannot scan %s (type id %d) with subtype %d into %T", dataTypeName, plan.typeMetadata.TypeID, plan.typeMetadata.SubType, dst)
 }
 
 // TryWrapScanPlanFunc is a function that tries to create a wrapper plan for target. If successful it returns a plan
@@ -1032,26 +989,8 @@ func (m *Map) planScan(typeMetadata TypeMetadata, target any, depth int) ScanPla
 		return scanPlanAnyToUndecodedBytes{}
 	}
 
-	switch typeMetadata.FormatCode {
-	case BinaryFormatCode:
-		switch target.(type) {
-		case *string:
-			charsetId := CharacterSetForType(typeMetadata.TypeID, typeMetadata.SubType, typeMetadata.Scale)
-			name, err := fbproto.CharacterSetIdIntoName(charsetId)
-			if err != nil {
-				return nil
-			}
-			encoding, err := fbproto.NewEncoding(name)
-			if err != nil {
-				return nil
-			}
-
-			switch typeMetadata.TypeID {
-			case fbproto.SQL_TYPE_TEXT, fbproto.SQL_TYPE_VARYING:
-				return scanPlanString{typeId: typeMetadata.TypeID, encoding: encoding, length: typeMetadata.Length}
-			}
-		}
-	case TextFormatCode:
+	switch target.(type) {
+	case *string:
 		charsetId := CharacterSetForType(typeMetadata.TypeID, typeMetadata.SubType, typeMetadata.Scale)
 		name, err := fbproto.CharacterSetIdIntoName(charsetId)
 		if err != nil {
@@ -1062,13 +1001,9 @@ func (m *Map) planScan(typeMetadata TypeMetadata, target any, depth int) ScanPla
 			return nil
 		}
 
-		switch target.(type) {
-		case *string:
+		switch typeMetadata.TypeID {
+		case fbproto.SQL_TYPE_TEXT, fbproto.SQL_TYPE_VARYING:
 			return scanPlanString{typeId: typeMetadata.TypeID, encoding: encoding, length: typeMetadata.Length}
-		case *[]byte:
-			return scanPlanAnyTextToBytes{typeId: typeMetadata.TypeID, encoding: encoding, length: typeMetadata.Length}
-		case TextScanner:
-			return scanPlanTextAnyToTextScanner{typeId: typeMetadata.TypeID, encoding: encoding, length: typeMetadata.Length}
 		}
 	}
 
@@ -1092,7 +1027,7 @@ func (m *Map) planScan(typeMetadata TypeMetadata, target any, depth int) ScanPla
 	//
 	if _, ok := target.(sql.Scanner); ok {
 		if dt == nil {
-			return &scanPlanSQLScanner{formatCode: typeMetadata.FormatCode}
+			return &scanPlanSQLScanner{}
 		} else {
 			return &scanPlanCodecSQLScanner{c: dt.Codec, m: m, typeMetadata: typeMetadata}
 		}
@@ -1114,11 +1049,7 @@ func (m *Map) planScan(typeMetadata TypeMetadata, target any, depth int) ScanPla
 		if dt != nil {
 			codec = dt.Codec
 		} else {
-			if typeMetadata.FormatCode == TextFormatCode {
-				codec = TextCodec{}
-			} else {
-				codec = ByteaCodec{}
-			}
+			codec = ByteaCodec{}
 		}
 		return &pointerEmptyInterfaceScanPlan{codec: codec, m: m, typeMetadata: typeMetadata}
 	}
@@ -1150,19 +1081,16 @@ func codecDecodeToTextFormat(codec Codec, m *Map, typeMetadata TypeMetadata, src
 		return nil, nil
 	}
 
-	if typeMetadata.FormatCode == TextFormatCode {
-		return string(src), nil
-	} else {
-		value, err := codec.DecodeValue(m, typeMetadata, src)
-		if err != nil {
-			return nil, err
-		}
-		buf, err := m.Encode(typeMetadata, value, nil)
-		if err != nil {
-			return nil, err
-		}
-		return string(buf), nil
+	value, err := codec.DecodeValue(m, typeMetadata, src)
+	if err != nil {
+		return nil, err
 	}
+	buf, err := m.Encode(typeMetadata, value, nil)
+	if err != nil {
+		return nil, err
+	}
+	return string(buf), nil
+
 }
 
 // PlanEncode returns an EncodePlan for encoding value into Firebird format for typeid and format. If no plan can be
@@ -1192,25 +1120,13 @@ func (m *Map) planEncodeDepth(typeMetadata TypeMetadata, value any, depth int) E
 
 	targetReflectType := reflect.TypeOf(value)
 	typeMemo := typeidMemo[targetReflectType]
-	plan := typeMemo[typeMetadata.FormatCode]
-	if plan == nil {
-		plan = m.planEncode(typeMetadata, value, depth)
-		typeMemo[typeMetadata.FormatCode] = plan
-		typeidMemo[targetReflectType] = typeMemo
-	}
+	plan := m.planEncode(typeMetadata, value, depth)
+	typeidMemo[targetReflectType] = typeMemo
 
 	return plan
 }
 
 func (m *Map) planEncode(typeMetadata TypeMetadata, value any, depth int) EncodePlan {
-	if typeMetadata.FormatCode == TextFormatCode {
-		switch value.(type) {
-		case string:
-			return encodePlanStringToAnyTextFormat{}
-		case TextValuer:
-			return encodePlanTextValuerToAnyTextFormat{}
-		}
-	}
 
 	var dt *Type
 	if dataType, ok := m.TypeForTypeID(typeMetadata.TypeID, typeMetadata.SubType); ok {
@@ -1297,7 +1213,6 @@ func (plan *encodePlanDriverValuer) Encode(value any, buf []byte) (newBuf []byte
 	}
 
 	var scannedValue any
-	plan.typeMetadata.FormatCode = TextFormatCode
 	scanErr := plan.m.Scan(plan.typeMetadata, []byte(s), &scannedValue)
 	if scanErr != nil {
 		return nil, err
@@ -1309,7 +1224,6 @@ func (plan *encodePlanDriverValuer) Encode(value any, buf []byte) (newBuf []byte
 	}
 
 	var err2 error
-	plan.typeMetadata.FormatCode = BinaryFormatCode
 	newBuf, err2 = plan.m.Encode(plan.typeMetadata, scannedValue, buf)
 	if err2 != nil {
 		return nil, err
@@ -1906,16 +1820,7 @@ func (plan *wrapArrayEncodeReflectPlan) Encode(value any, buf []byte) (newBuf []
 	return plan.next.Encode(w, buf)
 }
 
-func newEncodeError(value any, m *Map, typeid uint32, subType int32, formatCode int16, err error) error {
-	var format string
-	switch formatCode {
-	case TextFormatCode:
-		format = "text"
-	case BinaryFormatCode:
-		format = "binary"
-	default:
-		format = fmt.Sprintf("unknown (%d)", formatCode)
-	}
+func newEncodeError(value any, m *Map, typeid uint32, subType int32, err error) error {
 
 	var dataTypeName string
 	if t, ok := m.TypeForTypeID(typeid, subType); ok {
@@ -1924,7 +1829,7 @@ func newEncodeError(value any, m *Map, typeid uint32, subType int32, formatCode 
 		dataTypeName = "unknown type"
 	}
 
-	return fmt.Errorf("unable to encode %#v into %s format for %s (TypeID %d): %w", value, format, dataTypeName, typeid, err)
+	return fmt.Errorf("unable to encode %#v for %s (TypeID %d): %w", value, dataTypeName, typeid, err)
 }
 
 // Encode appends the encoded bytes of value to buf. If value is the SQL value NULL then append nothing and return
@@ -1935,7 +1840,7 @@ func (m *Map) Encode(typeMetadata TypeMetadata, value any, buf []byte) (newBuf [
 		if callNilDriverValuer {
 			newBuf, err = (&encodePlanDriverValuer{m: m, typeMetadata: typeMetadata}).Encode(value, buf)
 			if err != nil {
-				return nil, newEncodeError(value, m, typeMetadata.TypeID, typeMetadata.SubType, typeMetadata.FormatCode, err)
+				return nil, newEncodeError(value, m, typeMetadata.TypeID, typeMetadata.SubType, err)
 			}
 
 			return newBuf, nil
@@ -1946,12 +1851,12 @@ func (m *Map) Encode(typeMetadata TypeMetadata, value any, buf []byte) (newBuf [
 
 	plan := m.PlanEncode(typeMetadata, value)
 	if plan == nil {
-		return nil, newEncodeError(value, m, typeMetadata.TypeID, typeMetadata.SubType, typeMetadata.FormatCode, errors.New("cannot find encode plan"))
+		return nil, newEncodeError(value, m, typeMetadata.TypeID, typeMetadata.SubType, errors.New("cannot find encode plan"))
 	}
 
 	newBuf, err = plan.Encode(value, buf)
 	if err != nil {
-		return nil, newEncodeError(value, m, typeMetadata.TypeID, typeMetadata.SubType, typeMetadata.FormatCode, err)
+		return nil, newEncodeError(value, m, typeMetadata.TypeID, typeMetadata.SubType, err)
 	}
 
 	return newBuf, nil

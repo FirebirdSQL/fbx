@@ -966,7 +966,6 @@ func (ct QueryStatus) DDL() bool {
 type FieldDescription struct {
 	Index             int
 	Type              uint32
-	Format            int16 // 0 - text, 1 - binary
 	Scale             int32
 	Subtype           int32
 	Length            uint32
@@ -986,7 +985,6 @@ func (fbConn *FbConn) convertRowDescription(src []fbproto.FieldDescriptor) []Fie
 	for i := range src {
 		res[i].Index = src[i].Index
 		res[i].Type = uint32(src[i].Type)
-		res[i].Format = src[i].Format
 		res[i].Scale = int32(src[i].Scale)
 		res[i].Subtype = int32(src[i].Subtype)
 		res[i].Length = uint32(src[i].Length)

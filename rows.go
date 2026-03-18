@@ -269,7 +269,7 @@ func (rows *baseRows) Scan(dest ...any) error {
 		rows.scanPlans = make([]fbtype.ScanPlan, len(values))
 		rows.scanTypes = make([]reflect.Type, len(values))
 		for i := range dest {
-			typeMetadata := fbtype.NewTypeMetadata(fieldDescriptions[i].Type, fieldDescriptions[i].Subtype, fieldDescriptions[i].Length, fieldDescriptions[i].Scale, fieldDescriptions[i].Format)
+			typeMetadata := fbtype.NewTypeMetadata(fieldDescriptions[i].Type, fieldDescriptions[i].Subtype, fieldDescriptions[i].Length, fieldDescriptions[i].Scale)
 			rows.scanPlans[i] = m.PlanScan(typeMetadata, dest[i])
 			rows.scanTypes[i] = reflect.TypeOf(dest[i])
 		}
@@ -290,7 +290,7 @@ func (rows *baseRows) Scan(dest ...any) error {
 		}
 
 		if rows.scanTypes[i] != reflect.TypeOf(dst) {
-			typeMetadata := fbtype.NewTypeMetadata(fieldDescriptions[i].Type, fieldDescriptions[i].Subtype, fieldDescriptions[i].Length, fieldDescriptions[i].Scale, fieldDescriptions[i].Format)
+			typeMetadata := fbtype.NewTypeMetadata(fieldDescriptions[i].Type, fieldDescriptions[i].Subtype, fieldDescriptions[i].Length, fieldDescriptions[i].Scale)
 			rows.scanPlans[i] = m.PlanScan(typeMetadata, dest[i])
 			rows.scanTypes[i] = reflect.TypeOf(dest[i])
 		}
@@ -348,23 +348,16 @@ func (rows *baseRows) Values() ([]any, error) {
 		}
 
 		if dt, ok := rows.typeMap.TypeForTypeID(fd.Type, fd.Subtype); ok {
-			typeMetadata := fbtype.NewTypeMetadata(fd.Type, fd.Subtype, fd.Length, fd.Scale, fd.Format)
+			typeMetadata := fbtype.NewTypeMetadata(fd.Type, fd.Subtype, fd.Length, fd.Scale)
 			value, err := dt.Codec.DecodeValue(rows.typeMap, typeMetadata, buf)
 			if err != nil {
 				rows.fatal(err)
 			}
 			values = append(values, value)
 		} else {
-			switch fd.Format {
-			case TextFormatCode:
-				values = append(values, string(buf))
-			case BinaryFormatCode:
-				newBuf := make([]byte, len(buf))
-				copy(newBuf, buf)
-				values = append(values, newBuf)
-			default:
-				rows.fatal(errors.New("unknown format code"))
-			}
+			newBuf := make([]byte, len(buf))
+			copy(newBuf, buf)
+			values = append(values, newBuf)
 		}
 
 		if rows.Err() != nil {
@@ -460,7 +453,7 @@ func (e ScanArgError) Unwrap() error {
 // ScanRow decodes raw row data into dest. It can be used to scan rows read from the lower level fbconn interface.
 //
 // typeMap - TypeID to Go type mapping.
-// fieldDescriptions - TypeID and format of values
+// fieldDescriptions - TypeID of values
 // values - the raw data as returned from the PostgreSQL server
 // dest - the destination that values will be decoded into
 func ScanRow(typeMap *fbtype.Map, fieldDescriptions []fbconn.FieldDescription, values [][]byte, dest ...any) error {
@@ -479,7 +472,7 @@ func ScanRow(typeMap *fbtype.Map, fieldDescriptions []fbconn.FieldDescription, v
 			return ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: errors.New("cannot scan blob without connection")}
 		}
 
-		typeMetadata := fbtype.NewTypeMetadata(fieldDescriptions[i].Type, fieldDescriptions[i].Subtype, fieldDescriptions[i].Length, fieldDescriptions[i].Scale, fieldDescriptions[i].Format)
+		typeMetadata := fbtype.NewTypeMetadata(fieldDescriptions[i].Type, fieldDescriptions[i].Subtype, fieldDescriptions[i].Length, fieldDescriptions[i].Scale)
 		err := typeMap.Scan(typeMetadata, values[i], d)
 		if err != nil {
 			return ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: err}

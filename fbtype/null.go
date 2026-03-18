@@ -6,21 +6,8 @@ import (
 
 type NullCodec struct{}
 
-func (NullCodec) FormatSupported(format int16) bool {
-	return format == BinaryFormatCode
-}
-
-func (NullCodec) PreferredFormat() int16 {
-	return BinaryFormatCode
-}
-
 func (NullCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
-	switch typeMetadata.FormatCode {
-	case BinaryFormatCode:
-		return encodePlanNullValuer{}
-	}
-
-	return nil
+	return encodePlanNullValuer{}
 }
 
 type encodePlanNullValuer struct{}

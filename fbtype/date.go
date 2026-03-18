@@ -97,14 +97,6 @@ func (dst *Date) UnmarshalJSON(b []byte) error {
 
 type DateCodec struct{}
 
-func (DateCodec) FormatSupported(format int16) bool {
-	return format == BinaryFormatCode
-}
-
-func (DateCodec) PreferredFormat() int16 {
-	return BinaryFormatCode
-}
-
 func (DateCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	switch value.(type) {
 	case DateValuer:

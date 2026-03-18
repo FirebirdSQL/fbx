@@ -69,7 +69,7 @@ func TestTimestamptzCodec_RoundTrip_Time(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			typeMetadata := NewTypeMetadata(fbproto.SQL_TYPE_TIMESTAMP_TZ, 0, 0, 0, BinaryFormatCode)
+			typeMetadata := NewTypeMetadata(fbproto.SQL_TYPE_TIMESTAMP_TZ, 0, 0, 0)
 			planEnc := c.PlanEncode(nil, typeMetadata, tt.time)
 			if planEnc == nil {
 				t.Fatalf("PlanEncode returned nil for time.Time")
@@ -119,7 +119,7 @@ func TestTimestamptzCodec_RoundTrip_String(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			typeMetadata := NewTypeMetadata(fbproto.SQL_TYPE_TIMESTAMP_TZ, 0, 0, 0, BinaryFormatCode)
+			typeMetadata := NewTypeMetadata(fbproto.SQL_TYPE_TIMESTAMP_TZ, 0, 0, 0)
 			planEnc := c.PlanEncode(nil, typeMetadata, tt.str)
 			if planEnc == nil {
 				t.Fatalf("PlanEncode returned nil for string")
@@ -190,7 +190,7 @@ func TestTimestamptzCodec_RoundTrip_TimestamptzStruct(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			typeMetadata := NewTypeMetadata(fbproto.SQL_TYPE_TIMESTAMP_TZ, 0, 0, 0, BinaryFormatCode)
+			typeMetadata := NewTypeMetadata(fbproto.SQL_TYPE_TIMESTAMP_TZ, 0, 0, 0)
 			planEnc := c.PlanEncode(nil, typeMetadata, tt.in)
 			if planEnc == nil {
 				t.Fatalf("PlanEncode returned nil for TimestamptzValuer")
@@ -228,7 +228,7 @@ func TestTimestamptzCodec_Encode_NullStruct(t *testing.T) {
 
 	in := Timestamptz{Valid: false}
 
-	typeMetadata := NewTypeMetadata(fbproto.SQL_TYPE_TIMESTAMP_TZ, 0, 0, 0, BinaryFormatCode)
+	typeMetadata := NewTypeMetadata(fbproto.SQL_TYPE_TIMESTAMP_TZ, 0, 0, 0)
 	planEnc := c.PlanEncode(nil, typeMetadata, in)
 	if planEnc == nil {
 		t.Fatalf("PlanEncode returned nil for TimestamptzValuer")

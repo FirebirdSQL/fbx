@@ -624,12 +624,6 @@ func (m QueryExecMode) String() string {
 	}
 }
 
-// QueryResultFormats controls the result format (text=0, binary=1) of a query by result column position.
-type QueryResultFormats []int16
-
-// QueryResultFormatsByTypeID controls the result format (text=0, binary=1) of a query by the result column TypeID.
-type QueryResultFormatsByTypeID map[uint32]int16
-
 // QueryRewriter rewrites a query when used as the first arguments to a query method.
 type QueryRewriter interface {
 	RewriteQuery(ctx context.Context, conn *Conn, sql string, args []any) (newSQL string, newArgs []any, err error)
@@ -677,10 +671,6 @@ func (c *Conn) queryTx(ctx context.Context, tx *dbTx, sql string, args ...any) (
 optionLoop:
 	for len(args) > 0 {
 		switch arg := args[0].(type) {
-		case QueryResultFormats:
-			args = args[1:]
-		case QueryResultFormatsByTypeID:
-			args = args[1:]
 		case QueryExecMode:
 			mode = arg
 			args = args[1:]

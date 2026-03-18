@@ -161,33 +161,24 @@ func (n Int128) String() string {
 
 type Int128Codec struct{}
 
-func (Int128Codec) FormatSupported(format int16) bool {
-	return format == BinaryFormatCode
-}
-
-func (Int128Codec) PreferredFormat() int16 { return BinaryFormatCode }
-
 func (Int128Codec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
-	switch typeMetadata.FormatCode {
-	case BinaryFormatCode:
-		switch value.(type) {
-		case int16:
-			return encodePlanInt128CodecBinaryInt16{}
-		case int32:
-			return encodePlanInt128CodecBinaryInt32{}
-		case int64:
-			return encodePlanInt128CodecBinaryInt64{}
-		case int:
-			return encodePlanInt128CodecBinaryInt{}
-		case string:
-			return &encodePlanInt128CodecBinaryString{}
-		case big.Int:
-			return encodePlanInt128CodecBinaryBigInt{}
-		case *big.Int:
-			return encodePlanInt128CodecBinaryBigIntPtr{}
-		case Int128Valuer:
-			return encodePlanInt128CodecBinaryValuer{}
-		}
+	switch value.(type) {
+	case int16:
+		return encodePlanInt128CodecBinaryInt16{}
+	case int32:
+		return encodePlanInt128CodecBinaryInt32{}
+	case int64:
+		return encodePlanInt128CodecBinaryInt64{}
+	case int:
+		return encodePlanInt128CodecBinaryInt{}
+	case string:
+		return &encodePlanInt128CodecBinaryString{}
+	case big.Int:
+		return encodePlanInt128CodecBinaryBigInt{}
+	case *big.Int:
+		return encodePlanInt128CodecBinaryBigIntPtr{}
+	case Int128Valuer:
+		return encodePlanInt128CodecBinaryValuer{}
 	}
 	return nil
 }
@@ -278,39 +269,37 @@ func (encodePlanInt128CodecBinaryValuer) Encode(value any, buf []byte) ([]byte, 
 }
 
 func (Int128Codec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
-	switch typeMetadata.FormatCode {
-	case BinaryFormatCode:
-		switch target.(type) {
-		case *int8:
-			return scanPlanBinaryInt128ToInt8{}
-		case *int16:
-			return scanPlanBinaryInt128ToInt16{}
-		case *int32:
-			return scanPlanBinaryInt128ToInt32{}
-		case *int64:
-			return scanPlanBinaryInt128ToInt64{}
-		case *int:
-			return scanPlanBinaryInt128ToInt{}
-		case *uint8:
-			return scanPlanBinaryInt128ToUint8{}
-		case *uint16:
-			return scanPlanBinaryInt128ToUint16{}
-		case *uint32:
-			return scanPlanBinaryInt128ToUint32{}
-		case *uint64:
-			return scanPlanBinaryInt128ToUint64{}
-		case *uint:
-			return scanPlanBinaryInt128ToUint{}
-		case *string:
-			return &scanPlanBinaryInt128ToString{}
-		case *big.Int:
-			return scanPlanBinaryInt128ToBigInt{}
-		case Int128Scanner:
-			return scanPlanBinaryInt128ToInt128Scanner{}
-		case TextScanner:
-			return scanPlanBinaryInt128ToTextScanner{}
-		}
+	switch target.(type) {
+	case *int8:
+		return scanPlanBinaryInt128ToInt8{}
+	case *int16:
+		return scanPlanBinaryInt128ToInt16{}
+	case *int32:
+		return scanPlanBinaryInt128ToInt32{}
+	case *int64:
+		return scanPlanBinaryInt128ToInt64{}
+	case *int:
+		return scanPlanBinaryInt128ToInt{}
+	case *uint8:
+		return scanPlanBinaryInt128ToUint8{}
+	case *uint16:
+		return scanPlanBinaryInt128ToUint16{}
+	case *uint32:
+		return scanPlanBinaryInt128ToUint32{}
+	case *uint64:
+		return scanPlanBinaryInt128ToUint64{}
+	case *uint:
+		return scanPlanBinaryInt128ToUint{}
+	case *string:
+		return &scanPlanBinaryInt128ToString{}
+	case *big.Int:
+		return scanPlanBinaryInt128ToBigInt{}
+	case Int128Scanner:
+		return scanPlanBinaryInt128ToInt128Scanner{}
+	case TextScanner:
+		return scanPlanBinaryInt128ToTextScanner{}
 	}
+
 	return nil
 }
 
@@ -606,18 +595,11 @@ func (c Int128Codec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, s
 		return nil, nil
 	}
 
-	switch typeMetadata.FormatCode {
-	case TextFormatCode:
-		return string(src), nil
-	case BinaryFormatCode:
-		var z big.Int
-		if err := int128SetFromBinary(&z, src); err != nil {
-			return nil, err
-		}
-		return z.String(), nil
-	default:
-		return nil, fmt.Errorf("unsupported format: %v", typeMetadata.FormatCode)
+	var z big.Int
+	if err := int128SetFromBinary(&z, src); err != nil {
+		return nil, err
 	}
+	return z.String(), nil
 }
 
 func (c Int128Codec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
@@ -625,20 +607,13 @@ func (c Int128Codec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) 
 		return nil, nil
 	}
 
-	switch typeMetadata.FormatCode {
-	case TextFormatCode:
-		return ParseInt128(string(src))
-	case BinaryFormatCode:
-		var z big.Int
-		if err := int128SetFromBinary(&z, src); err != nil {
-			return nil, err
-		}
-		var v big.Int
-		v.Set(&z)
-		return Int128{Int: v, Valid: true}, nil
-	default:
-		return nil, fmt.Errorf("unsupported format: %v", typeMetadata.FormatCode)
+	var z big.Int
+	if err := int128SetFromBinary(&z, src); err != nil {
+		return nil, err
 	}
+	var v big.Int
+	v.Set(&z)
+	return Int128{Int: v, Valid: true}, nil
 }
 
 func checkInt128Range(z *big.Int) error {
