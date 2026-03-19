@@ -16,7 +16,7 @@ import (
 func TestTransactionSuccessfulCommit(t *testing.T) {
 	//t.Parallel()
 
-	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 
 	//create temporary table foo(
@@ -60,7 +60,7 @@ func TestTransactionSuccessfulCommit(t *testing.T) {
 func TestTxCommitAfterQueryError(t *testing.T) {
 	//t.Parallel()
 
-	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 	createSql := `
     recreate table ` + t.Name() + `(
@@ -106,7 +106,7 @@ func TestTxCommitWhenDeferredConstraintFailure(t *testing.T) {
 	t.Skipf("not supported by server")
 	t.Parallel()
 
-	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 
 	createSql := `
@@ -152,14 +152,10 @@ func TestTxCommitSerializationFailure(t *testing.T) {
 	t.Skip("transaction will wait indefinitely")
 	//t.Parallel()
 
-	c1 := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+	c1 := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, c1)
 
-	if c1.FbConn().ParameterStatus("crdb_version") != "" {
-		t.Skip("Skipping due to known server issue: (https://github.com/cockroachdb/cockroach/issues/60754)")
-	}
-
-	c2 := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+	c2 := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, c2)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -211,7 +207,7 @@ func TestTransactionSuccessfulRollback(t *testing.T) {
 	//t.Parallel()
 
 	ctx := context.Background()
-	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 
 	createSql := `
@@ -253,7 +249,7 @@ func TestTransactionSuccessfulRollback(t *testing.T) {
 func TestTransactionRollbackFailsClosesConnection(t *testing.T) {
 	t.Parallel()
 
-	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -272,7 +268,7 @@ func TestTransactionRollbackFailsClosesConnection(t *testing.T) {
 func TestBeginIsoLevels(t *testing.T) {
 	t.Parallel()
 
-	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 
 	serverMajorVersion := getServerMajorVersionForConn(context.Background(), t, conn)
@@ -312,7 +308,7 @@ func TestBeginIsoLevels(t *testing.T) {
 func TestBeginFunc(t *testing.T) {
 	//t.Parallel()
 
-	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 
 	createSql := `
@@ -341,7 +337,7 @@ func TestBeginFunc(t *testing.T) {
 func TestBeginFuncRollbackOnError(t *testing.T) {
 	//t.Parallel()
 
-	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 
 	createSql := `
@@ -370,7 +366,7 @@ func TestBeginFuncRollbackOnError(t *testing.T) {
 func TestBeginReadOnly(t *testing.T) {
 	//t.Parallel()
 
-	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 
 	tx, err := conn.BeginTx(context.Background(), fbx.TxOptions{AccessMode: fbx.ReadOnly})
@@ -388,7 +384,7 @@ func TestBeginReadOnly(t *testing.T) {
 func TestTxNestedTransactionCommit(t *testing.T) {
 	//t.Parallel()
 
-	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 
 	createSql := `
@@ -460,7 +456,7 @@ func TestTxNestedTransactionCommit(t *testing.T) {
 func TestTxNestedTransactionRollback(t *testing.T) {
 	//t.Parallel()
 
-	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 
 	createSql := `
@@ -522,7 +518,7 @@ func TestTxNestedTransactionRollback(t *testing.T) {
 func TestTxBeginFuncNestedTransactionCommit(t *testing.T) {
 	//t.Parallel()
 
-	db := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+	db := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, db)
 	ctx := context.Background()
 
@@ -567,7 +563,7 @@ func TestTxBeginFuncNestedTransactionCommit(t *testing.T) {
 func TestTxBeginFuncNestedTransactionRollback(t *testing.T) {
 	//t.Parallel()
 
-	db := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+	db := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, db)
 	ctx := context.Background()
 

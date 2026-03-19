@@ -13,7 +13,7 @@ import (
 func TestNamedArgsQueryRewriter(t *testing.T) {
 	t.Parallel()
 
-	connConfig := mustParseConfig(t, os.Getenv("PGX_TEST_DATABASE"))
+	connConfig := mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE"))
 	connConfig.DefaultQueryExecMode = fbx.QueryExecModeExec
 
 	conn := mustConnect(t, connConfig)

@@ -6,22 +6,16 @@ nearly the same level is the C library libfbclient.
 Establishing a Connection
 
 Use Connect to establish a connection. It accepts a connection string in URL or keyword/value format and will read the
-environment for libpq style environment variables.
+environment (see ParseConfig for supported environment variables and parameters)
 
-Executing a Query
+Executing a Statement
 
-ExecParams and ExecPrepared execute a single query. They return readers that iterate over each row. The Read method
-reads all rows into memory.
+Exec and ExecParams execute a single SQL statement and return a ResultReader that iterates over rows.
+Call Close on the ResultReader before reusing the connection. The Read method reads the entire result into memory.
 
-Executing Multiple Queries in a Single Round Trip
+Prepared Statements
 
-Exec and ExecBatch can execute multiple queries in a single round trip. They return readers that iterate over each query
-result. The ReadAll method reads all query results into memory.
-
-Pipeline Mode
-
-Pipeline mode allows sending queries without having read the results of previously sent queries. It allows control of
-exactly how many and when network round trips occur.
+Use Prepare / PrepareTx to create a prepared statement and execute it using the returned Statement.
 
 Context Support
 
@@ -32,7 +26,7 @@ This can be especially useful when queries that are frequently canceled and the 
 a problem. DeadlineContextWatcherHandler and CancelRequestContextWatcherHandler can be used to introduce a delay before
 interrupting the query in such a way as to close the connection.
 
-The CancelRequest method may be used to request the PostgreSQL server cancel an in-progress query without forcing the
+The CancelRequest method may be used to request the server cancel an in-progress query without forcing the
 client to abort.
 */
 package fbconn

@@ -44,7 +44,7 @@ func TestDriverBytesQueryRow(t *testing.T) {
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		var buf []byte
 		err := conn.QueryRow(ctx, `select $1::bytea`, []byte{1, 2}).Scan((*fbtype.DriverBytes)(&buf))
-		require.EqualError(t, err, "cannot scan into *pgtype.DriverBytes from QueryRow")
+		require.EqualError(t, err, "cannot scan into *fbtype.DriverBytes from QueryRow")
 	})
 }
 

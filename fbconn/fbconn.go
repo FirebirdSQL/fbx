@@ -37,18 +37,7 @@ const (
 	connStatusBusy
 )
 
-// Notice represents a notice response message reported by the PostgreSQL server. Be aware that this is distinct from
-// LISTEN/NOTIFY notification.
-type Notice FbError
-
-// Notification is a message received from the PostgreSQL LISTEN/NOTIFY system
-type Notification struct {
-	PID     uint32 // backend pid that sent the notification
-	Channel string // channel from which notification was received
-	Payload string
-}
-
-// DialFunc is a function that can be used to connect to a PostgreSQL server.
+// DialFunc is a function that can be used to establish a network connection to a server
 type DialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
 
 // LookupFunc is a function that can be used to lookup IPs addrs from host. Optionally an ip:port combination can be
@@ -68,23 +57,10 @@ type FbErrorHandler func(*FbConn, *FbError) bool
 // The *FbConn is provided so the handler is aware of the origin of the warning, but it must not invoke any query method.
 type FbWarningHandler func(*FbConn, *FbWarning)
 
-// NoticeHandler is a function that can handle notices received from the PostgreSQL server. Notices can be received at
-// any time, usually during handling of a query response. The *FbConn is provided so the handler is aware of the origin
-// of the notice, but it must not invoke any query method. Be aware that this is distinct from LISTEN/NOTIFY
-// notification.
-type NoticeHandler func(*FbConn, *Notice)
-
-// NotificationHandler is a function that can handle notifications received from the PostgreSQL server. Notifications
-// can be received at any time, usually during handling of a query response. The *FbConn is provided so the handler is
-// aware of the origin of the notice, but it must not invoke any query method. Be aware that this is distinct from a
-// notice event.
-type NotificationHandler func(*FbConn, *Notification)
-
-// FbConn is a low-level PostgreSQL connection handle. It is not safe for concurrent usage.
+// FbConn is a low-level FirebirdSQL connection handle. It is not safe for concurrent usage.
 type FbConn struct {
 	conn              net.Conn
 	secretKey         uint32            // key to use to send a cancel query message to the server
-	parameterStatuses map[string]string // parameters that have been reported by the server
 	txStatus          byte
 	client            *fbproto.Client
 	wireCrypt         *wirecrypt.Manager
@@ -129,7 +105,7 @@ type FbConn struct {
 	authContFirstSent bool
 }
 
-// Connect establishes a connection to a PostgreSQL server using the environment and connString (in URL or keyword/value
+// Connect establishes a connection to a server using the environment and connString (in URL or keyword/value
 // format) to provide configuration. See documentation for [ParseConfig] for details. ctx can be used to cancel a
 // connect attempt.
 func Connect(ctx context.Context, connString string) (*FbConn, error) {
@@ -141,7 +117,7 @@ func Connect(ctx context.Context, connString string) (*FbConn, error) {
 	return ConnectConfig(ctx, config)
 }
 
-// Connect establishes a connection to a PostgreSQL server using the environment and connString (in URL or keyword/value
+// Connect establishes a connection to a Firebird/RedDatabase server using the environment and connString (in URL or keyword/value
 // format) and ParseConfigOptions to provide additional configuration. See documentation for [ParseConfig] for details.
 // ctx can be used to cancel a connect attempt.
 func ConnectWithOptions(ctx context.Context, connString string, parseConfigOptions ParseConfigOptions) (*FbConn, error) {
@@ -153,12 +129,11 @@ func ConnectWithOptions(ctx context.Context, connString string, parseConfigOptio
 	return ConnectConfig(ctx, config)
 }
 
-// Connect establishes a connection to a PostgreSQL server using config. config must have been constructed with
+// Connect establishes a connection to a Firebird/RedDatabase server using config. config must have been constructed with
 // [ParseConfig]. ctx can be used to cancel a connect attempt.
 //
 // If config.Fallbacks are present they will sequentially be tried in case of error establishing network connection. An
-// authentication error will terminate the chain of attempts (like libpq:
-// https://www.postgresql.org/docs/11/libpq-connect.html#LIBPQ-MULTIPLE-HOSTS) and be returned as the error.
+// authentication error will terminate the chain of attempts and be returned as the error.
 func ConnectConfig(ctx context.Context, config *Config) (*FbConn, error) {
 	// Default values are set in ParseConfig. Enforce initial creation by ParseConfig rather than setting defaults from
 	// zero values.
@@ -402,7 +377,7 @@ func connectPreferred(ctx context.Context, config *Config, connectOneConfigs []*
 
 		var fbErr *FbError
 		if errors.As(err, &fbErr) {
-			// pgx will try next host even if libpq does not in certain cases (see #2246)
+			// fbx will try next host even if libpq does not in certain cases (see #2246)
 			// consider change for the next major version
 
 			const ERRCODE_INVALID_PASSWORD = "28P01"
@@ -461,7 +436,6 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 	fbConn.contextWatcher.Watch(ctx)
 	defer fbConn.contextWatcher.Unwatch()
 
-	fbConn.parameterStatuses = make(map[string]string)
 	fbConn.status = connStatusConnecting
 
 	fbConn.Encoding, err = fbproto.NewEncoding(config.Encoding)
@@ -679,13 +653,8 @@ connectLoop:
 	return fbConn, nil
 }
 
-// ReceiveMessage receives one wire protocol message from the PostgreSQL server. It must only be used when the
-// connection is not busy. e.g. It is an error to call ReceiveMessage while reading the result of a query. The messages
-// are still handled by the core fbconn message handling system so receiving a NotificationResponse will still trigger
-// the OnNotification callback.
-//
-// This is a very low level method that requires deep understanding of the PostgreSQL wire protocol to use correctly.
-// See https://www.postgresql.org/docs/current/protocol.html.
+// ReceiveMessage receives one wire protocol message from the server. It must only be used when the
+// connection is not busy. e.g. It is an error to call ReceiveMessage while reading the result of a query. 
 func (fbConn *FbConn) ReceiveMessage(ctx context.Context) (fbproto.ServerMessage, error) {
 	if err := fbConn.lock(); err != nil {
 		return nil, err
@@ -797,7 +766,7 @@ func (fbConn *FbConn) Client() *fbproto.Client {
 }
 
 // Close closes a connection. It is safe to call Close on an already closed connection. Close attempts a clean close by
-// sending the exit message to PostgreSQL. However, this could block so ctx is available to limit the time to wait. The
+// sending the exit message to Firebird/RedDatabase server. However, this could block so ctx is available to limit the time to wait. The
 // underlying net.Conn.Close() will always be called regardless of any other errors.
 func (fbConn *FbConn) Close(ctx context.Context) error {
 	if fbConn.status == connStatusClosed {
@@ -813,8 +782,6 @@ func (fbConn *FbConn) Close(ctx context.Context) error {
 		// Close may be called while a cancellable query is in progress. This will most often be triggered by panic when
 		// a defer closes the connection (possibly indirectly via a transaction or a connection pool). Unwatch to end any
 		// previous watch. It is safe to Unwatch regardless of whether a watch is already is progress.
-		//
-		// See https://github.com/jackc/fbconn/issues/29
 		fbConn.contextWatcher.Unwatch()
 
 		fbConn.contextWatcher.Watch(ctx)
@@ -891,12 +858,6 @@ func (fbConn *FbConn) unlock() {
 	default:
 		panic("BUG: cannot unlock unlocked connection") // This should only be possible if there is a bug in this package.
 	}
-}
-
-// ParameterStatus returns the value of a parameter reported by the server (e.g.
-// server_version). Returns an empty string for unknown parameters.
-func (fbConn *FbConn) ParameterStatus(key string) string {
-	return fbConn.parameterStatuses[key]
 }
 
 // QueryStatus simple query info
@@ -1108,9 +1069,8 @@ func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 	return st, nil
 }
 
-// CancelRequest sends a cancel request to the PostgreSQL server. It returns an error if unable to deliver the cancel
-// request, but lack of an error does not ensure that the query was canceled. As specified in the documentation, there
-// is no way to be sure a query was canceled. See https://www.postgresql.org/docs/11/protocol-flow.html#id-1.10.5.7.9
+// CancelRequest sends a cancel request to the server. It returns an error if unable to deliver the cancel
+// request, but lack of an error does not ensure that the query was canceled.
 func (fbConn *FbConn) CancelRequest(ctx context.Context) error {
 	if ctx != context.Background() {
 		contextWatcher := ctxwatch.NewContextWatcher(&DeadlineContextWatcherHandler{Conn: fbConn.conn})
@@ -1205,11 +1165,11 @@ func (fbConn *FbConn) ExecImmediateTx(ctx context.Context, tx *FBTransaction, sq
 	return nil
 }
 
-// Exec executes SQL via the PostgreSQL simple query protocol. SQL may contain multiple queries. Execution is
-// implicitly wrapped in a transaction unless a transaction is already in progress or SQL contains transaction control
-// statements.
+// Exec execute a single SQL statement.
 //
-// Prefer ExecParams unless executing arbitrary SQL that may contain multiple queries.
+// If no transaction is provided (see ExecTx / ExecParamsTx), an internal transaction is used.
+//
+// ResultReader must be closed before FbConn can be used again.
 func (fbConn *FbConn) Exec(ctx context.Context, sql string) *ResultReader {
 	return fbConn.ExecParams(ctx, sql, nil)
 }
@@ -1218,23 +1178,13 @@ func (fbConn *FbConn) ExecTx(ctx context.Context, tx *FBTransaction, sql string)
 	return fbConn.ExecParamsTx(ctx, tx, sql, nil)
 }
 
-// ExecParams executes a command via the PostgreSQL extended query protocol.
+// ExecParams executes a single SQL statement with already-encoded parameter values.
 //
-// sql is a SQL command string. It may only contain one query. Parameter substitution is positional using $1, $2, $3,
-// etc.
+// sql is a SQL command string. It may only contain one query. 
+// Parameters are positional; the placeholder syntax is defined by the SQL dialect supported by the server.
 //
-// paramValues are the parameter values. It must be encoded in the format given by paramFormats.
-//
-// paramTypeIDs is a slice of data type TypeIDs for paramValues. If paramTypeIDs is nil, the server will infer the data type for
-// all parameters. Any paramTypeID element that is 0 that will cause the server to infer the data type for that parameter.
-// ExecParams will panic if len(paramTypeIDs) is not 0, 1, or len(paramValues).
-//
-// paramFormats is a slice of format codes determining for each paramValue column whether it is encoded in text or
-// binary format. If paramFormats is nil all params are text format. ExecParams will panic if
-// len(paramFormats) is not 0, 1, or len(paramValues).
-//
-// resultFormats is a slice of format codes determining for each result column whether it is encoded in text or
-// binary format. If resultFormats is nil all results will be in text format.
+// paramValues are parameter values encoded for the wire protocol / statement parameter layout.
+// Higher-level APIs (fbx.Conn) typically build these values using the extended query builder.
 //
 // ResultReader must be closed before FbConn can be used again.
 func (fbConn *FbConn) ExecParams(ctx context.Context, sql string, paramValues [][]byte) *ResultReader {
@@ -1436,7 +1386,7 @@ func (rr *ResultReader) Read() *Result {
 	return br
 }
 
-// ReadAll for compatibility with pgx code
+// ReadAll reads the entire result set into memory
 // It will always return single result from ResultReader and its error
 func (rr *ResultReader) ReadAll() ([]*Result, error) {
 	var results []*Result
@@ -1840,8 +1790,6 @@ func (fbConn *FbConn) flushWithPotentialWriteReadDeadlock() error {
 // buffered or a read is in progress. SyncConn drains read buffers and stops background IO. In some cases this may
 // require sending a ping to the server. ctx can be used to cancel this operation. This should be called before any
 // operation that will use the underlying net.Conn directly. e.g. Before Conn() or Hijack().
-//
-// This should not be confused with the PostgreSQL protocol Sync message.
 func (fbConn *FbConn) SyncConn(ctx context.Context) error {
 	//for i := 0; i < 10; i++ {
 	//	if fbConn.bgReader.Status() == bgreader.StatusStopped && fbConn.frontend.ReadBufferLen() == 0 {
@@ -1875,7 +1823,7 @@ type HijackedConn struct {
 	//SecretKey         uint32            // key to use to send a cancel query message to the server
 	//ParameterStatuses map[string]string // parameters that have been reported by the server
 	//TxStatus          byte
-	//Client          *pgproto3.Client
+	//Client          *fbproto3.Client
 	//Config            *Config
 	//CustomData        map[string]any
 }
@@ -1905,10 +1853,8 @@ func (fbConn *FbConn) Hijack() (*HijackedConn, error) {
 	panic("implement me")
 }
 
-// Construct created a FbConn from an already established connection to a PostgreSQL server. This is the inverse of
+// Construct created a FbConn from an already established network connection. This is the inverse of
 // FbConn.Hijack. The connection must be in an idle state.
-//
-// hc.Client is replaced by a new pgproto3.Client built by hc.Config.BuildFrontend.
 //
 // Due to the necessary exposure of internal implementation details, it is not covered by the semantic versioning
 // compatibility.

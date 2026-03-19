@@ -1,6 +1,6 @@
 package fbx
 
-// PostgreSQL format codes
+// format codes
 const (
 	TextFormatCode   = 0
 	BinaryFormatCode = 1

@@ -18,8 +18,8 @@ import (
 )
 
 func getDefaultPort(t *testing.T) uint16 {
-	if envPGPORT := os.Getenv("PGPORT"); envPGPORT != "" {
-		p, err := strconv.ParseUint(envPGPORT, 10, 16)
+	if envFBPORT := os.Getenv("FBPORT"); envFBPORT != "" {
+		p, err := strconv.ParseUint(envFBPORT, 10, 16)
 		require.NoError(t, err)
 		return uint16(p)
 	}
@@ -183,7 +183,7 @@ func TestParseConfig(t *testing.T) {
 			},
 		},
 		{
-			name:       "database url postgresql protocol",
+			name:       "database url firebird protocol",
 			connString: "firebird://jack@localhost:5432/mydb",
 			config: &fbconn.Config{
 				User:          "jack",
@@ -367,7 +367,6 @@ func TestParseConfig(t *testing.T) {
 				},
 			},
 		},
-		// https://github.com/jackc/pgconn/issues/72
 		{
 			name:       "URL without host but with port still uses default host",
 			connString: "firebird://jack:secret@:1/mydb",
@@ -422,7 +421,6 @@ func TestParseConfig(t *testing.T) {
 	}
 }
 
-// https://github.com/jackc/pgconn/issues/47
 func TestParseConfigKVWithTrailingEmptyEqualDoesNotPanic(t *testing.T) {
 	_, err := fbconn.ParseConfig("host= user= password= port= database=")
 	require.NoError(t, err)
@@ -433,7 +431,6 @@ func TestParseConfigKVLeadingEqual(t *testing.T) {
 	require.Error(t, err)
 }
 
-// https://github.com/jackc/pgconn/issues/49
 func TestParseConfigKVTrailingBackslash(t *testing.T) {
 	_, err := fbconn.ParseConfig(`x=x\`)
 	require.Error(t, err)
@@ -449,7 +446,7 @@ func TestParseConfigInvalidFetchBatchSize(t *testing.T) {
 }
 
 func TestConfigCopyReturnsEqualConfig(t *testing.T) {
-	connString := "postgres://jack:secret@localhost:5432/mydb?application_name=fbxtest&search_path=myschema&connect_timeout=5"
+	connString := "firebird://jack:secret@localhost:3050/mydb?application_name=fbxtest&connect_timeout=5"
 	original, err := fbconn.ParseConfig(connString)
 	require.NoError(t, err)
 
@@ -458,7 +455,7 @@ func TestConfigCopyReturnsEqualConfig(t *testing.T) {
 }
 
 func TestConfigCopyOriginalConfigDidNotChange(t *testing.T) {
-	connString := "postgres://jack:secret@localhost:5432/mydb?application_name=fbxtest&search_path=myschema&connect_timeout=5&sslmode=prefer"
+	connString := "firebird://jack:secret@localhost:3050/mydb?application_name=fbxtest&connect_timeout=5"
 	original, err := fbconn.ParseConfig(connString)
 	require.NoError(t, err)
 
@@ -473,7 +470,7 @@ func TestConfigCopyOriginalConfigDidNotChange(t *testing.T) {
 }
 
 func TestConfigCopyCanBeUsedToConnect(t *testing.T) {
-	connString := os.Getenv("PGX_TEST_DATABASE")
+	connString := os.Getenv("FBX_TEST_DATABASE")
 	original, err := fbconn.ParseConfig(connString)
 	require.NoError(t, err)
 
