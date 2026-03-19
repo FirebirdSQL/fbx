@@ -2445,7 +2445,7 @@ func TestCancelRequestContextWatcherHandler(t *testing.T) {
 	})
 
 	t.Run("Late cancel does not affect next query", func(t *testing.T) {
-		config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+		config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 		require.NoError(t, err)
 		config.BuildContextWatcherHandler = func(conn *fbconn.FbConn) ctxwatch.Handler {
 			return &fbconn.CancelRequestContextWatcherHandler{
