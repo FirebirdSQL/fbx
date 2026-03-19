@@ -1128,7 +1128,7 @@ func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 	}
 
 	if tables != nil {
-		arr, err := getArrayInfo(fbConn, ctx, fields, tables)
+		arr, err := getArrayInfo(fbConn, ctx, tx, fields, tables)
 		if err != nil {
 			return nil, err
 		}
@@ -1138,6 +1138,91 @@ func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 		for i := range desc.Parameters {
 			desc.Parameters[i].ArrayData = arr[desc.Parameters[i].OriginalTableName][desc.Parameters[i].OriginalName]
 		}
+	}
+
+	st := &Statement{
+		conn:        fbConn,
+		Description: desc,
+	}
+	if tx != fbConn.internalTransaction {
+		st.transaction = tx
+	}
+	return st, nil
+}
+
+func (fbConn *FbConn) internalPrepareTx(ctx context.Context, tx *FBTransaction, sql string) (*Statement, error) {
+	var err error
+
+	if ctx != context.Background() {
+		select {
+		case <-ctx.Done():
+			return nil, newContextAlreadyDoneError(ctx)
+		default:
+		}
+	}
+
+	if err = fbConn.client.WriteMessage(&fbproto.OpAllocateStatement{}); err != nil {
+		fbConn.asyncClose()
+		return nil, err
+	}
+	if err = fbConn.client.WriteMessage(&fbproto.OpPrepareStatement{
+		Encoding:          fbConn.Encoding,
+		TransactionHandle: tx.Handle,
+		StatementHandle:   0xFFFF,
+		Dialect:           3,
+		Query:             sql,
+	}); err != nil {
+		fbConn.asyncClose()
+		return nil, err
+	}
+	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+		fbConn.asyncClose()
+		return nil, err
+	}
+
+	msg, err := fbConn.receiveMessage()
+	if err != nil {
+		fbConn.asyncClose()
+		return nil, normalizeTimeoutError(ctx, err)
+	}
+
+	var statementHandle int
+	switch m := msg.(type) {
+	case *fbproto.OpResponse:
+		statementHandle = m.Object
+	case *fbproto.ErrorResponse:
+		return nil, ErrorResponseToFbError(m)
+	}
+
+	msg, err = fbConn.receiveMessage()
+	if err != nil {
+		fbConn.asyncClose()
+		return nil, normalizeTimeoutError(ctx, err)
+	}
+	switch m := msg.(type) {
+	case *fbproto.ErrorResponse:
+		return nil, ErrorResponseToFbError(m)
+	}
+
+	statementInfo := StatementInfo{}
+	err = fbConn.getInfoStatement(statementHandle, statementInfo.parseInfo)
+	if err != nil {
+		var fbError *FbError
+		switch {
+		case errors.As(err, &fbError):
+			return nil, err
+		default:
+			fbConn.asyncClose()
+			return nil, err
+		}
+	}
+
+	desc := &StatementDescription{
+		SQL:             sql,
+		Fields:          fbConn.convertRowDescription(statementInfo.FieldDescriptors),
+		Parameters:      fbConn.convertRowDescription(statementInfo.ParametersDescriptors),
+		StatementHandle: statementHandle,
+		StatementInfo:   &statementInfo,
 	}
 
 	st := &Statement{
@@ -1350,6 +1435,54 @@ func (fbConn *FbConn) ExecParamsTx(ctx context.Context, tx *FBTransaction, sql s
 	return rr
 }
 
+func (fbConn *FbConn) internalExecParamsTx(ctx context.Context, tx *FBTransaction, sql string, paramValues [][]byte) *ResultReader {
+	st, err := fbConn.internalPrepareTx(ctx, tx, sql)
+	if err != nil {
+		// early check lock state and do not close connection
+		closeConn := true
+		var fbErr *FbError
+		if SafeToRetry(err) || errors.As(err, &fbErr) {
+			closeConn = false
+		}
+		if closeConn {
+			_ = tx.Rollback(ctx)
+		}
+		res := ResultReader{
+			fbConn: fbConn,
+			ctx:    ctx,
+			closed: true,
+		}
+		if closeConn {
+			fbConn.asyncClose()
+		}
+		res.concludeCommand(QueryStatus{}, err)
+		return &res
+	}
+
+	rr := st.internalExec(ctx, paramValues)
+	if rr.err != nil {
+		closeConn := true
+		var fbErr *FbError
+		if SafeToRetry(rr.err) || errors.As(rr.err, &fbErr) {
+			closeConn = false
+		}
+		if closeConn {
+			_ = tx.Rollback(ctx)
+		}
+		res := ResultReader{
+			fbConn: fbConn,
+			ctx:    ctx,
+			closed: true,
+		}
+		if closeConn {
+			fbConn.asyncClose()
+		}
+		res.concludeCommand(QueryStatus{}, rr.err)
+		return rr
+	}
+	return rr
+}
+
 // Commit commits internal implicit transaction
 func (fbConn *FbConn) Commit(ctx context.Context) error {
 	if fbConn.explicitTransaction {
@@ -1405,15 +1538,7 @@ func (fbConn *FbConn) Disconnect(ctx context.Context) error {
 	return nil
 }
 
-// GetArrayMetadata returns the information about fields
-func (fbConn *FbConn) GetArrayMetadata(ctx context.Context, tableNames, fieldNames []string) ([]map[string][]byte, [][]byte, error) {
-	if fbConn.status == connStatusBusy {
-		fbConn.unlock()
-		defer fbConn.lock()
-	}
-
-	fbConn.contextWatcher.Unwatch()
-	defer fbConn.contextWatcher.Watch(ctx)
+func (fbConn *FbConn) getArrayMetadata(ctx context.Context, tx *FBTransaction, tableNames, fieldNames []string) ([]map[string][]byte, [][]byte, error) {
 
 	tables := ""
 	for _, table := range tableNames {
@@ -1424,12 +1549,12 @@ func (fbConn *FbConn) GetArrayMetadata(ctx context.Context, tableNames, fieldNam
 		fields += "'" + field + "',"
 	}
 
-	result := fbConn.Exec(ctx, fmt.Sprintf(`SELECT Y.RDB$FIELD_TYPE, Y.RDB$FIELD_SCALE, Y.RDB$FIELD_LENGTH, 
+	result := fbConn.internalExecParamsTx(ctx, tx, fmt.Sprintf(`SELECT Y.RDB$FIELD_TYPE, Y.RDB$FIELD_SCALE, Y.RDB$FIELD_LENGTH, 
        	Y.RDB$FIELD_SUB_TYPE, X.RDB$FIELD_SOURCE, X.RDB$RELATION_NAME, X.RDB$FIELD_NAME
 		FROM RDB$RELATION_FIELDS X, RDB$FIELDS Y 
 		WHERE X.RDB$FIELD_SOURCE = Y.RDB$FIELD_NAME 
   		AND X.RDB$RELATION_NAME IN (%s)
-  		AND X.RDB$FIELD_NAME IN (%s)`, tables[:len(tables)-1], fields[:len(fields)-1])).ReadWithoutCommit()
+  		AND X.RDB$FIELD_NAME IN (%s)`, tables[:len(tables)-1], fields[:len(fields)-1]), nil).ReadWithoutCommit()
 
 	if result.Err != nil {
 		return nil, nil, result.Err
@@ -1461,25 +1586,16 @@ func (fbConn *FbConn) GetArrayMetadata(ctx context.Context, tableNames, fieldNam
 	return metadataList, sources, nil
 }
 
-// GetArrayDimentions returns the information about arrays dimensions
-func (fbConn *FbConn) GetArrayDimentions(ctx context.Context, sources [][]byte) (map[string][][]int, error) {
-	if fbConn.status == connStatusBusy {
-		fbConn.unlock()
-		defer fbConn.lock()
-	}
-
-	fbConn.contextWatcher.Unwatch()
-	defer fbConn.contextWatcher.Watch(ctx)
-
+func (fbConn *FbConn) getArrayDimentions(ctx context.Context, tx *FBTransaction, sources [][]byte) (map[string][][]int, error) {
 	sourcesString := ""
 	for _, source := range sources {
 		sourcesString += "'" + string(source) + "',"
 	}
 
-	result := fbConn.Exec(ctx, fmt.Sprintf(`SELECT X.RDB$LOWER_BOUND, X.RDB$UPPER_BOUND, X.RDB$FIELD_NAME
+	result := fbConn.internalExecParamsTx(ctx, tx, fmt.Sprintf(`SELECT X.RDB$LOWER_BOUND, X.RDB$UPPER_BOUND, X.RDB$FIELD_NAME
 		FROM RDB$FIELD_DIMENSIONS X 
 		WHERE X.RDB$FIELD_NAME IN (%s) 
-		ORDER BY X.RDB$FIELD_NAME, X.RDB$DIMENSION`, sourcesString[:len(sourcesString)-1])).ReadWithoutCommit()
+		ORDER BY X.RDB$FIELD_NAME, X.RDB$DIMENSION`, sourcesString[:len(sourcesString)-1]), nil).ReadWithoutCommit()
 
 	if result.Err != nil {
 		return nil, result.Err
@@ -1950,8 +2066,6 @@ func (rr *ResultReader) CloseWithoutCommit() (QueryStatus, error) {
 			}
 		}
 		rr.closed = true
-		rr.fbConn.unlock()
-		rr.fbConn.contextWatcher.Unwatch()
 	}
 	return rr.queryStatus, rr.err
 }
@@ -2391,12 +2505,12 @@ func (h *CancelRequestContextWatcherHandler) HandleUnwatchAfterCancel() {
 	h.Conn.conn.SetDeadline(time.Time{})
 }
 
-func getArrayInfo(fbConn *FbConn, ctx context.Context, fields, tables []string) (map[string]map[string]*Array, error) {
-	metadataList, sources, err := fbConn.GetArrayMetadata(ctx, tables, fields)
+func getArrayInfo(fbConn *FbConn, ctx context.Context, tx *FBTransaction, fields, tables []string) (map[string]map[string]*Array, error) {
+	metadataList, sources, err := fbConn.getArrayMetadata(ctx, tx, tables, fields)
 	if err != nil {
 		return nil, err
 	}
-	dimensions, err := fbConn.GetArrayDimentions(ctx, sources)
+	dimensions, err := fbConn.getArrayDimentions(ctx, tx, sources)
 	if err != nil {
 		return nil, err
 	}
