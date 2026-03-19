@@ -192,9 +192,9 @@ func runWithBlobStreamModesInternal(
 ) {
 	t.Helper()
 
-	connString := os.Getenv("PGX_TEST_DATABASE")
+	connString := os.Getenv("FBX_TEST_DATABASE")
 	if connString == "" {
-		t.Skipf("Skipping due to missing environment variable %v", "PGX_TEST_DATABASE")
+		t.Skipf("Skipping due to missing environment variable %v", "FBX_TEST_DATABASE")
 	}
 
 	for _, useStreamBlobs := range []bool{true, false} {

@@ -9,7 +9,7 @@ import (
 type FieldDescriptor struct {
 	Index             int
 	Type              int
-	Format            int16 // 0 - text, 1 - binary. PG flavor flag for compatibility. Probable should be removed after reworking type conversion module
+	Format            int16 // 0 - text, 1 - binary. FB flavor flag for compatibility. Probable should be removed after reworking type conversion module
 	Scale             int
 	Subtype           int
 	Length            int

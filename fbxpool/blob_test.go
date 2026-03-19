@@ -16,7 +16,7 @@ func TestPoolBlobBinary(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pool, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pool, err := fbxpool.New(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 
@@ -44,7 +44,7 @@ func TestPoolBlobTextCharsets(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pool, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pool, err := fbxpool.New(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 
