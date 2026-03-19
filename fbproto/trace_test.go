@@ -227,6 +227,8 @@ func getTraceSnapshotProfileForServerEngineVersion(versionNumber int) (traceSnap
 			return traceSnapshotProfileV50, true
 		}
 		return traceSnapshotProfileV5, true
+	case 6:
+		return traceSnapshotProfileV5, true
 	}
 	return "", false
 }

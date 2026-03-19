@@ -182,6 +182,7 @@ func TestConnectInvalidUser(t *testing.T) {
 
 	_, err = fbconn.ConnectConfig(ctx, config)
 	require.Error(t, err)
+	require.NotContains(t, err.Error(), "invalid SRP payload")
 	var fbErr *fbconn.FbError
 	require.ErrorAs(t, err, &fbErr)
 	if fbErr.Code != "28000" && fbErr.Code != "28P01" {
