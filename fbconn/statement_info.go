@@ -136,17 +136,6 @@ func (p *StatementInfo) feedDescriptors(r *ServerInfoBufferReader) error {
 	}
 }
 
-func FbTypeIntoFormat(fbtype int, subtype int) int16 {
-	switch fbtype {
-	case fbproto.SQL_TYPE_VARYING, fbproto.SQL_TYPE_TEXT:
-		if (subtype & 0xFF) == fbproto.CS_BINARY { //OCTETS
-			return 1
-		}
-		return 0
-	}
-	return 1
-}
-
 func (p *StatementInfo) GetRowBlr() []byte {
 	return p.CalculateBlr(p.FieldDescriptors, nil)
 }
