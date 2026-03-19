@@ -1,4 +1,4 @@
-package pgtype_test
+package fbtype_test
 
 import (
 	"context"
@@ -9,24 +9,24 @@ import (
 
 <%
   [
-    ["int4", ["int16", "int32", "int64", "uint64", "pgtype.Int4"], [[1, 1], [1, 10], [10, 1], [100, 10]]],
-    ["numeric", ["int64", "float64", "pgtype.Numeric"], [[1, 1], [1, 10], [10, 1], [100, 10]]],
-  ].each do |pg_type, go_types, rows_columns|
+    ["int4", ["int16", "int32", "int64", "uint64", "fbtype.Int4"], [[1, 1], [1, 10], [10, 1], [100, 10]]],
+    ["numeric", ["int64", "float64", "fbtype.Numeric"], [[1, 1], [1, 10], [10, 1], [100, 10]]],
+  ].each do |fb_type, go_types, rows_columns|
 %>
 <% go_types.each do |go_type| %>
 <% rows_columns.each do |rows, columns| %>
-<% [["Text", "pgx.TextFormatCode"], ["Binary", "pgx.BinaryFormatCode"]].each do |format_name, format_code| %>
-func BenchmarkQuery<%= format_name %>FormatDecode_PG_<%= pg_type %>_to_Go_<%= go_type.gsub(/\W/, "_") %>_<%= rows %>_rows_<%= columns %>_columns(b *testing.B) {
-  defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *pgx.Conn) {
+<% [["Text", "fbx.TextFormatCode"], ["Binary", "fbx.BinaryFormatCode"]].each do |format_name, format_code| %>
+func BenchmarkQuery<%= format_name %>FormatDecode_FB_<%= fb_type %>_to_Go_<%= go_type.gsub(/\W/, "_") %>_<%= rows %>_rows_<%= columns %>_columns(b *testing.B) {
+  defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
     b.ResetTimer()
     var v [<%= columns %>]<%= go_type %>
     for i := 0; i < b.N; i++ {
       rows, _ := conn.Query(
         ctx,
-        `select <% columns.times do |col_idx| %><% if col_idx != 0 %>, <% end %>n::<%= pg_type %> + <%= col_idx%><% end %> from generate_series(1, <%= rows %>) n`,
-        pgx.QueryResultFormats{<%= format_code %>},
+        `select <% columns.times do |col_idx| %><% if col_idx != 0 %>, <% end %>n::<%= fb_type %> + <%= col_idx%><% end %> from generate_series(1, <%= rows %>) n`,
+        fbx.QueryResultFormats{<%= format_code %>},
       )
-      _, err := pgx.ForEachRow(rows, []any{<% columns.times do |col_idx| %><% if col_idx != 0 %>, <% end %>&v[<%= col_idx%>]<% end %>},  func() error { return nil })
+      _, err := fbx.ForEachRow(rows, []any{<% columns.times do |col_idx| %><% if col_idx != 0 %>, <% end %>&v[<%= col_idx%>]<% end %>},  func() error { return nil })
       if err != nil {
         b.Fatal(err)
       }
@@ -39,18 +39,18 @@ func BenchmarkQuery<%= format_name %>FormatDecode_PG_<%= pg_type %>_to_Go_<%= go
 <% end %>
 
 <% [10, 100, 1000].each do |array_size| %>
-<% [["Text", "pgx.TextFormatCode"], ["Binary", "pgx.BinaryFormatCode"]].each do |format_name, format_code| %>
-func BenchmarkQuery<%= format_name %>FormatDecode_PG_Int4Array_With_Go_Int4Array_<%= array_size %>(b *testing.B) {
-  defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *pgx.Conn) {
+<% [["Text", "fbx.TextFormatCode"], ["Binary", "fbx.BinaryFormatCode"]].each do |format_name, format_code| %>
+func BenchmarkQuery<%= format_name %>FormatDecode_FB_Int4Array_With_Go_Int4Array_<%= array_size %>(b *testing.B) {
+  defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
     b.ResetTimer()
     var v []int32
     for i := 0; i < b.N; i++ {
       rows, _ := conn.Query(
         ctx,
         `select array_agg(n) from generate_series(1, <%= array_size %>) n`,
-        pgx.QueryResultFormats{<%= format_code %>},
+        fbx.QueryResultFormats{<%= format_code %>},
       )
-      _, err := pgx.ForEachRow(rows, []any{&v},  func() error { return nil })
+      _, err := fbx.ForEachRow(rows, []any{&v},  func() error { return nil })
       if err != nil {
         b.Fatal(err)
       }

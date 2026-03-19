@@ -24,7 +24,7 @@ package fbtype_test
 // 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 // 	defer cancel()
 
-// 	conn, err := fbx.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+// 	conn, err := fbx.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 // 	if err != nil {
 // 		fmt.Printf("Unable to establish connection: %v", err)
 // 		return

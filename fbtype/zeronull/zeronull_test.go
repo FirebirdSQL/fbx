@@ -24,7 +24,7 @@ var (
 func init() {
 	defaultConnTestRunner = fbxtest.DefaultConnTestRunner()
 	defaultConnTestRunner.CreateConfig = func(ctx context.Context, t testing.TB) *fbx.ConnConfig {
-		config, err := fbx.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+		config, err := fbx.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 		require.NoError(t, err)
 		return config
 	}

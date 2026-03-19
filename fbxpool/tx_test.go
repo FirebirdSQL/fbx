@@ -16,7 +16,7 @@ func TestTxExec(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pool, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pool, err := fbxpool.New(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer pool.Close()
 
@@ -33,7 +33,7 @@ func TestTxQuery(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pool, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pool, err := fbxpool.New(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer pool.Close()
 
@@ -50,7 +50,7 @@ func TestTxQueryRow(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	pool, err := fbxpool.New(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	pool, err := fbxpool.New(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer pool.Close()
 

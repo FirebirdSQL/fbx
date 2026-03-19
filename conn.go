@@ -34,10 +34,8 @@ type ConnConfig struct {
 	// "cache_describe" query exec mode.
 	DescriptionCacheCapacity int
 
-	// DefaultQueryExecMode controls the default mode for executing queries. By default pgx uses the extended protocol
-	// and automatically prepares and caches prepared statements. However, this may be incompatible with proxies such as
-	// PGBouncer. In this case it may be preferable to use QueryExecModeExec or QueryExecModeSimpleProtocol. The same
-	// functionality can be controlled on a per query basis by passing a QueryExecMode as the first query argument.
+	// DefaultQueryExecMode controls the default mode for executing queries. By default fbx prepares statements and 
+	// may cache statement/description metadata to reduce round trips and parsing overhead.
 	DefaultQueryExecMode QueryExecMode
 
 	createdByParseConfig bool // Used to enforce created by ParseConfig rule.
@@ -73,8 +71,6 @@ type Conn struct {
 
 	queryTracer   QueryTracer
 	prepareTracer PrepareTracer
-
-	notifications []*fbconn.Notification
 
 	doneChan   chan struct{}
 	closedChan chan error
@@ -150,7 +146,7 @@ func ConnectWithOptions(ctx context.Context, connString string, options ParseCon
 // connConfig must have been created by ParseConfig.
 func ConnectConfig(ctx context.Context, connConfig *ConnConfig) (*Conn, error) {
 	// In general this improves safety. In particular avoid the config.Config.OnNotification mutation from affecting other
-	// connections with the same config. See https://github.com/jackc/pgx/issues/618.
+	// connections with the same config.
 	connConfig = connConfig.Copy()
 
 	return connect(ctx, connConfig)
@@ -248,11 +244,6 @@ func connect(ctx context.Context, config *ConnConfig) (c *Conn, err error) {
 		c.prepareTracer = t
 	}
 
-	// Only install pgx notification system if no other callback handler is present.
-	if config.Config.OnNotification == nil {
-		config.Config.OnNotification = c.bufferNotifications
-	}
-
 	c.fbConn, err = fbconn.ConnectConfig(ctx, &config.Config)
 	if err != nil {
 		return nil, err
@@ -283,7 +274,7 @@ func (c *Conn) Close(ctx context.Context) error {
 
 // Prepare creates a prepared statement with name and sql. sql can contain placeholders for bound parameters. These
 // placeholders are referenced positionally as ?. name can be used instead of sql with Query, QueryRow, and
-// Exec to execute the statement. It can also be used with Batch.Queue.
+// Exec to execute the statement.
 //
 // The underlying Firebird identifier for the prepared statement will be name if name != sql or a digest of sql if
 // name == sql.
@@ -384,10 +375,6 @@ func (c *Conn) DeallocateAll(ctx context.Context) error {
 	c.preparedStatements = map[string]*fbconn.Statement{}
 
 	return nil
-}
-
-func (c *Conn) bufferNotifications(_ *fbconn.FbConn, n *fbconn.Notification) {
-	c.notifications = append(c.notifications, n)
 }
 
 // IsClosed reports if the connection has been closed.
@@ -598,7 +585,7 @@ const (
 
 	// Assume the Firebird query parameter types based on the Go type of the arguments. This uses the extended protocol
 	// with text formatted parameters and results. Queries are executed in a single round trip. Type mappings can be
-	// registered with pgtype.Map.RegisterDefaultPgType. Queries will be rejected that have arguments that are
+	// registered with fbtype.Map.RegisterDefaultFbType. Queries will be rejected that have arguments that are
 	// unregistered or ambiguous. e.g. A map[string]string may have the Firebird type json or hstore. Modes that know
 	// the Firebird type can use a map[string]string directly as an argument. This mode cannot.
 	//
@@ -607,8 +594,8 @@ const (
 	// Roman numerals (e.g. 7 is VII). The binary format would properly encode the integer 7 as the binary value for 7.
 	// But the text format would encode the integer 7 as the string "VII". As QueryExecModeExec uses the text format, it
 	// is possible that changing query mode from another mode to QueryExecModeExec could change the behavior of the query.
-	// This should not occur with types pgx supports directly and can be avoided by registering the types with
-	// pgtype.Map.RegisterDefaultPgType and implementing the appropriate type interfaces. In the cas of RomanNumeral, it
+	// This should not occur with types fbx supports directly and can be avoided by registering the types with
+	// fbtype.Map.RegisterDefaultFbType and implementing the appropriate type interfaces. In the cas of RomanNumeral, it
 	// should implement fbtype.Int64Valuer.
 	QueryExecModeExec
 )
@@ -826,7 +813,7 @@ func (c *Conn) QueryRow(ctx context.Context, sql string, args ...any) Row {
 }
 
 // LoadType inspects the database for typeName and produces a fbtype.Type suitable for registration. typeName must be
-// the name of a type where the underlying type(s) is already understood by pgx. It is for derived types. In particular,
+// the name of a type where the underlying type(s) is already understood by fbx. It is for derived types. In particular,
 // typeName must be one of the following:
 //   - An array type name of a type that is already registered. e.g. "_foo" when "foo" is registered.
 //   - A composite type name where all field types are already registered.
@@ -845,7 +832,7 @@ func (c *Conn) LoadType(ctx context.Context, typeName string) (*fbtype.Type, err
 	//var typtype string
 	//var typbasetype uint32
 	//
-	//err = c.QueryRow(ctx, "select typtype::text, typbasetype from pg_type where typeid=$1", typeid).Scan(&typtype, &typbasetype)
+	//err = c.QueryRow(ctx, "select typtype::text, typbasetype from fb_type where typeid=$1", typeid).Scan(&typtype, &typbasetype)
 	//if err != nil {
 	//	return nil, err
 	//}
@@ -862,23 +849,23 @@ func (c *Conn) LoadType(ctx context.Context, typeName string) (*fbtype.Type, err
 	//		return nil, errors.New("array element TypeID not registered")
 	//	}
 	//
-	//	return &pgtype.Type{Name: typeName, TypeID: typeid, Codec: &pgtype.ArrayCodec{ElementType: dt}}, nil
+	//	return &fbtype.Type{Name: typeName, TypeID: typeid, Codec: &fbtype.ArrayCodec{ElementType: dt}}, nil
 	//case "c": // composite
 	//	fields, err := c.getCompositeFields(ctx, typeid)
 	//	if err != nil {
 	//		return nil, err
 	//	}
 	//
-	//	return &pgtype.Type{Name: typeName, TypeID: typeid, Codec: &pgtype.CompositeCodec{Fields: fields}}, nil
+	//	return &fbtype.Type{Name: typeName, TypeID: typeid, Codec: &fbtype.CompositeCodec{Fields: fields}}, nil
 	//case "d": // domain
 	//	dt, ok := c.TypeMap().TypeForTypeID(typbasetype)
 	//	if !ok {
 	//		return nil, errors.New("domain base type TypeID not registered")
 	//	}
 	//
-	//	return &pgtype.Type{Name: typeName, TypeID: typeid, Codec: dt.Codec}, nil
+	//	return &fbtype.Type{Name: typeName, TypeID: typeid, Codec: dt.Codec}, nil
 	//case "e": // enum
-	//	return &pgtype.Type{Name: typeName, TypeID: typeid, Codec: &pgtype.EnumCodec{}}, nil
+	//	return &fbtype.Type{Name: typeName, TypeID: typeid, Codec: &fbtype.EnumCodec{}}, nil
 	//case "r": // range
 	//	elementTypeID, err := c.getRangeElementTypeID(ctx, typeid)
 	//	if err != nil {
@@ -890,7 +877,7 @@ func (c *Conn) LoadType(ctx context.Context, typeName string) (*fbtype.Type, err
 	//		return nil, errors.New("range element TypeID not registered")
 	//	}
 	//
-	//	return &pgtype.Type{Name: typeName, TypeID: typeid, Codec: &pgtype.RangeCodec{ElementType: dt}}, nil
+	//	return &fbtype.Type{Name: typeName, TypeID: typeid, Codec: &fbtype.RangeCodec{ElementType: dt}}, nil
 	//case "m": // multirange
 	//	elementTypeID, err := c.getMultiRangeElementTypeID(ctx, typeid)
 	//	if err != nil {
@@ -902,9 +889,9 @@ func (c *Conn) LoadType(ctx context.Context, typeName string) (*fbtype.Type, err
 	//		return nil, errors.New("multirange element TypeID not registered")
 	//	}
 	//
-	//	return &pgtype.Type{Name: typeName, TypeID: typeid, Codec: &pgtype.MultirangeCodec{ElementType: dt}}, nil
+	//	return &fbtype.Type{Name: typeName, TypeID: typeid, Codec: &fbtype.MultirangeCodec{ElementType: dt}}, nil
 	//default:
-	//	return &pgtype.Type{}, errors.New("unknown typtype")
+	//	return &fbtype.Type{}, errors.New("unknown typtype")
 	//}
 	panic("implement me")
 }
@@ -912,7 +899,7 @@ func (c *Conn) LoadType(ctx context.Context, typeName string) (*fbtype.Type, err
 func (c *Conn) getArrayElementTypeID(ctx context.Context, typeid uint32) (uint32, error) {
 	//var typelem uint32
 	//
-	//err := c.QueryRow(ctx, "select typelem from pg_type where typeid=$1", typeid).Scan(&typelem)
+	//err := c.QueryRow(ctx, "select typelem from fb_type where typeid=$1", typeid).Scan(&typelem)
 	//if err != nil {
 	//	return 0, err
 	//}
@@ -924,7 +911,7 @@ func (c *Conn) getArrayElementTypeID(ctx context.Context, typeid uint32) (uint32
 func (c *Conn) getRangeElementTypeID(ctx context.Context, typeid uint32) (uint32, error) {
 	//var typelem uint32
 	//
-	//err := c.QueryRow(ctx, "select rngsubtype from pg_range where rngtypid=$1", typeid).Scan(&typelem)
+	//err := c.QueryRow(ctx, "select rngsubtype from fb_range where rngtypid=$1", typeid).Scan(&typelem)
 	//if err != nil {
 	//	return 0, err
 	//}
@@ -936,7 +923,7 @@ func (c *Conn) getRangeElementTypeID(ctx context.Context, typeid uint32) (uint32
 func (c *Conn) getMultiRangeElementTypeID(ctx context.Context, typeid uint32) (uint32, error) {
 	//var typelem uint32
 	//
-	//err := c.QueryRow(ctx, "select rngtypid from pg_range where rngmultitypid=$1", typeid).Scan(&typelem)
+	//err := c.QueryRow(ctx, "select rngtypid from fb_range where rngmultitypid=$1", typeid).Scan(&typelem)
 	//if err != nil {
 	//	return 0, err
 	//}
@@ -948,16 +935,16 @@ func (c *Conn) getMultiRangeElementTypeID(ctx context.Context, typeid uint32) (u
 // func (c *Conn) getCompositeFields(ctx context.Context, typeid uint32) ([]fbtype.CompositeCodecField, error) {
 // 	//	var typrelid uint32
 // 	//
-// 	//	err := c.QueryRow(ctx, "select typrelid from pg_type where typeid=$1", typeid).Scan(&typrelid)
+// 	//	err := c.QueryRow(ctx, "select typrelid from fb_type where typeid=$1", typeid).Scan(&typrelid)
 // 	//	if err != nil {
 // 	//		return nil, err
 // 	//	}
 // 	//
-// 	//	var fields []pgtype.CompositeCodecField
+// 	//	var fields []fbtype.CompositeCodecField
 // 	//	var fieldName string
 // 	//	var fieldTypeID uint32
 // 	//	rows, _ := c.Query(ctx, `select attname, atttypid
-// 	//from pg_attribute
+// 	//from fb_attribute
 // 	//where attrelid=$1
 // 	//	and not attisdropped
 // 	//	and attnum > 0
@@ -969,7 +956,7 @@ func (c *Conn) getMultiRangeElementTypeID(ctx context.Context, typeid uint32) (u
 // 	//		if !ok {
 // 	//			return fmt.Errorf("unknown composite type field TypeID: %v", fieldTypeID)
 // 	//		}
-// 	//		fields = append(fields, pgtype.CompositeCodecField{Name: fieldName, Type: dt})
+// 	//		fields = append(fields, fbtype.CompositeCodecField{Name: fieldName, Type: dt})
 // 	//		return nil
 // 	//	})
 // 	//	if err != nil {

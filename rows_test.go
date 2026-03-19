@@ -42,7 +42,6 @@ func (ers *testErrRowScanner) ScanRow(rows fbx.Rows) error {
 	return errors.New(string(*ers))
 }
 
-// https://github.com/jackc/pgx/issues/1654
 func TestRowScannerErrorIsFatalToRows(t *testing.T) {
 	t.Parallel()
 
@@ -154,7 +153,7 @@ func TestForEachRowAbort(t *testing.T) {
 }
 
 func ExampleForEachRow() {
-	conn, err := fbx.Connect(context.Background(), os.Getenv("PGX_TEST_DATABASE"))
+	conn, err := fbx.Connect(context.Background(), os.Getenv("FBX_TEST_DATABASE"))
 	if err != nil {
 		fmt.Printf("Unable to establish connection: %v", err)
 		return
@@ -220,7 +219,7 @@ func ExampleCollectRows() {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	conn, err := fbx.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	conn, err := fbx.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	if err != nil {
 		fmt.Printf("Unable to establish connection: %v", err)
 		return
@@ -285,8 +284,7 @@ func TestCollectOneRowIgnoresExtraRows(t *testing.T) {
 	})
 }
 
-// https://github.com/jackc/pgx/issues/1334
-func TestCollectOneRowPrefersPostgreSQLErrorOverErrNoRows(t *testing.T) {
+func TestCollectOneRowPrefersFirebirdSQLErrorOverErrNoRows(t *testing.T) {
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		_, err := conn.Exec(ctx, `recreate table "+t.Name()+" (name varchar(255) not null)`)
 		require.NoError(t, err)
@@ -320,7 +318,7 @@ func TestCollectOneRowPrefersPostgreSQLErrorOverErrNoRows(t *testing.T) {
 		require.Equal(t, "foo1", name)
 
 		//rows, _ = conn.Query(ctx, `insert into "+t.Name()+" (name) values ('foo2') returning name`)
-		//name, err = pgx.CollectOneRow(rows, func(row pgx.CollectableRow) (string, error) {
+		//name, err = fbx.CollectOneRow(rows, func(row fbx.CollectableRow) (string, error) {
 		//	var n string
 		//	err := row.Scan(&n)
 		//	return n, err
@@ -389,7 +387,7 @@ func ExampleRowTo() {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	conn, err := fbx.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	conn, err := fbx.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	if err != nil {
 		fmt.Printf("Unable to establish connection: %v", err)
 		return
@@ -426,7 +424,7 @@ func ExampleRowToAddrOf() {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	conn, err := fbx.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	conn, err := fbx.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	if err != nil {
 		fmt.Printf("Unable to establish connection: %v", err)
 		return
@@ -604,20 +602,12 @@ func ExampleRowToStructByPos() {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	conn, err := fbx.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	conn, err := fbx.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	if err != nil {
 		fmt.Printf("Unable to establish connection: %v", err)
 		return
 	}
 	defer conn.Close(ctx)
-
-	if conn.FbConn().ParameterStatus("crdb_version") != "" {
-		// Skip test / example when running on CockroachDB. Since an example can't be skipped fake success instead.
-		fmt.Println(`Cheeseburger: $10
-Fries: $5
-Soft Drink: $3`)
-		return
-	}
 
 	// Setup example schema and data.
 	_, err = conn.Exec(ctx, `
@@ -789,20 +779,12 @@ func ExampleRowToStructByName() {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	conn, err := fbx.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	conn, err := fbx.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	if err != nil {
 		fmt.Printf("Unable to establish connection: %v", err)
 		return
 	}
 	defer conn.Close(ctx)
-
-	if conn.FbConn().ParameterStatus("crdb_version") != "" {
-		// Skip test / example when running on CockroachDB. Since an example can't be skipped fake success instead.
-		fmt.Println(`Cheeseburger: $10
-Fries: $5
-Soft Drink: $3`)
-		return
-	}
 
 	// Setup example schema and data.
 	_, err = conn.Exec(ctx, `
@@ -985,20 +967,12 @@ func ExampleRowToStructByNameLax() {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	conn, err := fbx.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	conn, err := fbx.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	if err != nil {
 		fmt.Printf("Unable to establish connection: %v", err)
 		return
 	}
 	defer conn.Close(ctx)
-
-	if conn.FbConn().ParameterStatus("crdb_version") != "" {
-		// Skip test / example when running on CockroachDB. Since an example can't be skipped fake success instead.
-		fmt.Println(`Cheeseburger: $10
-Fries: $5
-Soft Drink: $3`)
-		return
-	}
 
 	// Setup example schema and data.
 	_, err = conn.Exec(ctx, `

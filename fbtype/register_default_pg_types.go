@@ -1,4 +1,4 @@
-//go:build !nopgxregisterdefaulttypes
+//go:build !nofbxregisterdefaulttypes
 
 package fbtype
 

@@ -31,7 +31,7 @@ var (
 func init() {
 	defaultConnTestRunner = fbxtest.DefaultConnTestRunner()
 	defaultConnTestRunner.CreateConfig = func(ctx context.Context, t testing.TB) *fbx.ConnConfig {
-		config, err := fbx.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+		config, err := fbx.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 		require.NoError(t, err)
 		return config
 	}
@@ -207,17 +207,17 @@ func TestMapScanUnregisteredTypeIDIntoRenamedStringSQLScanner(t *testing.T) {
 	assert.Equal(t, "scanned", string(s))
 }
 
-type pgCustomInt int64
+type fbCustomInt int64
 
-func (ci *pgCustomInt) Scan(src interface{}) error {
-	*ci = pgCustomInt(src.(int64))
+func (ci *fbCustomInt) Scan(src interface{}) error {
+	*ci = fbCustomInt(src.(int64))
 	return nil
 }
 
 func TestScanPlanBinaryInt32ScanScanner(t *testing.T) {
 	m := fbtype.NewMap()
 	src := []byte{0, 0, 0, 42}
-	var v pgCustomInt
+	var v fbCustomInt
 
 	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 0, 4, 0, fbtype.BinaryFormatCode)
 	plan := m.PlanScan(typeMetadata, &v)
@@ -225,13 +225,13 @@ func TestScanPlanBinaryInt32ScanScanner(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, 42, v)
 
-	ptr := new(pgCustomInt)
+	ptr := new(fbCustomInt)
 	plan = m.PlanScan(typeMetadata, &ptr)
 	err = plan.Scan(src, &ptr)
 	require.NoError(t, err)
 	require.EqualValues(t, 42, *ptr)
 
-	ptr = new(pgCustomInt)
+	ptr = new(fbCustomInt)
 	err = plan.Scan(nil, &ptr)
 	require.NoError(t, err)
 	assert.Nil(t, ptr)

@@ -11,7 +11,7 @@ import (
 )
 
 func BenchmarkAcquireAndRelease(b *testing.B) {
-	pool, err := fbxpool.New(context.Background(), os.Getenv("PGX_TEST_DATABASE"))
+	pool, err := fbxpool.New(context.Background(), os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(b, err)
 	defer pool.Close()
 
@@ -26,7 +26,7 @@ func BenchmarkAcquireAndRelease(b *testing.B) {
 }
 
 func BenchmarkMinimalPreparedSelectBaseline(b *testing.B) {
-	config, err := fbxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbxpool.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(b, err)
 
 	config.AfterConnect = func(ctx context.Context, c *fbx.Conn) error {
@@ -57,7 +57,7 @@ func BenchmarkMinimalPreparedSelectBaseline(b *testing.B) {
 }
 
 func BenchmarkMinimalPreparedSelect(b *testing.B) {
-	config, err := fbxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbxpool.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(b, err)
 
 	config.AfterConnect = func(ctx context.Context, c *fbx.Conn) error {
