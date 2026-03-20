@@ -634,12 +634,12 @@ func (a anySliceArrayReflect) Index(i int) any {
 	return a.slice.Index(i).Interface()
 }
 
-func (a anySliceArrayReflect) Dimensions() []Dimension {
+func (a anySliceArrayReflect) Dimensions(lowers []int) []Dimension {
 	if a.slice.IsNil() {
 		return nil
 	}
 
-	return []Dimension{{Lower: 1, Upper: a.slice.Len()}}
+	return []Dimension{{Lower: lowers[0], Upper: lowers[0] + (a.slice.Len() - 1)}}
 }
 
 func (a *anySliceArrayReflect) SetDimentions(dimensions []Dimension) error {
@@ -685,16 +685,18 @@ func (a *anyMultiDimSliceArray) Index(i int) any {
 	return v.Interface()
 }
 
-func (a *anyMultiDimSliceArray) Dimensions() []Dimension {
+func (a *anyMultiDimSliceArray) Dimensions(lowers []int) []Dimension {
 	if a.slice.IsNil() {
 		return nil
 	}
 
 	s := a.slice
+	dimensionNum := 0
 	for {
-		a.dimensions = append(a.dimensions, Dimension{Lower: 1, Upper: s.Len()})
+		a.dimensions = append(a.dimensions, Dimension{Lower: lowers[dimensionNum], Upper: lowers[dimensionNum] + (s.Len() - 1)})
 		if s.Len() > 0 {
 			s = s.Index(0)
+			dimensionNum++
 		} else {
 			break
 		}
@@ -780,8 +782,8 @@ func (a anyArrayArrayReflect) Index(i int) any {
 	return a.array.Index(i).Interface()
 }
 
-func (a anyArrayArrayReflect) Dimensions() []Dimension {
-	return []Dimension{{Lower: 1, Upper: a.array.Len()}}
+func (a anyArrayArrayReflect) Dimensions(lowers []int) []Dimension {
+	return []Dimension{{Lower: lowers[0], Upper: lowers[0] + (a.array.Len() - 1)}}
 }
 
 func (a *anyArrayArrayReflect) SetDimentions(dimensions []Dimension) error {

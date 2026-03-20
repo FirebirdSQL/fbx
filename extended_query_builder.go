@@ -152,7 +152,11 @@ func (pb *ExtendedQueryBuilder) encodeParamValue(ctx context.Context, conn *Conn
 	buf, err := m.Encode(typeMetadata, arg, pb.paramValueBytes)
 
 	if fbconn.IsArrayType(typeMetadata.TypeID) && buf != nil {
-		dimensions, err := fbtype.Dimensions(arg)
+		var lowers []int
+		for _, d := range typeMetadata.ArrayData.Dimensions {
+			lowers = append(lowers, d.Lower)
+		}
+		dimensions, err := fbtype.Dimensions(arg, lowers)
 		if err != nil {
 			return nil, err
 		}

@@ -17,7 +17,7 @@ type ArraySetter interface {
 	Index(i int) any
 
 	// Dimensions returns the []Dimensions of the array
-	Dimensions() []Dimension
+	Dimensions(lowers []int) []Dimension
 }
 
 // Dimension is a struct for storage array dimensions
@@ -161,7 +161,11 @@ func (pe planEncodeArray) Encode(value any, buf []byte) (newBuf []byte, err erro
 	if err != nil {
 		return nil, err
 	}
-	dimensions := array.Dimensions()
+	var lowers []int
+	for _, d := range pe.arrayData.Dimensions {
+		lowers = append(lowers, d.Lower)
+	}
+	dimensions := array.Dimensions(lowers)
 	if dimensions == nil {
 		return nil, nil
 	}
@@ -213,12 +217,12 @@ func (pe planEncodeArray) Encode(value any, buf []byte) (newBuf []byte, err erro
 }
 
 // Dimensions returns the list of dimensions and their bounds for array
-func Dimensions(value any) ([]map[string]int, error) {
+func Dimensions(value any, lowers []int) ([]map[string]int, error) {
 	array, err := getArrayEncodeType(value)
 	if err != nil {
 		return nil, err
 	}
-	dimensions := array.Dimensions()
+	dimensions := array.Dimensions(lowers)
 	if dimensions == nil {
 		return nil, nil
 	}
@@ -487,7 +491,7 @@ type Array[T any] struct {
 	Valid    bool
 }
 
-func (a Array[T]) Dimensions() []Dimension {
+func (a Array[T]) Dimensions(lowers []int) []Dimension {
 	return a.Dims
 }
 
@@ -521,12 +525,12 @@ func (a FlatArray[T]) Index(i int) any {
 	return a[i]
 }
 
-func (a FlatArray[T]) Dimensions() []Dimension {
+func (a FlatArray[T]) Dimensions(lowers []int) []Dimension {
 	if a == nil {
 		return nil
 	}
 
-	return []Dimension{{Lower: 1, Upper: len(a)}}
+	return []Dimension{{Lower: lowers[0], Upper: lowers[0] + (len(a) - 1)}}
 }
 
 func (a *FlatArray[T]) SetDimentions(dimensions []Dimension) error {

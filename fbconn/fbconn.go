@@ -1606,8 +1606,8 @@ func (fbConn *FbConn) getArrayDimentions(ctx context.Context, tx *FBTransaction,
 		dimensions[string(val[2])] = append(
 			dimensions[string(val[2])], // val[2] - field name
 			[]int{
-				int(binary.BigEndian.Uint32(val[0])), // lower bound
-				int(binary.BigEndian.Uint32(val[1])), // upper bound
+				int(int32(binary.BigEndian.Uint32(val[0]))), // lower bound
+				int(int32(binary.BigEndian.Uint32(val[1]))), // upper bound
 			},
 		)
 	}
@@ -1932,7 +1932,10 @@ func (rr *ResultReader) bufferCurrentFetchRows() bool {
 	rr.clearBufferedFetch()
 	colCount := len(rr.fieldDescriptions)
 
+	var rowsBuf [][][]byte
+
 	for rr.fetchResp.MoreRows() {
+		rowBuf := [][]byte{}
 		row, msg, err := rr.fbConn.client.ReceiveSQLData(rr.statementDescription.StatementInfo.FieldDescriptors)
 		if err != nil {
 			rr.fbConn.asyncClose()
@@ -1949,27 +1952,16 @@ func (rr *ResultReader) bufferCurrentFetchRows() bool {
 			panic(fmt.Sprintf("wrong response message type %T instead expected OpFetchResponse or ErrorResponse", m))
 		}
 
-		rowStart := len(rr.bufferedCols)
 		for i := 0; i < colCount; i++ {
-			col := row.RowData[i]
-			if IsArrayType(uint32(row.RowDescriptor[i].Type)) {
-				array, err := GetArray(rr.fbConn, rr.ctx, rr.fieldDescriptions[i].ArrayData, col)
-				if err != nil {
-					rr.fbConn.asyncClose()
-					rr.concludeCommand(QueryStatus{}, err)
-					return false
-				}
-				col = array
-			}
-			if col == nil {
-				rr.bufferedCols = append(rr.bufferedCols, bufferedCol{length: bufferedColNullLength})
+			col := make([]byte, 0)
+			if row.RowData[i] == nil {
+				rowBuf = append(rowBuf, nil)
 				continue
 			}
-			start := len(rr.bufferedArena)
-			rr.bufferedArena = append(rr.bufferedArena, col...)
-			rr.bufferedCols = append(rr.bufferedCols, bufferedCol{start: start, length: len(col)})
+			col = append(col, row.RowData[i]...)
+			rowBuf = append(rowBuf, col)
 		}
-		rr.bufferedRows = append(rr.bufferedRows, bufferedRow{colStart: rowStart})
+		rowsBuf = append(rowsBuf, rowBuf)
 
 		if rr.fetchResp.EndOfCursor() {
 			rr.eoc = true
@@ -1977,6 +1969,28 @@ func (rr *ResultReader) bufferCurrentFetchRows() bool {
 	}
 	if rr.fetchResp.EndOfCursor() {
 		rr.eoc = true
+	}
+	for _, row := range rowsBuf {
+		rowStart := len(rr.bufferedCols)
+		for j, elem := range row {
+			if IsArrayType(uint32(rr.fieldDescriptions[j].Type)) {
+				array, err := GetArray(rr.fbConn, rr.ctx, rr.fieldDescriptions[j].ArrayData, elem)
+				if err != nil {
+					rr.fbConn.asyncClose()
+					rr.concludeCommand(QueryStatus{}, err)
+					return false
+				}
+				elem = array
+			}
+			if elem == nil {
+				rr.bufferedCols = append(rr.bufferedCols, bufferedCol{length: bufferedColNullLength})
+				continue
+			}
+			start := len(rr.bufferedArena)
+			rr.bufferedArena = append(rr.bufferedArena, elem...)
+			rr.bufferedCols = append(rr.bufferedCols, bufferedCol{start: start, length: len(elem)})
+		}
+		rr.bufferedRows = append(rr.bufferedRows, bufferedRow{colStart: rowStart})
 	}
 	return true
 }
