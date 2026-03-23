@@ -80,13 +80,13 @@ func (sd *StatementDescription) GetAffectedCount() int64 {
 }
 
 type Statement struct {
-	conn           *FbConn
-	Description    *StatementDescription
-	transaction    *FBTransaction
-	cursorOpened   bool
-	closed         bool
-	timeout        int
-	cursorFlags    int
+	conn         *FbConn
+	Description  *StatementDescription
+	transaction  *FBTransaction
+	cursorOpened bool
+	closed       bool
+	timeout      int
+	cursorFlags  int
 }
 
 // SetTimeout sets statement timeout (milliseconds).
@@ -105,8 +105,6 @@ func (st *Statement) SetInlineBlobSize(size int) {
 }
 
 // Exec executed a prepared statement inside bound transaction
-//
-// paramValues are the parameter values. It must be encoded in the binary format
 //
 // ResultReader must be closed before FbConn can be used again.
 func (st *Statement) Exec(ctx context.Context, paramValues [][]byte) *ResultReader {
@@ -149,7 +147,6 @@ func (st *Statement) Exec(ctx context.Context, paramValues [][]byte) *ResultRead
 // ExecTx executed a prepared statement inside specified transaction
 //
 // tx opened transaction
-// paramValues are the parameter values. It must be encoded in the binary format
 //
 // ResultReader must be closed before FbConn can be used again.
 func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues [][]byte) *ResultReader {

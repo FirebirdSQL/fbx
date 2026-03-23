@@ -16,7 +16,7 @@ import (
 // A Codec converts between Go and Firebird values. A Codec must not be mutated after it is registered with a Map.
 type Codec interface {
 
-	// PlanEncode returns an EncodePlan for encoding value into Firebird format for typeid and format. If no plan can be
+	// PlanEncode returns an EncodePlan for encoding value into Firebird format for typeid. If no plan can be
 	// found then nil is returned.
 	PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan
 
@@ -27,7 +27,7 @@ type Codec interface {
 	// DecodeDatabaseSQLValue returns src decoded into a value compatible with the sql.Scanner interface.
 	DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error)
 
-	// DecodeValue returns src decoded into its default format.
+	// DecodeValue returns decoded src.
 	DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error)
 }
 
@@ -73,7 +73,7 @@ type Map struct {
 
 	reflectTypeToType map[reflect.Type]*Type
 
-	memoizedEncodePlans map[TypeMetadata]map[reflect.Type][2]EncodePlan
+	memoizedEncodePlans map[TypeMetadata]map[reflect.Type]EncodePlan
 
 	// TryWrapEncodePlanFuncs is a slice of functions that will wrap a value that cannot be encoded by the Codec. Every
 	// time a wrapper is found the PlanEncode method will be recursively called with the new value. This allows several layers of wrappers
@@ -105,7 +105,7 @@ func NewMap() *Map {
 		nameToType:        make(map[string]*Type),
 		reflectTypeToName: make(map[reflect.Type]string),
 
-		memoizedEncodePlans: make(map[TypeMetadata]map[reflect.Type][2]EncodePlan),
+		memoizedEncodePlans: make(map[TypeMetadata]map[reflect.Type]EncodePlan),
 
 		TryWrapEncodePlanFuncs: []TryWrapEncodePlanFunc{
 			TryWrapDerefPointerEncodePlan,
@@ -231,7 +231,7 @@ func (m *Map) TypeForValue(v any) (*Type, bool) {
 	return dt, ok
 }
 
-// EncodePlan is a precompiled plan to encode a particular type into a particular TypeID and format.
+// EncodePlan is a precompiled plan to encode a particular type into a particular TypeID.
 type EncodePlan interface {
 	// Encode appends the encoded bytes of value to buf. If value is the SQL value NULL then append nothing and return
 	// (nil, nil). The caller of Encode is responsible for writing the correct NULL value or the length of the data
@@ -269,8 +269,7 @@ func (plan *scanPlanSQLScanner) Scan(src []byte, dst any) error {
 	scanner := dst.(sql.Scanner)
 
 	if src == nil {
-		// This is necessary because interface value []byte:nil does not equal nil:nil for the binary format path and the
-		// text format path would be converted to empty string.
+		// This is necessary because interface value []byte:nil does not equal nil:nil
 		return scanner.Scan(nil)
 	} else {
 		return scanner.Scan(src)
@@ -1093,7 +1092,7 @@ func codecDecodeToTextFormat(codec Codec, m *Map, typeMetadata TypeMetadata, src
 
 }
 
-// PlanEncode returns an EncodePlan for encoding value into Firebird format for typeid and format. If no plan can be
+// PlanEncode returns an EncodePlan for encoding value into Firebird format for typeid. If no plan can be
 // found then nil is returned.
 func (m *Map) PlanEncode(typeMetadata TypeMetadata, value any) EncodePlan {
 	return m.planEncodeDepth(typeMetadata, value, 0)
@@ -1114,14 +1113,16 @@ func (m *Map) planEncodeDepth(typeMetadata TypeMetadata, value any, depth int) E
 	// }
 	typeidMemo := m.memoizedEncodePlans[typeMetadata]
 	if typeidMemo == nil {
-		typeidMemo = make(map[reflect.Type][2]EncodePlan)
+		typeidMemo = make(map[reflect.Type]EncodePlan)
 		m.memoizedEncodePlans[typeMetadata] = typeidMemo
 	}
 
 	targetReflectType := reflect.TypeOf(value)
-	typeMemo := typeidMemo[targetReflectType]
-	plan := m.planEncode(typeMetadata, value, depth)
-	typeidMemo[targetReflectType] = typeMemo
+	plan := typeidMemo[targetReflectType]
+	if plan == nil {
+		plan = m.planEncode(typeMetadata, value, depth)
+		typeidMemo[targetReflectType] = plan
+	}
 
 	return plan
 }
@@ -1161,27 +1162,6 @@ func (m *Map) planEncode(typeMetadata TypeMetadata, value any, depth int) Encode
 	}
 
 	return nil
-}
-
-type encodePlanStringToAnyTextFormat struct{}
-
-func (encodePlanStringToAnyTextFormat) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	s := value.(string)
-	return append(buf, s...), nil
-}
-
-type encodePlanTextValuerToAnyTextFormat struct{}
-
-func (encodePlanTextValuerToAnyTextFormat) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	t, err := value.(TextValuer).TextValue()
-	if err != nil {
-		return nil, err
-	}
-	if !t.Valid {
-		return nil, nil
-	}
-
-	return append(buf, t.String...), nil
 }
 
 type encodePlanDriverValuer struct {

@@ -1221,18 +1221,9 @@ func (fbConn *FbConn) ExecTx(ctx context.Context, tx *FBTransaction, sql string)
 // sql is a SQL command string. It may only contain one query. Parameter substitution is positional using $1, $2, $3,
 // etc.
 //
-// paramValues are the parameter values. It must be encoded in the format given by paramFormats.
-//
 // paramTypeIDs is a slice of data type TypeIDs for paramValues. If paramTypeIDs is nil, the server will infer the data type for
 // all parameters. Any paramTypeID element that is 0 that will cause the server to infer the data type for that parameter.
 // ExecParams will panic if len(paramTypeIDs) is not 0, 1, or len(paramValues).
-//
-// paramFormats is a slice of format codes determining for each paramValue column whether it is encoded in text or
-// binary format. If paramFormats is nil all params are text format. ExecParams will panic if
-// len(paramFormats) is not 0, 1, or len(paramValues).
-//
-// resultFormats is a slice of format codes determining for each result column whether it is encoded in text or
-// binary format. If resultFormats is nil all results will be in text format.
 //
 // ResultReader must be closed before FbConn can be used again.
 func (fbConn *FbConn) ExecParams(ctx context.Context, sql string, paramValues [][]byte) *ResultReader {

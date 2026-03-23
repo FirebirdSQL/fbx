@@ -104,17 +104,7 @@ func TestMapScanNilIsNoOp(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestMapScanTextFormatInterfacePtr(t *testing.T) {
-	m := fbtype.NewMap()
-	var got any
-	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 0, 3, 0)
-	err := m.Scan(typeMetadata, []byte("foo"), &got)
-	require.NoError(t, err)
-	assert.Equal(t, "foo", got)
-}
-
 func TestMapScanBinaryFormatInterfacePtr(t *testing.T) {
-	t.Skip()
 	m := fbtype.NewMap()
 	var got any
 	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 0, 3, 0)
@@ -334,16 +324,6 @@ func (s databaseValuerFmtStringer) Value() (driver.Value, error) {
 
 func (s databaseValuerFmtStringer) String() string {
 	return "foobar"
-}
-
-func TestMapEncodeTextFormatDatabaseValuerThatIsFmtStringer(t *testing.T) {
-	t.Skip()
-	m := fbtype.NewMap()
-	src := databaseValuerFmtStringer("")
-	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 0, 0, 0)
-	buf, err := m.Encode(typeMetadata, src, nil)
-	require.NoError(t, err)
-	require.Nil(t, buf)
 }
 
 type databaseValuerStringFormat struct {
