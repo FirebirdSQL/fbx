@@ -25,7 +25,7 @@ type GetSSLPasswordFunc func(ctx context.Context) string
 const DefaultBlobBufferSize = 16384
 const DefaultFetchBatchSize = 400
 
-// Config is the settings used to establish a connection to a PostgreSQL server. It must be created by [ParseConfig]. A
+// Config contains settings used to establish a connection to a Firebird/RedDatabase server. It must be created by [ParseConfig] (or ParseConfigWithOptions). A
 // manually initialized Config will cause ConnectConfig to panic.
 type Config struct {
 	Host                       string // host (e.g. localhost) or absolute path to unix domain socket directory (e.g. /private/tmp)
@@ -64,20 +64,13 @@ type Config struct {
 
 	Fallbacks []*FallbackConfig
 
-	// ValidateConnect is called during a connection attempt after a successful authentication with the PostgreSQL server.
-	// It can be used to validate that the server is acceptable. If this returns an error the connection is closed and the next
-	// fallback config is tried. This allows implementing high availability behavior such as libpq does with target_session_attrs.
+	// ValidateConnect is called during a connection attempt after a successful authentication, before the connection is returned.
+	// If this returns an error the connection is closed and the next fallback config is tried. 
 	ValidateConnect ValidateConnectFunc
 
 	// AfterConnect is called after ValidateConnect. It can be used to set up the connection (e.g. Set session variables
 	// or prepare statements). If this returns an error the connection attempt fails.
 	AfterConnect AfterConnectFunc
-
-	// OnNotice is a callback function called when a notice response is received.
-	OnNotice NoticeHandler
-
-	// OnNotification is a callback function called when a notification from the LISTEN/NOTIFY system is received.
-	OnNotification NotificationHandler
 
 	// OnFbError is a callback function called when a Firebird error happened on server
 	OnFbError FbErrorHandler
@@ -88,19 +81,20 @@ type Config struct {
 	createdByParseConfig bool // Used to enforce created by ParseConfig rule.
 }
 
-// ParseConfigOptions contains options that control how a config is built such as GetSSLPassword.
+// ParseConfigOptions contains options that control how a config is built.
 type ParseConfigOptions struct {
-	// GetSSLPassword gets the password to decrypt a SSL client certificate. This is analogous to the libpq function
-	// PQsetSSLKeyPassHook_OpenSSL.
+	// GetSSLPassword returns the password to decrypt a client private key / certificate,
+	// when encrypted transport is used (if supported).
 	GetSSLPassword GetSSLPasswordFunc
 }
 
-// Copy returns a deep copy of the config that is safe to use and modify.
-// The only exception is the TLSConfig field:
-// according to the tls.Config docs it must not be modified after creation.
+// Copy returns a copy of the config that is safe to use and modify.
 func (c *Config) Copy() *Config {
 	newConf := new(Config)
 	*newConf = *c
+	if newConf.DPB != nil {
+		newConf.DPB = append([]byte(nil), c.DPB...)
+	}
 	if newConf.RuntimeParams != nil {
 		newConf.RuntimeParams = make(map[string]string, len(c.RuntimeParams))
 		for k, v := range c.RuntimeParams {
@@ -112,13 +106,23 @@ func (c *Config) Copy() *Config {
 		copy(newList, c.AuthPluginList)
 		newConf.AuthPluginList = newList
 	}
+	if len(newConf.Fallbacks) > 0 {
+		fbs := make([]*FallbackConfig, len(c.Fallbacks))
+		for i, fb := range c.Fallbacks {
+			if fb == nil {
+				continue
+			}
+			cp := *fb
+			fbs[i] = &cp
+		}
+		newConf.Fallbacks = fbs
+	}
 	return newConf
 }
 
-// FallbackConfig is additional settings to attempt a connection with when the primary Config fails to establish a
-// network connection. It is used for TLS fallback such as sslmode=prefer and high availability (HA) connections.
+// FallbackConfig contains additional host/port pairs to try when the primary address fails
 type FallbackConfig struct {
-	Host string // host (e.g. localhost) or path to unix domain socket directory (e.g. /private/tmp)
+	Host string // host (e.g. localhost) or absolute path (see NetworkAddress)
 	Port uint16
 }
 
@@ -148,8 +152,8 @@ func isAbsolutePath(path string) bool {
 	return strings.HasPrefix(path, "/") || isWindowsPath(path)
 }
 
-// NetworkAddress converts a PostgreSQL host and port into network and address suitable for use with
-// net.Dial.
+// NetworkAddress converts host and port into network and address suitable for use with net.Dial.
+// If host is an absolute path, it currently falls back to a local TCP connection to localhost:3050.
 func NetworkAddress(host string, port uint16) (network, address string) {
 	if isAbsolutePath(host) {
 		network = "tcp"
@@ -162,90 +166,41 @@ func NetworkAddress(host string, port uint16) (network, address string) {
 	return network, address
 }
 
-// ParseConfig builds a *Config from connString with similar behavior to the PostgreSQL standard C library libpq. It
-// uses the same defaults as libpq (e.g. port=5432) and understands most PG* environment variables. ParseConfig closely
-// matches the parsing behavior of libpq. connString may either be in URL format or keyword = value format. See
-// https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING for details. connString also may be empty
-// to only read from the environment. If a password is not supplied it will attempt to read the .pgpass file.
+// ParseConfig builds a *Config from connString.
 //
-//	# Example Keyword/Value
-//	user=jack password=secret host=pg.example.com port=5432 dbname=mydb sslmode=verify-ca
+// connString may be:
+// - URL format (firebird:// or firebirdsql://)
+// - keyword/value format (key=value pairs separated by spaces)
 //
-//	# Example URL
-//	postgres://jack:secret@pg.example.com:5432/mydb?sslmode=verify-ca
+// connString may also be empty to only read from the environment and defaults.
 //
-// The returned *Config may be modified. However, it is strongly recommended that any configuration that can be done
-// through the connection string be done there. In particular the fields Host, Port, TLSConfig, and Fallbacks can be
-// interdependent (e.g. TLSConfig needs knowledge of the host to validate the server certificate). These fields should
-// not be modified individually. They should all be modified or all left unchanged.
+// Defaults come from defaultSettings (e.g. host=localhost, port=3050).
 //
-// ParseConfig supports specifying multiple hosts in similar manner to libpq. Host and port may include comma separated
-// values that will be tried in order. This can be used as part of a high availability system. See
-// https://www.postgresql.org/docs/11/libpq-connect.html#LIBPQ-MULTIPLE-HOSTS for more information.
+// Examples:
 //
-//	# Example URL
-//	postgres://jack:secret@foo.example.com:5432,bar.example.com:5432/mydb
+//	# Keyword/Value
+//	user=sysdba password=masterkey host=localhost port=3050 database=employee.fdb
+// # URL
+//	firebird://sysdba:masterkey@localhost:3050/employee.fdb
 //
-// ParseConfig currently recognizes the following environment variable and their parameter key word equivalents passed
-// via database URL or keyword/value:
+// ParseConfig recognizes the following environment variables (and their equivalents in the connection string):
 //
-//	FBHOST
-//	FBPORT
-//	FBDATABASE
-//	FBUSER
-//	FBPASSWORD
-//	FBPASSFILE
-//	FBSERVICE
-//	FBSERVICEFILE
-//	FBSSLMODE
-//	FBSSLCERT
-//	FBSSLKEY
-//	FBSSLROOTCERT
-//	FBSSLPASSWORD
-//	FBOPTIONS
-//	FBAPPNAME
-//	FBCONNECT_TIMEOUT
+//	FBHOST, FBPORT, FBDATABASE, FBUSER, FBPASSWORD
+//	FBAPPNAME, FBTZ, FBCONNECT_TIMEOUT, FBFETCH_BATCH_SIZE
 //	FBTARGETSESSIONATTRS
-//	FBTZ
+//	FBSSLMODE, FBSSLKEY, FBSSLCERT, FBSSLROOTCERT, FBSSLPASSWORD, FBSSLSNI, FBSSLNEGOTIATION
+//	FBPASSFILE, FBSERVICE, FBSERVICEFILE, FBOPTIONS
 //
-// See http://www.postgresql.org/docs/11/static/libpq-envars.html for details on the meaning of environment variables.
+// Any unrecognized options are preserved in Config.RuntimeParams.
 //
-// See https://www.postgresql.org/docs/11/libpq-connect.html#LIBPQ-PARAMKEYWORDS for parameter key word names. They are
-// usually but not always the environment variable name downcased and without the "PG" prefix.
-//
-// Important Security Notes:
-//
-// ParseConfig tries to match libpq behavior with regard to PGSSLMODE. This includes defaulting to "prefer" behavior if
-// not set.
-//
-// See http://www.postgresql.org/docs/11/static/libpq-ssl.html#LIBPQ-SSL-PROTECTION for details on what level of
-// security each sslmode provides.
-//
-// The sslmode "prefer" (the default), sslmode "allow", and multiple hosts are implemented via the Fallbacks field of
-// the Config struct. If TLSConfig is manually changed it will not affect the fallbacks. For example, in the case of
-// sslmode "prefer" this means it will first try the main Config settings which use TLS, then it will try the fallback
-// which does not use TLS. This can lead to an unexpected unencrypted connection if the main TLS config is manually
-// changed later but the unencrypted fallback is present. Ensure there are no stale fallbacks when manually setting
-// TLSConfig.
-//
-// Other known differences with libpq:
-//
-// When multiple hosts are specified, libpq allows them to have different passwords set via the .pgpass file. fbconn
-// does not.
-//
-// In addition, ParseConfig accepts the following options:
-//
-//   - servicefile.
-//     libpq only reads servicefile from the PGSERVICEFILE environment variable. ParseConfig accepts servicefile as a
-//     part of the connection string.
+// Multiple hosts/ports may be specified using comma-separated values; they will be tried in order.
+// This is exposed via Config.Fallbacks and can be used for HA / failover.
 func ParseConfig(connString string) (*Config, error) {
 	var parseConfigOptions ParseConfigOptions
 	return ParseConfigWithOptions(connString, parseConfigOptions)
 }
 
-// ParseConfigWithOptions builds a *Config from connString and options with similar behavior to the PostgreSQL standard
-// C library libpq. options contains settings that cannot be specified in a connString such as providing a function to
-// get the SSL password.
+// ParseConfigWithOptions builds a *Config from connString and options
 func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Config, error) {
 	defaultSettings := defaultSettings()
 	envSettings := parseEnvSettings()
@@ -253,7 +208,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 	connStringSettings := make(map[string]string)
 	if connString != "" {
 		var err error
-		// connString may be a database URL or in PostgreSQL keyword/value format
+		// connString may be a database URL or in keyword/value format
 		if strings.HasPrefix(connString, "firebird://") || strings.HasPrefix(connString, "firebirdsql://") {
 			connStringSettings, err = parseURLSettings(connString)
 			if err != nil {
@@ -295,7 +250,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		OnFbError: func(_ *FbConn, fbErr *FbError) bool {
 			// we want to automatically close any fatal errors
 			// FIXME: fbx how to check if server error is fatal?
-			//if strings.EqualFold(pgErr.Severity, "FATAL") {
+			//if strings.EqualFold(fbErr.Severity, "FATAL") {
 			//	return false
 			//}
 			return true
@@ -377,7 +332,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		"client_version":                {},
 		"encoding":                      {},
 		"default_transaction_read_only": {},
-		"autotommit":                    {},
+		"autocommit":                    {},
 		"blob_buffer_size":              {},
 		"use_stream_blobs":              {},
 		"max_inline_blob_size":          {},
@@ -692,7 +647,7 @@ func parseKeywordValueSettings(s string) (map[string]string, error) {
 }
 
 func parseServiceSettings(servicefilePath, serviceName string) (map[string]string, error) {
-	//servicefile, err := pgservicefile.ReadServicefile(servicefilePath)
+	//servicefile, err := fbservicefile.ReadServicefile(servicefilePath)
 	//if err != nil {
 	//	return nil, fmt.Errorf("failed to read service file: %v", servicefilePath)
 	//}
@@ -860,7 +815,7 @@ func ValidateConnectTargetSessionAttrsPreferReplica(ctx context.Context, fbConn 
 // ValidateConnectTargetSessionAttrsStandby is a ValidateConnectFunc that implements libpq compatible
 // target_session_attrs=standby.
 //func ValidateConnectTargetSessionAttrsStandby(ctx context.Context, fbConn *FbConn) error {
-//	result, err := fbConn.Exec(ctx, "select pg_is_in_recovery()").ReadAll()
+//	result, err := fbConn.Exec(ctx, "select fb_is_in_recovery()").ReadAll()
 //	if err != nil {
 //		return err
 //	}
@@ -875,7 +830,7 @@ func ValidateConnectTargetSessionAttrsPreferReplica(ctx context.Context, fbConn 
 // ValidateConnectTargetSessionAttrsPrimary is a ValidateConnectFunc that implements libpq compatible
 // target_session_attrs=primary.
 //func ValidateConnectTargetSessionAttrsPrimary(ctx context.Context, fbConn *FbConn) error {
-//	result, err := fbConn.Exec(ctx, "select pg_is_in_recovery()").ReadAll()
+//	result, err := fbConn.Exec(ctx, "select fb_is_in_recovery()").ReadAll()
 //	if err != nil {
 //		return err
 //	}
@@ -890,7 +845,7 @@ func ValidateConnectTargetSessionAttrsPreferReplica(ctx context.Context, fbConn 
 // ValidateConnectTargetSessionAttrsPreferStandby is a ValidateConnectFunc that implements libpq compatible
 // target_session_attrs=prefer-standby.
 //func ValidateConnectTargetSessionAttrsPreferStandby(ctx context.Context, fbConn *FbConn) error {
-//	result, err := fbConn.Exec(ctx, "select pg_is_in_recovery()").ReadAll()
+//	result, err := fbConn.Exec(ctx, "select fb_is_in_recovery()").ReadAll()
 //	if err != nil {
 //		return err
 //	}

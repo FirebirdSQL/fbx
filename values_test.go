@@ -81,7 +81,7 @@ func TestTimestampTzTranscode(t *testing.T) {
 	})
 }
 
-// TODO - move these tests to pgtype
+// TODO - move these tests to fbtype
 
 func TestArrayDecoding(t *testing.T) {
 	t.Skip()
@@ -415,7 +415,7 @@ func TestEncodeTypeRename(t *testing.T) {
 		inBool := _bool(true)
 		var outBool _bool
 
-		// pgx.QueryExecModeExec requires all types to be registered.
+		// fbx.QueryExecModeExec requires all types to be registered.
 		conn.TypeMap().RegisterDefaultFbType(inInt, "integer")
 		conn.TypeMap().RegisterDefaultFbType(inInt8, "smallint")
 		conn.TypeMap().RegisterDefaultFbType(inInt16, "smallint")
@@ -523,7 +523,7 @@ select 1, 2 from rdb$database
 func TestScanIntoByteSlice(t *testing.T) {
 	t.Parallel()
 
-	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 	// Success cases
 	for _, tt := range []struct {
@@ -544,7 +544,7 @@ func TestScanIntoByteSlice(t *testing.T) {
 }
 
 func TestEncodeIntoNullField(t *testing.T) {
-	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 
 	rows, err := conn.Query(context.Background(), "select first_name from phone_list where ? is null", nil)

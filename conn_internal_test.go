@@ -29,7 +29,7 @@ func mustConnect(t testing.TB, config *ConnConfig) *Conn {
 func TestStmtCacheSizeLimit(t *testing.T) {
 	const cacheLimit = 16
 
-	connConfig := mustParseConfig(t, os.Getenv("PGX_TEST_DATABASE"))
+	connConfig := mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE"))
 	connConfig.StatementCacheCapacity = cacheLimit
 	conn := mustConnect(t, connConfig)
 	defer func() {

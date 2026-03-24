@@ -76,7 +76,7 @@ func (cr *connResource) getPoolRows(c *Conn, r fbx.Rows) *poolRows {
 // Pool allows for connection reuse.
 type Pool struct {
 	// 64 bit fields accessed with atomics must be at beginning of struct to guarantee alignment for certain 32-bit
-	// architectures. See BUGS section of https://pkg.go.dev/sync/atomic and https://github.com/jackc/pgx/issues/1288.
+	// architectures. See BUGS section of https://pkg.go.dev/sync/atomic
 	newConnsCount        int64
 	lifetimeDestroyCount int64
 	idleDestroyCount     int64
@@ -121,7 +121,7 @@ type ShouldPingParams struct {
 type Config struct {
 	ConnConfig *fbx.ConnConfig
 
-	// BeforeConnect is called before a new connection is made. It is passed a copy of the underlying pgx.ConnConfig and
+	// BeforeConnect is called before a new connection is made. It is passed a copy of the underlying fbx.ConnConfig and
 	// will not impact any existing open connections.
 	BeforeConnect func(context.Context, *fbx.ConnConfig) error
 
@@ -339,9 +339,11 @@ func NewWithConfig(ctx context.Context, config *Config) (*Pool, error) {
 	return p, nil
 }
 
-// ParseConfig builds a Config from connString. It parses connString with the same behavior as [pgx.ParseConfig] with the
-// addition of the following variables:
+// ParseConfig builds a Config from connString.
 //
+// It uses fbx.ParseConfig to parse Firebird/RedDatabase connection settings and additionally recognizes the following
+// pool-specific parameters (passed via URL query or keyword/value format):
+
 //   - pool_max_conns: integer greater than 0 (default 4)
 //   - pool_min_conns: integer 0 or greater (default 0)
 //   - pool_max_conn_lifetime: duration string (default 1 hour)
@@ -352,10 +354,10 @@ func NewWithConfig(ctx context.Context, config *Config) (*Pool, error) {
 // See Config for definitions of these arguments.
 //
 //	# Example Keyword/Value
-//	user=jack password=secret host=pg.example.com port=5432 dbname=mydb sslmode=verify-ca pool_max_conns=10 pool_max_conn_lifetime=1h30m
+//	user=jack password=secret host=fb.example.com port=3050 database=mydb pool_max_conns=10 pool_max_conn_lifetime=1h30m
 //
 //	# Example URL
-//	postgres://jack:secret@pg.example.com:5432/mydb?sslmode=verify-ca&pool_max_conns=10&pool_max_conn_lifetime=1h30m
+//	firebird://jack:secret@fb.example.com:3050/mydb?pool_max_conns=10&pool_max_conn_lifetime=1h30m
 func ParseConfig(connString string) (*Config, error) {
 	connConfig, err := fbx.ParseConfig(connString)
 	if err != nil {
@@ -722,12 +724,12 @@ func (p *Pool) Exec(ctx context.Context, sql string, arguments ...any) (fbconn.Q
 	return c.Exec(ctx, sql, arguments...)
 }
 
-// Query acquires a connection and executes a query that returns pgx.Rows.
+// Query acquires a connection and executes a query that returns fbx.Rows.
 // Arguments should be referenced positionally from the SQL string as $1, $2, etc.
-// See pgx.Rows documentation to close the returned Rows and return the acquired connection to the Pool.
+// See fbx.Rows documentation to close the returned Rows and return the acquired connection to the Pool.
 //
-// If there is an error, the returned pgx.Rows will be returned in an error state.
-// If preferred, ignore the error returned from Query and handle errors using the returned pgx.Rows.
+// If there is an error, the returned fbx.Rows will be returned in an error state.
+// If preferred, ignore the error returned from Query and handle errors using the returned fbx.Rows.
 func (p *Pool) Query(ctx context.Context, sql string, args ...any) (fbx.Rows, error) {
 	c, err := p.Acquire(ctx)
 	if err != nil {
@@ -763,15 +765,15 @@ func (p *Pool) QueryRow(ctx context.Context, sql string, args ...any) fbx.Row {
 
 // Begin acquires a connection from the Pool and starts a transaction. Unlike database/sql, the context only affects the begin command. i.e. there is no
 // auto-rollback on context cancellation. Begin initiates a transaction block without explicitly setting a transaction mode for the block (see BeginTx with TxOptions if transaction mode is required).
-// *fbxpool.Tx is returned, which implements the pgx.Tx interface.
+// *fbxpool.Tx is returned, which implements the fbx.Tx interface.
 // Commit or Rollback must be called on the returned transaction to finalize the transaction block.
 func (p *Pool) Begin(ctx context.Context) (fbx.Tx, error) {
 	return p.BeginTx(ctx, fbx.TxOptions{})
 }
 
-// BeginTx acquires a connection from the Pool and starts a transaction with pgx.TxOptions determining the transaction mode.
+// BeginTx acquires a connection from the Pool and starts a transaction with fbx.TxOptions determining the transaction mode.
 // Unlike database/sql, the context only affects the begin command. i.e. there is no auto-rollback on context cancellation.
-// *fbxpool.Tx is returned, which implements the pgx.Tx interface.
+// *fbxpool.Tx is returned, which implements the fbx.Tx interface.
 // Commit or Rollback must be called on the returned transaction to finalize the transaction block.
 func (p *Pool) BeginTx(ctx context.Context, txOptions fbx.TxOptions) (fbx.Tx, error) {
 	c, err := p.Acquire(ctx)

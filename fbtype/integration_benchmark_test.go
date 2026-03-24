@@ -1,4 +1,4 @@
-// Code generated from pgtype/integration_benchmark_test.go.erb. DO NOT EDIT.
+// Code generated from fbtype/integration_benchmark_test.go.erb. DO NOT EDIT.
 
 package fbtype_test
 
@@ -10,7 +10,7 @@ import (
 	"rdb.red-soft.ru/fbx/fbtype"
 )
 
-func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_int16_1_rows_1_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_int4_to_Go_int16_1_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]int16
@@ -27,7 +27,7 @@ func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_int16_1_rows_1_columns(b *test
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_int16_1_rows_1_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_int4_to_Go_int16_1_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]int16
@@ -44,7 +44,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_int16_1_rows_1_columns(b *te
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_int16_1_rows_10_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_int4_to_Go_int16_1_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]int16
@@ -61,7 +61,7 @@ func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_int16_1_rows_10_columns(b *tes
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_int16_1_rows_10_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_int4_to_Go_int16_1_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]int16
@@ -78,7 +78,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_int16_1_rows_10_columns(b *t
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_int16_10_rows_1_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_int4_to_Go_int16_10_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]int16
@@ -95,7 +95,7 @@ func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_int16_10_rows_1_columns(b *tes
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_int16_10_rows_1_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_int4_to_Go_int16_10_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]int16
@@ -112,7 +112,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_int16_10_rows_1_columns(b *t
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_int16_100_rows_10_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_int4_to_Go_int16_100_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]int16
@@ -129,7 +129,7 @@ func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_int16_100_rows_10_columns(b *t
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_int16_100_rows_10_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_int4_to_Go_int16_100_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]int16
@@ -146,7 +146,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_int16_100_rows_10_columns(b 
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_int32_1_rows_1_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_int4_to_Go_int32_1_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]int32
@@ -163,7 +163,7 @@ func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_int32_1_rows_1_columns(b *test
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_int32_1_rows_1_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_int4_to_Go_int32_1_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]int32
@@ -180,7 +180,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_int32_1_rows_1_columns(b *te
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_int32_1_rows_10_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_int4_to_Go_int32_1_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]int32
@@ -197,7 +197,7 @@ func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_int32_1_rows_10_columns(b *tes
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_int32_1_rows_10_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_int4_to_Go_int32_1_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]int32
@@ -214,7 +214,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_int32_1_rows_10_columns(b *t
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_int32_10_rows_1_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_int4_to_Go_int32_10_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]int32
@@ -231,7 +231,7 @@ func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_int32_10_rows_1_columns(b *tes
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_int32_10_rows_1_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_int4_to_Go_int32_10_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]int32
@@ -248,7 +248,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_int32_10_rows_1_columns(b *t
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_int32_100_rows_10_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_int4_to_Go_int32_100_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]int32
@@ -265,7 +265,7 @@ func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_int32_100_rows_10_columns(b *t
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_int32_100_rows_10_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_int4_to_Go_int32_100_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]int32
@@ -282,7 +282,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_int32_100_rows_10_columns(b 
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_int64_1_rows_1_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_int4_to_Go_int64_1_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]int64
@@ -299,7 +299,7 @@ func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_int64_1_rows_1_columns(b *test
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_int64_1_rows_1_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_int4_to_Go_int64_1_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]int64
@@ -316,7 +316,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_int64_1_rows_1_columns(b *te
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_int64_1_rows_10_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_int4_to_Go_int64_1_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]int64
@@ -333,7 +333,7 @@ func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_int64_1_rows_10_columns(b *tes
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_int64_1_rows_10_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_int4_to_Go_int64_1_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]int64
@@ -350,7 +350,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_int64_1_rows_10_columns(b *t
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_int64_10_rows_1_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_int4_to_Go_int64_10_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]int64
@@ -367,7 +367,7 @@ func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_int64_10_rows_1_columns(b *tes
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_int64_10_rows_1_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_int4_to_Go_int64_10_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]int64
@@ -384,7 +384,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_int64_10_rows_1_columns(b *t
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_int64_100_rows_10_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_int4_to_Go_int64_100_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]int64
@@ -401,7 +401,7 @@ func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_int64_100_rows_10_columns(b *t
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_int64_100_rows_10_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_int4_to_Go_int64_100_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]int64
@@ -418,7 +418,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_int64_100_rows_10_columns(b 
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_uint64_1_rows_1_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_int4_to_Go_uint64_1_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]uint64
@@ -435,7 +435,7 @@ func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_uint64_1_rows_1_columns(b *tes
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_uint64_1_rows_1_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_int4_to_Go_uint64_1_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]uint64
@@ -452,7 +452,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_uint64_1_rows_1_columns(b *t
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_uint64_1_rows_10_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_int4_to_Go_uint64_1_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]uint64
@@ -469,7 +469,7 @@ func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_uint64_1_rows_10_columns(b *te
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_uint64_1_rows_10_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_int4_to_Go_uint64_1_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]uint64
@@ -486,7 +486,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_uint64_1_rows_10_columns(b *
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_uint64_10_rows_1_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_int4_to_Go_uint64_10_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]uint64
@@ -503,7 +503,7 @@ func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_uint64_10_rows_1_columns(b *te
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_uint64_10_rows_1_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_int4_to_Go_uint64_10_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]uint64
@@ -520,7 +520,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_uint64_10_rows_1_columns(b *
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_uint64_100_rows_10_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_int4_to_Go_uint64_100_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]uint64
@@ -537,7 +537,7 @@ func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_uint64_100_rows_10_columns(b *
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_uint64_100_rows_10_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_int4_to_Go_uint64_100_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]uint64
@@ -554,7 +554,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_uint64_100_rows_10_columns(b
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_pgtype_Int4_1_rows_1_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_int4_to_Go_fbtype_Int4_1_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]fbtype.Int4
@@ -571,7 +571,7 @@ func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_pgtype_Int4_1_rows_1_columns(b
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_pgtype_Int4_1_rows_1_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_int4_to_Go_fbtype_Int4_1_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]fbtype.Int4
@@ -588,7 +588,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_pgtype_Int4_1_rows_1_columns
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_pgtype_Int4_1_rows_10_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_int4_to_Go_fbtype_Int4_1_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]fbtype.Int4
@@ -605,7 +605,7 @@ func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_pgtype_Int4_1_rows_10_columns(
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_pgtype_Int4_1_rows_10_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_int4_to_Go_fbtype_Int4_1_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]fbtype.Int4
@@ -622,7 +622,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_pgtype_Int4_1_rows_10_column
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_pgtype_Int4_10_rows_1_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_int4_to_Go_fbtype_Int4_10_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]fbtype.Int4
@@ -639,7 +639,7 @@ func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_pgtype_Int4_10_rows_1_columns(
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_pgtype_Int4_10_rows_1_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_int4_to_Go_fbtype_Int4_10_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]fbtype.Int4
@@ -656,7 +656,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_pgtype_Int4_10_rows_1_column
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_pgtype_Int4_100_rows_10_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_int4_to_Go_fbtype_Int4_100_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]fbtype.Int4
@@ -673,7 +673,7 @@ func BenchmarkQueryTextFormatDecode_PG_int4_to_Go_pgtype_Int4_100_rows_10_column
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_pgtype_Int4_100_rows_10_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_int4_to_Go_fbtype_Int4_100_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]fbtype.Int4
@@ -690,7 +690,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_int4_to_Go_pgtype_Int4_100_rows_10_colu
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_numeric_to_Go_int64_1_rows_1_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_numeric_to_Go_int64_1_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]int64
@@ -707,7 +707,7 @@ func BenchmarkQueryTextFormatDecode_PG_numeric_to_Go_int64_1_rows_1_columns(b *t
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_numeric_to_Go_int64_1_rows_1_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_numeric_to_Go_int64_1_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]int64
@@ -724,7 +724,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_numeric_to_Go_int64_1_rows_1_columns(b 
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_numeric_to_Go_int64_1_rows_10_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_numeric_to_Go_int64_1_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]int64
@@ -741,7 +741,7 @@ func BenchmarkQueryTextFormatDecode_PG_numeric_to_Go_int64_1_rows_10_columns(b *
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_numeric_to_Go_int64_1_rows_10_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_numeric_to_Go_int64_1_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]int64
@@ -758,7 +758,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_numeric_to_Go_int64_1_rows_10_columns(b
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_numeric_to_Go_int64_10_rows_1_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_numeric_to_Go_int64_10_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]int64
@@ -775,7 +775,7 @@ func BenchmarkQueryTextFormatDecode_PG_numeric_to_Go_int64_10_rows_1_columns(b *
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_numeric_to_Go_int64_10_rows_1_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_numeric_to_Go_int64_10_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]int64
@@ -792,7 +792,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_numeric_to_Go_int64_10_rows_1_columns(b
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_numeric_to_Go_int64_100_rows_10_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_numeric_to_Go_int64_100_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]int64
@@ -809,7 +809,7 @@ func BenchmarkQueryTextFormatDecode_PG_numeric_to_Go_int64_100_rows_10_columns(b
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_numeric_to_Go_int64_100_rows_10_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_numeric_to_Go_int64_100_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]int64
@@ -826,7 +826,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_numeric_to_Go_int64_100_rows_10_columns
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_numeric_to_Go_float64_1_rows_1_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_numeric_to_Go_float64_1_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]float64
@@ -843,7 +843,7 @@ func BenchmarkQueryTextFormatDecode_PG_numeric_to_Go_float64_1_rows_1_columns(b 
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_numeric_to_Go_float64_1_rows_1_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_numeric_to_Go_float64_1_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]float64
@@ -860,7 +860,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_numeric_to_Go_float64_1_rows_1_columns(
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_numeric_to_Go_float64_1_rows_10_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_numeric_to_Go_float64_1_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]float64
@@ -877,7 +877,7 @@ func BenchmarkQueryTextFormatDecode_PG_numeric_to_Go_float64_1_rows_10_columns(b
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_numeric_to_Go_float64_1_rows_10_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_numeric_to_Go_float64_1_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]float64
@@ -894,7 +894,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_numeric_to_Go_float64_1_rows_10_columns
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_numeric_to_Go_float64_10_rows_1_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_numeric_to_Go_float64_10_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]float64
@@ -911,7 +911,7 @@ func BenchmarkQueryTextFormatDecode_PG_numeric_to_Go_float64_10_rows_1_columns(b
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_numeric_to_Go_float64_10_rows_1_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_numeric_to_Go_float64_10_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]float64
@@ -928,7 +928,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_numeric_to_Go_float64_10_rows_1_columns
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_numeric_to_Go_float64_100_rows_10_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_numeric_to_Go_float64_100_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]float64
@@ -945,7 +945,7 @@ func BenchmarkQueryTextFormatDecode_PG_numeric_to_Go_float64_100_rows_10_columns
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_numeric_to_Go_float64_100_rows_10_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_numeric_to_Go_float64_100_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]float64
@@ -962,7 +962,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_numeric_to_Go_float64_100_rows_10_colum
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_numeric_to_Go_pgtype_Numeric_1_rows_1_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_numeric_to_Go_fbtype_Numeric_1_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]fbtype.Numeric
@@ -979,7 +979,7 @@ func BenchmarkQueryTextFormatDecode_PG_numeric_to_Go_pgtype_Numeric_1_rows_1_col
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_numeric_to_Go_pgtype_Numeric_1_rows_1_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_numeric_to_Go_fbtype_Numeric_1_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]fbtype.Numeric
@@ -996,7 +996,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_numeric_to_Go_pgtype_Numeric_1_rows_1_c
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_numeric_to_Go_pgtype_Numeric_1_rows_10_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_numeric_to_Go_fbtype_Numeric_1_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]fbtype.Numeric
@@ -1013,7 +1013,7 @@ func BenchmarkQueryTextFormatDecode_PG_numeric_to_Go_pgtype_Numeric_1_rows_10_co
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_numeric_to_Go_pgtype_Numeric_1_rows_10_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_numeric_to_Go_fbtype_Numeric_1_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]fbtype.Numeric
@@ -1030,7 +1030,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_numeric_to_Go_pgtype_Numeric_1_rows_10_
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_numeric_to_Go_pgtype_Numeric_10_rows_1_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_numeric_to_Go_fbtype_Numeric_10_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]fbtype.Numeric
@@ -1047,7 +1047,7 @@ func BenchmarkQueryTextFormatDecode_PG_numeric_to_Go_pgtype_Numeric_10_rows_1_co
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_numeric_to_Go_pgtype_Numeric_10_rows_1_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_numeric_to_Go_fbtype_Numeric_10_rows_1_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [1]fbtype.Numeric
@@ -1064,7 +1064,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_numeric_to_Go_pgtype_Numeric_10_rows_1_
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_numeric_to_Go_pgtype_Numeric_100_rows_10_columns(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_numeric_to_Go_fbtype_Numeric_100_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]fbtype.Numeric
@@ -1081,7 +1081,7 @@ func BenchmarkQueryTextFormatDecode_PG_numeric_to_Go_pgtype_Numeric_100_rows_10_
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_numeric_to_Go_pgtype_Numeric_100_rows_10_columns(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_numeric_to_Go_fbtype_Numeric_100_rows_10_columns(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v [10]fbtype.Numeric
@@ -1098,7 +1098,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_numeric_to_Go_pgtype_Numeric_100_rows_1
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_Int4Array_With_Go_Int4Array_10(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_Int4Array_With_Go_Int4Array_10(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v []int32
@@ -1115,7 +1115,7 @@ func BenchmarkQueryTextFormatDecode_PG_Int4Array_With_Go_Int4Array_10(b *testing
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_Int4Array_With_Go_Int4Array_10(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_Int4Array_With_Go_Int4Array_10(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v []int32
@@ -1132,7 +1132,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_Int4Array_With_Go_Int4Array_10(b *testi
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_Int4Array_With_Go_Int4Array_100(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_Int4Array_With_Go_Int4Array_100(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v []int32
@@ -1149,7 +1149,7 @@ func BenchmarkQueryTextFormatDecode_PG_Int4Array_With_Go_Int4Array_100(b *testin
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_Int4Array_With_Go_Int4Array_100(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_Int4Array_With_Go_Int4Array_100(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v []int32
@@ -1166,7 +1166,7 @@ func BenchmarkQueryBinaryFormatDecode_PG_Int4Array_With_Go_Int4Array_100(b *test
 	})
 }
 
-func BenchmarkQueryTextFormatDecode_PG_Int4Array_With_Go_Int4Array_1000(b *testing.B) {
+func BenchmarkQueryTextFormatDecode_FB_Int4Array_With_Go_Int4Array_1000(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v []int32
@@ -1183,7 +1183,7 @@ func BenchmarkQueryTextFormatDecode_PG_Int4Array_With_Go_Int4Array_1000(b *testi
 	})
 }
 
-func BenchmarkQueryBinaryFormatDecode_PG_Int4Array_With_Go_Int4Array_1000(b *testing.B) {
+func BenchmarkQueryBinaryFormatDecode_FB_Int4Array_With_Go_Int4Array_1000(b *testing.B) {
 	defaultConnTestRunner.RunTest(context.Background(), b, func(ctx context.Context, _ testing.TB, conn *fbx.Conn) {
 		b.ResetTimer()
 		var v []int32

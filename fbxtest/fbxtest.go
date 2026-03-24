@@ -107,7 +107,7 @@ func RunValueRoundTripTests(
 	t testing.TB,
 	ctr ConnTestRunner,
 	modes []fbx.QueryExecMode,
-	pgTypeName string,
+	fbTypeName string,
 	tests []ValueRoundTripTest,
 ) {
 	t.Helper()
@@ -119,7 +119,7 @@ func RunValueRoundTripTests(
 	ctr.RunTest(ctx, t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		t.Helper()
 
-		sql := fmt.Sprintf("select cast(? as %s) from rdb$database", pgTypeName)
+		sql := fmt.Sprintf("select cast(? as %s) from rdb$database", fbTypeName)
 
 		for i, tt := range tests {
 			for _, mode := range modes {

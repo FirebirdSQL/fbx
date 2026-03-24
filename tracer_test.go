@@ -241,8 +241,6 @@ func TestTraceConnect(t *testing.T) {
 }
 
 // Ensure tracer runs within a transaction.
-//
-// https://github.com/jackc/pgx/issues/2304
 func TestTraceWithinTx(t *testing.T) {
 	t.Parallel()
 
