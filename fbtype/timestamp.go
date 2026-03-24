@@ -116,14 +116,6 @@ type TimestampCodec struct {
 	ScanLocation *time.Location
 }
 
-func (*TimestampCodec) FormatSupported(format int16) bool {
-	return format == TextFormatCode || format == BinaryFormatCode
-}
-
-func (*TimestampCodec) PreferredFormat() int16 {
-	return BinaryFormatCode
-}
-
 func (*TimestampCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	switch value.(type) {
 	case TimestampValuer:

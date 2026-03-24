@@ -59,16 +59,16 @@ type FbWarningHandler func(*FbConn, *FbWarning)
 
 // FbConn is a low-level FirebirdSQL connection handle. It is not safe for concurrent usage.
 type FbConn struct {
-	conn              net.Conn
-	secretKey         uint32            // key to use to send a cancel query message to the server
-	txStatus          byte
-	client            *fbproto.Client
-	wireCrypt         *wirecrypt.Manager
-	bgReader          *bgreader.BGReader
-	writer            *bufio.Writer
-	slowWriteTimer    *time.Timer
-	bgReaderStarted   chan struct{}
-	dbHandle          int
+	conn            net.Conn
+	secretKey       uint32 // key to use to send a cancel query message to the server
+	txStatus        byte
+	client          *fbproto.Client
+	wireCrypt       *wirecrypt.Manager
+	bgReader        *bgreader.BGReader
+	writer          *bufio.Writer
+	slowWriteTimer  *time.Timer
+	bgReaderStarted chan struct{}
+	dbHandle        int
 
 	customData map[string]any
 
@@ -654,7 +654,7 @@ connectLoop:
 }
 
 // ReceiveMessage receives one wire protocol message from the server. It must only be used when the
-// connection is not busy. e.g. It is an error to call ReceiveMessage while reading the result of a query. 
+// connection is not busy. e.g. It is an error to call ReceiveMessage while reading the result of a query.
 func (fbConn *FbConn) ReceiveMessage(ctx context.Context) (fbproto.ServerMessage, error) {
 	if err := fbConn.lock(); err != nil {
 		return nil, err
@@ -927,7 +927,6 @@ func (ct QueryStatus) DDL() bool {
 type FieldDescription struct {
 	Index             int
 	Type              uint32
-	Format            int16 // 0 - text, 1 - binary
 	Scale             int32
 	Subtype           int32
 	Length            uint32
@@ -947,7 +946,6 @@ func (fbConn *FbConn) convertRowDescription(src []fbproto.FieldDescriptor) []Fie
 	for i := range src {
 		res[i].Index = src[i].Index
 		res[i].Type = uint32(src[i].Type)
-		res[i].Format = src[i].Format
 		res[i].Scale = int32(src[i].Scale)
 		res[i].Subtype = int32(src[i].Subtype)
 		res[i].Length = uint32(src[i].Length)
@@ -1180,7 +1178,7 @@ func (fbConn *FbConn) ExecTx(ctx context.Context, tx *FBTransaction, sql string)
 
 // ExecParams executes a single SQL statement with already-encoded parameter values.
 //
-// sql is a SQL command string. It may only contain one query. 
+// sql is a SQL command string. It may only contain one query.
 // Parameters are positional; the placeholder syntax is defined by the SQL dialect supported by the server.
 //
 // paramValues are parameter values encoded for the wire protocol / statement parameter layout.

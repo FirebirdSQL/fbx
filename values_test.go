@@ -527,19 +527,16 @@ func TestScanIntoByteSlice(t *testing.T) {
 	defer closeConn(t, conn)
 	// Success cases
 	for _, tt := range []struct {
-		name             string
-		sql              string
-		resultFormatCode int16
-		output           []byte
+		name   string
+		sql    string
+		output []byte
 	}{
-		{"int - text", "select 42 from rdb$database", fbx.TextFormatCode, []byte("42")},
-		{"int - binary", "select 42 from rdb$database", fbx.BinaryFormatCode, []byte("42")},
-		{"text - text", "select cast('hi' as varchar(2)) from rdb$database", fbx.TextFormatCode, []byte("hi")},
-		{"text - binary", "select cast('hi' as varchar(2)) from rdb$database", fbx.BinaryFormatCode, []byte("hi")},
+		{"int - binary", "select 42 from rdb$database", []byte("42")},
+		{"text - binary", "select cast('hi' as varchar(2)) from rdb$database", []byte("hi")},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf []byte
-			err := conn.QueryRow(context.Background(), tt.sql, fbx.QueryResultFormats{tt.resultFormatCode}).Scan(&buf)
+			err := conn.QueryRow(context.Background(), tt.sql).Scan(&buf)
 			require.NoError(t, err)
 			require.Equal(t, tt.output, buf)
 		})

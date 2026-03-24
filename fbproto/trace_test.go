@@ -66,8 +66,7 @@ C\tInfoSQL stmt=2 maxBuf=64 lenItems=1
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=2 blobId=0 lenData=33 gdsCodes=0
 C\tCommit
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=0 blobId=0 lenData=0 gdsCodes=0
-`,
-	`\t`, "\t")
+`, `\t`, "\t")
 
 var expectedFullLogTraceSnapshotV5 = strings.ReplaceAll(`C\tBeginTx tpb=''
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 data='' gdsCodes=0
@@ -77,7 +76,7 @@ S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlSta
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=4 blobId=0 lenData=1 data='\x01' gdsCodes=0
 C\tInfoSQL stmt=2 maxBuf=524288 lenItems=26 items='\x14\x02\x00\x00\x15\x04\x07\x09\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x08\x05\x07\x09\x0b\x0c\x0d\x0e\x08'
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=2 blobId=0 lenData=138 data='\x15\x04\x00\x01\x00\x00\x00\x04\x07\x04\x00\x01\x00\x00\x00\x09\x04\x00\x01\x00\x00\x00\x0b\x04\x00\xf0\x01\x00\x00\x0c\x04\x00\x00\x00\x00\x00\x0d\x04\x00\x00\x00\x00\x00\x0e\x04\x00\x04\x00\x00\x00\x0f\x04\x00\x00\x00\x00\x00\x10\x08\x00CONSTANT\x11\x00\x00\x12\x00\x00\x13\x0f\x00GENERATE_SERIES\x08\x05\x07\x04\x00\x01\x00\x00\x00\x09\x04\x00\x01\x00\x00\x00\x0b\x04\x00\xf0\x01\x00\x00\x0c\x04\x00\x00\x00\x00\x00\x0d\x04\x00\x00\x00\x00\x00\x0e\x04\x00\x04\x00\x00\x00\x08\x01' gdsCodes=0
-C\tExecute kind=63 stmt=2 tx=1 inBLR=12 outBLR=0 lenParameters=1 sqldata:4 '\x00\x00\x00\x03' lenParamDes=1 paramsdesc:1 496 1 0 0 4 false "" "" "" "" "" "" false timeout=0 cursorFlags=0 inlineBlobSize=65536
+C\tExecute kind=63 stmt=2 tx=1 inBLR=12 outBLR=0 lenParameters=1 sqldata:4 '\x00\x00\x00\x03' lenParamDes=1 paramsdesc:1 496 0 0 4 false "" "" "" "" "" "" false timeout=0 cursorFlags=0 inlineBlobSize=65536
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 data='' gdsCodes=0
 C\tFetch stmt=2 msgs=400 lenRowBLR=12 rowBLR='\x05\x02\x04\x00\x02\x00\x08\x00\x07\x00\xffL'
 S\tFetchResponse status=0 msgs=1
@@ -101,7 +100,7 @@ S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlSta
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=4 blobId=0 lenData=1 data='\x01' gdsCodes=0
 C\tInfoSQL stmt=2 maxBuf=524288 lenItems=26 items='\x14\x02\x00\x00\x15\x04\x07\x09\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x08\x05\x07\x09\x0b\x0c\x0d\x0e\x08'
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=2 blobId=0 lenData=138 data='\x15\x04\x00\x01\x00\x00\x00\x04\x07\x04\x00\x01\x00\x00\x00\x09\x04\x00\x01\x00\x00\x00\x0b\x04\x00\xf0\x01\x00\x00\x0c\x04\x00\x00\x00\x00\x00\x0d\x04\x00\x00\x00\x00\x00\x0e\x04\x00\x04\x00\x00\x00\x0f\x04\x00\x00\x00\x00\x00\x10\x08\x00CONSTANT\x11\x00\x00\x12\x00\x00\x13\x0f\x00GENERATE_SERIES\x08\x05\x07\x04\x00\x01\x00\x00\x00\x09\x04\x00\x01\x00\x00\x00\x0b\x04\x00\xf0\x01\x00\x00\x0c\x04\x00\x00\x00\x00\x00\x0d\x04\x00\x00\x00\x00\x00\x0e\x04\x00\x04\x00\x00\x00\x08\x01' gdsCodes=0
-C\tExecute kind=63 stmt=2 tx=1 inBLR=12 outBLR=0 lenParameters=1 sqldata:4 '\x00\x00\x00\x03' lenParamDes=1 paramsdesc:1 496 1 0 0 4 false "" "" "" "" "" "" false timeout=0 cursorFlags=0
+C\tExecute kind=63 stmt=2 tx=1 inBLR=12 outBLR=0 lenParameters=1 sqldata:4 '\x00\x00\x00\x03' lenParamDes=1 paramsdesc:1 496 0 0 4 false "" "" "" "" "" "" false timeout=0 cursorFlags=0
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 data='' gdsCodes=0
 C\tFetch stmt=2 msgs=400 lenRowBLR=12 rowBLR='\x05\x02\x04\x00\x02\x00\x08\x00\x07\x00\xffL'
 S\tFetchResponse status=0 msgs=1
@@ -150,7 +149,7 @@ S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlSta
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=4 blobId=0 lenData=1 data='\x01' gdsCodes=0
 C\tInfoSQL stmt=2 maxBuf=524288 lenItems=26 items='\x14\x02\x00\x00\x15\x04\x07\x09\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x08\x05\x07\x09\x0b\x0c\x0d\x0e\x08'
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=2 blobId=0 lenData=130 data='\x15\x04\x00\x01\x00\x00\x00\x04\x07\x04\x00\x01\x00\x00\x00\x09\x04\x00\x01\x00\x00\x00\x0b\x04\x00\xf0\x01\x00\x00\x0c\x04\x00\x00\x00\x00\x00\x0d\x04\x00\x00\x00\x00\x00\x0e\x04\x00\x04\x00\x00\x00\x0f\x04\x00\x00\x00\x00\x00\x10\x00\x00\x11\x00\x00\x12\x00\x00\x13\x0f\x00GENERATE_SERIES\x08\x05\x07\x04\x00\x01\x00\x00\x00\x09\x04\x00\x01\x00\x00\x00\x0b\x04\x00\xf0\x01\x00\x00\x0c\x04\x00\x00\x00\x00\x00\x0d\x04\x00\x00\x00\x00\x00\x0e\x04\x00\x04\x00\x00\x00\x08\x01' gdsCodes=0
-C\tExecute kind=63 stmt=2 tx=1 inBLR=12 outBLR=0 lenParameters=1 sqldata:4 '\x00\x00\x00\x03' lenParamDes=1 paramsdesc:1 496 1 0 0 4 false "" "" "" "" "" "" false
+C\tExecute kind=63 stmt=2 tx=1 inBLR=12 outBLR=0 lenParameters=1 sqldata:4 '\x00\x00\x00\x03' lenParamDes=1 paramsdesc:1 496 0 0 4 false "" "" "" "" "" "" false
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 data='' gdsCodes=0
 C\tFetch stmt=2 msgs=400 lenRowBLR=12 rowBLR='\x05\x02\x04\x00\x02\x00\x08\x00\x07\x00\xffL'
 S\tFetchResponse status=0 msgs=1

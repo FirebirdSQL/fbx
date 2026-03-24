@@ -83,14 +83,6 @@ func (dst *Text) UnmarshalJSON(b []byte) error {
 
 type TextCodec struct{}
 
-func (TextCodec) FormatSupported(format int16) bool {
-	return format == TextFormatCode || format == BinaryFormatCode
-}
-
-func (TextCodec) PreferredFormat() int16 {
-	return TextFormatCode
-}
-
 func (TextCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	charsetId := CharacterSetForType(typeMetadata.TypeID, typeMetadata.SubType, typeMetadata.Scale)
 	name, err := fbproto.CharacterSetIdIntoName(charsetId)
@@ -102,18 +94,15 @@ func (TextCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) Encode
 		return nil
 	}
 
-	switch typeMetadata.FormatCode {
-	case TextFormatCode, BinaryFormatCode:
-		switch value.(type) {
-		case string:
-			return encodePlanTextCodecString{encoding: encoding, length: typeMetadata.Length}
-		case []byte:
-			return encodePlanTextCodecByteSlice{encoding: encoding, length: typeMetadata.Length}
-		case fmt.Stringer:
-			return encodePlanTextCodecStringer{encoding: encoding, length: typeMetadata.Length}
-		case TextValuer:
-			return encodePlanTextCodecTextValuer{encoding: encoding, length: typeMetadata.Length}
-		}
+	switch value.(type) {
+	case string:
+		return encodePlanTextCodecString{encoding: encoding, length: typeMetadata.Length}
+	case []byte:
+		return encodePlanTextCodecByteSlice{encoding: encoding, length: typeMetadata.Length}
+	case fmt.Stringer:
+		return encodePlanTextCodecStringer{encoding: encoding, length: typeMetadata.Length}
+	case TextValuer:
+		return encodePlanTextCodecTextValuer{encoding: encoding, length: typeMetadata.Length}
 	}
 
 	return nil
@@ -196,18 +185,15 @@ func (TextCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPla
 		return nil
 	}
 
-	switch typeMetadata.FormatCode {
-	case TextFormatCode, BinaryFormatCode:
-		switch target.(type) {
-		case *string:
-			return scanPlanTextAnyToString{encoding: encoding, length: typeMetadata.Length, typeId: typeMetadata.TypeID}
-		case *[]byte:
-			return scanPlanAnyToNewByteSlice{encoding: encoding, length: typeMetadata.Length, typeId: typeMetadata.TypeID}
-		case BytesScanner:
-			return scanPlanAnyToByteScanner{encoding: encoding, length: typeMetadata.Length, typeId: typeMetadata.TypeID}
-		case TextScanner:
-			return scanPlanTextAnyToTextScanner{encoding: encoding, length: typeMetadata.Length, typeId: typeMetadata.TypeID}
-		}
+	switch target.(type) {
+	case *string:
+		return scanPlanTextAnyToString{encoding: encoding, length: typeMetadata.Length, typeId: typeMetadata.TypeID}
+	case *[]byte:
+		return scanPlanAnyToNewByteSlice{encoding: encoding, length: typeMetadata.Length, typeId: typeMetadata.TypeID}
+	case BytesScanner:
+		return scanPlanAnyToByteScanner{encoding: encoding, length: typeMetadata.Length, typeId: typeMetadata.TypeID}
+	case TextScanner:
+		return scanPlanTextAnyToTextScanner{encoding: encoding, length: typeMetadata.Length, typeId: typeMetadata.TypeID}
 	}
 
 	return nil

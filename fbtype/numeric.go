@@ -257,14 +257,6 @@ func (n Numeric) numberTextBytes() []byte {
 
 type NumericCodec struct{}
 
-func (NumericCodec) FormatSupported(format int16) bool {
-	return format == TextFormatCode || format == BinaryFormatCode
-}
-
-func (NumericCodec) PreferredFormat() int16 {
-	return BinaryFormatCode
-}
-
 func (NumericCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	switch value.(type) {
 	case NumericValuer:

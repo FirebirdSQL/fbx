@@ -34,7 +34,7 @@ type ConnConfig struct {
 	// "cache_describe" query exec mode.
 	DescriptionCacheCapacity int
 
-	// DefaultQueryExecMode controls the default mode for executing queries. By default fbx prepares statements and 
+	// DefaultQueryExecMode controls the default mode for executing queries. By default fbx prepares statements and
 	// may cache statement/description metadata to reduce round trips and parsing overhead.
 	DefaultQueryExecMode QueryExecMode
 
@@ -583,20 +583,11 @@ const (
 	// number of columns returned by a "SELECT *" changes or the type of a column is changed.
 	QueryExecModeCacheStatement
 
-	// Assume the Firebird query parameter types based on the Go type of the arguments. This uses the extended protocol
-	// with text formatted parameters and results. Queries are executed in a single round trip. Type mappings can be
+	// Assume the Firebird query parameter types based on the Go type of the arguments.
+	// Queries are executed in a single round trip. Type mappings can be
 	// registered with fbtype.Map.RegisterDefaultFbType. Queries will be rejected that have arguments that are
 	// unregistered or ambiguous. e.g. A map[string]string may have the Firebird type json or hstore. Modes that know
 	// the Firebird type can use a map[string]string directly as an argument. This mode cannot.
-	//
-	// On rare occasions user defined types may behave differently when encoded in the text format instead of the binary
-	// format. For example, this could happen if a "type RomanNumeral int32" implements fmt.Stringer to format integers as
-	// Roman numerals (e.g. 7 is VII). The binary format would properly encode the integer 7 as the binary value for 7.
-	// But the text format would encode the integer 7 as the string "VII". As QueryExecModeExec uses the text format, it
-	// is possible that changing query mode from another mode to QueryExecModeExec could change the behavior of the query.
-	// This should not occur with types fbx supports directly and can be avoided by registering the types with
-	// fbtype.Map.RegisterDefaultFbType and implementing the appropriate type interfaces. In the cas of RomanNumeral, it
-	// should implement fbtype.Int64Valuer.
 	QueryExecModeExec
 )
 
@@ -610,12 +601,6 @@ func (m QueryExecMode) String() string {
 		return "invalid"
 	}
 }
-
-// QueryResultFormats controls the result format (text=0, binary=1) of a query by result column position.
-type QueryResultFormats []int16
-
-// QueryResultFormatsByTypeID controls the result format (text=0, binary=1) of a query by the result column TypeID.
-type QueryResultFormatsByTypeID map[uint32]int16
 
 // QueryRewriter rewrites a query when used as the first arguments to a query method.
 type QueryRewriter interface {
@@ -639,10 +624,6 @@ type QueryRewriter interface {
 //
 // An implementor of QueryRewriter may be passed as the first element of args. It can rewrite the sql and change or
 // replace args. For example, NamedArgs is QueryRewriter that implements named arguments.
-//
-// For extra control over how the query is executed, the types QueryExecMode, QueryResultFormats, and
-// QueryResultFormatsByTypeID may be used as the first args to control exactly how the query is executed. This is rarely
-// needed. See the documentation for those types for details.
 func (c *Conn) Query(ctx context.Context, sql string, args ...any) (Rows, error) {
 	return c.queryTx(ctx, nil, sql, args...)
 }
@@ -664,10 +645,6 @@ func (c *Conn) queryTx(ctx context.Context, tx *dbTx, sql string, args ...any) (
 optionLoop:
 	for len(args) > 0 {
 		switch arg := args[0].(type) {
-		case QueryResultFormats:
-			args = args[1:]
-		case QueryResultFormatsByTypeID:
-			args = args[1:]
 		case QueryExecMode:
 			mode = arg
 			args = args[1:]

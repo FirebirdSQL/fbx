@@ -83,7 +83,7 @@ func (t Time) Value() (driver.Value, error) {
 		return nil, nil
 	}
 
-	typeMetadata := NewTypeMetadata(0, 0, 0, 0, TextFormatCode)
+	typeMetadata := NewTypeMetadata(0, 0, 0, 0)
 	buf, err := TimeCodec{}.PlanEncode(nil, typeMetadata, t).Encode(t, nil)
 	if err != nil {
 		return nil, err
@@ -92,14 +92,6 @@ func (t Time) Value() (driver.Value, error) {
 }
 
 type TimeCodec struct{}
-
-func (TimeCodec) FormatSupported(format int16) bool {
-	return format == TextFormatCode || format == BinaryFormatCode
-}
-
-func (TimeCodec) PreferredFormat() int16 {
-	return BinaryFormatCode
-}
 
 func (TimeCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	switch value.(type) {

@@ -121,7 +121,6 @@ func (p *StatementInfo) feedDescriptors(r *ServerInfoBufferReader) error {
 				return err
 			}
 		case fbproto.Isc_info_sql_describe_end:
-			field.Format = FbTypeIntoFormat(field.Type, field.Subtype)
 			*p.currentDescriptor = append(*p.currentDescriptor, field)
 		case fbproto.Isc_info_sql_null_ind:
 			var nullOk int
@@ -135,17 +134,6 @@ func (p *StatementInfo) feedDescriptors(r *ServerInfoBufferReader) error {
 			return fmt.Errorf("unknown descriptor info item: %d", item)
 		}
 	}
-}
-
-func FbTypeIntoFormat(fbtype int, subtype int) int16 {
-	switch fbtype {
-	case fbproto.SQL_TYPE_VARYING, fbproto.SQL_TYPE_TEXT:
-		if (subtype & 0xFF) == fbproto.CS_BINARY { //OCTETS
-			return 1
-		}
-		return 0
-	}
-	return 1
 }
 
 func (p *StatementInfo) GetRowBlr() []byte {

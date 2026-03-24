@@ -126,7 +126,7 @@ func TestForEachRowScanError(t *testing.T) {
 			actualResults = append(actualResults, []any{a, b})
 			return nil
 		})
-		require.Contains(t, err.Error(), "cannot scan text (type id 452) with subtype 4 in text format into *int")
+		require.Contains(t, err.Error(), "can't scan into dest[0] (col: CONSTANT): cannot scan text (type id 452) with subtype 4 into *int")
 		require.Equal(t, fbconn.QueryStatus{}, ct)
 	})
 }
