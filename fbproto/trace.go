@@ -62,6 +62,8 @@ func (t *tracer) traceRequest(sender byte, msg ClientMessage) {
 		t.traceCloseBlobMessage(sender, msg)
 	case *OpCancelBlob:
 		t.traceCancelBlobMessage(sender, msg)
+	case *OpCancel:
+		t.traceCancelMessage(sender, msg)
 	case *OpSeekBlob:
 		t.traceSeekBlobMessage(sender, msg)
 	case *OpInfoBlob:
@@ -181,6 +183,24 @@ func (t *tracer) traceCloseBlobMessage(sender byte, msg *OpCloseBlob) {
 func (t *tracer) traceCancelBlobMessage(sender byte, msg *OpCancelBlob) {
 	t.writeTrace(sender, "CancelBlob", func() {
 		fmt.Fprintf(t.buf, " handle=%d", msg.BlobHandle)
+	})
+}
+
+func (t *tracer) traceCancelMessage(sender byte, msg *OpCancel) {
+	t.writeTrace(sender, "Cancel", func() {
+		kindText := "unknown"
+		switch msg.Kind {
+		case Fb_cancel_disable:
+			kindText = "disable"
+		case Fb_cancel_enable:
+			kindText = "enable"
+		case Fb_cancel_raise:
+			kindText = "raise"
+		case Fb_cancel_abort:
+			kindText = "abort"
+		}
+
+		fmt.Fprintf(t.buf, " kind=%d(%s)", msg.Kind, kindText)
 	})
 }
 
