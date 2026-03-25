@@ -1583,15 +1583,18 @@ func testConnContextCanceledCancelsRunningQueryOnServer(t *testing.T, connString
 	require.NoError(t, err)
 	defer closeConn(t, otherConn)
 
-	pollDeadline := time.Now().Add(20 * time.Second)
+	pollDeadline := time.Now().Add(15 * time.Second)
 	for {
 		if time.Now().After(pollDeadline) {
-			t.Fatalf("canceled query marker %q is still visible in MON$STATEMENTS", queryID)
+			t.Fatalf("canceled query marker %q is still active in MON$STATEMENTS", queryID)
 		}
 
 		pollCtx, pollCancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 		result := otherConn.ExecParams(pollCtx,
-			`select 1, cast(mon$sql_text as varchar(255)) from mon$statements where cast(mon$sql_text as varchar(255)) like ?`,
+			`select 1, cast(mon$sql_text as varchar(255))
+			   from mon$statements
+			  where mon$state = 1
+			    and cast(mon$sql_text as varchar(255)) like ?`,
 			[][]byte{[]byte("%" + queryID + "%")}).Read()
 		pollCancel()
 		require.NoError(t, result.Err)

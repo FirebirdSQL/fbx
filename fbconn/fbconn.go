@@ -69,6 +69,7 @@ type FbConn struct {
 	writer            *bufio.Writer
 	slowWriteTimer    *time.Timer
 	bgReaderStarted   chan struct{}
+	writeInProgress   atomic.Bool
 	dbHandle          int
 
 	customData map[string]any
@@ -1789,10 +1790,13 @@ func (fbConn *FbConn) enterPotentialWriteReadDeadlock() {
 	if fbConn.slowWriteTimer.Reset(15 * time.Millisecond) {
 		panic("BUG: slow write timer already active")
 	}
+	fbConn.writeInProgress.Store(true)
 }
 
 // exitPotentialWriteReadDeadlock must be called after a call to enterPotentialWriteReadDeadlock.
 func (fbConn *FbConn) exitPotentialWriteReadDeadlock() {
+	defer fbConn.writeInProgress.Store(false)
+
 	if !fbConn.slowWriteTimer.Stop() {
 		// The timer starts its function in a separate goroutine. It is necessary to ensure the background reader has
 		// started before calling Stop. Otherwise, the background reader may not be stopped. That on its own is not a
@@ -2084,15 +2088,34 @@ func (h *CancelRequestContextWatcherHandler) HandleCancel(context.Context) {
 	go func() {
 		defer close(h.cancelFinishedChan)
 
-		select {
-		case <-handleUnwatchedAfterCancelCalledCtx.Done():
-			return
-		case <-time.After(h.CancelRequestDelay):
+		if h.CancelRequestDelay > 0 {
+			select {
+			case <-handleUnwatchedAfterCancelCalledCtx.Done():
+				return
+			case <-time.After(h.CancelRequestDelay):
+			}
 		}
 
-		cancelRequestCtx, cancel := context.WithDeadline(handleUnwatchedAfterCancelCalledCtx, deadline)
+		cancelRequestParentCtx := handleUnwatchedAfterCancelCalledCtx
+		if h.CancelRequestDelay == 0 {
+			// Zero-delay mode should always attempt sending op_cancel. If we tie
+			// send context to Unwatch here, fast Unwatch can cancel before send.
+			cancelRequestParentCtx = context.Background()
+
+			// If a write is currently in progress, wait briefly for it to finish.
+			// This avoids racing a concurrent write+flush path while preserving a
+			// best-effort cancel attempt in zero-delay mode.
+			for h.Conn.writeInProgress.Load() {
+				if time.Now().After(deadline) {
+					return
+				}
+				time.Sleep(time.Millisecond)
+			}
+		}
+
+		cancelRequestCtx, cancel := context.WithDeadline(cancelRequestParentCtx, deadline)
 		defer cancel()
-		if err := h.Conn.CancelRequest(cancelRequestCtx); err != nil {
+		if err := h.sendCancelRequest(cancelRequestCtx); err != nil {
 			// Ignore timeout/cancel outcomes for cancel request itself; they only
 			// mean that the deadline fallback should win.
 			var netErr net.Error
@@ -2155,4 +2178,11 @@ func (h *CancelRequestContextWatcherHandler) sendCancelOperationWithTimeout(kind
 	}
 
 	return h.Conn.sendCancelOperation(ctx, kind)
+}
+
+func (h *CancelRequestContextWatcherHandler) sendCancelRequest(ctx context.Context) error {
+	if h.sendCancelOperationFunc != nil {
+		return h.sendCancelOperationFunc(ctx, fbproto.Fb_cancel_raise)
+	}
+	return h.Conn.CancelRequest(ctx)
 }

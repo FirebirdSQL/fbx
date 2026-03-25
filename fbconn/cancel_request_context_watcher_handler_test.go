@@ -125,3 +125,91 @@ func TestCancelRequestContextWatcherHandlerWatchEnableErrorClosesConnAndPrevents
 	require.EqualValues(t, 1, calls.Load())
 	require.Error(t, fbConn.lock())
 }
+
+func TestCancelRequestContextWatcherHandlerHandleCancelZeroDelayStillSendsCancelWithFastUnwatch(t *testing.T) {
+	const iterations = 100
+
+	for i := 0; i < iterations; i++ {
+		h, _ := newWatcherHandlerForWindowTests()
+		h.CancelRequestDelay = 0
+		h.DeadlineDelay = 50 * time.Millisecond
+
+		var calls atomic.Int32
+		h.sendCancelOperationFunc = func(_ context.Context, kind int) error {
+			require.Equal(t, fbproto.Fb_cancel_raise, kind)
+			calls.Add(1)
+			return nil
+		}
+
+		h.HandleCancel(context.Background())
+		h.HandleUnwatchAfterCancel()
+
+		require.EqualValuesf(t, 1, calls.Load(), "iteration=%d", i)
+	}
+}
+
+func TestCancelRequestContextWatcherHandlerHandleCancelRespectsGraceWindow(t *testing.T) {
+	h, _ := newWatcherHandlerForWindowTests()
+	h.CancelRequestDelay = 20 * time.Millisecond
+	h.DeadlineDelay = 200 * time.Millisecond
+
+	var calls atomic.Int32
+	h.sendCancelOperationFunc = func(_ context.Context, kind int) error {
+		require.Equal(t, fbproto.Fb_cancel_raise, kind)
+		calls.Add(1)
+		return nil
+	}
+
+	h.HandleCancel(context.Background())
+	h.HandleUnwatchAfterCancel()
+
+	require.EqualValues(t, 0, calls.Load())
+}
+
+func TestCancelRequestContextWatcherHandlerHandleCancelZeroDelayUsesFallbackDeadline(t *testing.T) {
+	h, _ := newWatcherHandlerForWindowTests()
+	h.CancelRequestDelay = 0
+	h.DeadlineDelay = 0
+
+	h.sendCancelOperationFunc = func(ctx context.Context, kind int) error {
+		require.Equal(t, fbproto.Fb_cancel_raise, kind)
+
+		deadline, ok := ctx.Deadline()
+		require.True(t, ok)
+
+		remaining := time.Until(deadline)
+		require.Greater(t, remaining, 10*time.Millisecond)
+		require.Less(t, remaining, 500*time.Millisecond)
+		return nil
+	}
+
+	h.HandleCancel(context.Background())
+	h.HandleUnwatchAfterCancel()
+}
+
+func TestCancelRequestContextWatcherHandlerHandleCancelZeroDelayWaitsForWriteCompletionAndStillSends(t *testing.T) {
+	h, _ := newWatcherHandlerForWindowTests()
+	h.CancelRequestDelay = 0
+	h.DeadlineDelay = 200 * time.Millisecond
+	h.Conn.writeInProgress.Store(true)
+
+	var calls atomic.Int32
+	h.sendCancelOperationFunc = func(ctx context.Context, kind int) error {
+		require.Equal(t, fbproto.Fb_cancel_raise, kind)
+		calls.Add(1)
+		return nil
+	}
+
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		h.Conn.writeInProgress.Store(false)
+	}()
+
+	start := time.Now()
+	h.HandleCancel(context.Background())
+	h.HandleUnwatchAfterCancel()
+
+	require.EqualValues(t, 1, calls.Load())
+	require.GreaterOrEqual(t, time.Since(start), 10*time.Millisecond)
+	require.Less(t, time.Since(start), 180*time.Millisecond)
+}
