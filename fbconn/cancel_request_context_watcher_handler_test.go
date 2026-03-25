@@ -31,7 +31,7 @@ type noopAddr string
 func (a noopAddr) Network() string { return string(a) }
 func (a noopAddr) String() string  { return string(a) }
 
-func newWatcherHandlerForResetTests() (*CancelRequestContextWatcherHandler, *FbConn) {
+func newWatcherHandlerForWindowTests() (*CancelRequestContextWatcherHandler, *FbConn) {
 	done := make(chan struct{})
 	close(done)
 
@@ -47,7 +47,6 @@ func newWatcherHandlerForResetTests() (*CancelRequestContextWatcherHandler, *FbC
 		cancelFinishedChan:             done,
 		handleUnwatchAfterCancelCalled: func() {},
 	}
-	h.cancelRequestSent.Store(true)
 
 	return h, fbConn
 }
@@ -61,8 +60,9 @@ func waitCleanupDone(t *testing.T, fbConn *FbConn) {
 	}
 }
 
-func TestCancelRequestContextWatcherHandlerResetTimeoutClosesConn(t *testing.T) {
-	h, fbConn := newWatcherHandlerForResetTests()
+func TestCancelRequestContextWatcherHandlerUnwatchDisableTimeoutClosesConn(t *testing.T) {
+	h, fbConn := newWatcherHandlerForWindowTests()
+	h.requestCancelEnabled.Store(true)
 
 	var calls atomic.Int32
 	h.sendCancelOperationFunc = func(ctx context.Context, _ int) error {
@@ -71,7 +71,7 @@ func TestCancelRequestContextWatcherHandlerResetTimeoutClosesConn(t *testing.T) 
 		return ctx.Err()
 	}
 
-	h.HandleUnwatchAfterCancel()
+	h.HandleUnwatch()
 
 	require.True(t, fbConn.IsClosed())
 	waitCleanupDone(t, fbConn)
@@ -79,16 +79,38 @@ func TestCancelRequestContextWatcherHandlerResetTimeoutClosesConn(t *testing.T) 
 	require.Error(t, fbConn.lock())
 }
 
-func TestCancelRequestContextWatcherHandlerEnableErrorClosesConnAndPreventsReuse(t *testing.T) {
-	h, fbConn := newWatcherHandlerForResetTests()
-	enableErr := errors.New("enable failed")
+func TestCancelRequestContextWatcherHandlerUnwatchDisableErrorClosesConnAndPreventsReuse(t *testing.T) {
+	h, fbConn := newWatcherHandlerForWindowTests()
+	disableErr := errors.New("disable failed")
+	h.requestCancelEnabled.Store(true)
 
 	var calls atomic.Int32
 	h.sendCancelOperationFunc = func(_ context.Context, kind int) error {
 		calls.Add(1)
 		switch kind {
 		case fbproto.Fb_cancel_disable:
+			return disableErr
+		default:
 			return nil
+		}
+	}
+
+	h.HandleUnwatch()
+
+	require.True(t, fbConn.IsClosed())
+	waitCleanupDone(t, fbConn)
+	require.EqualValues(t, 1, calls.Load())
+	require.Error(t, fbConn.lock())
+}
+
+func TestCancelRequestContextWatcherHandlerWatchEnableErrorClosesConnAndPreventsReuse(t *testing.T) {
+	h, fbConn := newWatcherHandlerForWindowTests()
+	enableErr := errors.New("enable failed")
+
+	var calls atomic.Int32
+	h.sendCancelOperationFunc = func(_ context.Context, kind int) error {
+		calls.Add(1)
+		switch kind {
 		case fbproto.Fb_cancel_enable:
 			return enableErr
 		default:
@@ -96,10 +118,10 @@ func TestCancelRequestContextWatcherHandlerEnableErrorClosesConnAndPreventsReuse
 		}
 	}
 
-	h.HandleUnwatchAfterCancel()
+	h.HandleWatch(context.Background())
 
 	require.True(t, fbConn.IsClosed())
 	waitCleanupDone(t, fbConn)
-	require.EqualValues(t, 2, calls.Load())
+	require.EqualValues(t, 1, calls.Load())
 	require.Error(t, fbConn.lock())
 }

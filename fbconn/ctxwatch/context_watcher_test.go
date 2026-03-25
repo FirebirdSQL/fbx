@@ -11,8 +11,22 @@ import (
 )
 
 type testHandler struct {
+	handleWatch              func(context.Context)
+	handleUnwatch            func()
 	handleCancel             func(context.Context)
 	handleUnwatchAfterCancel func()
+}
+
+func (h *testHandler) HandleWatch(ctx context.Context) {
+	if h.handleWatch != nil {
+		h.handleWatch(ctx)
+	}
+}
+
+func (h *testHandler) HandleUnwatch() {
+	if h.handleUnwatch != nil {
+		h.handleUnwatch()
+	}
 }
 
 func (h *testHandler) HandleCancel(ctx context.Context) {
@@ -21,6 +35,51 @@ func (h *testHandler) HandleCancel(ctx context.Context) {
 
 func (h *testHandler) HandleUnwatchAfterCancel() {
 	h.handleUnwatchAfterCancel()
+}
+
+func TestContextWatcherLifecycleHooksCalledForCancellableContext(t *testing.T) {
+	var watchCalls int32
+	var unwatchCalls int32
+	cw := ctxwatch.NewContextWatcher(&testHandler{
+		handleWatch: func(context.Context) {
+			atomic.AddInt32(&watchCalls, 1)
+		},
+		handleUnwatch: func() {
+			atomic.AddInt32(&unwatchCalls, 1)
+		},
+		handleCancel:             func(context.Context) {},
+		handleUnwatchAfterCancel: func() {},
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cw.Watch(ctx)
+	cw.Unwatch()
+
+	require.EqualValues(t, 1, atomic.LoadInt32(&watchCalls))
+	require.EqualValues(t, 1, atomic.LoadInt32(&unwatchCalls))
+}
+
+func TestContextWatcherLifecycleHooksNotCalledForUncancellableContext(t *testing.T) {
+	var watchCalls int32
+	var unwatchCalls int32
+	cw := ctxwatch.NewContextWatcher(&testHandler{
+		handleWatch: func(context.Context) {
+			atomic.AddInt32(&watchCalls, 1)
+		},
+		handleUnwatch: func() {
+			atomic.AddInt32(&unwatchCalls, 1)
+		},
+		handleCancel:             func(context.Context) {},
+		handleUnwatchAfterCancel: func() {},
+	})
+
+	cw.Watch(context.Background())
+	cw.Unwatch()
+
+	require.EqualValues(t, 0, atomic.LoadInt32(&watchCalls))
+	require.EqualValues(t, 0, atomic.LoadInt32(&unwatchCalls))
 }
 
 func TestContextWatcherContextCancelled(t *testing.T) {

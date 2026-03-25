@@ -245,7 +245,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 			return fbproto.NewClient(r, w, encoding)
 		},
 		BuildContextWatcherHandler: func(fbConn *FbConn) ctxwatch.Handler {
-			return &DeadlineContextWatcherHandler{Conn: fbConn.conn}
+			return &CancelRequestContextWatcherHandler{Conn: fbConn}
 		},
 		OnFbError: func(_ *FbConn, fbErr *FbError) bool {
 			// we want to automatically close any fatal errors

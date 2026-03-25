@@ -655,7 +655,7 @@ connectLoop:
 }
 
 // ReceiveMessage receives one wire protocol message from the server. It must only be used when the
-// connection is not busy. e.g. It is an error to call ReceiveMessage while reading the result of a query. 
+// connection is not busy. e.g. It is an error to call ReceiveMessage while reading the result of a query.
 func (fbConn *FbConn) ReceiveMessage(ctx context.Context) (fbproto.ServerMessage, error) {
 	if err := fbConn.lock(); err != nil {
 		return nil, err
@@ -1207,7 +1207,7 @@ func (fbConn *FbConn) ExecTx(ctx context.Context, tx *FBTransaction, sql string)
 
 // ExecParams executes a single SQL statement with already-encoded parameter values.
 //
-// sql is a SQL command string. It may only contain one query. 
+// sql is a SQL command string. It may only contain one query.
 // Parameters are positional; the placeholder syntax is defined by the SQL dialect supported by the server.
 //
 // paramValues are parameter values encoded for the wire protocol / statement parameter layout.
@@ -2032,8 +2032,8 @@ func (h *DeadlineContextWatcherHandler) HandleUnwatchAfterCancel() {
 	h.Conn.SetDeadline(time.Time{})
 }
 
-// CancelRequestContextWatcherHandler handles canceled contexts by sending a cancel request to the server. It also sets
-// a deadline on a net.Conn as a fallback.
+// CancelRequestContextWatcherHandler manages cancel state around each watched request and handles canceled contexts by
+// sending a cancel request to the server. It also sets a deadline on a net.Conn as a fallback.
 type CancelRequestContextWatcherHandler struct {
 	Conn *FbConn
 
@@ -2043,18 +2043,32 @@ type CancelRequestContextWatcherHandler struct {
 	// DeadlineDelay is the delay to set on the deadline set on net.Conn when the context is canceled.
 	DeadlineDelay time.Duration
 
-	// CancelResetTimeout is the timeout for clearing deferred cancel state (disable/enable) before reuse.
+	// CancelResetTimeout is the timeout for cancel state operations (enable/disable).
 	CancelResetTimeout time.Duration
 
 	cancelFinishedChan             chan struct{}
 	handleUnwatchAfterCancelCalled func()
-	cancelRequestSent              atomic.Bool
+	requestCancelEnabled           atomic.Bool
 	sendCancelOperationFunc        func(context.Context, int) error
+}
+
+func (h *CancelRequestContextWatcherHandler) HandleWatch(context.Context) {
+	if !h.canManageCancelState() {
+		return
+	}
+
+	h.requestCancelEnabled.Store(false)
+
+	if err := h.sendCancelOperationWithTimeout(fbproto.Fb_cancel_enable); err != nil {
+		h.Conn.asyncClose()
+		return
+	}
+
+	h.requestCancelEnabled.Store(true)
 }
 
 func (h *CancelRequestContextWatcherHandler) HandleCancel(context.Context) {
 	h.cancelFinishedChan = make(chan struct{})
-	h.cancelRequestSent.Store(false)
 	var handleUnwatchedAfterCancelCalledCtx context.Context
 	handleUnwatchedAfterCancelCalledCtx, h.handleUnwatchAfterCancelCalled = context.WithCancel(context.Background())
 
@@ -2072,26 +2086,46 @@ func (h *CancelRequestContextWatcherHandler) HandleCancel(context.Context) {
 
 		cancelRequestCtx, cancel := context.WithDeadline(handleUnwatchedAfterCancelCalledCtx, deadline)
 		defer cancel()
-		if err := h.Conn.CancelRequest(cancelRequestCtx); err == nil {
-			h.cancelRequestSent.Store(true)
+		if err := h.Conn.CancelRequest(cancelRequestCtx); err != nil {
+			// CancelRequest already closes on transport/protocol errors, but keep fail-safe behavior explicit.
+			h.Conn.asyncClose()
 		}
 	}()
+}
+
+func (h *CancelRequestContextWatcherHandler) HandleUnwatch() {
+	if !h.requestCancelEnabled.Load() {
+		return
+	}
+	h.requestCancelEnabled.Store(false)
+
+	if err := h.sendCancelOperationWithTimeout(fbproto.Fb_cancel_disable); err != nil {
+		h.Conn.asyncClose()
+		return
+	}
+}
+
+func (h *CancelRequestContextWatcherHandler) canManageCancelState() bool {
+	if h == nil || h.Conn == nil {
+		return false
+	}
+	if h.sendCancelOperationFunc != nil {
+		return true
+	}
+	// During connect handshake ContextWatcher may be active before fbConn.client is initialized.
+	// Skip per-request enable/disable until attachment is fully established.
+	if h.Conn.client == nil {
+		return false
+	}
+	if h.Conn.status < connStatusIdle {
+		return false
+	}
+	return true
 }
 
 func (h *CancelRequestContextWatcherHandler) HandleUnwatchAfterCancel() {
 	h.handleUnwatchAfterCancelCalled()
 	<-h.cancelFinishedChan
-
-	if h.cancelRequestSent.Load() {
-		if err := h.sendCancelOperationWithTimeout(fbproto.Fb_cancel_disable); err != nil {
-			h.Conn.asyncClose()
-			return
-		}
-		if err := h.sendCancelOperationWithTimeout(fbproto.Fb_cancel_enable); err != nil {
-			h.Conn.asyncClose()
-			return
-		}
-	}
 
 	h.Conn.conn.SetDeadline(time.Time{})
 }

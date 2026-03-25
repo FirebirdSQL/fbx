@@ -41,6 +41,9 @@ func (cw *ContextWatcher) Watch(ctx context.Context) {
 	cw.onCancelWasCalled.Store(false)
 
 	if ctx.Done() != nil {
+		if lifecycleHandler, ok := cw.handler.(WatchLifecycleHandler); ok {
+			lifecycleHandler.HandleWatch(ctx)
+		}
 		cw.watchInProgress = true
 		go func() {
 			select {
@@ -67,6 +70,9 @@ func (cw *ContextWatcher) Unwatch() {
 		if cw.onCancelWasCalled.Load() {
 			cw.handler.HandleUnwatchAfterCancel()
 		}
+		if lifecycleHandler, ok := cw.handler.(WatchLifecycleHandler); ok {
+			lifecycleHandler.HandleUnwatch()
+		}
 		cw.watchInProgress = false
 	}
 }
@@ -78,4 +84,11 @@ type Handler interface {
 
 	// HandleUnwatchAfterCancel is called when a ContextWatcher that called HandleCancel on this Handler is unwatched.
 	HandleUnwatchAfterCancel()
+}
+
+// WatchLifecycleHandler is an extension for Handler. If implemented, HandleWatch/HandleUnwatch are called for
+// each normal watch/unwatch lifecycle when ctx is cancellable.
+type WatchLifecycleHandler interface {
+	HandleWatch(ctx context.Context)
+	HandleUnwatch()
 }
