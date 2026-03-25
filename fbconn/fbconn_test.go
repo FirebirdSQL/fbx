@@ -1583,18 +1583,23 @@ func testConnContextCanceledCancelsRunningQueryOnServer(t *testing.T, connString
 	require.NoError(t, err)
 	defer closeConn(t, otherConn)
 
-	ctx, cancel = context.WithTimeout(ctx, time.Second*5)
-	defer cancel()
-
+	pollDeadline := time.Now().Add(20 * time.Second)
 	for {
-		result := otherConn.ExecParams(ctx,
+		if time.Now().After(pollDeadline) {
+			t.Fatalf("canceled query marker %q is still visible in MON$STATEMENTS", queryID)
+		}
+
+		pollCtx, pollCancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+		result := otherConn.ExecParams(pollCtx,
 			`select 1, cast(mon$sql_text as varchar(255)) from mon$statements where cast(mon$sql_text as varchar(255)) like ?`,
 			[][]byte{[]byte("%" + queryID + "%")}).Read()
+		pollCancel()
 		require.NoError(t, result.Err)
 
 		if len(result.Rows) == 0 {
 			break
 		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
@@ -2319,12 +2324,13 @@ func TestDeadlineContextWatcherHandler(t *testing.T) {
 		require.NoError(t, err)
 		defer closeConn(t, fbConn)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-		defer cancel()
-
-		_, err = fbConn.Exec(ctx, "recreate function fbsleep (delay float not null) returns float external name 'fbxci!fbsleep' engine udr;").Close()
+		setupCtx, setupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer setupCancel()
+		_, err = fbConn.Exec(setupCtx, "recreate function fbsleep (delay float not null) returns float external name 'fbxci!fbsleep' engine udr;").Close()
 		require.NoError(t, err)
 
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		defer cancel()
 		res := fbConn.Exec(ctx, "select 1, fbsleep(1) from rdb$database").Read()
 		require.Error(t, res.Err)
 		require.ErrorIs(t, res.Err, context.DeadlineExceeded)

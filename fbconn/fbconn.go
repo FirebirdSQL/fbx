@@ -1545,7 +1545,7 @@ func (rr *ResultReader) bufferCurrentFetchRows() bool {
 		row, msg, err := rr.fbConn.client.ReceiveSQLData(rr.statementDescription.StatementInfo.FieldDescriptors)
 		if err != nil {
 			rr.fbConn.asyncClose()
-			rr.concludeCommand(QueryStatus{}, err)
+			rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(rr.ctx, err))
 			return false
 		}
 		switch m := msg.(type) {
@@ -1596,7 +1596,7 @@ func (rr *ResultReader) drainCurrentFetch() {
 		_, msg, err := rr.fbConn.client.ReceiveSQLData(rr.statementDescription.StatementInfo.FieldDescriptors)
 		if err != nil {
 			rr.fbConn.asyncClose()
-			rr.concludeCommand(QueryStatus{}, err)
+			rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(rr.ctx, err))
 			return
 		}
 		switch m := msg.(type) {
@@ -2072,7 +2072,13 @@ func (h *CancelRequestContextWatcherHandler) HandleCancel(context.Context) {
 	var handleUnwatchedAfterCancelCalledCtx context.Context
 	handleUnwatchedAfterCancelCalledCtx, h.handleUnwatchAfterCancelCalled = context.WithCancel(context.Background())
 
-	deadline := time.Now().Add(h.DeadlineDelay)
+	now := time.Now()
+	deadline := now.Add(h.DeadlineDelay)
+	if !deadline.After(now) {
+		// Keep a small fallback window to deliver op_cancel even when
+		// DeadlineDelay is zero or negative.
+		deadline = now.Add(100 * time.Millisecond)
+	}
 	h.Conn.conn.SetDeadline(deadline)
 
 	go func() {
@@ -2087,6 +2093,12 @@ func (h *CancelRequestContextWatcherHandler) HandleCancel(context.Context) {
 		cancelRequestCtx, cancel := context.WithDeadline(handleUnwatchedAfterCancelCalledCtx, deadline)
 		defer cancel()
 		if err := h.Conn.CancelRequest(cancelRequestCtx); err != nil {
+			// Ignore timeout/cancel outcomes for cancel request itself; they only
+			// mean that the deadline fallback should win.
+			var netErr net.Error
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()) {
+				return
+			}
 			// CancelRequest already closes on transport/protocol errors, but keep fail-safe behavior explicit.
 			h.Conn.asyncClose()
 		}

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 	"sync"
@@ -565,11 +566,13 @@ func TestFatalRxError(t *testing.T) {
 	require.NoError(t, err)
 
 	var wg sync.WaitGroup
+	queryStarted := make(chan struct{})
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		var n int32
 		var s string
+		close(queryStarted)
 		err := conn.QueryRow(context.Background(), "select 1, fbsleep(10) from rdb$database").Scan(&n, &s)
 		if err == nil {
 			t.Errorf("Expected QueryRow Scan to return an error, but got nil")
@@ -584,8 +587,14 @@ func TestFatalRxError(t *testing.T) {
 		t.Errorf("Expected QueryRow Scan to return fatal FbError, but instead received %v", err)
 	}()
 
-	if err := conn.FbConn().Disconnect(context.Background()); err != nil {
-		t.Fatalf("Unable to disconnect: %v", err)
+	<-queryStarted
+	deadline := time.Now().Add(2 * time.Second)
+	for !conn.FbConn().IsBusy() && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	if err := conn.FbConn().Conn().Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("Unable to force-close socket: %v", err)
 	}
 
 	wg.Wait()

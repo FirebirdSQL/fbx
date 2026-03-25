@@ -226,7 +226,7 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 		ProtocolFeatures:      st.conn.protocolFeatures,
 	}); err != nil {
 		st.conn.asyncClose()
-		rr.concludeCommand(QueryStatus{}, err)
+		rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(ctx, err))
 		st.conn.contextWatcher.Unwatch()
 		st.conn.unlock()
 		rr.closed = true
@@ -235,7 +235,7 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 
 	if err = st.conn.flushWithPotentialWriteReadDeadlock(); err != nil {
 		st.conn.asyncClose()
-		rr.concludeCommand(QueryStatus{}, err)
+		rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(ctx, err))
 		st.conn.contextWatcher.Unwatch()
 		st.conn.unlock()
 		rr.closed = true
@@ -258,7 +258,7 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 			row, dataResp, err := st.conn.client.ReceiveSQLData(st.Description.StatementInfo.FieldDescriptors)
 			if err != nil {
 				st.conn.asyncClose()
-				rr.concludeCommand(QueryStatus{}, err)
+				rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(ctx, err))
 				st.conn.contextWatcher.Unwatch()
 				st.conn.unlock()
 				rr.closed = true
