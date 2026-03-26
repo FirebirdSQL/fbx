@@ -213,3 +213,47 @@ func TestCancelRequestContextWatcherHandlerHandleCancelZeroDelayWaitsForWriteCom
 	require.GreaterOrEqual(t, time.Since(start), 10*time.Millisecond)
 	require.Less(t, time.Since(start), 180*time.Millisecond)
 }
+
+func TestCancelRequestContextWatcherHandlerHandleUnwatchAfterCancelDefersCancelStateResetWhenConnOpen(t *testing.T) {
+	h, _ := newWatcherHandlerForWindowTests()
+	h.requestCancelEnabled.Store(true)
+
+	h.HandleUnwatchAfterCancel()
+
+	require.True(t, h.pendingCancelReset.Load())
+}
+
+func TestCancelRequestContextWatcherHandlerHandleUnwatchAfterCancelSkipsResetWhenConnClosed(t *testing.T) {
+	h, fbConn := newWatcherHandlerForWindowTests()
+	h.requestCancelEnabled.Store(true)
+	fbConn.asyncClose()
+	waitCleanupDone(t, fbConn)
+
+	var calls atomic.Int32
+	h.sendCancelOperationFunc = func(_ context.Context, _ int) error {
+		calls.Add(1)
+		return nil
+	}
+
+	h.HandleUnwatchAfterCancel()
+
+	require.EqualValues(t, 0, calls.Load())
+	require.False(t, h.pendingCancelReset.Load())
+}
+
+func TestCancelRequestContextWatcherHandlerHandleWatchResetsPendingCancelState(t *testing.T) {
+	h, _ := newWatcherHandlerForWindowTests()
+	h.pendingCancelReset.Store(true)
+
+	var calls []int
+	h.sendCancelOperationFunc = func(_ context.Context, kind int) error {
+		calls = append(calls, kind)
+		return nil
+	}
+
+	h.HandleWatch(context.Background())
+
+	require.Equal(t, []int{fbproto.Fb_cancel_disable, fbproto.Fb_cancel_enable}, calls)
+	require.False(t, h.pendingCancelReset.Load())
+	require.True(t, h.requestCancelEnabled.Load())
+}

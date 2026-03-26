@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"rdb.red-soft.ru/fbx/fbconn/ctxwatch"
 	"github.com/stretchr/testify/require"
+	"rdb.red-soft.ru/fbx/fbconn/ctxwatch"
 )
 
 type testHandler struct {
@@ -79,6 +79,40 @@ func TestContextWatcherLifecycleHooksNotCalledForUncancellableContext(t *testing
 	cw.Unwatch()
 
 	require.EqualValues(t, 0, atomic.LoadInt32(&watchCalls))
+	require.EqualValues(t, 0, atomic.LoadInt32(&unwatchCalls))
+}
+
+func TestContextWatcherLifecycleUnwatchNotCalledAfterCancel(t *testing.T) {
+	var unwatchCalls int32
+	var cleanupCalls int32
+	canceled := make(chan struct{})
+
+	cw := ctxwatch.NewContextWatcher(&testHandler{
+		handleWatch: func(context.Context) {},
+		handleUnwatch: func() {
+			atomic.AddInt32(&unwatchCalls, 1)
+		},
+		handleCancel: func(context.Context) {
+			close(canceled)
+		},
+		handleUnwatchAfterCancel: func() {
+			atomic.AddInt32(&cleanupCalls, 1)
+		},
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cw.Watch(ctx)
+	cancel()
+
+	select {
+	case <-canceled:
+	case <-time.NewTimer(time.Second).C:
+		t.Fatal("Timed out waiting for cancel func to be called")
+	}
+
+	cw.Unwatch()
+
+	require.EqualValues(t, 1, atomic.LoadInt32(&cleanupCalls))
 	require.EqualValues(t, 0, atomic.LoadInt32(&unwatchCalls))
 }
 

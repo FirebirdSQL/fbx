@@ -60,17 +60,17 @@ type FbWarningHandler func(*FbConn, *FbWarning)
 
 // FbConn is a low-level FirebirdSQL connection handle. It is not safe for concurrent usage.
 type FbConn struct {
-	conn              net.Conn
-	secretKey         uint32            // key to use to send a cancel query message to the server
-	txStatus          byte
-	client            *fbproto.Client
-	wireCrypt         *wirecrypt.Manager
-	bgReader          *bgreader.BGReader
-	writer            *bufio.Writer
-	slowWriteTimer    *time.Timer
-	bgReaderStarted   chan struct{}
-	writeInProgress   atomic.Bool
-	dbHandle          int
+	conn            net.Conn
+	secretKey       uint32 // key to use to send a cancel query message to the server
+	txStatus        byte
+	client          *fbproto.Client
+	wireCrypt       *wirecrypt.Manager
+	bgReader        *bgreader.BGReader
+	writer          *bufio.Writer
+	slowWriteTimer  *time.Timer
+	bgReaderStarted chan struct{}
+	writeInProgress atomic.Bool
+	dbHandle        int
 
 	customData map[string]any
 
@@ -2053,6 +2053,7 @@ type CancelRequestContextWatcherHandler struct {
 	cancelFinishedChan             chan struct{}
 	handleUnwatchAfterCancelCalled func()
 	requestCancelEnabled           atomic.Bool
+	pendingCancelReset             atomic.Bool
 	sendCancelOperationFunc        func(context.Context, int) error
 }
 
@@ -2063,9 +2064,21 @@ func (h *CancelRequestContextWatcherHandler) HandleWatch(context.Context) {
 
 	h.requestCancelEnabled.Store(false)
 
-	if err := h.sendCancelOperationWithTimeout(fbproto.Fb_cancel_enable); err != nil {
-		h.Conn.asyncClose()
-		return
+	if h.pendingCancelReset.Load() {
+		if err := h.sendCancelOperationWithTimeout(fbproto.Fb_cancel_disable); err != nil {
+			h.Conn.asyncClose()
+			return
+		}
+		if err := h.sendCancelOperationWithTimeout(fbproto.Fb_cancel_enable); err != nil {
+			h.Conn.asyncClose()
+			return
+		}
+		h.pendingCancelReset.Store(false)
+	} else {
+		if err := h.sendCancelOperationWithTimeout(fbproto.Fb_cancel_enable); err != nil {
+			h.Conn.asyncClose()
+			return
+		}
 	}
 
 	h.requestCancelEnabled.Store(true)
@@ -2161,6 +2174,10 @@ func (h *CancelRequestContextWatcherHandler) canManageCancelState() bool {
 func (h *CancelRequestContextWatcherHandler) HandleUnwatchAfterCancel() {
 	h.handleUnwatchAfterCancelCalled()
 	<-h.cancelFinishedChan
+
+	if h.requestCancelEnabled.Load() && !h.Conn.IsClosed() {
+		h.pendingCancelReset.Store(true)
+	}
 
 	h.Conn.conn.SetDeadline(time.Time{})
 }

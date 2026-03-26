@@ -69,8 +69,7 @@ func (cw *ContextWatcher) Unwatch() {
 		cw.unwatchChan <- struct{}{}
 		if cw.onCancelWasCalled.Load() {
 			cw.handler.HandleUnwatchAfterCancel()
-		}
-		if lifecycleHandler, ok := cw.handler.(WatchLifecycleHandler); ok {
+		} else if lifecycleHandler, ok := cw.handler.(WatchLifecycleHandler); ok {
 			lifecycleHandler.HandleUnwatch()
 		}
 		cw.watchInProgress = false
