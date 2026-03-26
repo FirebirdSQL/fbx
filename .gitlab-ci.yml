@@ -81,6 +81,8 @@ test:fb:
       FB_DOWNLOAD_URL: "http://minio.red-soft.biz/3rdparty/firebird/Firebird-${FB_VERSION}-linux-x64.tar.gz"
   before_script:
     - apt update && apt install -y libtommath1 libicu76
+    - ln -s /usr/lib/x86_64-linux-gnu/libtommath.so.1 /usr/lib/x86_64-linux-gnu/libtommath.so.0
+    - ln -s /usr/lib/x86_64-linux-gnu/libncursesw.so.6 /usr/lib/x86_64-linux-gnu/libncurses.so.5
     - wget -q ${FB_DOWNLOAD_URL} -O fb.tar.gz
     - tar xf fb.tar.gz
     - cd Firebird-${FB_VERSION}*
