@@ -10,8 +10,8 @@ import (
 	"rdb.red-soft.ru/fbx/fbproto"
 )
 
-// ArraySetter is the interface for sending the array to the server
-type ArraySetter interface {
+// ArrayGetter is the interface for sending the array to the server
+type ArrayGetter interface {
 
 	// Index returns the element at i.
 	Index(i int) any
@@ -26,14 +26,14 @@ type Dimension struct {
 	Upper int
 }
 
-// ArrayGetter is the interface for getting the array from the server
-type ArrayGetter interface {
-	// SetDimentions prepares the value such that ScanIndex can be called for each element. This will remove any existing
-	// elements. dimensions may be nil to indicate a NULL array. If unable to exactly preserve dimensions SetDimentions
+// ArraySetter is the interface for getting the array from the server
+type ArraySetter interface {
+	// SetDimensions prepares the value such that ScanIndex can be called for each element. This will remove any existing
+	// elements. dimensions may be nil to indicate a NULL array. If unable to exactly preserve dimensions SetDimensions
 	// may return an error or silently flatten the array dimensions.
-	SetDimentions(dimensions []Dimension) error
+	SetDimensions(dimensions []Dimension) error
 
-	// ScanIndex returns a value usable as a scan target for i. SetDimentions must be called before ScanIndex.
+	// ScanIndex returns a value usable as a scan target for i. SetDimensions must be called before ScanIndex.
 	ScanIndex(i int) any
 }
 
@@ -51,7 +51,7 @@ type ArrayData struct {
 }
 
 // NewArrayData is a constructor for ArrayData struct
-func NewArrayData(typeId, blrTypeId uint32, subType int32, length uint32, scale int32, dimentionsMap []map[string]int, table, field string) (*ArrayData, error) {
+func NewArrayData(typeId, blrTypeId uint32, subType int32, length uint32, scale int32, DimensionsMap []map[string]int, table, field string) (*ArrayData, error) {
 	ad := new(ArrayData)
 	var err error
 
@@ -62,7 +62,7 @@ func NewArrayData(typeId, blrTypeId uint32, subType int32, length uint32, scale 
 	ad.BlrTypeId = blrTypeId
 
 	b := []Dimension{}
-	for _, elem := range dimentionsMap {
+	for _, elem := range DimensionsMap {
 		b = append(b, Dimension{Lower: elem["Lower"], Upper: elem["Upper"]})
 	}
 	ad.Dimensions = b
@@ -129,11 +129,11 @@ func (sp planScanArray) Scan(src []byte, dst any) error {
 	}
 
 	if src == nil {
-		array.SetDimentions(nil)
+		array.SetDimensions(nil)
 		return nil
 	}
 
-	err = array.SetDimentions(sp.arrayData.Dimensions)
+	err = array.SetDimensions(sp.arrayData.Dimensions)
 	if err != nil {
 		return err
 	}
@@ -174,10 +174,8 @@ func (pe planEncodeArray) Encode(value any, buf []byte) (newBuf []byte, err erro
 	fieldElementCount := allElementsCount(pe.arrayData.Dimensions)
 
 	if fieldElementCount < argumentElementCount {
-		return nil, fmt.Errorf("array to long")
+		return nil, fmt.Errorf("array too long")
 	}
-
-	pe.arrayData.Dimensions = dimensions
 
 	var encodePlan EncodePlan
 	var lastElemType reflect.Type
@@ -263,7 +261,7 @@ func (c *ArrayData) encodeTextType(encodePlan EncodePlan, elem any) ([]byte, err
 		}
 		buf = append(buf, padding...)
 		if c.Length%4 != 0 {
-			padding = make([]byte, 4-c.Length&3)
+			padding = make([]byte, 4-c.Length%4)
 			buf = append(buf, padding...)
 		}
 	} else {
@@ -286,8 +284,10 @@ func (c *ArrayData) encodeVaryingType(encodePlan EncodePlan, elem any) ([]byte, 
 		buf = append(buf, bufLen...)
 		buf = append(buf, str...)
 
-		padding := make([]byte, 4-lenElem&3)
-		buf = append(buf, padding...)
+		if lenElem%4 != 0 {
+			padding := make([]byte, 4-lenElem%4)
+			buf = append(buf, padding...)
+		}
 		lenElem = 0
 	} else {
 		bufLen := make([]byte, 4)
@@ -310,7 +310,7 @@ func allElementsCount(dimensions []Dimension) int {
 	return elementCount
 }
 
-func (c *ArrayData) decodeBinary(m *Map, arrayOID uint32, src []byte, length int, array ArrayGetter) error {
+func (c *ArrayData) decodeBinary(m *Map, arrayOID uint32, src []byte, length int, array ArraySetter) error {
 
 	elementCount := allElementsCount(c.Dimensions)
 	if elementCount == 0 {
@@ -353,7 +353,7 @@ func (c *ArrayData) decodeBinary(m *Map, arrayOID uint32, src []byte, length int
 	return nil
 }
 
-func getArrayDecodeType(dst any) (ArrayGetter, error) {
+func getArrayDecodeType(dst any) (ArraySetter, error) {
 
 	switch target := dst.(type) {
 	case *[]int16:
@@ -397,7 +397,7 @@ func getArrayDecodeType(dst any) (ArrayGetter, error) {
 		return &anyArrayArrayReflect{array: targetValue.Elem()}, nil
 	}
 
-	a, ok := dst.(ArrayGetter)
+	a, ok := dst.(ArraySetter)
 	if !ok {
 		return nil, fmt.Errorf("unsupported argument type")
 	}
@@ -406,7 +406,7 @@ func getArrayDecodeType(dst any) (ArrayGetter, error) {
 
 }
 
-func getArrayEncodeType(dst any) (ArraySetter, error) {
+func getArrayEncodeType(dst any) (ArrayGetter, error) {
 
 	switch target := dst.(type) {
 	case []int16:
@@ -425,9 +425,7 @@ func getArrayEncodeType(dst any) (ArraySetter, error) {
 		return (FlatArray[time.Time])(target), nil
 	}
 
-	targetType := reflect.TypeOf(dst)
-
-	targetElemType := targetType
+	targetElemType := reflect.TypeOf(dst)
 
 	targetValue := reflect.ValueOf(dst)
 
@@ -438,7 +436,7 @@ func getArrayEncodeType(dst any) (ArraySetter, error) {
 			if !isRagged(targetValue) {
 				return &anyMultiDimSliceArray{slice: targetValue}, nil
 			}
-			return nil, fmt.Errorf("cannot convert to ArraySetter because it is a ragged multi-dimensional")
+			return nil, fmt.Errorf("cannot convert to ArrayGetter because it is a ragged multi-dimensional")
 		default:
 			return &anySliceArrayReflect{slice: targetValue}, nil
 		}
@@ -448,9 +446,9 @@ func getArrayEncodeType(dst any) (ArraySetter, error) {
 		return &anyArrayArrayReflect{array: targetValue}, nil
 	}
 
-	a, ok := dst.(ArraySetter)
+	a, ok := dst.(ArrayGetter)
 
-	if targetType.Kind() != reflect.Slice && !ok {
+	if targetElemType.Kind() != reflect.Slice && !ok {
 		return nil, fmt.Errorf("unsupported argument type")
 	}
 
@@ -499,7 +497,7 @@ func (a Array[T]) Index(i int) any {
 	return a.Elements[i]
 }
 
-func (a *Array[T]) SetDimentions(dimensions []Dimension) error {
+func (a *Array[T]) SetDimensions(dimensions []Dimension) error {
 	if dimensions == nil {
 		*a = Array[T]{}
 		return nil
@@ -533,7 +531,7 @@ func (a FlatArray[T]) Dimensions(lowers []int) []Dimension {
 	return []Dimension{{Lower: lowers[0], Upper: lowers[0] + (len(a) - 1)}}
 }
 
-func (a *FlatArray[T]) SetDimentions(dimensions []Dimension) error {
+func (a *FlatArray[T]) SetDimensions(dimensions []Dimension) error {
 	if dimensions == nil {
 		*a = nil
 		return nil

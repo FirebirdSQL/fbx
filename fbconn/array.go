@@ -99,9 +99,9 @@ func (ac Array) generateSDL() []byte {
 				fbproto.Isc_sdl_do2,
 				byte(i),
 			}...)
-			sdl = append(sdl, getDimentionBound(b["Lower"])...)
+			sdl = append(sdl, getDimensionBound(b["Lower"])...)
 		}
-		sdl = append(sdl, getDimentionBound(b["Upper"])...)
+		sdl = append(sdl, getDimensionBound(b["Upper"])...)
 	}
 
 	sdl = append(sdl, []byte{
@@ -134,7 +134,7 @@ func trimBytes(in []byte, l int) []byte {
 	return out
 }
 
-func getDimentionBound(value int) []byte {
+func getDimensionBound(value int) []byte {
 	out := []byte{}
 	valByte := make([]byte, 4)
 	binary.BigEndian.PutUint32(valByte, uint32(value))

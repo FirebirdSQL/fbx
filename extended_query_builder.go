@@ -150,6 +150,9 @@ func (pb *ExtendedQueryBuilder) encodeParamValue(ctx context.Context, conn *Conn
 	}
 
 	buf, err := m.Encode(typeMetadata, arg, pb.paramValueBytes)
+	if err != nil {
+		return nil, err
+	}
 
 	if fbconn.IsArrayType(typeMetadata.TypeID) && buf != nil {
 		var lowers []int
@@ -180,9 +183,6 @@ func (pb *ExtendedQueryBuilder) encodeParamValue(ctx context.Context, conn *Conn
 		}
 	}
 
-	if err != nil {
-		return nil, err
-	}
 	if buf == nil {
 		return nil, nil
 	}

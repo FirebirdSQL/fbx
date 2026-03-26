@@ -250,6 +250,6 @@ func TestArrayEncodeMultipleDimensionsRagged(t *testing.T) {
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		_, _ = conn.Exec(ctx, "recreate table two_dim_ArrayRagged(val integer[3,4])")
 		_, err := conn.Exec(ctx, `insert into two_dim_ArrayRagged(val) values(?)`, [][]int32{{1, 2, 3, 4}, {5}, {9, 10, 11, 12}})
-		require.Error(t, err, "cannot convert to ArraySetter because it is a ragged multi-dimensional")
+		require.Error(t, err, "cannot convert to ArrayGetter because it is a ragged multi-dimensional")
 	})
 }

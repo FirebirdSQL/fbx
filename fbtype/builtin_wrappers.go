@@ -642,7 +642,7 @@ func (a anySliceArrayReflect) Dimensions(lowers []int) []Dimension {
 	return []Dimension{{Lower: lowers[0], Upper: lowers[0] + (a.slice.Len() - 1)}}
 }
 
-func (a *anySliceArrayReflect) SetDimentions(dimensions []Dimension) error {
+func (a *anySliceArrayReflect) SetDimensions(dimensions []Dimension) error {
 	sliceType := a.slice.Type()
 
 	if dimensions == nil {
@@ -709,7 +709,7 @@ func (a *anyMultiDimSliceArray) Dimensions(lowers []int) []Dimension {
 	return a.dimensions
 }
 
-func (a *anyMultiDimSliceArray) SetDimentions(dimensions []Dimension) error {
+func (a *anyMultiDimSliceArray) SetDimensions(dimensions []Dimension) error {
 	sliceType := a.slice.Type()
 
 	if dimensions == nil {
@@ -786,7 +786,7 @@ func (a anyArrayArrayReflect) Dimensions(lowers []int) []Dimension {
 	return []Dimension{{Lower: lowers[0], Upper: lowers[0] + (a.array.Len() - 1)}}
 }
 
-func (a *anyArrayArrayReflect) SetDimentions(dimensions []Dimension) error {
+func (a *anyArrayArrayReflect) SetDimensions(dimensions []Dimension) error {
 	if dimensions == nil {
 		return fmt.Errorf("anyArrayArrayReflect: cannot scan NULL into %v", a.array.Type().String())
 	}
