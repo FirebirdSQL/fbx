@@ -8,6 +8,8 @@ variables:
   RDB50_VERSION: 5.0.8
   RDB51_VERSION: 5.1.4
   RDB60_VERSION: 6.0.0-SNAPSHOT.1303
+  FB30_VERSION: 3.0.13.33818-0
+  FB40_VERSION: 4.0.6.3221-0
   FB50_VERSION: 5.0.3.1683-0
   FBX_TEST_DATABASE: database=employee host=localhost port=3050 user=sysdba password=masterkey
   FBX_TEST_TCP_CONN_STRING: database=employee host=localhost port=3050 user=sysdba password=masterkey
@@ -35,7 +37,7 @@ format:
   tags: [docker, linux, x86_64]
   extends: .go-cache
   script:
-    - go run gotest.tools/gotestsum@latest --format testname  -- -p 1 -coverprofile cover.out ./...
+    - go run gotest.tools/gotestsum@latest --format testname  -- -p 1 ${GOTEST_EXTRA_ARGS} -coverprofile cover.out ./...
   after_script:
     - go tool cover -html cover.out -o cover.html
     - go tool cover -func cover.out
@@ -67,6 +69,7 @@ test:rdb:
         RDB_DOWNLOAD_URL: "http://builds.red-soft.biz/release_hub/rdb30/${RDB30_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB30_VERSION}:bin"
       - RDB_VERSION: "${RDB50_VERSION}"
         RDB_DOWNLOAD_URL: "http://builds.red-soft.biz/release_hub/rdb50/${RDB50_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB50_VERSION}:bin"
+        GOTEST_EXTRA_ARGS: "-parallel 1"
       - RDB_VERSION: "${RDB51_VERSION}"
         RDB_DOWNLOAD_URL: "http://builds.red-soft.biz/release_hub/rdb50/${RDB51_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB51_VERSION}:bin"
       - RDB_VERSION: "6.0"
@@ -75,11 +78,15 @@ test:rdb:
 
 test:fb:
   extends: .test_template
+  variables:
+      FB_DOWNLOAD_URL: "http://minio.red-soft.biz/3rdparty/firebird/Firebird-${FB_VERSION}-linux-x64.tar.gz"
   before_script:
     - apt update && apt install -y libtommath1 libicu76
+    - ln -s /usr/lib/x86_64-linux-gnu/libtommath.so.1 /usr/lib/x86_64-linux-gnu/libtommath.so.0
+    - ln -s /usr/lib/x86_64-linux-gnu/libncursesw.so.6 /usr/lib/x86_64-linux-gnu/libncurses.so.5
     - wget -q ${FB_DOWNLOAD_URL} -O fb.tar.gz
     - tar xf fb.tar.gz
-    - cd Firebird-${FB_VERSION}-linux-x64
+    - cd Firebird-${FB_VERSION}*
     - ./install.sh -silent
     - . /opt/firebird/SYSDBA.password
     - export ISC_PASSWORD
@@ -90,5 +97,6 @@ test:fb:
     - /etc/init.d/firebird restart
   parallel:
     matrix:
+      - FB_VERSION: ${FB30_VERSION}
+      - FB_VERSION: ${FB40_VERSION}
       - FB_VERSION: ${FB50_VERSION}
-        FB_DOWNLOAD_URL: "http://minio.red-soft.biz/3rdparty/firebird/Firebird-${FB50_VERSION}-linux-x64.tar.gz"

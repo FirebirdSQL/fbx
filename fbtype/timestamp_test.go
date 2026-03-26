@@ -81,7 +81,7 @@ func TestTimestampTranscodeBigTimeBinary(t *testing.T) {
 func TestTimestampCodecDecodeTextInvalid(t *testing.T) {
 	c := &fbtype.TimestampCodec{}
 	var ts fbtype.Timestamp
-	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TIMESTAMP, 0, 0, 0, fbtype.TextFormatCode)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TIMESTAMP, 0, 0, 0)
 	plan := c.PlanScan(nil, typeMetadata, &ts)
 	err := plan.Scan([]byte(`eeeee`), &ts)
 	require.Error(t, err)

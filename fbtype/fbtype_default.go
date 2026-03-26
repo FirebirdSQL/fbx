@@ -28,12 +28,11 @@ func GetSubType(t uint32) int32 {
 
 func initDefaultMap() {
 	defaultMap = &Map{
-		typeidToType:       make(map[uint32]*Type),
-		nameToType:         make(map[string]*Type),
-		reflectTypeToName:  make(map[reflect.Type]string),
-		typeidToFormatCode: make(map[uint32]int16),
+		typeidToType:      make(map[uint32]*Type),
+		nameToType:        make(map[string]*Type),
+		reflectTypeToName: make(map[reflect.Type]string),
 
-		memoizedEncodePlans: make(map[TypeMetadata]map[reflect.Type][2]EncodePlan),
+		memoizedEncodePlans: make(map[TypeMetadata]map[reflect.Type]EncodePlan),
 
 		TryWrapEncodePlanFuncs: []TryWrapEncodePlanFunc{
 			TryWrapDerefPointerEncodePlan,

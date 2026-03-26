@@ -100,14 +100,6 @@ func (dst *Bool) UnmarshalJSON(b []byte) error {
 
 type BoolCodec struct{}
 
-func (BoolCodec) FormatSupported(format int16) bool {
-	return format == TextFormatCode || format == BinaryFormatCode
-}
-
-func (BoolCodec) PreferredFormat() int16 {
-	return BinaryFormatCode
-}
-
 func (BoolCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	switch value.(type) {
 	case bool:

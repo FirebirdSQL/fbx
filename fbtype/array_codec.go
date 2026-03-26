@@ -42,17 +42,6 @@ type ArrayCodec struct {
 	Scale       int32
 }
 
-func (c *ArrayCodec) FormatSupported(format int16) bool {
-	return c.ElementType.Codec.FormatSupported(format)
-}
-
-func (c *ArrayCodec) PreferredFormat() int16 {
-	if c.ElementType.Codec.FormatSupported(BinaryFormatCode) {
-		return BinaryFormatCode
-	}
-	return TextFormatCode
-}
-
 func (c *ArrayCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	arrayValuer, ok := value.(ArrayGetter)
 	if !ok {
@@ -61,7 +50,7 @@ func (c *ArrayCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) En
 
 	elementType := arrayValuer.IndexType()
 
-	newTypeMetadata := NewTypeMetadata(c.ElementType.TypeID, c.SubType, c.Length, c.Scale, typeMetadata.FormatCode)
+	newTypeMetadata := NewTypeMetadata(c.ElementType.TypeID, c.SubType, c.Length, c.Scale)
 	elementEncodePlan := m.PlanEncode(newTypeMetadata, elementType)
 	if elementEncodePlan == nil {
 		if reflect.TypeOf(elementType) != nil {
@@ -69,14 +58,7 @@ func (c *ArrayCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) En
 		}
 	}
 
-	switch typeMetadata.FormatCode {
-	case BinaryFormatCode:
-		return &encodePlanArrayCodecBinary{ac: c, m: m, typeid: typeMetadata.TypeID}
-	case TextFormatCode:
-		return &encodePlanArrayCodecText{ac: c, m: m, typeid: typeMetadata.TypeID}
-	}
-
-	return nil
+	return &encodePlanArrayCodecBinary{ac: c, m: m, typeid: typeMetadata.TypeID}
 }
 
 type encodePlanArrayCodecText struct {
@@ -131,7 +113,7 @@ func (p *encodePlanArrayCodecText) Encode(value any, buf []byte) (newBuf []byte,
 			elemType := reflect.TypeOf(elem)
 			if lastElemType != elemType {
 				lastElemType = elemType
-				typeMetadata := NewTypeMetadata(p.ac.ElementType.TypeID, p.ac.SubType, p.ac.Length, p.ac.Scale, TextFormatCode)
+				typeMetadata := NewTypeMetadata(p.ac.ElementType.TypeID, p.ac.SubType, p.ac.Length, p.ac.Scale)
 				encodePlan = p.m.PlanEncode(typeMetadata, elem)
 				if encodePlan == nil {
 					return nil, fmt.Errorf("unable to encode %v", array.Index(i))
@@ -196,7 +178,7 @@ func (p *encodePlanArrayCodecBinary) Encode(value any, buf []byte) (newBuf []byt
 			elemType := reflect.TypeOf(elem)
 			if lastElemType != elemType {
 				lastElemType = elemType
-				typeMetadata := NewTypeMetadata(p.ac.ElementType.TypeID, p.ac.SubType, p.ac.Length, p.ac.Scale, BinaryFormatCode)
+				typeMetadata := NewTypeMetadata(p.ac.ElementType.TypeID, p.ac.SubType, p.ac.Length, p.ac.Scale)
 				encodePlan = p.m.PlanEncode(typeMetadata, elem)
 				if encodePlan == nil {
 					return nil, fmt.Errorf("unable to encode %v", array.Index(i))
@@ -244,7 +226,6 @@ func (c *ArrayCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) Sca
 		arrayCodec: c,
 		m:          m,
 		typeid:     typeMetadata.TypeID,
-		formatCode: typeMetadata.FormatCode,
 	}
 }
 
@@ -265,7 +246,7 @@ func (c *ArrayCodec) decodeBinary(m *Map, arrayTypeID uint32, src []byte, array 
 		return nil
 	}
 
-	typeMetadata := NewTypeMetadata(c.ElementType.TypeID, c.SubType, c.Length, c.Scale, BinaryFormatCode)
+	typeMetadata := NewTypeMetadata(c.ElementType.TypeID, c.SubType, c.Length, c.Scale)
 	elementScanPlan := c.ElementType.Codec.PlanScan(m, typeMetadata, array.ScanIndex(0))
 	if elementScanPlan == nil {
 		elementScanPlan = m.PlanScan(typeMetadata, array.ScanIndex(0))
@@ -304,7 +285,7 @@ func (c *ArrayCodec) decodeText(m *Map, arrayTypeID uint32, src []byte, array Ar
 		return nil
 	}
 
-	typeMetadata := NewTypeMetadata(c.ElementType.TypeID, c.SubType, c.Length, c.Scale, TextFormatCode)
+	typeMetadata := NewTypeMetadata(c.ElementType.TypeID, c.SubType, c.Length, c.Scale)
 	elementScanPlan := c.ElementType.Codec.PlanScan(m, typeMetadata, array.ScanIndex(0))
 	if elementScanPlan == nil {
 		elementScanPlan = m.PlanScan(typeMetadata, array.ScanIndex(0))
@@ -333,7 +314,6 @@ type scanPlanArrayCodec struct {
 	subType         int32
 	length          uint32
 	scale           int32
-	formatCode      int16
 	elementScanPlan ScanPlan
 }
 
@@ -341,7 +321,6 @@ func (spac *scanPlanArrayCodec) Scan(src []byte, dst any) error {
 	c := spac.arrayCodec
 	m := spac.m
 	typeid := spac.typeid
-	formatCode := spac.formatCode
 
 	array := dst.(ArraySetter)
 
@@ -349,14 +328,7 @@ func (spac *scanPlanArrayCodec) Scan(src []byte, dst any) error {
 		return array.SetDimensions(nil)
 	}
 
-	switch formatCode {
-	case BinaryFormatCode:
-		return c.decodeBinary(m, typeid, src, array)
-	case TextFormatCode:
-		return c.decodeText(m, typeid, src, array)
-	default:
-		return fmt.Errorf("unknown format code %d", formatCode)
-	}
+	return c.decodeBinary(m, typeid, src, array)
 }
 
 func (c *ArrayCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
@@ -364,16 +336,9 @@ func (c *ArrayCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, s
 		return nil, nil
 	}
 
-	switch typeMetadata.FormatCode {
-	case TextFormatCode:
-		return string(src), nil
-	case BinaryFormatCode:
-		buf := make([]byte, len(src))
-		copy(buf, src)
-		return buf, nil
-	default:
-		return nil, fmt.Errorf("unknown format code %d", typeMetadata.FormatCode)
-	}
+	buf := make([]byte, len(src))
+	copy(buf, src)
+	return buf, nil
 }
 
 func (c *ArrayCodec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
