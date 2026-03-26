@@ -99,6 +99,10 @@ func (fbConn *FbConn) openOrCreateBlob(ctx context.Context, tx *FBTransaction, m
 		}
 		defer fbConn.unlock()
 
+		if err := fbConn.beforeRequest(); err != nil {
+			return 0, 0, err
+		}
+
 		if ctx != context.Background() {
 			select {
 			case <-ctx.Done():
@@ -589,6 +593,11 @@ func (b *remoteBlob) lockConn(ctx context.Context) (func(), error) {
 	}
 
 	if err := b.conn.lock(); err != nil {
+		return nil, err
+	}
+
+	if err := b.conn.beforeRequest(); err != nil {
+		b.conn.unlock()
 		return nil, err
 	}
 

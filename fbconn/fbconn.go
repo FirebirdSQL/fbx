@@ -91,6 +91,7 @@ type FbConn struct {
 
 	// Reusable / preallocated resources
 	contextWatcher    *ctxwatch.ContextWatcher
+	contextHandler    ctxwatch.Handler
 	fieldDescriptions [16]FieldDescription
 
 	cleanupDone         chan struct{}
@@ -434,7 +435,8 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 		return nil, newPerDialConnectError("dial error", err)
 	}
 
-	fbConn.contextWatcher = ctxwatch.NewContextWatcher(config.BuildContextWatcherHandler(fbConn))
+	fbConn.contextHandler = config.BuildContextWatcherHandler(fbConn)
+	fbConn.contextWatcher = ctxwatch.NewContextWatcher(fbConn.contextHandler)
 	fbConn.contextWatcher.Watch(ctx)
 	defer fbConn.contextWatcher.Unwatch()
 
@@ -682,6 +684,28 @@ func (fbConn *FbConn) ReceiveMessage(ctx context.Context) (fbproto.ServerMessage
 		}
 	}
 	return msg, err
+}
+
+type requestStartHandler interface {
+	HandleBeforeRequest() error
+}
+
+func (fbConn *FbConn) beforeRequest() error {
+	if fbConn == nil || fbConn.contextHandler == nil {
+		return nil
+	}
+
+	handler, ok := fbConn.contextHandler.(requestStartHandler)
+	if !ok {
+		return nil
+	}
+
+	if err := handler.HandleBeforeRequest(); err != nil {
+		fbConn.asyncClose()
+		return err
+	}
+
+	return nil
 }
 
 // peekMessage peeks at the next message without setting up context cancellation.
@@ -987,6 +1011,10 @@ func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 	}
 	defer fbConn.unlock()
 
+	if err = fbConn.beforeRequest(); err != nil {
+		return nil, err
+	}
+
 	if ctx != context.Background() {
 		select {
 		case <-ctx.Done():
@@ -1115,6 +1143,11 @@ func (fbConn *FbConn) ExecImmediateTx(ctx context.Context, tx *FBTransaction, sq
 	watched := false
 
 	if err = fbConn.lock(); err != nil {
+		return err
+	}
+
+	if err = fbConn.beforeRequest(); err != nil {
+		fbConn.unlock()
 		return err
 	}
 
@@ -1317,6 +1350,10 @@ func (fbConn *FbConn) Disconnect(ctx context.Context) error {
 		return err
 	}
 	defer fbConn.unlock()
+
+	if err = fbConn.beforeRequest(); err != nil {
+		return err
+	}
 
 	if ctx != context.Background() {
 		select {
@@ -1737,6 +1774,10 @@ func (fbConn *FbConn) Ping(ctx context.Context) error {
 	}
 	defer fbConn.unlock()
 
+	if err = fbConn.beforeRequest(); err != nil {
+		return err
+	}
+
 	if ctx != context.Background() {
 		select {
 		case <-ctx.Done():
@@ -1965,6 +2006,10 @@ func (fbConn *FbConn) startTransactionTPB(ctx context.Context, tpb []byte, locke
 		}
 		defer fbConn.unlock()
 
+		if err = fbConn.beforeRequest(); err != nil {
+			return nil, err
+		}
+
 		if ctx != context.Background() {
 			select {
 			case <-ctx.Done():
@@ -2057,6 +2102,22 @@ type CancelRequestContextWatcherHandler struct {
 	sendCancelOperationFunc        func(context.Context, int) error
 }
 
+func (h *CancelRequestContextWatcherHandler) HandleBeforeRequest() error {
+	if !h.pendingCancelReset.Load() || !h.canManageCancelState() {
+		return nil
+	}
+
+	if err := h.sendCancelOperationWithTimeout(fbproto.Fb_cancel_disable); err != nil {
+		return err
+	}
+	if err := h.sendCancelOperationWithTimeout(fbproto.Fb_cancel_enable); err != nil {
+		return err
+	}
+
+	h.pendingCancelReset.Store(false)
+	return nil
+}
+
 func (h *CancelRequestContextWatcherHandler) HandleWatch(context.Context) {
 	if !h.canManageCancelState() {
 		return
@@ -2064,21 +2125,9 @@ func (h *CancelRequestContextWatcherHandler) HandleWatch(context.Context) {
 
 	h.requestCancelEnabled.Store(false)
 
-	if h.pendingCancelReset.Load() {
-		if err := h.sendCancelOperationWithTimeout(fbproto.Fb_cancel_disable); err != nil {
-			h.Conn.asyncClose()
-			return
-		}
-		if err := h.sendCancelOperationWithTimeout(fbproto.Fb_cancel_enable); err != nil {
-			h.Conn.asyncClose()
-			return
-		}
-		h.pendingCancelReset.Store(false)
-	} else {
-		if err := h.sendCancelOperationWithTimeout(fbproto.Fb_cancel_enable); err != nil {
-			h.Conn.asyncClose()
-			return
-		}
+	if err := h.sendCancelOperationWithTimeout(fbproto.Fb_cancel_enable); err != nil {
+		h.Conn.asyncClose()
+		return
 	}
 
 	h.requestCancelEnabled.Store(true)

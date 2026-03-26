@@ -188,6 +188,13 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 		return rr
 	}
 
+	if err = st.conn.beforeRequest(); err != nil {
+		rr.concludeCommand(QueryStatus{}, err)
+		rr.closed = true
+		st.conn.unlock()
+		return rr
+	}
+
 	if ctx != context.Background() {
 		select {
 		case <-ctx.Done():
@@ -329,6 +336,10 @@ func (st *Statement) internalClose(ctx context.Context, closeOption int) error {
 		return err
 	}
 	defer st.conn.unlock()
+
+	if err = st.conn.beforeRequest(); err != nil {
+		return err
+	}
 
 	if ctx != context.Background() {
 		select {

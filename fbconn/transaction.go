@@ -28,6 +28,10 @@ func (tx *FBTransaction) Commit(ctx context.Context) error {
 	}
 	defer tx.Connection.unlock()
 
+	if err = tx.Connection.beforeRequest(); err != nil {
+		return err
+	}
+
 	if ctx != context.Background() {
 		select {
 		case <-ctx.Done():
@@ -79,6 +83,10 @@ func (tx *FBTransaction) Rollback(ctx context.Context) error {
 		return err
 	}
 	defer tx.Connection.unlock()
+
+	if err = tx.Connection.beforeRequest(); err != nil {
+		return err
+	}
 
 	if ctx != context.Background() {
 		select {

@@ -241,7 +241,7 @@ func TestCancelRequestContextWatcherHandlerHandleUnwatchAfterCancelSkipsResetWhe
 	require.False(t, h.pendingCancelReset.Load())
 }
 
-func TestCancelRequestContextWatcherHandlerHandleWatchResetsPendingCancelState(t *testing.T) {
+func TestCancelRequestContextWatcherHandlerHandleBeforeRequestResetsPendingCancelState(t *testing.T) {
 	h, _ := newWatcherHandlerForWindowTests()
 	h.pendingCancelReset.Store(true)
 
@@ -251,9 +251,9 @@ func TestCancelRequestContextWatcherHandlerHandleWatchResetsPendingCancelState(t
 		return nil
 	}
 
-	h.HandleWatch(context.Background())
+	err := h.HandleBeforeRequest()
 
+	require.NoError(t, err)
 	require.Equal(t, []int{fbproto.Fb_cancel_disable, fbproto.Fb_cancel_enable}, calls)
 	require.False(t, h.pendingCancelReset.Load())
-	require.True(t, h.requestCancelEnabled.Load())
 }
