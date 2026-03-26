@@ -83,7 +83,7 @@ test:fb:
     - apt update && apt install -y libtommath1 libicu76
     - wget -q ${FB_DOWNLOAD_URL} -O fb.tar.gz
     - tar xf fb.tar.gz
-    - cd Firebird-${FB_VERSION}-linux-x64
+    - cd Firebird-${FB_VERSION}*
     - ./install.sh -silent
     - . /opt/firebird/SYSDBA.password
     - export ISC_PASSWORD
