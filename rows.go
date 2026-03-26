@@ -272,7 +272,6 @@ func (rows *baseRows) Scan(dest ...any) error {
 				fieldDescriptions[i].Subtype,
 				fieldDescriptions[i].Length,
 				fieldDescriptions[i].Scale,
-				fieldDescriptions[i].Format,
 			)
 			arr := fieldDescriptions[i].ArrayData
 			if arr != nil {
@@ -310,7 +309,6 @@ func (rows *baseRows) Scan(dest ...any) error {
 				fieldDescriptions[i].Subtype,
 				fieldDescriptions[i].Length,
 				fieldDescriptions[i].Scale,
-				fieldDescriptions[i].Format,
 			)
 			arr := fieldDescriptions[i].ArrayData
 			if arr != nil {

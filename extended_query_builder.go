@@ -24,7 +24,7 @@ func (pb *ExtendedQueryBuilder) Build(ctx context.Context, conn *Conn, tx *dbTx,
 
 	if sd == nil {
 		for i := range args {
-			typeMetadata := fbtype.NewTypeMetadataWithArrayData(0, 0, 0, 0, nil)
+			typeMetadata := fbtype.NewTypeMetadata(0, 0, 0, 0)
 			err := pb.appendParam(ctx, conn, tx, m, typeMetadata, args[i])
 			if err != nil {
 				err = fmt.Errorf("failed to encode args[%d]: %w", i, err)
@@ -45,7 +45,6 @@ func (pb *ExtendedQueryBuilder) Build(ctx context.Context, conn *Conn, tx *dbTx,
 			sd.Parameters[i].Subtype,
 			sd.Parameters[i].Length,
 			sd.Parameters[i].Scale,
-			-1,
 		)
 		if arr != nil {
 			arrayData, err := fbtype.NewArrayData(arr.TypeId, arr.BlrTypeId, arr.SubType, arr.Length, arr.Scale,

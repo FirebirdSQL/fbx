@@ -81,14 +81,6 @@ type ArrayCodec struct {
 	ElementType *Type
 }
 
-func (ac ArrayCodec) FormatSupported(format int16) bool {
-	return ac.ElementType.Codec.FormatSupported(format)
-}
-
-func (ArrayCodec) PreferredFormat() int16 {
-	return BinaryFormatCode
-}
-
 func (ArrayCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	return planEncodeArray{m: m, arrayData: typeMetadata.ArrayData}
 }
@@ -189,7 +181,7 @@ func (pe planEncodeArray) Encode(value any, buf []byte) (newBuf []byte, err erro
 		elemType := reflect.TypeOf(elem)
 		if lastElemType != elemType {
 			lastElemType = elemType
-			typeMetadata := NewTypeMetadata(elementTypeId, pe.arrayData.SubType, lenElem, pe.arrayData.Scale, BinaryFormatCode)
+			typeMetadata := NewTypeMetadata(elementTypeId, pe.arrayData.SubType, lenElem, pe.arrayData.Scale)
 			encodePlan = pe.m.PlanEncode(typeMetadata, elem)
 			if encodePlan == nil {
 				return nil, fmt.Errorf("unable to encode %v", array.Index(i))
@@ -317,10 +309,10 @@ func (c *ArrayData) decodeBinary(m *Map, arrayOID uint32, src []byte, length int
 		return nil
 	}
 
-	typeMetadata := NewTypeMetadata(c.ElementType.TypeID, c.SubType, c.Length, c.Scale, BinaryFormatCode)
+	typeMetadata := NewTypeMetadata(c.ElementType.TypeID, c.SubType, c.Length, c.Scale)
 	elementScanPlan := c.ElementType.Codec.PlanScan(m, typeMetadata, array.ScanIndex(0))
 	if elementScanPlan == nil {
-		typeMetadata := NewTypeMetadata(c.ElementType.TypeID, c.SubType, c.Length, c.Scale, BinaryFormatCode)
+		typeMetadata := NewTypeMetadata(c.ElementType.TypeID, c.SubType, c.Length, c.Scale)
 		elementScanPlan = m.PlanScan(typeMetadata, array.ScanIndex(0))
 	}
 	if arrayOID == fbproto.SQL_TYPE_SHORT {
