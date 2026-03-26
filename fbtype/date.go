@@ -5,14 +5,24 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"regexp"
-	"strconv"
+	"strings"
 	"time"
 
 	"rdb.red-soft.ru/fbx/internal/pgio"
 )
 
 var firebirdDateEpoch = time.Date(1858, time.November, 17, 0, 0, 0, 0, time.UTC)
+
+var supportedDateLayouts = []string{
+	"2006-01-02",
+	"2006-1-2",
+	"02.01.2006",
+	"2.1.2006",
+	"2006.01.02",
+	"2006.1.2",
+	"2006/01/02",
+	"2006/1/2",
+}
 
 type DateScanner interface {
 	ScanDate(v Date) error
@@ -45,12 +55,22 @@ func (dst *Date) Scan(src any) error {
 
 	switch src := src.(type) {
 	case string:
-		return scanPlanTextAnyToDateScanner{}.Scan([]byte(src), dst)
+		err := scanPlanTextAnyToDateScanner{}.Scan([]byte(src), dst)
+		if err != nil {
+			*dst = Date{}
+		}
+		return err
 	case time.Time:
-		*dst = Date{Time: src, Valid: true}
+		t, err := normalizeFirebirdDate(src)
+		if err != nil {
+			*dst = Date{}
+			return err
+		}
+		*dst = Date{Time: t, Valid: true}
 		return nil
 	}
 
+	*dst = Date{}
 	return fmt.Errorf("cannot scan %T", src)
 }
 
@@ -68,7 +88,10 @@ func (src Date) MarshalJSON() ([]byte, error) {
 		return []byte("null"), nil
 	}
 
-	s := src.Time.Format("2006-01-02")
+	s, err := formatDateString(src.Time)
+	if err != nil {
+		return nil, err
+	}
 
 	return json.Marshal(s)
 }
@@ -86,6 +109,11 @@ func (dst *Date) UnmarshalJSON(b []byte) error {
 	}
 
 	t, err := time.ParseInLocation("2006-01-02", *s, time.UTC)
+	if err != nil {
+		return err
+	}
+
+	t, err = normalizeFirebirdDate(t)
 	if err != nil {
 		return err
 	}
@@ -122,20 +150,24 @@ func (encodePlanDateCodecBinary) Encode(value any, buf []byte) (newBuf []byte, e
 		return nil, nil
 	}
 
-	tUnix := time.Date(date.Time.Year(), date.Time.Month(), date.Time.Day(), 0, 0, 0, 0, time.UTC)
+	t, err := normalizeFirebirdDate(date.Time)
+	if err != nil {
+		return nil, err
+	}
 
-	days := int32((tUnix.Unix() - firebirdDateEpoch.Unix()) / secondsPerDay)
-
+	days := int32((t.Unix() - firebirdDateEpoch.Unix()) / secondsPerDay)
 	return pgio.AppendInt32(buf, days), nil
 }
 
 type encodePlanDateCodecBinaryTime struct{}
 
 func (encodePlanDateCodecBinaryTime) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	t := value.(time.Time)
+	t, err := normalizeFirebirdDate(value.(time.Time))
+	if err != nil {
+		return nil, err
+	}
 
-	tUnix := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
-	days := int32((tUnix.Unix() - firebirdDateEpoch.Unix()) / secondsPerDay)
+	days := int32((t.Unix() - firebirdDateEpoch.Unix()) / secondsPerDay)
 
 	return pgio.AppendInt32(buf, days), nil
 }
@@ -143,69 +175,14 @@ func (encodePlanDateCodecBinaryTime) Encode(value any, buf []byte) (newBuf []byt
 type encodePlanDateCodecBinaryString struct{}
 
 func (encodePlanDateCodecBinaryString) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	str := value.(string)
-
-	match := dateRegexp.FindStringSubmatch(str)
-	if match == nil {
-		return nil, fmt.Errorf("invalid date format: %q (expected YYYY-MM-DD)", str)
-	}
-
-	year, err := strconv.ParseInt(match[1], 10, 32)
-	if err != nil {
-		return nil, fmt.Errorf("cannot parse year: %w", err)
-	}
-
-	month, err := strconv.ParseInt(match[2], 10, 32)
-	if err != nil {
-		return nil, fmt.Errorf("cannot parse month: %w", err)
-	}
-
-	day, err := strconv.ParseInt(match[3], 10, 32)
-	if err != nil {
-		return nil, fmt.Errorf("cannot parse day: %w", err)
-	}
-
-	if len(match[4]) > 0 {
-		year = -year + 1
-	}
-
-	t := time.Date(int(year), time.Month(month), int(day), 0, 0, 0, 0, time.UTC)
-	days := int32((t.Unix() - firebirdDateEpoch.Unix()) / secondsPerDay)
-
-	return pgio.AppendInt32(buf, days), nil
-}
-
-type encodePlanDateCodecText struct{}
-
-func (encodePlanDateCodecText) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	date, err := value.(DateValuer).DateValue()
+	t, err := parseDateString(value.(string))
 	if err != nil {
 		return nil, err
 	}
 
-	if !date.Valid {
-		return nil, nil
-	}
+	days := int32((t.Unix() - firebirdDateEpoch.Unix()) / secondsPerDay)
 
-	year := date.Time.Year()
-
-	yearBytes := strconv.AppendInt(make([]byte, 0, 6), int64(year), 10)
-	for i := len(yearBytes); i < 4; i++ {
-		buf = append(buf, '0')
-	}
-	buf = append(buf, yearBytes...)
-	buf = append(buf, '-')
-	if date.Time.Month() < 10 {
-		buf = append(buf, '0')
-	}
-	buf = strconv.AppendInt(buf, int64(date.Time.Month()), 10)
-	buf = append(buf, '-')
-	if date.Time.Day() < 10 {
-		buf = append(buf, '0')
-	}
-	buf = strconv.AppendInt(buf, int64(date.Time.Day()), 10)
-
-	return buf, nil
+	return pgio.AppendInt32(buf, days), nil
 }
 
 func (DateCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
@@ -283,14 +260,16 @@ func (scanPlanBinaryDateToString) Scan(src []byte, dst any) error {
 	dayOffset := int32(binary.BigEndian.Uint32(src))
 	date := firebirdDateEpoch.AddDate(0, 0, int(dayOffset))
 
-	*s = date.Format("2006-01-02")
+	formatted, err := formatDateString(date)
+	if err != nil {
+		return err
+	}
 
+	*s = formatted
 	return nil
 }
 
 type scanPlanTextAnyToDateScanner struct{}
-
-var dateRegexp = regexp.MustCompile(`^(\d{4,})-(\d\d)-(\d\d)( BC)?$`)
 
 func (scanPlanTextAnyToDateScanner) Scan(src []byte, dst any) error {
 	scanner := (dst).(DateScanner)
@@ -299,34 +278,12 @@ func (scanPlanTextAnyToDateScanner) Scan(src []byte, dst any) error {
 		return scanner.ScanDate(Date{})
 	}
 
-	sbuf := string(src)
-	match := dateRegexp.FindStringSubmatch(sbuf)
-	if match != nil {
-		year, err := strconv.ParseInt(match[1], 10, 32)
-		if err != nil {
-			return fmt.Errorf("BUG: cannot parse date that regexp matched (year): %w", err)
-		}
-
-		month, err := strconv.ParseInt(match[2], 10, 32)
-		if err != nil {
-			return fmt.Errorf("BUG: cannot parse date that regexp matched (month): %w", err)
-		}
-
-		day, err := strconv.ParseInt(match[3], 10, 32)
-		if err != nil {
-			return fmt.Errorf("BUG: cannot parse date that regexp matched (month): %w", err)
-		}
-
-		// BC matched
-		if len(match[4]) > 0 {
-			year = -year + 1
-		}
-
-		t := time.Date(int(year), time.Month(month), int(day), 0, 0, 0, 0, time.UTC)
-		return scanner.ScanDate(Date{Time: t, Valid: true})
+	t, err := parseDateString(string(src))
+	if err != nil {
+		return err
 	}
 
-	return fmt.Errorf("invalid date format")
+	return scanner.ScanDate(Date{Time: t, Valid: true})
 }
 
 func (c DateCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
@@ -355,4 +312,44 @@ func (c DateCodec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (a
 	}
 
 	return date.Time, nil
+}
+
+func normalizeFirebirdDate(t time.Time) (time.Time, error) {
+	t = time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+
+	year := t.Year()
+	if year < 1 || year > 9999 {
+		return time.Time{}, fmt.Errorf(
+			"date out of Firebird range: %04d-%02d-%02d (supported range is 0001-01-01..9999-12-31)",
+			t.Year(), t.Month(), t.Day(),
+		)
+	}
+
+	return t, nil
+}
+
+func formatDateString(t time.Time) (string, error) {
+	t, err := normalizeFirebirdDate(t)
+	if err != nil {
+		return "", err
+	}
+
+	return t.Format("2006-01-02"), nil
+}
+
+func parseDateString(s string) (time.Time, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}, fmt.Errorf("invalid date format: empty string")
+	}
+
+	for _, layout := range supportedDateLayouts {
+		t, err := time.ParseInLocation(layout, s, time.UTC)
+		if err == nil {
+			return normalizeFirebirdDate(t)
+		}
+	}
+
+	return time.Time{}, fmt.Errorf(
+		"invalid date format: %q (supported: YYYY-MM-DD, YYYY-M-D, DD.MM.YYYY, D.M.YYYY, YYYY.MM.DD, YYYY.M.D, YYYY/MM/DD, YYYY/M/D)", s)
 }
