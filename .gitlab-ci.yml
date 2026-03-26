@@ -37,7 +37,7 @@ format:
   tags: [docker, linux, x86_64]
   extends: .go-cache
   script:
-    - go run gotest.tools/gotestsum@latest --format testname  -- -p 1 -coverprofile cover.out ./...
+    - go run gotest.tools/gotestsum@latest --format testname  -- -p 1 ${GOTEST_EXTRA_ARGS} -coverprofile cover.out ./...
   after_script:
     - go tool cover -html cover.out -o cover.html
     - go tool cover -func cover.out
@@ -69,6 +69,7 @@ test:rdb:
         RDB_DOWNLOAD_URL: "http://builds.red-soft.biz/release_hub/rdb30/${RDB30_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB30_VERSION}:bin"
       - RDB_VERSION: "${RDB50_VERSION}"
         RDB_DOWNLOAD_URL: "http://builds.red-soft.biz/release_hub/rdb50/${RDB50_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB50_VERSION}:bin"
+        GOTEST_EXTRA_ARGS: "-parallel 1"
       - RDB_VERSION: "${RDB51_VERSION}"
         RDB_DOWNLOAD_URL: "http://builds.red-soft.biz/release_hub/rdb50/${RDB51_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB51_VERSION}:bin"
       - RDB_VERSION: "6.0"
