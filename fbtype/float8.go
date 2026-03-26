@@ -99,14 +99,6 @@ func (f *Float8) UnmarshalJSON(b []byte) error {
 
 type Float8Codec struct{}
 
-func (Float8Codec) FormatSupported(format int16) bool {
-	return format == TextFormatCode || format == BinaryFormatCode
-}
-
-func (Float8Codec) PreferredFormat() int16 {
-	return BinaryFormatCode
-}
-
 func (Float8Codec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	switch value.(type) {
 	case float64:

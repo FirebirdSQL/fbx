@@ -106,8 +106,6 @@ func (st *Statement) SetInlineBlobSize(size int) {
 
 // Exec executed a prepared statement inside bound transaction
 //
-// paramValues are the parameter values. It must be encoded in the binary format
-//
 // ResultReader must be closed before FbConn can be used again.
 func (st *Statement) Exec(ctx context.Context, paramValues [][]byte) *ResultReader {
 	var err error
@@ -149,7 +147,6 @@ func (st *Statement) Exec(ctx context.Context, paramValues [][]byte) *ResultRead
 // ExecTx executed a prepared statement inside specified transaction
 //
 // tx opened transaction
-// paramValues are the parameter values. It must be encoded in the binary format
 //
 // ResultReader must be closed before FbConn can be used again.
 func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues [][]byte) *ResultReader {

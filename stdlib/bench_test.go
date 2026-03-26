@@ -13,12 +13,12 @@ import (
 func getSelectRowsCounts(b *testing.B) []int64 {
 	var rowCounts []int64
 	{
-		s := os.Getenv("PGX_BENCH_SELECT_ROWS_COUNTS")
+		s := os.Getenv("FBX_BENCH_SELECT_ROWS_COUNTS")
 		if s != "" {
 			for _, p := range strings.Split(s, " ") {
 				n, err := strconv.ParseInt(p, 10, 64)
 				if err != nil {
-					b.Fatalf("Bad PGX_BENCH_SELECT_ROWS_COUNTS value: %v", err)
+					b.Fatalf("Bad FBX_BENCH_SELECT_ROWS_COUNTS value: %v", err)
 				}
 				rowCounts = append(rowCounts, n)
 			}

@@ -1,11 +1,5 @@
 package fbx
 
-// PostgreSQL format codes
-const (
-	TextFormatCode   = 0
-	BinaryFormatCode = 1
-)
-
 //func convertSimpleArgument(m *fbtype.Map, arg any) (any, error) {
 //	buf, err := m.Encode(0, TextFormatCode, arg, []byte{})
 //	if err != nil {

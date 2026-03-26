@@ -118,14 +118,6 @@ func (dst *Int2) UnmarshalJSON(b []byte) error {
 
 type Int2Codec struct{}
 
-func (Int2Codec) FormatSupported(format int16) bool {
-	return format == BinaryFormatCode
-}
-
-func (Int2Codec) PreferredFormat() int16 {
-	return BinaryFormatCode
-}
-
 func (Int2Codec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	switch value.(type) {
 	case int16:
@@ -643,14 +635,6 @@ func (dst *Int4) UnmarshalJSON(b []byte) error {
 }
 
 type Int4Codec struct{}
-
-func (Int4Codec) FormatSupported(format int16) bool {
-	return format == BinaryFormatCode
-}
-
-func (Int4Codec) PreferredFormat() int16 {
-	return BinaryFormatCode
-}
 
 func (Int4Codec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	switch value.(type) {
@@ -1178,14 +1162,6 @@ func (dst *Int8) UnmarshalJSON(b []byte) error {
 }
 
 type Int8Codec struct{}
-
-func (Int8Codec) FormatSupported(format int16) bool {
-	return format == BinaryFormatCode
-}
-
-func (Int8Codec) PreferredFormat() int16 {
-	return BinaryFormatCode
-}
 
 func (Int8Codec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	switch value.(type) {

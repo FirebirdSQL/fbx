@@ -89,9 +89,6 @@ import (
 	"rdb.red-soft.ru/fbx/fbxpool"
 )
 
-// Only intrinsic types should be binary format with database/sql.
-var databaseSQLResultFormats fbx.QueryResultFormatsByTypeID
-
 var fbxDriver *Driver
 
 func init() {
@@ -103,22 +100,6 @@ func init() {
 	// skip registration under the default name.
 	if !slices.Contains(sql.Drivers(), "fbx") {
 		sql.Register("fbx", fbxDriver)
-	}
-
-	databaseSQLResultFormats = fbx.QueryResultFormatsByTypeID{
-		fbproto.SQL_TYPE_BOOLEAN:      1,
-		fbproto.SQL_TYPE_DATE:         1,
-		fbproto.SQL_TYPE_FLOAT:        1,
-		fbproto.SQL_TYPE_D_FLOAT:      1,
-		fbproto.SQL_TYPE_SHORT:        1,
-		fbproto.SQL_TYPE_LONG:         1,
-		fbproto.SQL_TYPE_INT64:        1,
-		fbproto.SQL_TYPE_TIMESTAMP:    1,
-		fbproto.SQL_TYPE_TIMESTAMP_TZ: 1,
-		fbproto.SQL_TYPE_TIME:         1,
-		fbproto.SQL_TYPE_INT128:       1,
-		fbproto.SQL_TYPE_DEC64:        1,
-		fbproto.SQL_TYPE_DEC128:       1,
 	}
 }
 
@@ -508,9 +489,8 @@ func (c *Conn) QueryContext(ctx context.Context, query string, argsV []driver.Na
 		return nil, driver.ErrBadConn
 	}
 
-	args := make([]any, 1+len(argsV))
-	args[0] = databaseSQLResultFormats
-	convertNamedArguments(args[1:], argsV)
+	args := make([]any, len(argsV))
+	convertNamedArguments(args, argsV)
 
 	rows, err := c.conn.Query(ctx, query, args...)
 	if err != nil {
@@ -780,7 +760,7 @@ func (r *Rows) Next(dest []driver.Value) error {
 		r.blobColumns = make([]bool, len(fieldDescriptions))
 
 		for i, fd := range fieldDescriptions {
-			typeMetadata := fbtype.NewTypeMetadata(fd.Type, fd.Subtype, fd.Length, fd.Scale, fd.Format)
+			typeMetadata := fbtype.NewTypeMetadata(fd.Type, fd.Subtype, fd.Length, fd.Scale)
 
 			switch fd.Type {
 			case fbproto.SQL_TYPE_BLOB:
@@ -919,7 +899,7 @@ func (r *Rows) Next(dest []driver.Value) error {
 					return d, err
 				}
 			default:
-				if fd.Subtype != fbproto.CS_BINARY {
+				if (fd.Subtype & 0xFF) != fbproto.CS_BINARY {
 					var d string
 					scanPlan := m.PlanScan(typeMetadata, &d)
 					r.valueFuncs[i] = func(src []byte) (driver.Value, error) {

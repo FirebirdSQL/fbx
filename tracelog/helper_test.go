@@ -33,7 +33,7 @@ func getServerEngineInfo(t testing.TB) serverEngineInfo {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 
-		config, err := fbx.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+		config, err := fbx.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 		require.NoError(t, err)
 
 		conn, err := fbx.ConnectConfig(ctx, config)

@@ -93,19 +93,7 @@ func (tstz *Timestamptz) UnmarshalJSON(b []byte) error {
 
 type TimestamptzCodec struct{}
 
-func (*TimestamptzCodec) FormatSupported(format int16) bool {
-	return format == BinaryFormatCode
-}
-
-func (*TimestamptzCodec) PreferredFormat() int16 {
-	return BinaryFormatCode
-}
-
 func (*TimestamptzCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
-	if typeMetadata.FormatCode != BinaryFormatCode {
-		return nil
-	}
-
 	switch value.(type) {
 	case TimestamptzValuer:
 		return encodePlanTimestamptzCodecBinary{}
@@ -193,10 +181,6 @@ func (encodePlanTimestamptzCodecBinaryString) Encode(value any, buf []byte) ([]b
 }
 
 func (c *TimestamptzCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
-	if typeMetadata.FormatCode != BinaryFormatCode {
-		return nil
-	}
-
 	switch target.(type) {
 	case TimestamptzScanner:
 		return &scanPlanBinaryTimestamptzToTimestamptzScanner{}

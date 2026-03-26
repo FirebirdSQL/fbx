@@ -27,7 +27,7 @@ func TestConnect(t *testing.T) {
 		name string
 		env  string
 	}{
-		{"TCP", "PGX_TEST_TCP_CONN_STRING"},
+		{"TCP", "FBX_TEST_TCP_CONN_STRING"},
 	}
 
 	for _, tt := range tests {
@@ -54,7 +54,7 @@ func TestConnectWithOptions(t *testing.T) {
 		name string
 		env  string
 	}{
-		{"TCP", "PGX_TEST_TCP_CONN_STRING"},
+		{"TCP", "FBX_TEST_TCP_CONN_STRING"},
 	}
 
 	for _, tt := range tests {
@@ -77,9 +77,9 @@ func TestConnectWithOptions(t *testing.T) {
 	}
 }
 
-type pgmockWaitStep time.Duration
+type fbmockWaitStep time.Duration
 
-//func (s pgmockWaitStep) Step(*pgproto3.Backend) error {
+//func (s fbmockWaitStep) Step(*fbproto3.Backend) error {
 //	time.Sleep(time.Duration(s))
 //	return nil
 //}
@@ -115,13 +115,13 @@ type pgmockWaitStep time.Duration
 //		tt := tt
 //		t.Run(tt.name, func(t *testing.T) {
 //			t.Parallel()
-//			script := &pgmock.Script{
-//				Steps: []pgmock.Step{
-//					pgmock.ExpectAnyMessage(&pgproto3.StartupMessage{ProtocolVersion: pgproto3.ProtocolVersionNumber, Parameters: map[string]string{}}),
-//					pgmock.SendMessage(&pgproto3.AuthenticationOk{}),
-//					pgmockWaitStep(time.Millisecond * 500),
-//					pgmock.SendMessage(&pgproto3.BackendKeyData{ProcessID: 0, SecretKey: 0}),
-//					pgmock.SendMessage(&pgproto3.ReadyForQuery{TxStatus: 'I'}),
+//			script := &fbmock.Script{
+//				Steps: []fbmock.Step{
+//					fbmock.ExpectAnyMessage(&fbproto3.StartupMessage{ProtocolVersion: fbproto3.ProtocolVersionNumber, Parameters: map[string]string{}}),
+//					fbmock.SendMessage(&fbproto3.AuthenticationOk{}),
+//					fbmockWaitStep(time.Millisecond * 500),
+//					fbmock.SendMessage(&fbproto3.BackendKeyData{ProcessID: 0, SecretKey: 0}),
+//					fbmock.SendMessage(&fbproto3.ReadyForQuery{TxStatus: 'I'}),
 //				},
 //			}
 //
@@ -146,7 +146,7 @@ type pgmockWaitStep time.Duration
 //					return
 //				}
 //
-//				err = script.Run(pgproto3.NewBackend(conn, conn))
+//				err = script.Run(fbproto3.NewBackend(conn, conn))
 //				if err != nil {
 //					serverErrChan <- err
 //					return
@@ -170,18 +170,19 @@ func TestConnectInvalidUser(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	connString := os.Getenv("PGX_TEST_TCP_CONN_STRING")
+	connString := os.Getenv("FBX_TEST_TCP_CONN_STRING")
 	if connString == "" {
-		t.Skipf("Skipping due to missing environment variable %v", "PGX_TEST_TCP_CONN_STRING")
+		t.Skipf("Skipping due to missing environment variable %v", "FBX_TEST_TCP_CONN_STRING")
 	}
 
 	config, err := fbconn.ParseConfig(connString)
 	require.NoError(t, err)
 
-	config.User = "pgxinvalidusertest"
+	config.User = "fbxinvalidusertest"
 
 	_, err = fbconn.ConnectConfig(ctx, config)
 	require.Error(t, err)
+	require.NotContains(t, err.Error(), "invalid SRP payload")
 	var fbErr *fbconn.FbError
 	require.ErrorAs(t, err, &fbErr)
 	if fbErr.Code != "28000" && fbErr.Code != "28P01" {
@@ -209,7 +210,7 @@ func TestConnectCustomDialer(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	dialed := false
@@ -230,9 +231,9 @@ func TestConnectCustomLookup(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	connString := os.Getenv("PGX_TEST_TCP_CONN_STRING")
+	connString := os.Getenv("FBX_TEST_TCP_CONN_STRING")
 	if connString == "" {
-		t.Skipf("Skipping due to missing environment variable %v", "PGX_TEST_TCP_CONN_STRING")
+		t.Skipf("Skipping due to missing environment variable %v", "FBX_TEST_TCP_CONN_STRING")
 	}
 
 	config, err := fbconn.ParseConfig(connString)
@@ -256,9 +257,9 @@ func TestConnectCustomLookupWithPort(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	connString := os.Getenv("PGX_TEST_TCP_CONN_STRING")
+	connString := os.Getenv("FBX_TEST_TCP_CONN_STRING")
 	if connString == "" {
-		t.Skipf("Skipping due to missing environment variable %v", "PGX_TEST_TCP_CONN_STRING")
+		t.Skipf("Skipping due to missing environment variable %v", "FBX_TEST_TCP_CONN_STRING")
 	}
 
 	config, err := fbconn.ParseConfig(connString)
@@ -293,7 +294,7 @@ func TestConnectWithFallback(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	// Prepend current primary config to fallbacks
@@ -343,7 +344,7 @@ func TestConnectWithValidateConnect(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	dialCount := 0
@@ -384,7 +385,7 @@ func TestConnectWithValidateConnectTargetSessionAttrsReadWrite(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	config.ValidateConnect = fbconn.ValidateConnectTargetSessionAttrsReadWrite
@@ -402,7 +403,7 @@ func TestConnectWithAfterConnect(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	//"set search_path to foobar;"
@@ -438,7 +439,7 @@ func TestConnPrepareSyntaxError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
@@ -455,7 +456,7 @@ func TestConnPrepareContextPrecanceled(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
@@ -476,7 +477,7 @@ func TestConnDeallocate(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
@@ -510,7 +511,7 @@ func TestConnDeallocateSucceedsInAbortedTransaction(t *testing.T) {
 	//ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	//defer cancel()
 	//
-	//fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	//fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	//require.NoError(t, err)
 	//defer closeConn(t, fbConn)
 	//
@@ -549,7 +550,7 @@ func TestConnDeallocateNonExistantStatementSucceeds(t *testing.T) {
 	//ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	//defer cancel()
 	//
-	//fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	//fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	//require.NoError(t, err)
 	//defer closeConn(t, fbConn)
 	//
@@ -565,7 +566,7 @@ func TestConnExec(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
@@ -590,12 +591,12 @@ func TestConnExecDeferredError(t *testing.T) {
 	//ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	//defer cancel()
 	//
-	//fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	//fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	//require.NoError(t, err)
 	//defer closeConn(t, fbConn)
 	//
 	//if fbConn.ParameterStatus("crdb_version") != "" {
-	//	t.Skip("Server does not support deferred constraint (https://github.com/cockroachdb/cockroach/issues/31632)")
+	//	t.Skip("Server does not support deferred constraint")
 	//}
 	//
 	//setupSQL := `create temporary table t (
@@ -623,7 +624,7 @@ func TestConnExecContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
@@ -654,7 +655,7 @@ func TestConnExecContextPrecanceled(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
@@ -673,7 +674,7 @@ func TestConnExecParams(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
@@ -699,7 +700,7 @@ func TestConnExecParamsExtraValuesError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
@@ -727,7 +728,7 @@ func TestConnExecParamsCanceled(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
@@ -761,7 +762,7 @@ func TestConnExecParamsPrecanceled(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
@@ -780,7 +781,7 @@ func TestConnExecParamsEmptySQL(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
@@ -801,7 +802,7 @@ func TestResultReaderValuesHaveSameCapacityAsLength(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
@@ -829,7 +830,7 @@ func TestResultReaderReadNil(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
@@ -844,7 +845,7 @@ func TestConnExecPreparedMaxNumberOfParams(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
@@ -897,7 +898,7 @@ func TestConnExecParamsTooManyParams(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
@@ -948,7 +949,7 @@ func TestConnExecPrepared(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
@@ -982,7 +983,7 @@ func TestConnExecPreparedCanceled(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
@@ -1016,7 +1017,7 @@ func TestConnExecPreparedPrecanceled(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
@@ -1042,7 +1043,7 @@ func TestConnExecPreparedEmptySQL(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
@@ -1062,7 +1063,7 @@ func TestConnExecBatch(t *testing.T) {
 	//ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	//defer cancel()
 	//
-	//fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	//fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	//require.NoError(t, err)
 	//defer closeConn(t, fbConn)
 	//
@@ -1108,7 +1109,7 @@ func (m mockConnection) Write(b []byte) (n int, err error) {
 //	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 //	defer cancel()
 //
-//	config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+//	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 //	require.NoError(t, err)
 //
 //	var mockConn mockConnection
@@ -1145,12 +1146,12 @@ func (m mockConnection) Write(b []byte) (n int, err error) {
 //	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 //	defer cancel()
 //
-//	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+//	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 //	require.NoError(t, err)
 //	defer closeConn(t, fbConn)
 //
 //	if fbConn.ParameterStatus("crdb_version") != "" {
-//		t.Skip("Server does not support deferred constraint (https://github.com/cockroachdb/cockroach/issues/31632)")
+//		t.Skip("Server does not support deferred constraint")
 //	}
 //
 //	setupSQL := `create temporary table t (
@@ -1182,7 +1183,7 @@ func (m mockConnection) Write(b []byte) (n int, err error) {
 //ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 //defer cancel()
 //
-//fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+//fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 //require.NoError(t, err)
 //defer closeConn(t, fbConn)
 //
@@ -1206,7 +1207,6 @@ func (m mockConnection) Write(b []byte) (n int, err error) {
 
 // Without concurrent reading and writing large batches can deadlock.
 //
-// See https://github.com/jackc/pgx/issues/374.
 //func TestConnExecBatchHuge(t *testing.T) {
 //	if testing.Short() {
 //		t.Skip("skipping test in short mode.")
@@ -1217,7 +1217,7 @@ func (m mockConnection) Write(b []byte) (n int, err error) {
 //	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 //	defer cancel()
 //
-//	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+//	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 //	require.NoError(t, err)
 //	defer closeConn(t, fbConn)
 //
@@ -1248,12 +1248,12 @@ func (m mockConnection) Write(b []byte) (n int, err error) {
 //ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 //defer cancel()
 //
-//fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+//fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 //require.NoError(t, err)
 //defer closeConn(t, fbConn)
 //
 //if fbConn.ParameterStatus("crdb_version") != "" {
-//	t.Skip("Skipping due to known server issue: (https://github.com/cockroachdb/cockroach/issues/44803)")
+//	t.Skip()
 //}
 //
 //_, err = fbConn.Exec(ctx, "create temporary table t(id int)").ReadAll()
@@ -1278,7 +1278,7 @@ func TestConnLocking(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
@@ -1298,39 +1298,39 @@ func TestConnLocking(t *testing.T) {
 }
 
 func TestConnOnNotice(t *testing.T) {
-	t.Skip("need events implementation")
-	t.Parallel()
+	// 	t.Skip("need events implementation")
+	// 	t.Parallel()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
+	// 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	// 	defer cancel()
 
-	config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
-	require.NoError(t, err)
+	// 	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
+	// 	require.NoError(t, err)
 
-	var notice *fbconn.Notice
-	config.OnNotice = func(c *fbconn.FbConn, n *fbconn.Notice) {
-		notice = n
-	}
-	config.RuntimeParams["client_min_messages"] = "notice" // Ensure we only get the message we expect.
+	// 	var notice *fbconn.Notice
+	// 	config.OnNotice = func(c *fbconn.FbConn, n *fbconn.Notice) {
+	// 		notice = n
+	// 	}
+	// 	config.RuntimeParams["client_min_messages"] = "notice" // Ensure we only get the message we expect.
 
-	fbConn, err := fbconn.ConnectConfig(ctx, config)
-	require.NoError(t, err)
-	defer closeConn(t, fbConn)
+	// 	fbConn, err := fbconn.ConnectConfig(ctx, config)
+	// 	require.NoError(t, err)
+	// 	defer closeConn(t, fbConn)
 
-	if fbConn.ParameterStatus("crdb_version") != "" {
-		t.Skip("Server does not support PL/PGSQL (https://github.com/cockroachdb/cockroach/issues/17511)")
-	}
+	// 	if fbConn.ParameterStatus("crdb_version") != "" {
+	// 		t.Skip("")
+	// 	}
 
-	rr := fbConn.Exec(ctx, `do $$
-begin
-  raise notice 'hello, world';
-end$$;`)
-	res := rr.Read()
-	require.NoError(t, res.Err)
-	//assert.Equal(t, "NOTICE", notice.SeverityUnlocalized)
-	assert.Equal(t, "hello, world", notice.Message)
+	// 	rr := fbConn.Exec(ctx, `do $$
+	// begin
+	//   raise notice 'hello, world';
+	// end$$;`)
+	// 	res := rr.Read()
+	// 	require.NoError(t, res.Err)
+	// 	//assert.Equal(t, "NOTICE", notice.SeverityUnlocalized)
+	// 	assert.Equal(t, "hello, world", notice.Message)
 
-	ensureConnValid(t, fbConn)
+	// ensureConnValid(t, fbConn)
 }
 
 func TestConnOnNotification(t *testing.T) {
@@ -1339,7 +1339,7 @@ func TestConnOnNotification(t *testing.T) {
 	//ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	//defer cancel()
 	//
-	//config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	//config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 	//require.NoError(t, err)
 	//
 	//var msg string
@@ -1352,7 +1352,7 @@ func TestConnOnNotification(t *testing.T) {
 	//defer closeConn(t, fbConn)
 	//
 	//if fbConn.ParameterStatus("crdb_version") != "" {
-	//	t.Skip("Server does not support LISTEN / NOTIFY (https://github.com/cockroachdb/cockroach/issues/41522)")
+	//	t.Skip("Server does not support LISTEN / NOTIFY")
 	//}
 	//
 	//_, err = fbConn.Exec(ctx, "listen foo").ReadAll()
@@ -1378,7 +1378,7 @@ func TestConnWaitForNotification(t *testing.T) {
 	//ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	//defer cancel()
 	//
-	//config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	//config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 	//require.NoError(t, err)
 	//
 	//var msg string
@@ -1391,7 +1391,7 @@ func TestConnWaitForNotification(t *testing.T) {
 	//defer closeConn(t, fbConn)
 	//
 	//if fbConn.ParameterStatus("crdb_version") != "" {
-	//	t.Skip("Server does not support LISTEN / NOTIFY (https://github.com/cockroachdb/cockroach/issues/41522)")
+	//	t.Skip("Server does not support LISTEN / NOTIFY")
 	//}
 	//
 	//_, err = fbConn.Exec(ctx, "listen foo").ReadAll()
@@ -1417,7 +1417,7 @@ func TestConnWaitForNotificationPrecanceled(t *testing.T) {
 	//ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	//defer cancel()
 	//
-	//config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	//config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 	//require.NoError(t, err)
 	//
 	//fbConn, err := fbconn.ConnectConfig(ctx, config)
@@ -1437,7 +1437,7 @@ func TestConnWaitForNotificationTimeout(t *testing.T) {
 	//ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	//defer cancel()
 	//
-	//config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	//config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 	//require.NoError(t, err)
 	//
 	//fbConn, err := fbconn.ConnectConfig(ctx, config)
@@ -1469,7 +1469,7 @@ func TestConnEscapeString(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
@@ -1498,7 +1498,7 @@ func TestConnCancelRequest(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
@@ -1530,11 +1530,10 @@ func TestConnCancelRequest(t *testing.T) {
 	ensureConnValid(t, fbConn)
 }
 
-// https://github.com/jackc/pgx/issues/659
 func TestConnContextCanceledCancelsRunningQueryOnServer(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 	_, err = fbConn.Exec(ctx, "recreate function fbsleep (delay float not null) returns float external name 'fbxci!fbsleep' engine udr;").Close()
@@ -1543,7 +1542,7 @@ func TestConnContextCanceledCancelsRunningQueryOnServer(t *testing.T) {
 	t.Run("reddatabase", func(t *testing.T) {
 		t.Parallel()
 
-		testConnContextCanceledCancelsRunningQueryOnServer(t, os.Getenv("PGX_TEST_DATABASE"))
+		testConnContextCanceledCancelsRunningQueryOnServer(t, os.Getenv("FBX_TEST_DATABASE"))
 	})
 }
 
@@ -1558,9 +1557,8 @@ func testConnContextCanceledCancelsRunningQueryOnServer(t *testing.T, connString
 	ctx, cancel = context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
 
-	// Getting the actual PostgreSQL server process ID (PID) from a query executed through pgbouncer is not straightforward
-	// because pgbouncer abstracts the underlying database connections, and it doesn't expose the PID of the PostgreSQL
-	// server process to clients. However, we can check if the query is running by checking the generated query ID.
+	// We tag the query text with a unique marker (queryID) and then, from a separate connection,
+	// poll MON$STATEMENTS to ensure that the canceled statement is no longer running on the server.
 	queryID := fmt.Sprintf("testConnContextCanceled %d", time.Now().UnixNano())
 
 	rr := fbConn.Exec(ctx, fmt.Sprintf(`
@@ -1607,7 +1605,7 @@ func TestHijackAndConstruct(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	origConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	origConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	err = origConn.SyncConn(ctx)
@@ -1639,7 +1637,7 @@ func TestConnCloseWhileCancellableQueryInProgress(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	fbConn.Exec(ctx, generateSeriesQuery(1, 10, "n"))
@@ -1655,26 +1653,25 @@ func TestConnCloseWhileCancellableQueryInProgress(t *testing.T) {
 }
 
 // FIXME: fbx
-//// https://github.com/jackc/pgx/issues/800
 //func TestFatalErrorReceivedAfterCommandComplete(t *testing.T) {
 //	t.Parallel()
 //
 //	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 //	defer cancel()
 //
-//	steps := pgmock.AcceptUnauthenticatedConnRequestSteps()
-//	steps = append(steps, pgmock.ExpectAnyMessage(&pgproto3.Parse{}))
-//	steps = append(steps, pgmock.ExpectAnyMessage(&pgproto3.Bind{}))
-//	steps = append(steps, pgmock.ExpectAnyMessage(&pgproto3.Describe{}))
-//	steps = append(steps, pgmock.ExpectAnyMessage(&pgproto3.Execute{}))
-//	steps = append(steps, pgmock.ExpectAnyMessage(&pgproto3.Sync{}))
-//	steps = append(steps, pgmock.SendMessage(&pgproto3.RowDescription{Fields: []pgproto3.FieldDescription{
+//	steps := fbmock.AcceptUnauthenticatedConnRequestSteps()
+//	steps = append(steps, fbmock.ExpectAnyMessage(&fbproto3.Parse{}))
+//	steps = append(steps, fbmock.ExpectAnyMessage(&fbproto3.Bind{}))
+//	steps = append(steps, fbmock.ExpectAnyMessage(&fbproto3.Describe{}))
+//	steps = append(steps, fbmock.ExpectAnyMessage(&fbproto3.Execute{}))
+//	steps = append(steps, fbmock.ExpectAnyMessage(&fbproto3.Sync{}))
+//	steps = append(steps, fbmock.SendMessage(&fbproto3.RowDescription{Fields: []fbproto3.FieldDescription{
 //		{Name: []byte("mock")},
 //	}}))
-//	steps = append(steps, pgmock.SendMessage(&pgproto3.CommandComplete{QueryStatus: []byte("SELECT 0")}))
-//	steps = append(steps, pgmock.SendMessage(&pgproto3.ErrorResponse{Severity: "FATAL", Code: "57P01"}))
+//	steps = append(steps, fbmock.SendMessage(&fbproto3.CommandComplete{QueryStatus: []byte("SELECT 0")}))
+//	steps = append(steps, fbmock.SendMessage(&fbproto3.ErrorResponse{Severity: "FATAL", Code: "57P01"}))
 //
-//	script := &pgmock.Script{Steps: steps}
+//	script := &fbmock.Script{Steps: steps}
 //
 //	ln, err := net.Listen("tcp", "127.0.0.1:")
 //	require.NoError(t, err)
@@ -1697,7 +1694,7 @@ func TestConnCloseWhileCancellableQueryInProgress(t *testing.T) {
 //			return
 //		}
 //
-//		err = script.Run(pgproto3.NewBackend(conn, conn))
+//		err = script.Run(fbproto3.NewBackend(conn, conn))
 //		if err != nil {
 //			serverErrChan <- err
 //			return
@@ -1729,9 +1726,9 @@ func TestConnCheckConn(t *testing.T) {
 
 	// Intentionally using TCP connection for more predictable close behavior. (Not sure if Unix domain sockets would behave subtly different.)
 
-	connString := os.Getenv("PGX_TEST_TCP_CONN_STRING")
+	connString := os.Getenv("FBX_TEST_TCP_CONN_STRING")
 	if connString == "" {
-		t.Skipf("Skipping due to missing environment variable %v", "PGX_TEST_TCP_CONN_STRING")
+		t.Skipf("Skipping due to missing environment variable %v", "FBX_TEST_TCP_CONN_STRING")
 	}
 
 	c1, err := fbconn.Connect(ctx, connString)
@@ -1757,20 +1754,14 @@ func TestConnPing(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	// Intentionally using TCP connection for more predictable close behavior. (Not sure if Unix domain sockets would behave subtly different.)
-
-	connString := os.Getenv("PGX_TEST_TCP_CONN_STRING")
+	connString := os.Getenv("FBX_TEST_TCP_CONN_STRING")
 	if connString == "" {
-		t.Skipf("Skipping due to missing environment variable %v", "PGX_TEST_TCP_CONN_STRING")
+		t.Skipf("Skipping due to missing environment variable %v", "FBX_TEST_TCP_CONN_STRING")
 	}
 
 	c1, err := fbconn.Connect(ctx, connString)
 	require.NoError(t, err)
 	defer c1.Close(ctx)
-
-	if c1.ParameterStatus("crdb_version") != "" {
-		t.Skip("Server does not support pg_terminate_backend() (https://github.com/cockroachdb/cockroach/issues/35897)")
-	}
 
 	_, err = c1.Exec(ctx, "select * from rdb$database").Close()
 	require.NoError(t, err)
@@ -1781,10 +1772,21 @@ func TestConnPing(t *testing.T) {
 	err = c1.Disconnect(ctx)
 	require.NoError(t, err)
 
-	// Give a little time for the signal to actually kill the backend.
-	time.Sleep(500 * time.Millisecond)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		pingCtx, pingCancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		err = c1.Ping(pingCtx)
+		pingCancel()
 
-	err = c1.Ping(ctx)
+		if err != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("expected Ping to fail after Disconnect, but it kept succeeding")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
 	require.Error(t, err)
 }
 
@@ -1794,7 +1796,7 @@ func TestConnOnFbError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	config.OnFbError = func(c *fbconn.FbConn, fbErr *fbconn.FbError) bool {
 		require.NotNil(t, c)
@@ -1829,7 +1831,7 @@ func TestConnCustomData(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
@@ -1843,7 +1845,7 @@ func Example() {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -1867,7 +1869,7 @@ func Example() {
 }
 
 func GetSSLPassword(ctx context.Context) string {
-	connString := os.Getenv("PGX_SSL_PASSWORD")
+	connString := os.Getenv("FBX_SSL_PASSWORD")
 	return connString
 }
 
@@ -1981,7 +1983,7 @@ func testingKey(s string) string { return strings.ReplaceAll(s, "TESTING KEY", "
 //					return
 //				}
 //
-//				backend := pgproto3.NewBackend(conn, conn)
+//				backend := fbproto3.NewBackend(conn, conn)
 //				startupMessage, err := backend.ReceiveStartupMessage()
 //				if err != nil {
 //					serverErrChan <- err
@@ -1989,7 +1991,7 @@ func testingKey(s string) string { return strings.ReplaceAll(s, "TESTING KEY", "
 //				}
 //
 //				switch startupMessage.(type) {
-//				case *pgproto3.SSLRequest:
+//				case *fbproto3.SSLRequest:
 //					_, err = conn.Write([]byte("S"))
 //					if err != nil {
 //						serverErrChan <- err
@@ -2020,9 +2022,9 @@ func testingKey(s string) string { return strings.ReplaceAll(s, "TESTING KEY", "
 //					return
 //				}
 //
-//				srv.Write(mustEncode((&pgproto3.AuthenticationOk{}).Encode(nil)))
-//				srv.Write(mustEncode((&pgproto3.BackendKeyData{ProcessID: 0, SecretKey: 0}).Encode(nil)))
-//				srv.Write(mustEncode((&pgproto3.ReadyForQuery{TxStatus: 'I'}).Encode(nil)))
+//				srv.Write(mustEncode((&fbproto3.AuthenticationOk{}).Encode(nil)))
+//				srv.Write(mustEncode((&fbproto3.BackendKeyData{ProcessID: 0, SecretKey: 0}).Encode(nil)))
+//				srv.Write(mustEncode((&fbproto3.ReadyForQuery{TxStatus: 'I'}).Encode(nil)))
 //
 //				serverSNINameChan <- sniHost
 //			}()
@@ -2057,7 +2059,7 @@ func testingKey(s string) string { return strings.ReplaceAll(s, "TESTING KEY", "
 //		expectDirectNego bool
 //	}{
 //		{
-//			name:             "Default negotiation (postgres)",
+//			name:             "Default negotiation (firebird)",
 //			connString:       "sslmode=require",
 //			expectDirectNego: false,
 //		},
@@ -2067,8 +2069,8 @@ func testingKey(s string) string { return strings.ReplaceAll(s, "TESTING KEY", "
 //			expectDirectNego: true,
 //		},
 //		{
-//			name:             "Explicit postgres negotiation",
-//			connString:       "sslmode=require sslnegotiation=postgres",
+//			name:             "Explicit firebird negotiation",
+//			connString:       "sslmode=require sslnegotiation=firebird",
 //			expectDirectNego: false,
 //		},
 //	}
@@ -2078,8 +2080,8 @@ func testingKey(s string) string { return strings.ReplaceAll(s, "TESTING KEY", "
 //		t.Run(tt.name, func(t *testing.T) {
 //			t.Parallel()
 //
-//			script := &pgmock.Script{
-//				Steps: pgmock.AcceptUnauthenticatedConnRequestSteps(),
+//			script := &fbmock.Script{
+//				Steps: fbmock.AcceptUnauthenticatedConnRequestSteps(),
 //			}
 //
 //			ln, err := net.Listen("tcp", "127.0.0.1:")
@@ -2111,14 +2113,14 @@ func testingKey(s string) string { return strings.ReplaceAll(s, "TESTING KEY", "
 //					return
 //				}
 //
-//				// Check if TLS Client Hello (direct) or PostgreSQL SSLRequest
+//				// Check if TLS Client Hello (direct) or Firebird SSLRequest
 //				isDirect := firstByte[0] >= 20 && firstByte[0] <= 23
 //				directNegoObserved.Store(isDirect)
 //
 //				var tlsConn *tls.Conn
 //
 //				if !isDirect {
-//					// Handle standard PostgreSQL SSL negotiation
+//					// Handle standard Firebird SSL negotiation
 //					// Read the rest of the SSL request message
 //					sslRequestRemainder := make([]byte, 7)
 //					_, err = io.ReadFull(conn, sslRequestRemainder)
@@ -2171,9 +2173,9 @@ func testingKey(s string) string { return strings.ReplaceAll(s, "TESTING KEY", "
 //				}
 //				defer tlsConn.Close()
 //
-//				err = script.Run(pgproto3.NewBackend(tlsConn, tlsConn))
+//				err = script.Run(fbproto3.NewBackend(tlsConn, tlsConn))
 //				if err != nil {
-//					serverErrCh <- fmt.Errorf("pgmock run error: %w", err)
+//					serverErrCh <- fmt.Errorf("fbmock run error: %w", err)
 //					return
 //				}
 //			}()
@@ -2216,29 +2218,27 @@ func (c *prefixConn) Read(b []byte) (n int, err error) {
 }
 
 //FIXME: fbx
-//// https://github.com/jackc/pgx/issues/1920
 //func TestFatalErrorReceivedInPipelineMode(t *testing.T) {
 //	t.Parallel()
 //
 //	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 //	defer cancel()
 //
-//	steps := pgmock.AcceptUnauthenticatedConnRequestSteps()
-//	steps = append(steps, pgmock.ExpectAnyMessage(&pgproto3.Parse{}))
-//	steps = append(steps, pgmock.ExpectAnyMessage(&pgproto3.Describe{}))
-//	steps = append(steps, pgmock.ExpectAnyMessage(&pgproto3.Parse{}))
-//	steps = append(steps, pgmock.ExpectAnyMessage(&pgproto3.Describe{}))
-//	steps = append(steps, pgmock.ExpectAnyMessage(&pgproto3.Parse{}))
-//	steps = append(steps, pgmock.ExpectAnyMessage(&pgproto3.Describe{}))
-//	steps = append(steps, pgmock.SendMessage(&pgproto3.RowDescription{Fields: []pgproto3.FieldDescription{
+//	steps := fbmock.AcceptUnauthenticatedConnRequestSteps()
+//	steps = append(steps, fbmock.ExpectAnyMessage(&fbproto3.Parse{}))
+//	steps = append(steps, fbmock.ExpectAnyMessage(&fbproto3.Describe{}))
+//	steps = append(steps, fbmock.ExpectAnyMessage(&fbproto3.Parse{}))
+//	steps = append(steps, fbmock.ExpectAnyMessage(&fbproto3.Describe{}))
+//	steps = append(steps, fbmock.ExpectAnyMessage(&fbproto3.Parse{}))
+//	steps = append(steps, fbmock.ExpectAnyMessage(&fbproto3.Describe{}))
+//	steps = append(steps, fbmock.SendMessage(&fbproto3.RowDescription{Fields: []fbproto3.FieldDescription{
 //		{Name: []byte("mock")},
 //	}}))
-//	steps = append(steps, pgmock.SendMessage(&pgproto3.ErrorResponse{Severity: "FATAL", Code: "57P01"}))
-//	// We shouldn't get anything after the first fatal error. But the reported issue was with PgBouncer so maybe that
-//	// causes the issue. Anyway, a FATAL error after the connection had already been killed could cause a panic.
-//	steps = append(steps, pgmock.SendMessage(&pgproto3.ErrorResponse{Severity: "FATAL", Code: "57P01"}))
+//	steps = append(steps, fbmock.SendMessage(&fbproto3.ErrorResponse{Severity: "FATAL", Code: "57P01"}))
+//	// We shouldn't get anything after the first fatal error. A FATAL error after the connection had already been killed could cause a panic.
+//	steps = append(steps, fbmock.SendMessage(&fbproto3.ErrorResponse{Severity: "FATAL", Code: "57P01"}))
 //
-//	script := &pgmock.Script{Steps: steps}
+//	script := &fbmock.Script{Steps: steps}
 //
 //	ln, err := net.Listen("tcp", "127.0.0.1:")
 //	require.NoError(t, err)
@@ -2264,7 +2264,7 @@ func (c *prefixConn) Read(b []byte) (n int, err error) {
 //			return
 //		}
 //
-//		err = script.Run(pgproto3.NewBackend(conn, conn))
+//		err = script.Run(fbproto3.NewBackend(conn, conn))
 //		if err != nil {
 //			serverErrChan <- err
 //			return
@@ -2308,7 +2308,7 @@ func mustEncode(buf []byte, err error) []byte {
 
 func TestDeadlineContextWatcherHandler(t *testing.T) {
 	t.Run("DeadlineExceeded with zero DeadlineDelay", func(t *testing.T) {
-		config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+		config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 		require.NoError(t, err)
 		config.BuildContextWatcherHandler = func(conn *fbconn.FbConn) ctxwatch.Handler {
 			return &fbconn.DeadlineContextWatcherHandler{Conn: conn.Conn()}
@@ -2332,7 +2332,7 @@ func TestDeadlineContextWatcherHandler(t *testing.T) {
 	})
 
 	t.Run("DeadlineExceeded with DeadlineDelay", func(t *testing.T) {
-		config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+		config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 		require.NoError(t, err)
 		config.BuildContextWatcherHandler = func(conn *fbconn.FbConn) ctxwatch.Handler {
 			return &fbconn.DeadlineContextWatcherHandler{Conn: conn.Conn(), DeadlineDelay: 500 * time.Millisecond}
@@ -2357,7 +2357,7 @@ func TestDeadlineContextWatcherHandler(t *testing.T) {
 }
 
 func TestCancelRequestContextWatcherHandler(t *testing.T) {
-	config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
@@ -2368,7 +2368,7 @@ func TestCancelRequestContextWatcherHandler(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("DeadlineExceeded cancels request after CancelRequestDelay", func(t *testing.T) {
-		config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+		config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 		require.NoError(t, err)
 		config.BuildContextWatcherHandler = func(conn *fbconn.FbConn) ctxwatch.Handler {
 			return &fbconn.CancelRequestContextWatcherHandler{
@@ -2395,7 +2395,7 @@ func TestCancelRequestContextWatcherHandler(t *testing.T) {
 	})
 
 	t.Run("DeadlineExceeded - do not send cancel request when query finishes in grace period", func(t *testing.T) {
-		config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+		config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 		require.NoError(t, err)
 		config.BuildContextWatcherHandler = func(conn *fbconn.FbConn) ctxwatch.Handler {
 			return &fbconn.CancelRequestContextWatcherHandler{
@@ -2420,7 +2420,7 @@ func TestCancelRequestContextWatcherHandler(t *testing.T) {
 	})
 
 	t.Run("DeadlineExceeded sets conn deadline with DeadlineDelay", func(t *testing.T) {
-		config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+		config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 		require.NoError(t, err)
 		config.BuildContextWatcherHandler = func(conn *fbconn.FbConn) ctxwatch.Handler {
 			return &fbconn.CancelRequestContextWatcherHandler{
@@ -2448,7 +2448,7 @@ func TestCancelRequestContextWatcherHandler(t *testing.T) {
 		t.Run(fmt.Sprintf("Stress %d", i), func(t *testing.T) {
 			t.Parallel()
 
-			config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+			config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 			require.NoError(t, err)
 			config.BuildContextWatcherHandler = func(conn *fbconn.FbConn) ctxwatch.Handler {
 				return &fbconn.CancelRequestContextWatcherHandler{
@@ -2480,7 +2480,7 @@ func TestReadSingletonResult(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Second)
 	defer cancel()
 
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
@@ -2515,7 +2515,7 @@ func TestConnExecImmediate(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
@@ -2535,7 +2535,7 @@ func TestConnExecImmediateNoTx(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	fbConn, err := fbconn.Connect(ctx, os.Getenv("PGX_TEST_DATABASE"))
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
@@ -2551,7 +2551,7 @@ func TestConnWithWarning(t *testing.T) {
 
 	var warnings string
 	// Assume default database dialect is 3, but connect with dialect 1 to get warning
-	config, err := fbconn.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	dpb := fbproto.NewDPBWriterV2()
 	dpb.PutInt32(fbproto.Isc_dpb_set_db_sql_dialect, 1)

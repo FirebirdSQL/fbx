@@ -23,7 +23,7 @@ var defaultConnTestRunner fbxtest.ConnTestRunner
 func init() {
 	defaultConnTestRunner = fbxtest.DefaultConnTestRunner()
 	defaultConnTestRunner.CreateConfig = func(ctx context.Context, t testing.TB) *fbx.ConnConfig {
-		config, err := fbx.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+		config, err := fbx.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 		require.NoError(t, err)
 		return config
 	}
@@ -181,7 +181,6 @@ func TestLogQuery(t *testing.T) {
 	})
 }
 
-// https://github.com/jackc/fbx/issues/1365
 func TestLogQueryArgsHandlesUTF8(t *testing.T) {
 	t.Parallel()
 
@@ -430,7 +429,7 @@ func TestConcurrentUsage(t *testing.T) {
 		LogLevel: tracelog.LogLevelTrace,
 	}
 
-	config, err := fbxpool.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbxpool.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	config.ConnConfig.Tracer = tracer
 

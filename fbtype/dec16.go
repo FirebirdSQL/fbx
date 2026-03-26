@@ -143,18 +143,7 @@ func (d DecFloat16) IsNaN() bool {
 
 type DecFloat16Codec struct{}
 
-func (DecFloat16Codec) FormatSupported(format int16) bool {
-	return format == BinaryFormatCode
-}
-
-func (DecFloat16Codec) PreferredFormat() int16 {
-	return BinaryFormatCode
-}
-
 func (DecFloat16Codec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
-	if typeMetadata.FormatCode != BinaryFormatCode {
-		return nil
-	}
 
 	switch value.(type) {
 	case Dec16Valuer:
@@ -240,9 +229,6 @@ func (encodePlanDecFloat16CodecBinaryFromString) Encode(value any, buf []byte) (
 }
 
 func (DecFloat16Codec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
-	if typeMetadata.FormatCode != BinaryFormatCode {
-		return nil
-	}
 
 	switch target.(type) {
 	case *DecFloat16:

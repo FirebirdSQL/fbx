@@ -213,69 +213,31 @@ func (p *SrpAuthPlugin) verifyServerProof(serverProof []byte) error {
 }
 
 func parseSrpServerData(data []byte) ([]byte, string, error) {
-	offset := 0
-	var salt []byte
+	const maxAuthDataLength = (srpSaltSize + srpKeySize + 2) * 2
 
-	if len(data) >= 2 {
-		sectionCount := int(binary.LittleEndian.Uint16(data[offset : offset+2]))
-		if sectionCount > 0 && sectionCount <= 8 {
-			offset += 2
-			extendedSaltFound := false
-			for i := 0; i < sectionCount; i++ {
-				if offset+2 > len(data) {
-					return nil, "", fmt.Errorf("invalid SRP payload")
-				}
-				length := int(binary.LittleEndian.Uint16(data[offset : offset+2]))
-				offset += 2
-				if length < 0 || offset+length > len(data) {
-					return nil, "", fmt.Errorf("invalid SRP payload")
-				}
-				chunk := data[offset : offset+length]
-				offset += length
-				if len(chunk) > 0 && chunk[0] < 32 {
-					chunk = chunk[1:]
-				}
-				if len(chunk) == 0 {
-					continue
-				}
-
-				salt = append([]byte(nil), chunk...)
-				extendedSaltFound = true
-			}
-
-			if extendedSaltFound {
-				serverHex := string(data[offset:])
-				if serverHex == "" {
-					return nil, "", fmt.Errorf("invalid SRP server public")
-				}
-				return append([]byte(nil), salt...), serverHex, nil
-			}
-
-			offset = 0
-		}
+	if len(data) < 4 {
+		return nil, "", fmt.Errorf("invalid SRP payload")
 	}
-
-	if len(data) < 2 {
+	if len(data) > maxAuthDataLength {
 		return nil, "", fmt.Errorf("invalid SRP payload")
 	}
 
-	saltLen := int(binary.LittleEndian.Uint16(data[offset : offset+2]))
-	offset += 2
-	if saltLen < 0 || offset+saltLen > len(data) {
-		return nil, "", fmt.Errorf("invalid SRP payload")
-	}
-	salt = append([]byte(nil), data[offset:offset+saltLen]...)
-	offset += saltLen
-
-	if offset+2 <= len(data) {
-		offset += 2
-	}
-
-	if offset > len(data) {
+	saltLen := int(binary.LittleEndian.Uint16(data[0:2]))
+	saltStart := 2
+	saltEnd := saltStart + saltLen
+	if saltLen < 0 || saltLen > srpSaltSize*2 || saltEnd+2 > len(data) {
 		return nil, "", fmt.Errorf("invalid SRP payload")
 	}
 
-	serverHex := string(data[offset:])
+	keyLen := int(binary.LittleEndian.Uint16(data[saltEnd : saltEnd+2]))
+	keyStart := saltEnd + 2
+	keyEnd := keyStart + keyLen
+	if keyLen <= 0 || keyStart > len(data) || keyEnd != len(data) {
+		return nil, "", fmt.Errorf("invalid SRP payload")
+	}
+
+	salt := append([]byte(nil), data[saltStart:saltEnd]...)
+	serverHex := string(data[keyStart:keyEnd])
 	if serverHex == "" {
 		return nil, "", fmt.Errorf("invalid SRP server public")
 	}

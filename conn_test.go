@@ -23,9 +23,9 @@ import (
 func TestCrateDBConnect(t *testing.T) {
 	t.Parallel()
 
-	connString := os.Getenv("PGX_TEST_CRATEDB_CONN_STRING")
+	connString := os.Getenv("FBX_TEST_CRATEDB_CONN_STRING")
 	if connString == "" {
-		t.Skipf("Skipping due to missing environment variable %v", "PGX_TEST_CRATEDB_CONN_STRING")
+		t.Skipf("Skipping due to missing environment variable %v", "FBX_TEST_CRATEDB_CONN_STRING")
 	}
 
 	conn, err := fbx.Connect(context.Background(), connString)
@@ -47,7 +47,7 @@ func TestCrateDBConnect(t *testing.T) {
 func TestConnect(t *testing.T) {
 	t.Parallel()
 
-	connString := os.Getenv("PGX_TEST_DATABASE")
+	connString := os.Getenv("FBX_TEST_DATABASE")
 	config := mustParseConfig(t, connString)
 
 	conn, err := fbx.ConnectConfig(context.Background(), config)
@@ -84,14 +84,14 @@ func TestConnect(t *testing.T) {
 func TestConnectWithPreferSimpleProtocol(t *testing.T) {
 	t.Parallel()
 
-	connConfig := mustParseConfig(t, os.Getenv("PGX_TEST_DATABASE"))
+	connConfig := mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE"))
 	connConfig.DefaultQueryExecMode = fbx.QueryExecModeExec
 
 	conn := mustConnect(t, connConfig)
 	defer closeConn(t, conn)
 
 	// If simple protocol is used we should be able to correctly scan the result
-	// into a pgtype.Text as the integer will have been encoded in text.
+	// into a fbtype.Text as the integer will have been encoded in text.
 
 	var s fbtype.Text
 	err := conn.QueryRow(context.Background(), "select cast(? as int) from rdb$database", 42).Scan(&s)
@@ -109,14 +109,14 @@ func TestConnectConfigRequiresConnConfigFromParseConfig(t *testing.T) {
 }
 
 func TestConfigContainsConnStr(t *testing.T) {
-	connStr := os.Getenv("PGX_TEST_DATABASE")
+	connStr := os.Getenv("FBX_TEST_DATABASE")
 	config, err := fbx.ParseConfig(connStr)
 	require.NoError(t, err)
 	assert.Equal(t, connStr, config.ConnString())
 }
 
 func TestConfigCopyReturnsEqualConfig(t *testing.T) {
-	connString := "postgres://jack:secret@localhost:5432/mydb?application_name=pgxtest&search_path=myschema&connect_timeout=5"
+	connString := "firebird://jack:secret@localhost:3050/mydb?application_name=fbxtest&connect_timeout=5"
 	original, err := fbx.ParseConfig(connString)
 	require.NoError(t, err)
 
@@ -125,7 +125,7 @@ func TestConfigCopyReturnsEqualConfig(t *testing.T) {
 }
 
 func TestConfigCopyCanBeUsedToConnect(t *testing.T) {
-	connString := os.Getenv("PGX_TEST_DATABASE")
+	connString := os.Getenv("FBX_TEST_DATABASE")
 	original, err := fbx.ParseConfig(connString)
 	require.NoError(t, err)
 
@@ -353,7 +353,7 @@ func TestExecContextFailureWithoutCancelationWithArguments(t *testing.T) {
 func TestExecFailureCloseBefore(t *testing.T) {
 	t.Parallel()
 
-	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	closeConn(t, conn)
 
 	_, err := conn.Exec(context.Background(), "select 1 from rdb$database")
@@ -364,7 +364,7 @@ func TestExecFailureCloseBefore(t *testing.T) {
 func TestPrepare(t *testing.T) {
 	t.Parallel()
 
-	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 
 	//select $1::varchar
@@ -417,7 +417,7 @@ func TestPrepare(t *testing.T) {
 func TestPrepareBadSQLFailure(t *testing.T) {
 	t.Parallel()
 
-	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 
 	if _, err := conn.Prepare(context.Background(), "badSQL", "select foo"); err == nil {
@@ -498,7 +498,6 @@ func TestPrepareWithDigestedName(t *testing.T) {
 	})
 }
 
-// https://github.com/jackc/pgx/pull/1795
 func TestDeallocateInAbortedTransaction(t *testing.T) {
 	t.Parallel()
 
@@ -559,7 +558,7 @@ func TestDeallocateMissingPreparedStatementStillClearsFromPreparedStatementMap(t
 }
 
 func TestFatalRxError(t *testing.T) {
-	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 
 	_, err := conn.Exec(context.Background(), "recreate function fbsleep (delay float not null) returns float external name 'fbxci!fbsleep' engine udr;")
@@ -603,10 +602,10 @@ func TestFatalTxError(t *testing.T) {
 	// Run timing sensitive test many times
 	for i := 0; i < 50; i++ {
 		func() {
-			conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+			conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 			defer closeConn(t, conn)
 
-			otherConn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+			otherConn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 			defer otherConn.Close(context.Background())
 
 			if err = conn.FbConn().Disconnect(context.Background()); err != nil {
@@ -705,10 +704,9 @@ func TestIdentifierSanitize(t *testing.T) {
 }
 
 func TestConnInitTypeMap(t *testing.T) {
-	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 
-	// spot check that the standard postgres type names aren't qualified
 	nameTypeIDs := map[string]uint32{
 		"int":     fbproto.SQL_TYPE_LONG,
 		"varchar": fbproto.SQL_TYPE_VARYING,
@@ -754,7 +752,6 @@ func TestInsertDurationBigint(t *testing.T) {
 	})
 }
 
-// https://github.com/jackc/pgx/issues/1847
 func TestConnDeallocateInvalidatedCachedStatementsWhenCanceled(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
@@ -783,11 +780,10 @@ func TestConnDeallocateInvalidatedCachedStatementsWhenCanceled(t *testing.T) {
 	})
 }
 
-// Adapted from https://github.com/jackc/pgx/issues/2442
 func TestStmtCacheInvalidationExec(t *testing.T) {
 	ctx := context.Background()
 
-	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 
 	_, err := conn.Exec(ctx, `

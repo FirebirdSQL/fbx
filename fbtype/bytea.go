@@ -63,30 +63,13 @@ func (scanPlanAnyToUndecodedBytes) Scan(src []byte, dst any) error {
 
 type ByteaCodec struct{}
 
-func (ByteaCodec) FormatSupported(format int16) bool {
-	return format == TextFormatCode || format == BinaryFormatCode
-}
-
-func (ByteaCodec) PreferredFormat() int16 {
-	return BinaryFormatCode
-}
-
 func (ByteaCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
-	switch typeMetadata.FormatCode {
-	case BinaryFormatCode:
-		switch value.(type) {
-		case []byte:
-			return encodePlanBytesCodecBinaryBytes{}
-		case BytesValuer:
-			return encodePlanBytesCodecBinaryBytesValuer{}
-		}
-	case TextFormatCode:
-		switch value.(type) {
-		case []byte:
-			return encodePlanBytesCodecTextBytes{}
-		case BytesValuer:
-			return encodePlanBytesCodecTextBytesValuer{}
-		}
+
+	switch value.(type) {
+	case []byte:
+		return encodePlanBytesCodecBinaryBytes{}
+	case BytesValuer:
+		return encodePlanBytesCodecBinaryBytesValuer{}
 	}
 
 	return nil
@@ -148,21 +131,11 @@ func (encodePlanBytesCodecTextBytesValuer) Encode(value any, buf []byte) (newBuf
 
 func (ByteaCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
 
-	switch typeMetadata.FormatCode {
-	case BinaryFormatCode:
-		switch target.(type) {
-		case *[]byte:
-			return scanPlanBinaryBytesToBytes{}
-		case BytesScanner:
-			return scanPlanBinaryBytesToBytesScanner{}
-		}
-	case TextFormatCode:
-		switch target.(type) {
-		case *[]byte:
-			return scanPlanTextByteaToBytes{}
-		case BytesScanner:
-			return scanPlanTextByteaToBytesScanner{}
-		}
+	switch target.(type) {
+	case *[]byte:
+		return scanPlanBinaryBytesToBytes{}
+	case BytesScanner:
+		return scanPlanBinaryBytesToBytesScanner{}
 	}
 
 	return nil

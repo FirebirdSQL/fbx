@@ -121,7 +121,6 @@ func (p *StatementInfo) feedDescriptors(r *ServerInfoBufferReader) error {
 				return err
 			}
 		case fbproto.Isc_info_sql_describe_end:
-			field.Format = FbTypeIntoFormat(field.Type, field.Subtype)
 			*p.currentDescriptor = append(*p.currentDescriptor, field)
 		case fbproto.Isc_info_sql_null_ind:
 			var nullOk int
@@ -135,17 +134,6 @@ func (p *StatementInfo) feedDescriptors(r *ServerInfoBufferReader) error {
 			return fmt.Errorf("unknown descriptor info item: %d", item)
 		}
 	}
-}
-
-func FbTypeIntoFormat(fbtype int, subtype int) int16 {
-	switch fbtype {
-	case fbproto.SQL_TYPE_VARYING, fbproto.SQL_TYPE_TEXT:
-		if subtype == 1 { //OCTETS
-			return 1
-		}
-		return 0
-	}
-	return 1
 }
 
 func (p *StatementInfo) GetRowBlr() []byte {
@@ -183,15 +171,23 @@ func (p *StatementInfo) CalculateBlr(descriptors []fbproto.FieldDescriptor, valu
 		}
 		switch x.Type {
 		case fbproto.SQL_TYPE_VARYING:
-			blr[n] = 37
-			blr[n+1] = byte(dataLength & 255)
-			blr[n+2] = byte(dataLength >> 8)
-			n += 3
+			charsetID := byte(x.Subtype & 0xFF)
+			collationID := byte((x.Subtype >> 8) & 0xFF)
+			blr[n] = 38 // blr_varying2
+			blr[n+1] = charsetID
+			blr[n+2] = collationID
+			blr[n+3] = byte(dataLength & 255)
+			blr[n+4] = byte(dataLength >> 8)
+			n += 5
 		case fbproto.SQL_TYPE_TEXT:
-			blr[n] = 14
-			blr[n+1] = byte(dataLength & 255)
-			blr[n+2] = byte(dataLength >> 8)
-			n += 3
+			charsetID := byte(x.Subtype & 0xFF)
+			collationID := byte((x.Subtype >> 8) & 0xFF)
+			blr[n] = 15 // blr_text2
+			blr[n+1] = charsetID
+			blr[n+2] = collationID
+			blr[n+3] = byte(dataLength & 255)
+			blr[n+4] = byte(dataLength >> 8)
+			n += 5
 		case fbproto.SQL_TYPE_LONG:
 			blr[n] = 8
 			blr[n+1] = byte(sqlscale)

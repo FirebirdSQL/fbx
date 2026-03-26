@@ -50,7 +50,7 @@ type Rows interface {
 	// whether result-set reading ended prematurely due to an error. See
 	// Conn.Query for details.
 	//
-	// For simpler error handling, consider using the higher-level pgx v5
+	// For simpler error handling, consider using the higher-level fbx v5
 	// CollectRows() and ForEachRow() helpers instead.
 	Next() bool
 
@@ -107,7 +107,7 @@ func (r *connRow) Scan(dest ...any) (err error) {
 	for _, d := range dest {
 		if _, ok := d.(*fbtype.DriverBytes); ok {
 			rows.Close()
-			return fmt.Errorf("cannot scan into *pgtype.DriverBytes from QueryRow")
+			return fmt.Errorf("cannot scan into *fbtype.DriverBytes from QueryRow")
 		}
 	}
 
@@ -193,9 +193,7 @@ func (rows *baseRows) Close() {
 	}
 
 	// Zero references to other memory allocations. This allows them to be GC'd even when the Rows still referenced. In
-	// particular, when using pgxpool GC could be delayed as pgxpool.poolRows are allocated in large slices.
-	//
-	// https://github.com/jackc/pgx/pull/2269
+	// particular, when using fbxpool GC could be delayed as fbxpool.poolRows are allocated in large slices.
 	rows.values = nil
 	rows.scanPlans = nil
 	rows.scanTypes = nil
@@ -383,23 +381,16 @@ func (rows *baseRows) Values() ([]any, error) {
 		}
 
 		if dt, ok := rows.typeMap.TypeForTypeID(fd.Type, fd.Subtype); ok {
-			typeMetadata := fbtype.NewTypeMetadata(fd.Type, fd.Subtype, fd.Length, fd.Scale, fd.Format)
+			typeMetadata := fbtype.NewTypeMetadata(fd.Type, fd.Subtype, fd.Length, fd.Scale)
 			value, err := dt.Codec.DecodeValue(rows.typeMap, typeMetadata, buf)
 			if err != nil {
 				rows.fatal(err)
 			}
 			values = append(values, value)
 		} else {
-			switch fd.Format {
-			case TextFormatCode:
-				values = append(values, string(buf))
-			case BinaryFormatCode:
-				newBuf := make([]byte, len(buf))
-				copy(newBuf, buf)
-				values = append(values, newBuf)
-			default:
-				rows.fatal(errors.New("unknown format code"))
-			}
+			newBuf := make([]byte, len(buf))
+			copy(newBuf, buf)
+			values = append(values, newBuf)
 		}
 
 		if rows.Err() != nil {
@@ -495,8 +486,8 @@ func (e ScanArgError) Unwrap() error {
 // ScanRow decodes raw row data into dest. It can be used to scan rows read from the lower level fbconn interface.
 //
 // typeMap - TypeID to Go type mapping.
-// fieldDescriptions - TypeID and format of values
-// values - the raw data as returned from the PostgreSQL server
+// fieldDescriptions - TypeID of values
+// values - the raw data as returned from the Firebird/RedDatabase server
 // dest - the destination that values will be decoded into
 func ScanRow(typeMap *fbtype.Map, fieldDescriptions []fbconn.FieldDescription, values [][]byte, dest ...any) error {
 	if len(fieldDescriptions) != len(values) {
@@ -514,7 +505,7 @@ func ScanRow(typeMap *fbtype.Map, fieldDescriptions []fbconn.FieldDescription, v
 			return ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: errors.New("cannot scan blob without connection")}
 		}
 
-		typeMetadata := fbtype.NewTypeMetadata(fieldDescriptions[i].Type, fieldDescriptions[i].Subtype, fieldDescriptions[i].Length, fieldDescriptions[i].Scale, fieldDescriptions[i].Format)
+		typeMetadata := fbtype.NewTypeMetadata(fieldDescriptions[i].Type, fieldDescriptions[i].Subtype, fieldDescriptions[i].Length, fieldDescriptions[i].Scale)
 		err := typeMap.Scan(typeMetadata, values[i], d)
 		if err != nil {
 			return ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: err}

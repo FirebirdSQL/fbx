@@ -81,7 +81,7 @@ func TestTimestampTzTranscode(t *testing.T) {
 	})
 }
 
-// TODO - move these tests to pgtype
+// TODO - move these tests to fbtype
 
 func TestArrayDecoding(t *testing.T) {
 	t.Skip()
@@ -415,7 +415,7 @@ func TestEncodeTypeRename(t *testing.T) {
 		inBool := _bool(true)
 		var outBool _bool
 
-		// pgx.QueryExecModeExec requires all types to be registered.
+		// fbx.QueryExecModeExec requires all types to be registered.
 		conn.TypeMap().RegisterDefaultFbType(inInt, "integer")
 		conn.TypeMap().RegisterDefaultFbType(inInt8, "smallint")
 		conn.TypeMap().RegisterDefaultFbType(inInt16, "smallint")
@@ -523,23 +523,20 @@ select 1, 2 from rdb$database
 func TestScanIntoByteSlice(t *testing.T) {
 	t.Parallel()
 
-	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 	// Success cases
 	for _, tt := range []struct {
-		name             string
-		sql              string
-		resultFormatCode int16
-		output           []byte
+		name   string
+		sql    string
+		output []byte
 	}{
-		{"int - text", "select 42 from rdb$database", fbx.TextFormatCode, []byte("42")},
-		{"int - binary", "select 42 from rdb$database", fbx.BinaryFormatCode, []byte("42")},
-		{"text - text", "select cast('hi' as varchar(2)) from rdb$database", fbx.TextFormatCode, []byte("hi")},
-		{"text - binary", "select cast('hi' as varchar(2)) from rdb$database", fbx.BinaryFormatCode, []byte("hi")},
+		{"int - binary", "select 42 from rdb$database", []byte("42")},
+		{"text - binary", "select cast('hi' as varchar(2)) from rdb$database", []byte("hi")},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf []byte
-			err := conn.QueryRow(context.Background(), tt.sql, fbx.QueryResultFormats{tt.resultFormatCode}).Scan(&buf)
+			err := conn.QueryRow(context.Background(), tt.sql).Scan(&buf)
 			require.NoError(t, err)
 			require.Equal(t, tt.output, buf)
 		})
@@ -547,7 +544,7 @@ func TestScanIntoByteSlice(t *testing.T) {
 }
 
 func TestEncodeIntoNullField(t *testing.T) {
-	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
 
 	rows, err := conn.Query(context.Background(), "select first_name from phone_list where ? is null", nil)

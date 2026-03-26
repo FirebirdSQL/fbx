@@ -2,6 +2,7 @@ package auth
 
 import (
 	"encoding/binary"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -19,6 +20,7 @@ func TestParseSrpServerData_ShortSalt(t *testing.T) {
 	binary.LittleEndian.PutUint16(data[len(data)-2:], uint16(len(salt)))
 	data = append(data, salt...)
 	data = append(data, 0, 0)
+	binary.LittleEndian.PutUint16(data[len(data)-2:], uint16(len(serverHex)))
 	data = append(data, []byte(serverHex)...)
 
 	gotSalt, gotHex, err := parseSrpServerData(data)
@@ -27,7 +29,7 @@ func TestParseSrpServerData_ShortSalt(t *testing.T) {
 	require.Equal(t, serverHex, gotHex)
 }
 
-func TestParseSrpServerData_ExtendedSalt(t *testing.T) {
+func TestParseSrpServerData_SectionedFormatRejected(t *testing.T) {
 	salt := []byte{1, 2, 3, 4, 5, 6, 7}
 	serverHex := "ABCDEF012345"
 
@@ -39,6 +41,23 @@ func TestParseSrpServerData_ExtendedSalt(t *testing.T) {
 	binary.LittleEndian.PutUint16(data[len(data)-2:], uint16(sectionLen))
 	data = append(data, byte(1))
 	data = append(data, salt...)
+	data = append(data, []byte(serverHex)...)
+
+	_, _, err := parseSrpServerData(data)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid SRP payload")
+}
+
+func TestParseSrpServerData_LegacyShortSaltLargeKey(t *testing.T) {
+	salt := []byte{'0'}
+	serverHex := strings.Repeat("A", 257)
+
+	var data []byte
+	data = append(data, 0, 0)
+	binary.LittleEndian.PutUint16(data[len(data)-2:], uint16(len(salt)))
+	data = append(data, salt...)
+	data = append(data, 0, 0)
+	binary.LittleEndian.PutUint16(data[len(data)-2:], uint16(len(serverHex)))
 	data = append(data, []byte(serverHex)...)
 
 	gotSalt, gotHex, err := parseSrpServerData(data)

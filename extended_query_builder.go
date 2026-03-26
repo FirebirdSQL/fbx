@@ -11,22 +11,20 @@ import (
 	"rdb.red-soft.ru/fbx/fbtype"
 )
 
-// ExtendedQueryBuilder chooses parameter formats, encodes parameters, and tracks result formats for statement execution.
+// ExtendedQueryBuilder encodes parameters.
 type ExtendedQueryBuilder struct {
 	ParamValues     [][]byte
 	paramValueBytes []byte
-	ParamFormats    []int16
-	ResultFormats   []int16
 }
 
-// Build sets ParamValues, ParamFormats, and ResultFormats for use with *FbConn.ExecParams or *FbConn.ExecPrepared. If
+// Build sets ParamValues for use with *FbConn.ExecParams or *FbConn.ExecPrepared. If
 // sd is nil then QueryExecModeExec behavior will be used.
 func (pb *ExtendedQueryBuilder) Build(ctx context.Context, conn *Conn, tx *dbTx, m *fbtype.Map, sd *fbconn.StatementDescription, args []any) error {
 	pb.reset()
 
 	if sd == nil {
 		for i := range args {
-			typeMetadata := fbtype.NewTypeMetadataWithArrayData(0, 0, 0, 0, fbtype.TextFormatCode, nil)
+			typeMetadata := fbtype.NewTypeMetadataWithArrayData(0, 0, 0, 0, nil)
 			err := pb.appendParam(ctx, conn, tx, m, typeMetadata, args[i])
 			if err != nil {
 				err = fmt.Errorf("failed to encode args[%d]: %w", i, err)
@@ -67,53 +65,21 @@ func (pb *ExtendedQueryBuilder) Build(ctx context.Context, conn *Conn, tx *dbTx,
 	return nil
 }
 
-// appendParam appends a parameter to the query. format may be -1 to automatically choose the format. If arg is nil it
-// must be an untyped nil.
+// appendParam appends a parameter to the query.
 func (pb *ExtendedQueryBuilder) appendParam(ctx context.Context, conn *Conn, tx *dbTx, m *fbtype.Map, typeMetadata fbtype.TypeMetadata, arg any) error {
-	typeMetadata.FormatCode = 1
-	if typeMetadata.FormatCode == -1 {
-		preferredFormat := pb.chooseParameterFormatCode(m, typeMetadata.TypeID, arg)
-		preferredErr := pb.appendParam(ctx, conn, tx, m, typeMetadata, arg)
-		if preferredErr == nil {
-			return nil
-		}
-
-		if preferredFormat == TextFormatCode {
-			typeMetadata.FormatCode = BinaryFormatCode
-		} else {
-			typeMetadata.FormatCode = TextFormatCode
-		}
-
-		otherErr := pb.appendParam(ctx, conn, tx, m, typeMetadata, arg)
-		if otherErr == nil {
-			return nil
-		}
-
-		return preferredErr // return the error from the preferred format
-	}
-
 	v, err := pb.encodeParamValue(ctx, conn, tx, m, typeMetadata, arg)
 	if err != nil {
 		return err
 	}
-
-	pb.ParamFormats = append(pb.ParamFormats, typeMetadata.FormatCode)
 	pb.ParamValues = append(pb.ParamValues, v)
 
 	return nil
-}
-
-// appendResultFormat appends a result format to the query.
-func (pb *ExtendedQueryBuilder) appendResultFormat(format int16) {
-	pb.ResultFormats = append(pb.ResultFormats, format)
 }
 
 // reset readies pb to build another query.
 func (pb *ExtendedQueryBuilder) reset() {
 	pb.ParamValues = pb.ParamValues[0:0]
 	pb.paramValueBytes = pb.paramValueBytes[0:0]
-	pb.ParamFormats = pb.ParamFormats[0:0]
-	pb.ResultFormats = pb.ResultFormats[0:0]
 
 	if cap(pb.ParamValues) > 64 {
 		pb.ParamValues = make([][]byte, 0, 64)
@@ -121,12 +87,6 @@ func (pb *ExtendedQueryBuilder) reset() {
 
 	if cap(pb.paramValueBytes) > 256 {
 		pb.paramValueBytes = make([]byte, 0, 256)
-	}
-	if cap(pb.ParamFormats) > 64 {
-		pb.ParamFormats = make([]int16, 0, 64)
-	}
-	if cap(pb.ResultFormats) > 64 {
-		pb.ResultFormats = make([]int16, 0, 64)
 	}
 }
 
@@ -340,15 +300,4 @@ func (r *bytesReader) Read(p []byte) (int, error) {
 	n := copy(p, r.data[r.pos:])
 	r.pos += n
 	return n, nil
-}
-
-// chooseParameterFormatCode determines the correct format code for an
-// argument to a prepared statement. It defaults to TextFormatCode if no
-// determination can be made.
-func (pb *ExtendedQueryBuilder) chooseParameterFormatCode(m *fbtype.Map, typeid uint32, arg any) int16 {
-	switch arg.(type) {
-	case string, *string:
-		return TextFormatCode
-	}
-	return m.FormatCodeForTypeID(typeid)
 }

@@ -246,7 +246,7 @@ func (t *tracer) traceExecuteMessage(sender byte, op *OpExecute) {
 		fmt.Fprintf(t.buf, " lenParamDes=%d", len(op.ParametersDescriptors))
 		if t.FullLogMode {
 			for _, v := range op.ParametersDescriptors {
-				fmt.Fprintf(t.buf, " paramsdesc:%d %d %d %d %d %d %t %s %s %s %s %s %s %t", v.Index, v.Type, v.Format, v.Scale,
+				fmt.Fprintf(t.buf, " paramsdesc:%d %d %d %d %d %t %s %s %s %s %s %s %t", v.Index, v.Type, v.Scale,
 					v.Subtype, v.Length, v.NullOk, traceDoubleQuotedString([]byte(v.Name)), traceDoubleQuotedString([]byte(v.TableAliasName)),
 					traceDoubleQuotedString([]byte(v.RelName)), traceDoubleQuotedString([]byte(v.OwnerName)), traceDoubleQuotedString([]byte(v.OriginalName)),
 					traceDoubleQuotedString([]byte(v.OriginalTableName)), v.Nullable)

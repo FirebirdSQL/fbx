@@ -35,7 +35,7 @@ var (
 
 func openDB(t testing.TB, opts ...stdlib.OptionOpenDB) *sql.DB {
 	t.Helper()
-	config, err := fbx.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbx.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	return stdlib.OpenDB(*config, opts...)
 }
@@ -78,7 +78,7 @@ func testWithAllQueryExecModes(t *testing.T, f func(t *testing.T, db *sql.DB)) {
 	} {
 		t.Run(mode.String(),
 			func(t *testing.T) {
-				config, err := fbx.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+				config, err := fbx.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 				require.NoError(t, err)
 
 				config.DefaultQueryExecMode = mode
@@ -148,7 +148,7 @@ func TestSQLOpen(t *testing.T) {
 		tt := tt
 
 		t.Run(tt.driverName, func(t *testing.T) {
-			db, err := sql.Open(tt.driverName, os.Getenv("PGX_TEST_DATABASE"))
+			db, err := sql.Open(tt.driverName, os.Getenv("FBX_TEST_DATABASE"))
 			require.NoError(t, err)
 			closeDB(t, db)
 		})
@@ -239,7 +239,7 @@ func TestStdlibBlobText(t *testing.T) {
 }
 
 func TestSQLOpenFromPool(t *testing.T) {
-	pool, err := fbxpool.New(context.Background(), os.Getenv("PGX_TEST_DATABASE"))
+	pool, err := fbxpool.New(context.Background(), os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 
@@ -494,7 +494,6 @@ func TestConnConcurrency(t *testing.T) {
 	})
 }
 
-// https://github.com/jackc/fbx/issues/781
 func TestConnQueryDifferentScanPlansIssue781(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
 		var s string
@@ -594,7 +593,7 @@ func TestConnQueryScanArray(t *testing.T) {
 
 // Test type that fbx would handle natively in binary, but since it is not a
 // database/sql native type should be passed through as a string
-func TestConnQueryRowPgxBinary(t *testing.T) {
+func TestConnQueryRowFbxBinary(t *testing.T) {
 	t.Skip()
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
 		sql := "select cast(? as integer) from rdb$database"
@@ -843,8 +842,6 @@ func TestConnPrepareContextSuccess(t *testing.T) {
 	})
 }
 
-// https://github.com/jackc/fbx/issues/1753#issuecomment-1746033281
-// https://github.com/jackc/fbx/issues/1754#issuecomment-1752004634
 func TestConnMultiplePrepareAndDeallocate(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
 		sql := "select 42 from rdb$database"
@@ -1164,7 +1161,6 @@ func TestQueryLifeCycle(t *testing.T) {
 	})
 }
 
-// https://github.com/jackc/fbx/issues/409
 func TestScanJSONIntoJSONRawMessage(t *testing.T) {
 	t.Skip("need implementation")
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
@@ -1191,7 +1187,7 @@ func (l *testLogger) Log(ctx context.Context, lvl tracelog.LogLevel, msg string,
 }
 
 func TestRegisterConnConfig(t *testing.T) {
-	connConfig, err := fbx.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	connConfig, err := fbx.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	logger := &testLogger{}
@@ -1221,7 +1217,7 @@ func TestRegisterConnConfig(t *testing.T) {
 }
 
 func TestOptionBeforeAfterConnect(t *testing.T) {
-	config, err := fbx.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	config, err := fbx.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	var beforeConnConfigs []*fbx.ConnConfig
@@ -1296,7 +1292,7 @@ func TestRandomizeHostOrderFunc(t *testing.T) {
 func TestResetSessionHookCalled(t *testing.T) {
 	var mockCalled bool
 
-	connConfig, err := fbx.ParseConfig(os.Getenv("PGX_TEST_DATABASE"))
+	connConfig, err := fbx.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	db := stdlib.OpenDB(*connConfig, stdlib.OptionResetSession(func(ctx context.Context, conn *fbx.Conn) error {
@@ -1317,11 +1313,11 @@ func TestResetSessionHookCalled(t *testing.T) {
 }
 
 func TestCheckIdleConn(t *testing.T) {
-	controllerConn, err := sql.Open("fbx", os.Getenv("PGX_TEST_DATABASE"))
+	controllerConn, err := sql.Open("fbx", os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeDB(t, controllerConn)
 
-	db, err := sql.Open("fbx", os.Getenv("PGX_TEST_DATABASE"))
+	db, err := sql.Open("fbx", os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer closeDB(t, db)
 
