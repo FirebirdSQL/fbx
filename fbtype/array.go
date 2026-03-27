@@ -82,11 +82,17 @@ type ArrayCodec struct {
 }
 
 func (ArrayCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
-	return planEncodeArray{m: m, arrayData: typeMetadata.ArrayData}
+	if _, err := getArrayEncodeType(value); err == nil {
+		return planEncodeArray{m: m, arrayData: typeMetadata.ArrayData}
+	}
+	return nil
 }
 
 func (ArrayCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
-	return planScanArray{m: m, arrayData: typeMetadata.ArrayData}
+	if _, err := getArrayDecodeType(target); err == nil {
+		return planScanArray{m: m, arrayData: typeMetadata.ArrayData}
+	}
+	return nil
 }
 
 func (ac ArrayCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
