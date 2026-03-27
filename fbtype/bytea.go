@@ -2,8 +2,6 @@ package fbtype
 
 import (
 	"database/sql/driver"
-	"encoding/hex"
-	"fmt"
 )
 
 type BytesScanner interface {
@@ -70,6 +68,8 @@ func (ByteaCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) Encod
 		return encodePlanBytesCodecBinaryBytes{}
 	case BytesValuer:
 		return encodePlanBytesCodecBinaryBytesValuer{}
+	case string:
+		return encodePlanBytesCodecBinaryString{}
 	}
 
 	return nil
@@ -100,33 +100,11 @@ func (encodePlanBytesCodecBinaryBytesValuer) Encode(value any, buf []byte) (newB
 	return append(buf, b...), nil
 }
 
-type encodePlanBytesCodecTextBytes struct{}
+type encodePlanBytesCodecBinaryString struct{}
 
-func (encodePlanBytesCodecTextBytes) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	b := value.([]byte)
-	if b == nil {
-		return nil, nil
-	}
-
-	buf = append(buf, `\x`...)
-	buf = append(buf, hex.EncodeToString(b)...)
-	return buf, nil
-}
-
-type encodePlanBytesCodecTextBytesValuer struct{}
-
-func (encodePlanBytesCodecTextBytesValuer) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	b, err := value.(BytesValuer).BytesValue()
-	if err != nil {
-		return nil, err
-	}
-	if b == nil {
-		return nil, nil
-	}
-
-	buf = append(buf, `\x`...)
-	buf = append(buf, hex.EncodeToString(b)...)
-	return buf, nil
+func (encodePlanBytesCodecBinaryString) Encode(value any, buf []byte) ([]byte, error) {
+	s := value.(string)
+	return append(buf, s...), nil
 }
 
 func (ByteaCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
@@ -160,53 +138,6 @@ type scanPlanBinaryBytesToBytesScanner struct{}
 func (scanPlanBinaryBytesToBytesScanner) Scan(src []byte, dst any) error {
 	scanner := (dst).(BytesScanner)
 	return scanner.ScanBytes(src)
-}
-
-type scanPlanTextByteaToBytes struct{}
-
-func (scanPlanTextByteaToBytes) Scan(src []byte, dst any) error {
-	dstBuf := dst.(*[]byte)
-	if src == nil {
-		*dstBuf = nil
-		return nil
-	}
-
-	buf, err := decodeHexBytea(src)
-	if err != nil {
-		return err
-	}
-	*dstBuf = buf
-
-	return nil
-}
-
-type scanPlanTextByteaToBytesScanner struct{}
-
-func (scanPlanTextByteaToBytesScanner) Scan(src []byte, dst any) error {
-	scanner := (dst).(BytesScanner)
-	buf, err := decodeHexBytea(src)
-	if err != nil {
-		return err
-	}
-	return scanner.ScanBytes(buf)
-}
-
-func decodeHexBytea(src []byte) ([]byte, error) {
-	if src == nil {
-		return nil, nil
-	}
-
-	if len(src) < 2 || src[0] != '\\' || src[1] != 'x' {
-		return nil, fmt.Errorf("invalid hex format")
-	}
-
-	buf := make([]byte, (len(src)-2)/2)
-	_, err := hex.Decode(buf, src[2:])
-	if err != nil {
-		return nil, err
-	}
-
-	return buf, nil
 }
 
 func (c ByteaCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
