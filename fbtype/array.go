@@ -197,8 +197,8 @@ func (pe planEncodeArray) Encode(value any, buf []byte) (newBuf []byte, err erro
 		switch elementTypeId {
 		case fbproto.SQL_TYPE_VARYING:
 			tmpBuf, err = pe.arrayData.encodeVaryingType(encodePlan, elem)
-		case fbproto.SQL_TYPE_TEXT:
-			tmpBuf, err = pe.arrayData.encodeTextType(encodePlan, elem)
+		case fbproto.SQL_TYPE_TEXT, fbproto.SQL_TYPE_BOOLEAN:
+			tmpBuf, err = pe.arrayData.encodeWithPadding(encodePlan, elem)
 		default:
 			tmpBuf, err = pe.arrayData.encodeStaticType(encodePlan, elem)
 		}
@@ -244,7 +244,7 @@ func (c *ArrayData) encodeStaticType(encodePlan EncodePlan, elem any) ([]byte, e
 	return buf, nil
 }
 
-func (c *ArrayData) encodeTextType(encodePlan EncodePlan, elem any) ([]byte, error) {
+func (c *ArrayData) encodeWithPadding(encodePlan EncodePlan, elem any) ([]byte, error) {
 	var buf []byte
 	var err error
 	if elem != nil {
@@ -308,7 +308,7 @@ func allElementsCount(dimensions []Dimension) int {
 	return elementCount
 }
 
-func (c *ArrayData) decodeBinary(m *Map, arrayOID uint32, src []byte, length int, array ArraySetter) error {
+func (c *ArrayData) decodeBinary(m *Map, arrayTypeID uint32, src []byte, length int, array ArraySetter) error {
 
 	elementCount := allElementsCount(c.Dimensions)
 	if elementCount == 0 {
@@ -321,19 +321,19 @@ func (c *ArrayData) decodeBinary(m *Map, arrayOID uint32, src []byte, length int
 		typeMetadata := NewTypeMetadata(c.ElementType.TypeID, c.SubType, c.Length, c.Scale)
 		elementScanPlan = m.PlanScan(typeMetadata, array.ScanIndex(0))
 	}
-	if arrayOID == fbproto.SQL_TYPE_SHORT {
+	if arrayTypeID == fbproto.SQL_TYPE_SHORT {
 		length = 4
 	}
 	rp := 0
 	var elemLen int
-	if arrayOID == fbproto.SQL_TYPE_TEXT && length%4 != 0 {
+	if arrayTypeID == fbproto.SQL_TYPE_TEXT && length%4 != 0 {
 		elemLen = length + (4 - length&3)
 	} else {
 		elemLen = length
 	}
 	for i := 0; i < elementCount && rp < len(src); i++ {
 		elem := array.ScanIndex(i)
-		if arrayOID == fbproto.SQL_TYPE_VARYING {
+		if arrayTypeID == fbproto.SQL_TYPE_VARYING {
 			elemLen = int(int32(binary.BigEndian.Uint32(src[rp:])))
 			rp += 4
 		}
@@ -343,6 +343,9 @@ func (c *ArrayData) decodeBinary(m *Map, arrayOID uint32, src []byte, length int
 			rp += elemLen
 		}
 		err := elementScanPlan.Scan(elemSrc, elem)
+		if arrayTypeID == fbproto.SQL_TYPE_BOOLEAN {
+			rp += 3
+		}
 		if err != nil {
 			return fmt.Errorf("failed to scan array element %d: %w", i, err)
 		}

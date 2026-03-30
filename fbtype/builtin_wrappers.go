@@ -661,6 +661,7 @@ func (a *anySliceArrayReflect) ScanIndex(i int) any {
 }
 
 type anyMultiDimSliceArray struct {
+	nowIndex   int
 	slice      reflect.Value
 	dimensions []Dimension
 }
@@ -756,17 +757,17 @@ func (a *anyMultiDimSliceArray) SetDimensions(dimensions []Dimension) error {
 
 func (a *anyMultiDimSliceArray) makeMultidimensionalSlice(sliceType reflect.Type, dimensions []Dimension, flatSlice reflect.Value, flatSliceIdx int) reflect.Value {
 	if len(dimensions) == 1 {
-		endIdx := flatSliceIdx + int(dimensions[0].Upper-dimensions[0].Lower+1)
-		return flatSlice.Slice3(flatSliceIdx, endIdx, endIdx)
+		startIdx := a.nowIndex
+		a.nowIndex = a.nowIndex + int(dimensions[0].Upper-dimensions[0].Lower+1)
+		return flatSlice.Slice3(startIdx, a.nowIndex, a.nowIndex)
 	}
 
 	sliceLen := int(dimensions[0].Upper - dimensions[0].Lower + 1)
 	slice := reflect.MakeSlice(sliceType, sliceLen, sliceLen)
 	for i := 0; i < sliceLen; i++ {
-		subSlice := a.makeMultidimensionalSlice(sliceType.Elem(), dimensions[1:], flatSlice, flatSliceIdx+(i*int(dimensions[1].Upper-dimensions[1].Lower+1)))
+		subSlice := a.makeMultidimensionalSlice(sliceType.Elem(), dimensions[1:], flatSlice, a.nowIndex)
 		slice.Index(i).Set(subSlice)
 	}
-
 	return slice
 }
 

@@ -43,6 +43,8 @@ func (op *OpSliceResponse) Read(x *XDRReader) error {
 		isVariying = true
 	case Isc_blr_short:
 		op.SliceLengthBytes = op.SliceLengthBytes * op.SliceLengthElements
+	case Isc_blr_bool:
+		op.SliceLengthBytes *= 4
 	}
 
 	var arrayElement []byte
