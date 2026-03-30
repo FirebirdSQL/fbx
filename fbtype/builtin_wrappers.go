@@ -661,7 +661,6 @@ func (a *anySliceArrayReflect) ScanIndex(i int) any {
 }
 
 type anyMultiDimSliceArray struct {
-	length     int
 	slice      reflect.Value
 	dimensions []Dimension
 }
@@ -743,7 +742,7 @@ func (a *anyMultiDimSliceArray) SetDimensions(dimensions []Dimension) error {
 		elementCount := allElementsCount(dimensions)
 		flatSlice := reflect.MakeSlice(lowestSliceType, elementCount, elementCount)
 
-		multiDimSlice := a.makeMultidimensionalSlice(sliceType, dimensions, flatSlice, 0)
+		multiDimSlice, _ := a.makeMultidimensionalSlice(sliceType, dimensions, flatSlice, 0)
 		a.slice.Set(multiDimSlice)
 
 		// Now that a.slice is a multi-dimensional slice with the underlying data pointed at flatSlice change a.slice to
@@ -755,20 +754,21 @@ func (a *anyMultiDimSliceArray) SetDimensions(dimensions []Dimension) error {
 
 }
 
-func (a *anyMultiDimSliceArray) makeMultidimensionalSlice(sliceType reflect.Type, dimensions []Dimension, flatSlice reflect.Value, flatSliceIdx int) reflect.Value {
+func (a *anyMultiDimSliceArray) makeMultidimensionalSlice(sliceType reflect.Type, dimensions []Dimension, flatSlice reflect.Value, flatSliceIdx int) (reflect.Value, int) {
 	if len(dimensions) == 1 {
-		startIdx := a.length
-		a.length = a.length + int(dimensions[0].Upper-dimensions[0].Lower+1)
-		return flatSlice.Slice3(startIdx, a.length, a.length)
+		startIdx := flatSliceIdx
+		flatSliceIdx += int(dimensions[0].Upper - dimensions[0].Lower + 1)
+		return flatSlice.Slice3(startIdx, flatSliceIdx, flatSliceIdx), flatSliceIdx
 	}
 
 	sliceLen := int(dimensions[0].Upper - dimensions[0].Lower + 1)
 	slice := reflect.MakeSlice(sliceType, sliceLen, sliceLen)
 	for i := 0; i < sliceLen; i++ {
-		subSlice := a.makeMultidimensionalSlice(sliceType.Elem(), dimensions[1:], flatSlice, a.length)
+		var subSlice reflect.Value
+		subSlice, flatSliceIdx = a.makeMultidimensionalSlice(sliceType.Elem(), dimensions[1:], flatSlice, flatSliceIdx)
 		slice.Index(i).Set(subSlice)
 	}
-	return slice
+	return slice, flatSliceIdx
 }
 
 func (a *anyMultiDimSliceArray) ScanIndex(i int) any {
