@@ -1,22 +1,44 @@
 # Change Log
 
-# [0.3]
+# [0.3] - 06.04.2026
 
 ### Added
-
-- RS-278082. Port pgx v5.7.5..v5.7.6 pool API updates: add fbxpool hooks PrepareConn and ShouldPing.
-- RS-278082. Add Int64Valuer support for zeronull.Int2 / zeronull.Int4 / zeronull.Int8.
+- RS-279430. zeronull/int128 support.
+- RS-286253. Encoding octets to string.
+- RS-280247. Allow to configure fetch size with fetch_batch_size option.
+- RS-278714. Add support for time, int128, dec types in stdlib.
+- RS-278082. Port pgx v5.7.5..v5.7.6. pool API updates: add fbxpool hooks PrepareConn and ShouldPing.
+- RS-278082. Port pgx v5.7.5..v5.7.6. Add Int64Valuer support for zeronull.Int2 / zeronull.Int4 / zeronull.Int8.
+- RS-278083. Port pgx v5.7.6..v5.8.0. feat(stdlib): add OptionShouldPing to control ResetSession ping behavior.
+- RS-278083. Port pgx v5.7.6..v5.8.0. feat(fbxpool): acquire ping timeout this commit adds ping timeout in acquire loop for when the connection ping results in timeout instead of an error.
 
 ### Improved
 
-- RS-278082. Decrease allocations in stdlib ExecContext / QueryContext argument conversion path.
-- RS-278082. Protect fbxpool Acquire from infinite retry loops by capping attempts to MaxConns + 1.
+- RS-285525. Add more patterns to date conversions formats of fbtype.Date.
+- RS-278082. Port pgx v5.7.5..v5.7.6. Decrease allocations in stdlib ExecContext / QueryContext argument conversion path.
+- RS-278082. Port pgx v5.7.5..v5.7.6. Protect fbxpool acquire from infinite retry loops by capping attempts to MaxConns + 1.
+- RS-278083. Port pgx v5.7.6..v5.8.0. Faster shutdown of fbxpool.Pool background goroutines.
+- RS-278083. Port pgx v5.7.6..v5.8.0. perf(stmtcache): replace O(n) invalidation scan with O(1) map lookup.
+- RS-278083. Port pgx v5.7.6..v5.8.0. perf(iobufpool): optimize pool index calculations with O(1) bit manipulation.
+- RS-278083. Port pgx v5.7.6..v5.8.0. fbtype numeric optimization: replace Cmp(big0) with Sign().
 
 ### Fixed
 
-- RS-278082. Return fbconn.ParseConfigError from fbx.ParseConfig / fbxpool.ParseConfig using fbconn.NewParseConfigError.
-- RS-278082. Align zeronull.Int2 / Int4 / Int8 ScanInt64 signature with fbtype.Int64Scanner.
 - RS-277802. Panic when passing argument as SQL_NULL type.
+- RS-282682. Wrong SRP payload format detection.
+- RS-276860. Error when numeric to string scanning.
+- RS-276815. Error when scanning/encoding string to FB types.
+- RS-281968. Wrong octets handling on RDB 6.
+- RS-278531: Fix blob fetch batching and align seek behavior tests for stream/segmented blobs.
+- RS-278082. Port pgx v5.7.5..v5.7.6. Return fbconn.ParseConfigError from fbx.ParseConfig / fbxpool.ParseConfig using fbconn.NewParseConfigError.
+- RS-278083. Port pgx v5.7.6..v5.8.0. fix: invalidate statement/description cache in Exec.
+- RS-278083. Port pgx v5.7.6..v5.8.0. Array and Composite codecs handle typed nils.
+- RS-278083. Port pgx v5.7.6..v5.8.0. Scan unknown types into *any as string or []byte based on format code.
+- RS-278083. Port pgx v5.7.6..v5.8.0. Avoid overflow when MaxConns is set to MaxInt32.
+
+### Changed
+- RS-278083. Port pgx v5.7.6..v5.8.0. Remove unused stmcache.UnlimitedCache.
+- RS-278083. Port pgx v5.7.6..v5.8.0. Migrate from math/rand to math/rand/v2.
 
 # [0.2] - 09.02.2026
 
