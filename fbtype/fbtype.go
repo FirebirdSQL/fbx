@@ -1863,24 +1863,20 @@ type sqlScannerWrapper struct {
 }
 
 func (w *sqlScannerWrapper) Scan(src any) error {
-	//t, ok := w.m.TypeForValue(w.v)
-	//if !ok {
-	//	return fmt.Errorf("cannot convert to sql.Scanner: cannot find registered type for %T", w.v)
-	//}
-	//
-	//var bufSrc []byte
-	//if src != nil {
-	//	switch src := src.(type) {
-	//	case string:
-	//		bufSrc = []byte(src)
-	//	case []byte:
-	//		bufSrc = src
-	//	default:
-	//		bufSrc = []byte(fmt.Sprint(bufSrc))
-	//	}
-	//}
-	//return w.m.Scan(t.TypeID, TextFormatCode, bufSrc, w.v)
-	panic("not implemented")
+	_, err := getArrayDecodeType(w.v)
+	if err != nil {
+		return err
+	}
+	if src == nil {
+		return nil
+	}
+	array, ok := src.(ArraySQLScanner)
+	if !ok {
+		return fmt.Errorf("cannot convert to sql.Scanner: cannot find registered type for %T", w.v)
+	}
+	sp := planScanArray{m: w.m, arrayData: array.ArrayData}
+
+	return sp.Scan(array.ArrayBuffer, w.v)
 }
 
 var valuerReflectType = reflect.TypeFor[driver.Valuer]()

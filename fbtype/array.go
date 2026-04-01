@@ -50,6 +50,11 @@ type ArrayData struct {
 	BlrTypeId   uint32
 }
 
+type ArraySQLScanner struct {
+	ArrayData   *ArrayData
+	ArrayBuffer []byte
+}
+
 // NewArrayData is a constructor for ArrayData struct
 func NewArrayData(typeId, blrTypeId uint32, subType int32, length uint32, scale int32, DimensionsMap []map[string]int, table, field string) (*ArrayData, error) {
 	ad := new(ArrayData)

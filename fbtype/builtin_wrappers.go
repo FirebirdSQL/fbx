@@ -692,17 +692,26 @@ func (a *anyMultiDimSliceArray) Dimensions(lowers []int) []Dimension {
 
 	s := a.slice
 	dimensionNum := 0
-	for {
-		a.dimensions = append(a.dimensions, Dimension{Lower: lowers[dimensionNum], Upper: lowers[dimensionNum] + (s.Len() - 1)})
-		if s.Len() > 0 {
-			s = s.Index(0)
-			dimensionNum++
-		} else {
-			break
+	if s.Len() > 0 {
+		for {
+			a.dimensions = append(a.dimensions, Dimension{Lower: lowers[dimensionNum], Upper: lowers[dimensionNum] + (s.Len() - 1)})
+			if s.Len() > 0 {
+				s = s.Index(0)
+				dimensionNum++
+			} else {
+				break
+			}
+			if s.Type().Kind() == reflect.Slice {
+			} else {
+				break
+			}
 		}
-		if s.Type().Kind() == reflect.Slice {
-		} else {
-			break
+	} else {
+		t := s.Type()
+		for t.Kind() == reflect.Slice {
+			a.dimensions = append(a.dimensions, Dimension{Lower: lowers[dimensionNum], Upper: 0})
+			t = t.Elem()
+			dimensionNum++
 		}
 	}
 

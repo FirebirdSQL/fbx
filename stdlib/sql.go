@@ -898,6 +898,21 @@ func (r *Rows) Next(dest []driver.Value) error {
 					err := scanPlan.Scan(src, &d)
 					return d, err
 				}
+			case fbproto.SQL_TYPE_ARRAY:
+				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
+					var array fbtype.ArraySQLScanner
+					var err error
+					array.ArrayBuffer = src
+					array.ArrayData, err = fbtype.NewArrayData(fd.ArrayData.TypeId,
+						fd.ArrayData.BlrTypeId,
+						fd.ArrayData.SubType,
+						fd.ArrayData.Length,
+						fd.ArrayData.Scale,
+						fd.ArrayData.Dimensions,
+						fd.ArrayData.TableName,
+						fd.ArrayData.FieldName)
+					return array, err
+				}
 			default:
 				if (fd.Subtype & 0xFF) != fbproto.CS_BINARY {
 					var d string
