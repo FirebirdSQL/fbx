@@ -87,6 +87,12 @@ type FbConn struct {
 
 	peekedMsg fbproto.ServerMessage
 
+	eventMu      sync.Mutex
+	eventChannel *eventChannel
+	eventHandles map[int]*EventHandle
+	eventHost    string
+	eventErr     error
+
 	// Reusable / preallocated resources
 	contextWatcher    *ctxwatch.ContextWatcher
 	fieldDescriptions [16]FieldDescription
@@ -415,6 +421,13 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 ) (*FbConn, error) {
 	fbConn := new(FbConn)
 	fbConn.config = config
+	fbConn.eventHost = connectConfig.originalHostname
+	if fbConn.eventHost == "" {
+		fbConn.eventHost = config.Host
+	}
+	if isAbsolutePath(fbConn.eventHost) {
+		fbConn.eventHost = "localhost"
+	}
 	fbConn.cleanupDone = make(chan struct{})
 	fbConn.customData = make(map[string]any)
 	fbConn.activeTransactions = make(map[*FBTransaction]struct{})
@@ -774,6 +787,7 @@ func (fbConn *FbConn) Close(ctx context.Context) error {
 	}
 	fbConn.status = connStatusClosed
 	fbConn.clearAllInlineBlobCache()
+	fbConn.closeEventChannel()
 
 	defer close(fbConn.cleanupDone)
 	defer fbConn.conn.Close()
@@ -805,6 +819,7 @@ func (fbConn *FbConn) asyncClose() {
 	}
 	fbConn.status = connStatusClosed
 	fbConn.clearAllInlineBlobCache()
+	fbConn.closeEventChannel()
 
 	go func() {
 		defer close(fbConn.cleanupDone)

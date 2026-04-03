@@ -1,5 +1,19 @@
 # Change Log
 
+# [0.4]
+
+### Added
+
+- Implement Firebird `POST_EVENT` support in wire protocol (`op_connect_request`, `op_que_events`, `op_cancel_events`, `op_event` processing).
+- Add low-level events API in `fbconn` (event handles, queue/cancel/count, auxiliary async event channel).
+- Add new package `event` with Jaybird-like `EventManager` API (`add/remove listener`, `waitForEvent`, dispatcher).
+
+### Improved
+
+- Align event handling semantics with Jaybird: baseline first callback, delta event counts, automatic re-registration after event delivery.
+- Add integration and unit test coverage for event lifecycle and aux-channel failure scenarios.
+- Document Firebird events usage in `README.md` with `event.Manager` example.
+
 # [0.3]
 
 ### Added

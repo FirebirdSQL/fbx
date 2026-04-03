@@ -54,3 +54,46 @@ func main() {
 	fmt.Println(name, phone, ext)
 }
 ```
+
+## Firebird Events (`POST_EVENT`)
+
+Use package `rdb.red-soft.ru/fbx/event` for high-level event subscriptions.
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"time"
+
+	fbevent "rdb.red-soft.ru/fbx/event"
+)
+
+func main() {
+	ctx := context.Background()
+	connString := "firebird://sysdba:masterkey@localhost:3050/employee"
+
+	manager, err := fbevent.NewManager(connString)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := manager.Connect(ctx); err != nil {
+		log.Fatal(err)
+	}
+	defer manager.Close(context.Background())
+
+	// Wait for one event occurrence. timeout == 0 means wait indefinitely.
+	count, err := manager.WaitForEvent(ctx, "TEST_EVENT", 5*time.Second)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if count == -1 {
+		fmt.Println("timeout")
+		return
+	}
+
+	fmt.Printf("TEST_EVENT count delta: %d\n", count)
+}
+```
