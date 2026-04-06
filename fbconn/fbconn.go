@@ -67,6 +67,7 @@ type FbConn struct {
 	wireCrypt       *wirecrypt.Manager
 	bgReader        *bgreader.BGReader
 	writer          *bufio.Writer
+	writeMu         sync.Mutex
 	slowWriteTimer  *time.Timer
 	bgReaderStarted chan struct{}
 	writeInProgress atomic.Bool
@@ -618,11 +619,9 @@ connectLoop:
 		DPB:  dpb.Bytes(),
 	}
 
-	if err = fbConn.client.WriteMessage(&opAttach); err != nil {
-		fbConn.conn.Close()
-		return nil, newPerDialConnectError("failed to send opAttach", err)
-	}
-	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+	if err = fbConn.withWriteLockAndFlush(func() error {
+		return fbConn.client.WriteMessage(&opAttach)
+	}); err != nil {
 		fbConn.conn.Close()
 		return nil, newPerDialConnectError("failed to flush opAttach", err)
 	}
@@ -706,6 +705,21 @@ func (fbConn *FbConn) beforeRequest() error {
 	}
 
 	return nil
+}
+
+func (fbConn *FbConn) withWriteLock(writeFn func() error) error {
+	fbConn.writeMu.Lock()
+	defer fbConn.writeMu.Unlock()
+	return writeFn()
+}
+
+func (fbConn *FbConn) withWriteLockAndFlush(writeFn func() error) error {
+	return fbConn.withWriteLock(func() error {
+		if err := writeFn(); err != nil {
+			return err
+		}
+		return fbConn.flushWithPotentialWriteReadDeadlockLocked()
+	})
 }
 
 // peekMessage peeks at the next message without setting up context cancellation.
@@ -815,9 +829,12 @@ func (fbConn *FbConn) Close(ctx context.Context) error {
 	}
 
 	// Ignore any errors sending Terminate message and waiting for server to close connection.
-	fbConn.client.WriteMessage(&fbproto.OpDetach{})
-	fbConn.client.WriteMessage(&fbproto.OpDisconnect{})
-	fbConn.flushWithPotentialWriteReadDeadlock()
+	_ = fbConn.withWriteLockAndFlush(func() error {
+		if err := fbConn.client.WriteMessage(&fbproto.OpDetach{}); err != nil {
+			return err
+		}
+		return fbConn.client.WriteMessage(&fbproto.OpDisconnect{})
+	})
 	//FIXME: should we wait or not response from server?
 	//fbConn.receiveMessage()
 	return fbConn.conn.Close()
@@ -1023,21 +1040,18 @@ func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 		defer fbConn.contextWatcher.Unwatch()
 	}
 
-	if err = fbConn.client.WriteMessage(&fbproto.OpAllocateStatement{}); err != nil {
-		fbConn.asyncClose()
-		return nil, err
-	}
-	if err = fbConn.client.WriteMessage(&fbproto.OpPrepareStatement{
-		Encoding:          fbConn.Encoding,
-		TransactionHandle: tx.Handle,
-		StatementHandle:   0xFFFF,
-		Dialect:           3,
-		Query:             sql,
+	if err = fbConn.withWriteLockAndFlush(func() error {
+		if err := fbConn.client.WriteMessage(&fbproto.OpAllocateStatement{}); err != nil {
+			return err
+		}
+		return fbConn.client.WriteMessage(&fbproto.OpPrepareStatement{
+			Encoding:          fbConn.Encoding,
+			TransactionHandle: tx.Handle,
+			StatementHandle:   0xFFFF,
+			Dialect:           3,
+			Query:             sql,
+		})
 	}); err != nil {
-		fbConn.asyncClose()
-		return nil, err
-	}
-	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
 		fbConn.asyncClose()
 		return nil, err
 	}
@@ -1110,14 +1124,9 @@ func (fbConn *FbConn) sendCancelOperation(ctx context.Context, kind int) error {
 		defer contextWatcher.Unwatch()
 	}
 
-	if err := fbConn.client.WriteMessage(&fbproto.OpCancel{
-		Kind: kind,
+	if err := fbConn.withWriteLockAndFlush(func() error {
+		return fbConn.client.WriteMessage(&fbproto.OpCancel{Kind: kind})
 	}); err != nil {
-		fbConn.asyncClose()
-		return err
-	}
-
-	if err := fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
 		fbConn.asyncClose()
 		return err
 	}
@@ -1164,21 +1173,14 @@ func (fbConn *FbConn) ExecImmediateTx(ctx context.Context, tx *FBTransaction, sq
 	if tx != nil {
 		txHandle = tx.Handle
 	}
-	if err = fbConn.client.WriteMessage(&fbproto.OpExecuteImmediate{
-		Encoding:          fbConn.Encoding,
-		TransactionHandle: txHandle,
-		Dialect:           3,
-		Query:             sql,
+	if err = fbConn.withWriteLockAndFlush(func() error {
+		return fbConn.client.WriteMessage(&fbproto.OpExecuteImmediate{
+			Encoding:          fbConn.Encoding,
+			TransactionHandle: txHandle,
+			Dialect:           3,
+			Query:             sql,
+		})
 	}); err != nil {
-		if watched {
-			fbConn.contextWatcher.Unwatch()
-		}
-		fbConn.unlock()
-		fbConn.asyncClose()
-		return err
-	}
-
-	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
 		if watched {
 			fbConn.contextWatcher.Unwatch()
 		}
@@ -1363,12 +1365,9 @@ func (fbConn *FbConn) Disconnect(ctx context.Context) error {
 		defer fbConn.contextWatcher.Unwatch()
 	}
 
-	if err = fbConn.client.WriteMessage(&fbproto.OpDisconnect{}); err != nil {
-		fbConn.asyncClose()
-		return err
-	}
-
-	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+	if err = fbConn.withWriteLockAndFlush(func() error {
+		return fbConn.client.WriteMessage(&fbproto.OpDisconnect{})
+	}); err != nil {
 		fbConn.conn.Close()
 		return err
 	}
@@ -1494,14 +1493,13 @@ func (rr *ResultReader) NextRow() bool {
 		if rr.fbConn != nil && rr.fbConn.config != nil && rr.fbConn.config.FetchBatchSize > 0 {
 			fetchBatchSize = rr.fbConn.config.FetchBatchSize
 		}
-		if err = rr.fbConn.client.WriteMessage(&fbproto.OpFetch{
-			StatementHandle: rr.statementDescription.StatementHandle,
-			RowBlr:          rowBlr,
-			Messages:        fetchBatchSize,
+		if err = rr.fbConn.withWriteLockAndFlush(func() error {
+			return rr.fbConn.client.WriteMessage(&fbproto.OpFetch{
+				StatementHandle: rr.statementDescription.StatementHandle,
+				RowBlr:          rowBlr,
+				Messages:        fetchBatchSize,
+			})
 		}); err != nil {
-			return false
-		}
-		if err = rr.fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
 			return false
 		}
 		rr.fetchExecuted = true
@@ -1786,12 +1784,9 @@ func (fbConn *FbConn) Ping(ctx context.Context) error {
 		defer fbConn.contextWatcher.Unwatch()
 	}
 
-	if err = fbConn.client.WriteMessage(&fbproto.OpPing{}); err != nil {
-		fbConn.asyncClose()
-		return err
-	}
-
-	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+	if err = fbConn.withWriteLockAndFlush(func() error {
+		return fbConn.client.WriteMessage(&fbproto.OpPing{})
+	}); err != nil {
 		fbConn.conn.Close()
 		return err
 	}
@@ -1848,11 +1843,17 @@ func (fbConn *FbConn) exitPotentialWriteReadDeadlock() {
 	}
 }
 
-func (fbConn *FbConn) flushWithPotentialWriteReadDeadlock() error {
+func (fbConn *FbConn) flushWithPotentialWriteReadDeadlockLocked() error {
 	fbConn.enterPotentialWriteReadDeadlock()
 	defer fbConn.exitPotentialWriteReadDeadlock()
 	err := fbConn.writer.Flush()
 	return err
+}
+
+func (fbConn *FbConn) flushWithPotentialWriteReadDeadlock() error {
+	return fbConn.withWriteLock(func() error {
+		return fbConn.flushWithPotentialWriteReadDeadlockLocked()
+	})
 }
 
 // SyncConn prepares the underlying net.Conn for direct use. FbConn may internally buffer reads or use goroutines for
@@ -2035,11 +2036,9 @@ func (fbConn *FbConn) startTransactionTPB(ctx context.Context, tpb []byte, locke
 	opTransaction := fbproto.OpTransaction{
 		TPB: tpb,
 	}
-	if err = fbConn.client.WriteMessage(&opTransaction); err != nil {
-		return nil, err
-	}
-
-	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+	if err = fbConn.withWriteLockAndFlush(func() error {
+		return fbConn.client.WriteMessage(&opTransaction)
+	}); err != nil {
 		return nil, err
 	}
 

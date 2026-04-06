@@ -1,15 +1,19 @@
 package fbconn
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"io"
+	"math"
 	"net"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"rdb.red-soft.ru/fbx/fbconn/internal/bgreader"
 	"rdb.red-soft.ru/fbx/fbproto"
 )
 
@@ -256,4 +260,86 @@ func TestCancelRequestContextWatcherHandlerHandleBeforeRequestResetsPendingCance
 	require.NoError(t, err)
 	require.Equal(t, []int{fbproto.Fb_cancel_disable, fbproto.Fb_cancel_enable}, calls)
 	require.False(t, h.pendingCancelReset.Load())
+}
+
+type blockFirstWriteConn struct {
+	noopConn
+	writeStarted chan struct{}
+	releaseWrite chan struct{}
+	blockOnce    sync.Once
+}
+
+func (c *blockFirstWriteConn) Write(b []byte) (int, error) {
+	c.blockOnce.Do(func() {
+		close(c.writeStarted)
+		<-c.releaseWrite
+	})
+	return len(b), nil
+}
+
+func TestSendCancelOperationConcurrentFlushDoesNotPanic(t *testing.T) {
+	conn := &blockFirstWriteConn{
+		writeStarted: make(chan struct{}),
+		releaseWrite: make(chan struct{}),
+	}
+
+	fbConn := &FbConn{
+		conn:        conn,
+		writer:      bufio.NewWriter(conn),
+		cleanupDone: make(chan struct{}),
+	}
+	fbConn.bgReader = bgreader.New(conn)
+	fbConn.bgReaderStarted = make(chan struct{})
+	fbConn.slowWriteTimer = time.AfterFunc(time.Duration(math.MaxInt64), func() {
+		fbConn.bgReader.Start()
+		fbConn.bgReaderStarted <- struct{}{}
+	})
+	fbConn.slowWriteTimer.Stop()
+	fbConn.client = fbproto.NewClient(fbConn.bgReader, fbConn.writer, nil)
+
+	type callResult struct {
+		err error
+		pan any
+	}
+	runCancel := func() <-chan callResult {
+		done := make(chan callResult, 1)
+		go func() {
+			res := callResult{}
+			defer func() {
+				if r := recover(); r != nil {
+					res.pan = r
+				}
+				done <- res
+			}()
+			res.err = fbConn.sendCancelOperation(context.Background(), fbproto.Fb_cancel_raise)
+		}()
+		return done
+	}
+
+	first := runCancel()
+	select {
+	case <-conn.writeStarted:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for first flush write to start")
+	}
+
+	second := runCancel()
+	close(conn.releaseWrite)
+
+	var r1, r2 callResult
+	select {
+	case r1 = <-first:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for first cancel request")
+	}
+	select {
+	case r2 = <-second:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for second cancel request")
+	}
+
+	require.Nil(t, r1.pan)
+	require.Nil(t, r2.pan)
+	require.NoError(t, r1.err)
+	require.NoError(t, r2.err)
 }

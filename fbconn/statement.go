@@ -216,28 +216,21 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 		sqlDataBlr = st.Description.StatementInfo.GetParametersBlr(paramValues)
 	}
 
-	if err = st.conn.client.WriteMessage(&fbproto.OpExecute{
-		Kind:                  execKind,
-		TransactionHandle:     tx.Handle,
-		StatementHandle:       st.Description.StatementHandle,
-		ParametersDescriptors: st.Description.StatementInfo.ParametersDescriptors,
-		SQLDataBlr:            sqlDataBlr,
-		SQLDataOutBlr:         rowBlr,
-		Parameters:            paramValues,
-		Timeout:               st.timeout,
-		CursorFlags:           st.cursorFlags,
-		InlineBlobSize:        st.conn.inlineBlobSize,
-		ProtocolFeatures:      st.conn.protocolFeatures,
+	if err = st.conn.withWriteLockAndFlush(func() error {
+		return st.conn.client.WriteMessage(&fbproto.OpExecute{
+			Kind:                  execKind,
+			TransactionHandle:     tx.Handle,
+			StatementHandle:       st.Description.StatementHandle,
+			ParametersDescriptors: st.Description.StatementInfo.ParametersDescriptors,
+			SQLDataBlr:            sqlDataBlr,
+			SQLDataOutBlr:         rowBlr,
+			Parameters:            paramValues,
+			Timeout:               st.timeout,
+			CursorFlags:           st.cursorFlags,
+			InlineBlobSize:        st.conn.inlineBlobSize,
+			ProtocolFeatures:      st.conn.protocolFeatures,
+		})
 	}); err != nil {
-		st.conn.asyncClose()
-		rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(ctx, err))
-		st.conn.contextWatcher.Unwatch()
-		st.conn.unlock()
-		rr.closed = true
-		return rr
-	}
-
-	if err = st.conn.flushWithPotentialWriteReadDeadlock(); err != nil {
 		st.conn.asyncClose()
 		rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(ctx, err))
 		st.conn.contextWatcher.Unwatch()
@@ -351,13 +344,17 @@ func (st *Statement) internalClose(ctx context.Context, closeOption int) error {
 	st.cursorOpened = false
 	st.closed = closeOption == fbproto.DSQL_drop
 
-	if err = st.conn.client.WriteMessage(&fbproto.OpFreeStatement{StatementHandle: st.Description.StatementHandle, Option: closeOption}); err != nil {
-		st.conn.asyncClose()
-		return err
-	}
-
 	if closeOption == fbproto.DSQL_drop {
-		if err = st.conn.flushWithPotentialWriteReadDeadlock(); err != nil {
+		if err = st.conn.withWriteLockAndFlush(func() error {
+			return st.conn.client.WriteMessage(&fbproto.OpFreeStatement{StatementHandle: st.Description.StatementHandle, Option: closeOption})
+		}); err != nil {
+			st.conn.asyncClose()
+			return err
+		}
+	} else {
+		if err = st.conn.withWriteLock(func() error {
+			return st.conn.client.WriteMessage(&fbproto.OpFreeStatement{StatementHandle: st.Description.StatementHandle, Option: closeOption})
+		}); err != nil {
 			st.conn.asyncClose()
 			return err
 		}

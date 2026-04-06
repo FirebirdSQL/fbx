@@ -47,12 +47,9 @@ func (tx *FBTransaction) Commit(ctx context.Context) error {
 	opCommit := fbproto.OpCommit{
 		TransactionHandle: tx.Handle,
 	}
-	if err = tx.Connection.client.WriteMessage(&opCommit); err != nil {
-		tx.Connection.asyncClose()
-		return err
-	}
-
-	if err = tx.Connection.flushWithPotentialWriteReadDeadlock(); err != nil {
+	if err = tx.Connection.withWriteLockAndFlush(func() error {
+		return tx.Connection.client.WriteMessage(&opCommit)
+	}); err != nil {
 		tx.Connection.asyncClose()
 		return err
 	}
@@ -103,12 +100,9 @@ func (tx *FBTransaction) Rollback(ctx context.Context) error {
 	opRollback := fbproto.OpRollback{
 		TransactionHandle: tx.Handle,
 	}
-	if err = tx.Connection.client.WriteMessage(&opRollback); err != nil {
-		tx.Connection.asyncClose()
-		return err
-	}
-
-	if err = tx.Connection.flushWithPotentialWriteReadDeadlock(); err != nil {
+	if err = tx.Connection.withWriteLockAndFlush(func() error {
+		return tx.Connection.client.WriteMessage(&opRollback)
+	}); err != nil {
 		tx.Connection.asyncClose()
 		return err
 	}
