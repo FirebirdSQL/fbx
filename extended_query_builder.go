@@ -53,6 +53,17 @@ func (pb *ExtendedQueryBuilder) Build(ctx context.Context, conn *Conn, tx *dbTx,
 				return err
 			}
 			typeMetadata.SetArrayMetadata(arrayData)
+			var lowers []int
+			for _, d := range typeMetadata.ArrayData.Dimensions {
+				lowers = append(lowers, d.Lower)
+			}
+			dimensions, err := fbtype.Dimensions(args[i], lowers)
+			if err != nil {
+				return err
+			}
+			if dimensions != nil {
+				sd.Parameters[i].ArrayData.CurrentDimensions = dimensions
+			}
 		}
 		err := pb.appendParam(ctx, conn, tx, m, typeMetadata, args[i])
 		if err != nil {
@@ -111,35 +122,6 @@ func (pb *ExtendedQueryBuilder) encodeParamValue(ctx context.Context, conn *Conn
 	buf, err := m.Encode(typeMetadata, arg, pb.paramValueBytes)
 	if err != nil {
 		return nil, err
-	}
-
-	if fbconn.IsArrayType(typeMetadata.TypeID) && buf != nil {
-		var lowers []int
-		for _, d := range typeMetadata.ArrayData.Dimensions {
-			lowers = append(lowers, d.Lower)
-		}
-		dimensions, err := fbtype.Dimensions(arg, lowers)
-		if err != nil {
-			return nil, err
-		}
-		if dimensions != nil {
-			arrayData := fbconn.NewArray(
-				typeMetadata.ArrayData.Table,
-				typeMetadata.ArrayData.Field,
-				dimensions,
-				typeMetadata.ArrayData.Length,
-				typeMetadata.ArrayData.Scale,
-				typeMetadata.ArrayData.TypeId,
-				typeMetadata.ArrayData.BlrTypeId,
-				typeMetadata.ArrayData.SubType,
-			)
-			arrayId, err := fbconn.PutArray(conn.fbConn, ctx, arrayData, buf[pos:])
-
-			if err != nil {
-				return nil, err
-			}
-			buf = append(pb.paramValueBytes, arrayId...)
-		}
 	}
 
 	if buf == nil {

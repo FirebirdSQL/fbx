@@ -2388,6 +2388,7 @@ func getArrayInfo(fbConn *FbConn, ctx context.Context, tx *FBTransaction, fields
 					"Upper": dimension[1],
 				},
 			)
+			arr.CurrentDimensions = arr.Dimensions
 		}
 		arrays[arr.TableName][arr.FieldName] = &arr
 	}

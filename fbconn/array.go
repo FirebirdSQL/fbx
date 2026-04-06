@@ -10,14 +10,15 @@ import (
 
 // Array struct contains the information about array
 type Array struct {
-	TableName  string
-	FieldName  string
-	Dimensions []map[string]int
-	Length     uint32
-	Scale      int32
-	BlrTypeId  uint32
-	TypeId     uint32
-	SubType    int32
+	TableName         string
+	FieldName         string
+	Dimensions        []map[string]int
+	CurrentDimensions []map[string]int
+	Length            uint32
+	Scale             int32
+	BlrTypeId         uint32
+	TypeId            uint32
+	SubType           int32
 }
 
 // NewArray is a constructor for Array struct
@@ -28,6 +29,7 @@ func NewArray(table, field string, dims []map[string]int, l uint32, scale int32,
 	a.TableName = table
 	a.FieldName = field
 	a.Dimensions = dims
+	a.CurrentDimensions = dims
 	a.Length = l
 	a.Scale = scale
 	a.TypeId = typeId
@@ -39,7 +41,7 @@ func NewArray(table, field string, dims []map[string]int, l uint32, scale int32,
 
 func (ac Array) getSliceLength() int {
 	var elements int = 1
-	for _, elem := range ac.Dimensions {
+	for _, elem := range ac.CurrentDimensions {
 		elements *= elem["Upper"] - elem["Lower"] + 1
 	}
 
@@ -52,9 +54,9 @@ func (ac Array) getSliceLength() int {
 	return length
 }
 
-func (ac Array) generateSDL() []byte {
+func (ac *Array) generateSDL() []byte {
 	sdl := []byte{}
-	dimensions := ac.Dimensions
+	dimensions := ac.CurrentDimensions
 
 	data_type := trimBytes(binary.BigEndian.AppendUint32(make([]byte, 4), ac.BlrTypeId), 1)[0]
 	scale := trimBytes(binary.BigEndian.AppendUint32(make([]byte, 4), uint32(ac.Scale)), 1)
@@ -164,6 +166,7 @@ func PutArray(fbConn *FbConn, ctx context.Context, arrayData *Array, arr []byte)
 	length := arrayData.getSliceLength()
 
 	id, err := fbConn.putArray(ctx, arr, length, sdl)
+	arrayData.CurrentDimensions = arrayData.Dimensions
 	if err != nil {
 		return nil, err
 	}
