@@ -634,12 +634,12 @@ func (a anySliceArrayReflect) Index(i int) any {
 	return a.slice.Index(i).Interface()
 }
 
-func (a anySliceArrayReflect) Dimensions(lowers []int) []Dimension {
+func (a anySliceArrayReflect) Dimensions(lowers []int) ([]Dimension, error) {
 	if a.slice.IsNil() {
-		return nil
+		return nil, nil
 	}
 
-	return []Dimension{{Lower: lowers[0], Upper: lowers[0] + (a.slice.Len() - 1)}}
+	return []Dimension{{Lower: lowers[0], Upper: lowers[0] + (a.slice.Len() - 1)}}, nil
 }
 
 func (a *anySliceArrayReflect) SetDimensions(dimensions []Dimension) error {
@@ -685,15 +685,18 @@ func (a *anyMultiDimSliceArray) Index(i int) any {
 	return v.Interface()
 }
 
-func (a *anyMultiDimSliceArray) Dimensions(lowers []int) []Dimension {
+func (a *anyMultiDimSliceArray) Dimensions(lowers []int) ([]Dimension, error) {
 	if a.slice.IsNil() {
-		return nil
+		return nil, nil
 	}
 
 	s := a.slice
 	dimensionNum := 0
 	if s.Len() > 0 {
 		for {
+			if len(lowers) == dimensionNum {
+				return nil, fmt.Errorf("argument array has more dimensions than expected")
+			}
 			a.dimensions = append(a.dimensions, Dimension{Lower: lowers[dimensionNum], Upper: lowers[dimensionNum] + (s.Len() - 1)})
 			if s.Len() > 0 {
 				s = s.Index(0)
@@ -709,13 +712,16 @@ func (a *anyMultiDimSliceArray) Dimensions(lowers []int) []Dimension {
 	} else {
 		t := s.Type()
 		for t.Kind() == reflect.Slice {
+			if len(lowers) == dimensionNum {
+				return a.dimensions, fmt.Errorf("argument array has more dimensions than expected")
+			}
 			a.dimensions = append(a.dimensions, Dimension{Lower: lowers[dimensionNum], Upper: 0})
 			t = t.Elem()
 			dimensionNum++
 		}
 	}
 
-	return a.dimensions
+	return a.dimensions, nil
 }
 
 func (a *anyMultiDimSliceArray) SetDimensions(dimensions []Dimension) error {
@@ -792,8 +798,8 @@ func (a anyArrayArrayReflect) Index(i int) any {
 	return a.array.Index(i).Interface()
 }
 
-func (a anyArrayArrayReflect) Dimensions(lowers []int) []Dimension {
-	return []Dimension{{Lower: lowers[0], Upper: lowers[0] + (a.array.Len() - 1)}}
+func (a anyArrayArrayReflect) Dimensions(lowers []int) ([]Dimension, error) {
+	return []Dimension{{Lower: lowers[0], Upper: lowers[0] + (a.array.Len() - 1)}}, nil
 }
 
 func (a *anyArrayArrayReflect) SetDimensions(dimensions []Dimension) error {

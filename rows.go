@@ -275,8 +275,7 @@ func (rows *baseRows) Scan(dest ...any) error {
 			)
 			arr := fieldDescriptions[i].ArrayData
 			if arr != nil {
-				arrayData, err := fbtype.NewArrayData(arr.TypeId, arr.BlrTypeId, arr.SubType, arr.Length, arr.Scale,
-					arr.Dimensions, arr.TableName, arr.FieldName)
+				arrayData, err := fbtype.NewArrayData(arr.TypeId, arr.SubType, arr.Length, arr.Scale, arr.Dimensions)
 				if err != nil {
 					err = ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: err}
 					rows.fatal(err)
@@ -312,8 +311,7 @@ func (rows *baseRows) Scan(dest ...any) error {
 			)
 			arr := fieldDescriptions[i].ArrayData
 			if arr != nil {
-				arrayData, err := fbtype.NewArrayData(arr.TypeId, arr.BlrTypeId, arr.SubType, arr.Length, arr.Scale,
-					arr.Dimensions, arr.TableName, arr.FieldName)
+				arrayData, err := fbtype.NewArrayData(arr.TypeId, arr.SubType, arr.Length, arr.Scale, arr.Dimensions)
 				if err != nil {
 					err = ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: err}
 					rows.fatal(err)

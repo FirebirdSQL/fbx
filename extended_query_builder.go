@@ -47,8 +47,7 @@ func (pb *ExtendedQueryBuilder) Build(ctx context.Context, conn *Conn, tx *dbTx,
 			sd.Parameters[i].Scale,
 		)
 		if arr != nil {
-			arrayData, err := fbtype.NewArrayData(arr.TypeId, arr.BlrTypeId, arr.SubType, arr.Length, arr.Scale,
-				arr.Dimensions, arr.TableName, arr.FieldName)
+			arrayData, err := fbtype.NewArrayData(arr.TypeId, arr.SubType, arr.Length, arr.Scale, arr.Dimensions)
 			if err != nil {
 				return err
 			}
@@ -123,7 +122,6 @@ func (pb *ExtendedQueryBuilder) encodeParamValue(ctx context.Context, conn *Conn
 	if err != nil {
 		return nil, err
 	}
-
 	if buf == nil {
 		return nil, nil
 	}

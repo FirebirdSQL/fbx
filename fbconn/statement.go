@@ -205,7 +205,7 @@ func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *
 
 	for i, param := range st.Description.Parameters {
 		if param.IsArray() && paramValues[i] != nil {
-			arrayId, err := PutArray(st.conn, ctx, param.ArrayData, paramValues[i])
+			arrayId, err := putArray(st.conn, ctx, param.ArrayData, paramValues[i])
 			if err != nil {
 				st.conn.asyncClose()
 				rr.concludeCommand(QueryStatus{}, err)

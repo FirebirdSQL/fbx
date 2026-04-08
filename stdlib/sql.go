@@ -904,13 +904,10 @@ func (r *Rows) Next(dest []driver.Value) error {
 					var err error
 					array.ArrayBuffer = src
 					array.ArrayData, err = fbtype.NewArrayData(fd.ArrayData.TypeId,
-						fd.ArrayData.BlrTypeId,
 						fd.ArrayData.SubType,
 						fd.ArrayData.Length,
 						fd.ArrayData.Scale,
-						fd.ArrayData.Dimensions,
-						fd.ArrayData.TableName,
-						fd.ArrayData.FieldName)
+						fd.ArrayData.Dimensions)
 					return array, err
 				}
 			default:

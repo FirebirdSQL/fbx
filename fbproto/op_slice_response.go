@@ -44,7 +44,7 @@ func (op *OpSliceResponse) Read(x *XDRReader) error {
 	case Isc_blr_short:
 		op.SliceLengthBytes = op.SliceLengthBytes * op.SliceLengthElements
 	case Isc_blr_bool:
-		op.SliceLengthBytes *= 4
+		op.SliceLengthBytes *= 4 // bool type elements consist of 1 byte of data and 3 bytes of padding
 	}
 
 	var arrayElement []byte

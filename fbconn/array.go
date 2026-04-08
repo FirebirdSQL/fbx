@@ -22,7 +22,7 @@ type Array struct {
 }
 
 // NewArray is a constructor for Array struct
-func NewArray(table, field string, dims []map[string]int, l uint32, scale int32, typeId, blrTypeId uint32, subType int32) *Array {
+func NewArray(table, field string, dims []map[string]int, length uint32, scale int32, typeId, blrTypeId uint32, subType int32) *Array {
 
 	a := new(Array)
 
@@ -30,7 +30,7 @@ func NewArray(table, field string, dims []map[string]int, l uint32, scale int32,
 	a.FieldName = field
 	a.Dimensions = dims
 	a.CurrentDimensions = dims
-	a.Length = l
+	a.Length = length
 	a.Scale = scale
 	a.TypeId = typeId
 	a.BlrTypeId = blrTypeId
@@ -39,56 +39,53 @@ func NewArray(table, field string, dims []map[string]int, l uint32, scale int32,
 	return a
 }
 
-func (ac Array) getSliceLength() int {
+func (arr Array) getSliceLength() int {
 	var elements int = 1
-	for _, elem := range ac.CurrentDimensions {
+	for _, elem := range arr.CurrentDimensions {
 		elements *= elem["Upper"] - elem["Lower"] + 1
 	}
 
-	length := elements * int(ac.Length)
+	length := elements * int(arr.Length)
 
-	switch ac.TypeId {
+	switch arr.TypeId {
 	case fbproto.SQL_TYPE_VARYING:
-		length += elements * 2
+		length += elements * 2 // for each element is specified 2 bytes of its length
 	}
 	return length
 }
 
-func (ac *Array) generateSDL() []byte {
+func (arr *Array) generateSDL() []byte {
 	sdl := []byte{}
-	dimensions := ac.CurrentDimensions
+	dimensions := arr.CurrentDimensions
 
-	data_type := trimBytes(binary.BigEndian.AppendUint32(make([]byte, 4), ac.BlrTypeId), 1)[0]
-	scale := trimBytes(binary.BigEndian.AppendUint32(make([]byte, 4), uint32(ac.Scale)), 1)
-	length := trimBytes(binary.BigEndian.AppendUint32(make([]byte, 4), ac.Length), 2)
-
-	binary.LittleEndian.PutUint16(length, uint16(ac.Length))
+	dataType := byte(arr.BlrTypeId)
+	length := binary.LittleEndian.AppendUint16(make([]byte, 0), uint16(arr.Length))
 
 	sdl = append(sdl, []byte{
 		fbproto.Isc_sdl_version1,
 		fbproto.Isc_sdl_struct,
 		1,
-		data_type,
+		dataType,
 	}...)
 
-	switch data_type {
+	switch dataType {
 	case fbproto.Isc_blr_short, fbproto.Isc_blr_long, fbproto.Isc_blr_int64, fbproto.Isc_blr_quad:
-		sdl = append(sdl, scale...)
+		sdl = append(sdl, byte(arr.Scale))
 	case fbproto.Isc_blr_text, fbproto.Isc_blr_cstring, fbproto.Isc_blr_varaying:
 		sdl = append(sdl, length...)
 	}
 
 	sdl = append(sdl, []byte{
 		fbproto.Isc_sdl_relation,
-		byte(len(ac.TableName)),
+		byte(len(arr.TableName)),
 	}...)
-	sdl = append(sdl, []byte(ac.TableName)...)
+	sdl = append(sdl, []byte(arr.TableName)...)
 
 	sdl = append(sdl, []byte{
 		fbproto.Isc_sdl_field,
-		byte(len(ac.FieldName)),
+		byte(len(arr.FieldName)),
 	}...)
-	sdl = append(sdl, []byte(ac.FieldName)...)
+	sdl = append(sdl, []byte(arr.FieldName)...)
 
 	for i, b := range dimensions {
 		if b["Lower"] == 1 {
@@ -126,16 +123,6 @@ func (ac *Array) generateSDL() []byte {
 	return sdl
 }
 
-func trimBytes(in []byte, l int) []byte {
-	in = in[len(in)-l:]
-	out := []byte{}
-
-	for i := len(in) - 1; i >= 0; i-- {
-		out = append(out, in[i])
-	}
-	return out
-}
-
 func getDimensionBound(value int) []byte {
 	out := []byte{}
 	valByte := make([]byte, 4)
@@ -143,24 +130,23 @@ func getDimensionBound(value int) []byte {
 
 	if -128 <= value && value <= 127 {
 		out = append(out, fbproto.Isc_sdl_tiny_integer)
-		out = append(out, trimBytes(valByte, 1)...)
+		out = append(out, byte(value))
 		return out
 	}
 
 	if -32768 <= value && value <= 32767 {
 		out = append(out, fbproto.Isc_sdl_short_integer)
-		out = append(out, trimBytes(valByte, 2)...)
+		out = append(out, binary.LittleEndian.AppendUint16(make([]byte, 0), uint16(value))...)
 		return out
 	}
 
 	out = append(out, fbproto.Isc_sdl_long_integer)
-	out = append(out, trimBytes(valByte, 4)...)
+	out = append(out, binary.LittleEndian.AppendUint32(make([]byte, 0), uint32(value))...)
 
 	return out
 }
 
-// PutArray sends array to the server and returns an array id
-func PutArray(fbConn *FbConn, ctx context.Context, arrayData *Array, arr []byte) ([]byte, error) {
+func putArray(fbConn *FbConn, ctx context.Context, arrayData *Array, arr []byte) ([]byte, error) {
 
 	sdl := arrayData.generateSDL()
 	length := arrayData.getSliceLength()
@@ -173,8 +159,7 @@ func PutArray(fbConn *FbConn, ctx context.Context, arrayData *Array, arr []byte)
 	return id, nil
 }
 
-// GetArray sends an array id to the server and returns an array buffer
-func GetArray(fbConn *FbConn, ctx context.Context, arrayData *Array, arrId []byte) ([]byte, error) {
+func getArray(fbConn *FbConn, ctx context.Context, arrayData *Array, arrId []byte) ([]byte, error) {
 	if len(arrId) == 0 {
 		return nil, nil
 	}

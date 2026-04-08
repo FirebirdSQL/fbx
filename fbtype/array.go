@@ -17,7 +17,7 @@ type ArrayGetter interface {
 	Index(i int) any
 
 	// Dimensions returns the []Dimensions of the array
-	Dimensions(lowers []int) []Dimension
+	Dimensions(lowers []int) ([]Dimension, error)
 }
 
 // Dimension is a struct for storage array dimensions
@@ -39,15 +39,12 @@ type ArraySetter interface {
 
 // ArrayData is a struct for any array type.
 type ArrayData struct {
-	Table       string
-	Field       string
 	ElementType *Type
 	Dimensions  []Dimension
 	SubType     int32
 	Length      uint32
 	Scale       int32
 	TypeId      uint32
-	BlrTypeId   uint32
 }
 
 type ArraySQLScanner struct {
@@ -56,7 +53,7 @@ type ArraySQLScanner struct {
 }
 
 // NewArrayData is a constructor for ArrayData struct
-func NewArrayData(typeId, blrTypeId uint32, subType int32, length uint32, scale int32, DimensionsMap []map[string]int, table, field string) (*ArrayData, error) {
+func NewArrayData(typeId uint32, subType int32, length uint32, scale int32, DimensionsMap []map[string]int) (*ArrayData, error) {
 	ad := new(ArrayData)
 	var err error
 
@@ -64,7 +61,6 @@ func NewArrayData(typeId, blrTypeId uint32, subType int32, length uint32, scale 
 	ad.Scale = scale
 	ad.SubType = subType
 	ad.TypeId = typeId
-	ad.BlrTypeId = blrTypeId
 
 	b := []Dimension{}
 	for _, elem := range DimensionsMap {
@@ -76,8 +72,6 @@ func NewArrayData(typeId, blrTypeId uint32, subType int32, length uint32, scale 
 	if err != nil {
 		return nil, err
 	}
-	ad.Table = table
-	ad.Field = field
 	return ad, nil
 
 }
@@ -100,7 +94,7 @@ func (ArrayCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPl
 	return nil
 }
 
-func (ac ArrayCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
+func (ArrayCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
 	}
@@ -110,7 +104,7 @@ func (ac ArrayCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, s
 	return buf, nil
 }
 
-func (ac ArrayCodec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
+func (ArrayCodec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
 	}
@@ -125,7 +119,7 @@ type planScanArray struct {
 	arrayData *ArrayData
 }
 
-func (sp planScanArray) Scan(src []byte, dst any) error {
+func (ps planScanArray) Scan(src []byte, dst any) error {
 	array, err := getArrayDecodeType(dst)
 	if err != nil {
 		return err
@@ -136,7 +130,7 @@ func (sp planScanArray) Scan(src []byte, dst any) error {
 		return nil
 	}
 
-	err = array.SetDimensions(sp.arrayData.Dimensions)
+	err = array.SetDimensions(ps.arrayData.Dimensions)
 	if err != nil {
 		return err
 	}
@@ -144,12 +138,12 @@ func (sp planScanArray) Scan(src []byte, dst any) error {
 		return nil
 	}
 
-	sp.arrayData.ElementType, err = getTypeFromMap(sp.arrayData.TypeId)
+	ps.arrayData.ElementType, err = getTypeFromMap(ps.arrayData.TypeId)
 	if err != nil {
 		return err
 	}
 
-	err = sp.arrayData.decodeBinary(sp.m, sp.arrayData.TypeId, src, int(sp.arrayData.Length), array)
+	err = ps.arrayData.decodeBinary(ps.m, src, array)
 
 	return err
 }
@@ -168,9 +162,9 @@ func (pe planEncodeArray) Encode(value any, buf []byte) (newBuf []byte, err erro
 	for _, d := range pe.arrayData.Dimensions {
 		lowers = append(lowers, d.Lower)
 	}
-	dimensions := array.Dimensions(lowers)
+	dimensions, err := array.Dimensions(lowers)
 	if dimensions == nil {
-		return nil, nil
+		return nil, err
 	}
 
 	argumentElementCount := allElementsCount(dimensions)
@@ -223,9 +217,9 @@ func Dimensions(value any, lowers []int) ([]map[string]int, error) {
 	if err != nil {
 		return nil, err
 	}
-	dimensions := array.Dimensions(lowers)
+	dimensions, err := array.Dimensions(lowers)
 	if dimensions == nil {
-		return nil, nil
+		return nil, err
 	}
 	output := []map[string]int{}
 	for _, dimension := range dimensions {
@@ -234,7 +228,7 @@ func Dimensions(value any, lowers []int) ([]map[string]int, error) {
 	return output, nil
 }
 
-func (c *ArrayData) encodeStaticType(encodePlan EncodePlan, elem any) ([]byte, error) {
+func (ad *ArrayData) encodeStaticType(encodePlan EncodePlan, elem any) ([]byte, error) {
 	var buf []byte
 	var err error
 	if elem != nil {
@@ -243,13 +237,12 @@ func (c *ArrayData) encodeStaticType(encodePlan EncodePlan, elem any) ([]byte, e
 			return nil, err
 		}
 	} else {
-		mz := make([]byte, c.Length)
-		buf = append(buf, mz...)
+		buf = append(buf, make([]byte, ad.Length)...)
 	}
 	return buf, nil
 }
 
-func (c *ArrayData) encodeWithPadding(encodePlan EncodePlan, elem any) ([]byte, error) {
+func (ad *ArrayData) encodeWithPadding(encodePlan EncodePlan, elem any) ([]byte, error) {
 	var buf []byte
 	var err error
 	if elem != nil {
@@ -258,23 +251,22 @@ func (c *ArrayData) encodeWithPadding(encodePlan EncodePlan, elem any) ([]byte, 
 			return nil, err
 		}
 		l := uint32(len(buf))
-		padding := make([]byte, c.Length-l)
+		padding := make([]byte, ad.Length-l)
 		for i := range padding {
 			padding[i] = 32
 		}
 		buf = append(buf, padding...)
-		if c.Length%4 != 0 {
-			padding = make([]byte, 4-c.Length%4)
+		if ad.Length%4 != 0 {
+			padding = make([]byte, 4-ad.Length%4)
 			buf = append(buf, padding...)
 		}
 	} else {
-		mz := make([]byte, c.Length)
-		buf = append(buf, mz...)
+		buf = append(buf, make([]byte, ad.Length)...)
 	}
 	return buf, nil
 }
 
-func (c *ArrayData) encodeVaryingType(encodePlan EncodePlan, elem any) ([]byte, error) {
+func (ArrayData) encodeVaryingType(encodePlan EncodePlan, elem any) ([]byte, error) {
 	var buf []byte
 	if elem != nil {
 		str, err := encodePlan.Encode(elem, buf)
@@ -313,43 +305,43 @@ func allElementsCount(dimensions []Dimension) int {
 	return elementCount
 }
 
-func (c *ArrayData) decodeBinary(m *Map, arrayTypeID uint32, src []byte, length int, array ArraySetter) error {
+func (ad *ArrayData) decodeBinary(m *Map, src []byte, array ArraySetter) error {
 
-	elementCount := allElementsCount(c.Dimensions)
+	elementCount := allElementsCount(ad.Dimensions)
 	if elementCount == 0 {
 		return nil
 	}
+	length := int(ad.Length)
 
-	typeMetadata := NewTypeMetadata(c.ElementType.TypeID, c.SubType, c.Length, c.Scale)
-	elementScanPlan := c.ElementType.Codec.PlanScan(m, typeMetadata, array.ScanIndex(0))
+	typeMetadata := NewTypeMetadata(ad.ElementType.TypeID, ad.SubType, ad.Length, ad.Scale)
+	elementScanPlan := ad.ElementType.Codec.PlanScan(m, typeMetadata, array.ScanIndex(0))
 	if elementScanPlan == nil {
-		typeMetadata := NewTypeMetadata(c.ElementType.TypeID, c.SubType, c.Length, c.Scale)
 		elementScanPlan = m.PlanScan(typeMetadata, array.ScanIndex(0))
 	}
-	if arrayTypeID == fbproto.SQL_TYPE_SHORT {
+	if ad.TypeId == fbproto.SQL_TYPE_SHORT {
 		length = 4
 	}
-	rp := 0
+	position := 0
 	var elemLen int
-	if arrayTypeID == fbproto.SQL_TYPE_TEXT && length%4 != 0 {
+	if ad.TypeId == fbproto.SQL_TYPE_TEXT && length%4 != 0 {
 		elemLen = length + (4 - length&3)
 	} else {
 		elemLen = length
 	}
-	for i := 0; i < elementCount && rp < len(src); i++ {
+	for i := 0; i < elementCount && position < len(src); i++ {
 		elem := array.ScanIndex(i)
-		if arrayTypeID == fbproto.SQL_TYPE_VARYING {
-			elemLen = int(int32(binary.BigEndian.Uint32(src[rp:])))
-			rp += 4
+		if ad.TypeId == fbproto.SQL_TYPE_VARYING {
+			elemLen = int(int32(binary.BigEndian.Uint32(src[position:])))
+			position += 4
 		}
 		var elemSrc []byte
 		if elemLen >= 0 {
-			elemSrc = src[rp : rp+elemLen]
-			rp += elemLen
+			elemSrc = src[position : position+elemLen]
+			position += elemLen
 		}
 		err := elementScanPlan.Scan(elemSrc, elem)
-		if arrayTypeID == fbproto.SQL_TYPE_BOOLEAN {
-			rp += 3
+		if ad.TypeId == fbproto.SQL_TYPE_BOOLEAN {
+			position += 3 // skip padding
 		}
 		if err != nil {
 			return fmt.Errorf("failed to scan array element %d: %w", i, err)
@@ -380,7 +372,7 @@ func getArrayDecodeType(dst any) (ArraySetter, error) {
 
 	targetType := reflect.TypeOf(dst)
 	if targetType.Kind() != reflect.Ptr {
-		return nil, fmt.Errorf("unsupported argument type")
+		return nil, fmt.Errorf("unsupported argument type %T for array decode", dst)
 	}
 
 	targetElemType := targetType.Elem()
@@ -405,7 +397,7 @@ func getArrayDecodeType(dst any) (ArraySetter, error) {
 
 	a, ok := dst.(ArraySetter)
 	if !ok {
-		return nil, fmt.Errorf("unsupported argument type")
+		return nil, fmt.Errorf("unsupported argument type %T for array decode", dst)
 	}
 
 	return a, nil
@@ -455,7 +447,7 @@ func getArrayEncodeType(dst any) (ArrayGetter, error) {
 	a, ok := dst.(ArrayGetter)
 
 	if targetElemType.Kind() != reflect.Slice && !ok {
-		return nil, fmt.Errorf("unsupported argument type")
+		return nil, fmt.Errorf("unsupported argument type %T for array encode", dst)
 	}
 
 	return a, nil
@@ -495,8 +487,8 @@ type Array[T any] struct {
 	Valid    bool
 }
 
-func (a Array[T]) Dimensions(lowers []int) []Dimension {
-	return a.Dims
+func (a Array[T]) Dimensions(lowers []int) ([]Dimension, error) {
+	return a.Dims, nil
 }
 
 func (a Array[T]) Index(i int) any {
@@ -529,12 +521,12 @@ func (a FlatArray[T]) Index(i int) any {
 	return a[i]
 }
 
-func (a FlatArray[T]) Dimensions(lowers []int) []Dimension {
+func (a FlatArray[T]) Dimensions(lowers []int) ([]Dimension, error) {
 	if a == nil {
-		return nil
+		return nil, nil
 	}
 
-	return []Dimension{{Lower: lowers[0], Upper: lowers[0] + (len(a) - 1)}}
+	return []Dimension{{Lower: lowers[0], Upper: lowers[0] + (len(a) - 1)}}, nil
 }
 
 func (a *FlatArray[T]) SetDimensions(dimensions []Dimension) error {

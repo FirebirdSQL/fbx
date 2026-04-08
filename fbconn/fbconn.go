@@ -1386,7 +1386,7 @@ func (fbConn *FbConn) getArrayMetadata(ctx context.Context, tx *FBTransaction, t
 		boundTransaction: tx,
 	}
 
-	result := st.internalExecTx(ctx, tx, rr, nil).ReadWithoutCommit()
+	result := st.internalExecTx(ctx, tx, rr, nil).readWithoutCommit()
 
 	if result.Err != nil {
 		return nil, nil, result.Err
@@ -1439,19 +1439,19 @@ func (fbConn *FbConn) getArrayDimensions(ctx context.Context, tx *FBTransaction,
 		boundTransaction: tx,
 	}
 
-	result := st.internalExecTx(ctx, tx, rr, nil).ReadWithoutCommit()
+	result := st.internalExecTx(ctx, tx, rr, nil).readWithoutCommit()
 
 	if result.Err != nil {
 		return nil, result.Err
 	}
 
 	dimensions := map[string][][]int{}
-	for _, val := range result.Rows {
-		dimensions[string(val[2])] = append(
-			dimensions[string(val[2])], // val[2] - field name
+	for _, row := range result.Rows {
+		dimensions[string(row[2])] = append(
+			dimensions[string(row[2])], // val[2] - field name
 			[]int{
-				int(int32(binary.BigEndian.Uint32(val[0]))), // lower bound
-				int(int32(binary.BigEndian.Uint32(val[1]))), // upper bound
+				int(int32(binary.BigEndian.Uint32(row[0]))), // lower bound
+				int(int32(binary.BigEndian.Uint32(row[1]))), // upper bound
 			},
 		)
 	}
@@ -1493,7 +1493,7 @@ func (fbConn *FbConn) getArray(ctx context.Context, arrayId int64, datatype uint
 		fbConn.conn.Close()
 		return nil, ErrorResponseToFbError(m)
 	default:
-		return nil, fmt.Errorf("unexpected response")
+		return nil, fmt.Errorf("unexpected response type %T", msg)
 	}
 }
 
@@ -1535,7 +1535,7 @@ func (fbConn *FbConn) putArray(ctx context.Context, array []byte, length int, sd
 		fbConn.conn.Close()
 		return nil, ErrorResponseToFbError(m)
 	default:
-		return nil, fmt.Errorf("unexpected response")
+		return nil, fmt.Errorf("unexpected response type %T", msg)
 	}
 }
 
@@ -1612,8 +1612,7 @@ func (rr *ResultReader) Read() *Result {
 	return br
 }
 
-// Read saves the query response to a Result without commit
-func (rr *ResultReader) ReadWithoutCommit() *Result {
+func (rr *ResultReader) readWithoutCommit() *Result {
 	br := &Result{}
 
 	for rr.NextRow() {
@@ -1633,7 +1632,7 @@ func (rr *ResultReader) ReadWithoutCommit() *Result {
 		br.Rows = append(br.Rows, row)
 	}
 
-	br.QueryStatus, br.Err = rr.CloseWithoutCommit()
+	br.QueryStatus, br.Err = rr.closeWithoutCommit()
 
 	return br
 }
@@ -1808,7 +1807,7 @@ func (rr *ResultReader) bufferCurrentFetchRows() bool {
 		rowStart := len(rr.bufferedCols)
 		for j, elem := range row {
 			if IsArrayType(uint32(rr.fieldDescriptions[j].Type)) {
-				array, err := GetArray(rr.fbConn, rr.ctx, rr.fieldDescriptions[j].ArrayData, elem)
+				array, err := getArray(rr.fbConn, rr.ctx, rr.fieldDescriptions[j].ArrayData, elem)
 				if err != nil {
 					rr.fbConn.asyncClose()
 					rr.concludeCommand(QueryStatus{}, err)
@@ -1901,9 +1900,7 @@ func (rr *ResultReader) Close() (QueryStatus, error) {
 	return rr.queryStatus, rr.err
 }
 
-// Close consumes any remaining result data and returns the command tag or
-// error without commit
-func (rr *ResultReader) CloseWithoutCommit() (QueryStatus, error) {
+func (rr *ResultReader) closeWithoutCommit() (QueryStatus, error) {
 	if !rr.closed {
 		if rr.err == nil {
 			rr.drainCurrentFetch()
@@ -2375,7 +2372,7 @@ func getArrayInfo(fbConn *FbConn, ctx context.Context, tx *FBTransaction, fields
 
 		arr.Length = binary.BigEndian.Uint32(metadata["LENGTH"])
 		if arr.TypeId == fbproto.SQL_TYPE_VARYING || arr.TypeId == fbproto.SQL_TYPE_TEXT {
-			arr.Length *= fbConn.Encoding.MaxBytesPerChar
+			arr.Length *= fbConn.Encoding.MaxBytesPerChar // to read an array of text data when connected in any encoding
 		}
 
 		if arrays[arr.TableName] == nil {
