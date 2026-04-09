@@ -105,9 +105,9 @@ func TestArrayArray(t *testing.T) {
 		}{
 			{fbtype.Array[int32]{
 				Elements: []int32{1, 2, 3, 4},
-				Dims: []fbtype.Dimension{
-					{Lower: 1, Upper: 2},
-					{Lower: 1, Upper: 2},
+				Dims: []fbtype.ArrayDimension{
+					{LowerBound: 1, Length: 2},
+					{LowerBound: 1, Length: 2},
 				},
 				Valid: true,
 			}},

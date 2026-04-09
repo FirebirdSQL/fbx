@@ -54,7 +54,7 @@ func (pb *ExtendedQueryBuilder) Build(ctx context.Context, conn *Conn, tx *dbTx,
 			typeMetadata.SetArrayMetadata(arrayData)
 			var lowers []int
 			for _, d := range typeMetadata.ArrayData.Dimensions {
-				lowers = append(lowers, d.Lower)
+				lowers = append(lowers, d.LowerBound)
 			}
 			dimensions, err := fbtype.Dimensions(args[i], lowers)
 			if err != nil {

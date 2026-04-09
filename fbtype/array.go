@@ -17,13 +17,13 @@ type ArrayGetter interface {
 	Index(i int) any
 
 	// Dimensions returns the []Dimensions of the array
-	Dimensions(lowers []int) ([]Dimension, error)
+	Dimensions(lowers []int) ([]ArrayDimension, error)
 }
 
-// Dimension is a struct for storage array dimensions
-type Dimension struct {
-	Lower int
-	Upper int
+// ArrayDimension is a struct for storage array dimensions
+type ArrayDimension struct {
+	LowerBound int
+	Length     int
 }
 
 // ArraySetter is the interface for getting the array from the server
@@ -31,7 +31,7 @@ type ArraySetter interface {
 	// SetDimensions prepares the value such that ScanIndex can be called for each element. This will remove any existing
 	// elements. dimensions may be nil to indicate a NULL array. If unable to exactly preserve dimensions SetDimensions
 	// may return an error or silently flatten the array dimensions.
-	SetDimensions(dimensions []Dimension) error
+	SetDimensions(dimensions []ArrayDimension) error
 
 	// ScanIndex returns a value usable as a scan target for i. SetDimensions must be called before ScanIndex.
 	ScanIndex(i int) any
@@ -40,7 +40,7 @@ type ArraySetter interface {
 // ArrayData is a struct for any array type.
 type ArrayData struct {
 	ElementType *Type
-	Dimensions  []Dimension
+	Dimensions  []ArrayDimension
 	SubType     int32
 	Length      uint32
 	Scale       int32
@@ -62,9 +62,9 @@ func NewArrayData(typeId uint32, subType int32, length uint32, scale int32, Dime
 	ad.SubType = subType
 	ad.TypeId = typeId
 
-	b := []Dimension{}
+	b := []ArrayDimension{}
 	for _, elem := range DimensionsMap {
-		b = append(b, Dimension{Lower: elem["Lower"], Upper: elem["Upper"]})
+		b = append(b, ArrayDimension{LowerBound: elem["Lower"], Length: elem["Upper"] - elem["Lower"] + 1})
 	}
 	ad.Dimensions = b
 
@@ -160,7 +160,7 @@ func (pe planEncodeArray) Encode(value any, buf []byte) (newBuf []byte, err erro
 	}
 	var lowers []int
 	for _, d := range pe.arrayData.Dimensions {
-		lowers = append(lowers, d.Lower)
+		lowers = append(lowers, d.LowerBound)
 	}
 	dimensions, err := array.Dimensions(lowers)
 	if dimensions == nil {
@@ -223,7 +223,7 @@ func Dimensions(value any, lowers []int) ([]map[string]int, error) {
 	}
 	output := []map[string]int{}
 	for _, dimension := range dimensions {
-		output = append(output, map[string]int{"Lower": dimension.Lower, "Upper": dimension.Upper})
+		output = append(output, map[string]int{"Lower": dimension.LowerBound, "Upper": dimension.LowerBound + dimension.Length - 1})
 	}
 	return output, nil
 }
@@ -292,14 +292,14 @@ func (ArrayData) encodeVaryingType(encodePlan EncodePlan, elem any) ([]byte, err
 	return buf, nil
 }
 
-func allElementsCount(dimensions []Dimension) int {
+func allElementsCount(dimensions []ArrayDimension) int {
 	if len(dimensions) == 0 {
 		return 0
 	}
 
-	elementCount := int(dimensions[0].Upper - dimensions[0].Lower + 1)
+	elementCount := dimensions[0].Length
 	for _, d := range dimensions[1:] {
-		elementCount *= int(d.Upper - d.Lower + 1)
+		elementCount *= d.Length
 	}
 
 	return elementCount
@@ -483,11 +483,11 @@ func isRagged(slice reflect.Value) bool {
 
 type Array[T any] struct {
 	Elements []T
-	Dims     []Dimension
+	Dims     []ArrayDimension
 	Valid    bool
 }
 
-func (a Array[T]) Dimensions(lowers []int) ([]Dimension, error) {
+func (a Array[T]) Dimensions(lowers []int) ([]ArrayDimension, error) {
 	return a.Dims, nil
 }
 
@@ -495,7 +495,7 @@ func (a Array[T]) Index(i int) any {
 	return a.Elements[i]
 }
 
-func (a *Array[T]) SetDimensions(dimensions []Dimension) error {
+func (a *Array[T]) SetDimensions(dimensions []ArrayDimension) error {
 	if dimensions == nil {
 		*a = Array[T]{}
 		return nil
@@ -521,15 +521,15 @@ func (a FlatArray[T]) Index(i int) any {
 	return a[i]
 }
 
-func (a FlatArray[T]) Dimensions(lowers []int) ([]Dimension, error) {
+func (a FlatArray[T]) Dimensions(lowers []int) ([]ArrayDimension, error) {
 	if a == nil {
 		return nil, nil
 	}
 
-	return []Dimension{{Lower: lowers[0], Upper: lowers[0] + (len(a) - 1)}}, nil
+	return []ArrayDimension{{LowerBound: lowers[0], Length: len(a)}}, nil
 }
 
-func (a *FlatArray[T]) SetDimensions(dimensions []Dimension) error {
+func (a *FlatArray[T]) SetDimensions(dimensions []ArrayDimension) error {
 	if dimensions == nil {
 		*a = nil
 		return nil
