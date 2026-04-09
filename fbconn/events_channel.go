@@ -42,29 +42,12 @@ func (fbConn *FbConn) ensureEventChannel(ctx context.Context) (*eventChannel, er
 		return channel, nil
 	}
 
-	if err := fbConn.client.WriteMessage(&fbproto.OpConnectRequest{}); err != nil {
-		return nil, err
-	}
-	if err := fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
-		return nil, err
-	}
-
-	msg, err := fbConn.receiveMessage()
+	existingChannel, auxPort, err := fbConn.requestAuxEventPort(ctx)
 	if err != nil {
-		return nil, normalizeTimeoutError(ctx, err)
+		return nil, err
 	}
-
-	var auxPort int
-	switch m := msg.(type) {
-	case *fbproto.OpResponse:
-		auxPort, err = parseAuxEventPort(m.Data)
-		if err != nil {
-			return nil, err
-		}
-	case *fbproto.ErrorResponse:
-		return nil, ErrorResponseToFbError(m)
-	default:
-		return nil, fmt.Errorf("unexpected response message type %T while requesting event channel", m)
+	if existingChannel != nil {
+		return existingChannel, nil
 	}
 
 	host := fbConn.eventDialHost()
@@ -76,6 +59,14 @@ func (fbConn *FbConn) ensureEventChannel(ctx context.Context) (*eventChannel, er
 
 	channel = newEventChannel(auxConn)
 	fbConn.eventMu.Lock()
+	if fbConn.eventChannel != nil {
+		existingChannel = fbConn.eventChannel
+		fbConn.eventMu.Unlock()
+		if closeErr := channel.close(); closeErr != nil {
+			fbConn.setEventError(fmt.Errorf("event channel close failed: %w", closeErr))
+		}
+		return existingChannel, nil
+	}
 	fbConn.eventChannel = channel
 	fbConn.eventErr = nil
 	if fbConn.eventHandles == nil {
@@ -85,6 +76,55 @@ func (fbConn *FbConn) ensureEventChannel(ctx context.Context) (*eventChannel, er
 
 	go fbConn.readEventChannelLoop(channel)
 	return channel, nil
+}
+
+func (fbConn *FbConn) requestAuxEventPort(ctx context.Context) (*eventChannel, int, error) {
+	if err := fbConn.lock(); err != nil {
+		return nil, 0, err
+	}
+	defer fbConn.unlock()
+
+	if ctx != context.Background() {
+		select {
+		case <-ctx.Done():
+			return nil, 0, newContextAlreadyDoneError(ctx)
+		default:
+		}
+		fbConn.contextWatcher.Watch(ctx)
+		defer fbConn.contextWatcher.Unwatch()
+	}
+
+	fbConn.eventMu.Lock()
+	channel := fbConn.eventChannel
+	fbConn.eventMu.Unlock()
+	if channel != nil {
+		return channel, 0, nil
+	}
+
+	if err := fbConn.client.WriteMessage(&fbproto.OpConnectRequest{}); err != nil {
+		return nil, 0, err
+	}
+	if err := fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+		return nil, 0, err
+	}
+
+	msg, err := fbConn.receiveMessage()
+	if err != nil {
+		return nil, 0, normalizeTimeoutError(ctx, err)
+	}
+
+	switch m := msg.(type) {
+	case *fbproto.OpResponse:
+		auxPort, parseErr := parseAuxEventPort(m.Data)
+		if parseErr != nil {
+			return nil, 0, parseErr
+		}
+		return nil, auxPort, nil
+	case *fbproto.ErrorResponse:
+		return nil, 0, ErrorResponseToFbError(m)
+	default:
+		return nil, 0, fmt.Errorf("unexpected response message type %T while requesting event channel", m)
+	}
 }
 
 func (fbConn *FbConn) eventDialHost() string {

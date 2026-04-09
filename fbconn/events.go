@@ -24,6 +24,9 @@ func (fbConn *FbConn) QueueEvent(ctx context.Context, handle *EventHandle) error
 	if eventErr := fbConn.takeEventError(); eventErr != nil {
 		return eventErr
 	}
+	if _, err := fbConn.ensureEventChannel(ctx); err != nil {
+		return err
+	}
 	if err := fbConn.lock(); err != nil {
 		return err
 	}
@@ -37,10 +40,6 @@ func (fbConn *FbConn) QueueEvent(ctx context.Context, handle *EventHandle) error
 		}
 		fbConn.contextWatcher.Watch(ctx)
 		defer fbConn.contextWatcher.Unwatch()
-	}
-
-	if _, err := fbConn.ensureEventChannel(ctx); err != nil {
-		return err
 	}
 
 	eventID := handle.assignNewLocalID()
