@@ -149,6 +149,13 @@ func TestXPBWriter_PutMixed(t *testing.T) {
 	assert.Equal(t, []byte{1, 3, 5, 0, 7, 0, 0, 0}, w.Bytes())
 }
 
+func TestTPBWriterV3_PutInt32(t *testing.T) {
+	tpb := NewTPBWriterV3()
+	require.NotNil(t, tpb)
+	tpb.PutInt32(Isc_tpb_lock_timeout, 15)
+	assert.Equal(t, []byte{Isc_tpb_version3, Isc_tpb_lock_timeout, 4, 15, 0, 0, 0}, tpb.Bytes())
+}
+
 func TestXPBWriter_Reset(t *testing.T) {
 	w := NewXPBWriter()
 	require.NotNil(t, w)
