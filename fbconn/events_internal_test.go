@@ -2,6 +2,7 @@ package fbconn
 
 import (
 	"bytes"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -109,4 +110,33 @@ func TestReadSingleEventFromXDRIncompleteEventBuffer(t *testing.T) {
 	var scratch []byte
 	_, _, err := readSingleEventFromXDR(xr, &scratch)
 	require.Error(t, err)
+}
+
+func TestSetEventErrorKeepsFirstFailure(t *testing.T) {
+	t.Parallel()
+
+	fbConn := &FbConn{}
+	firstErr := errors.New("first channel failure")
+	secondErr := errors.New("secondary close failure")
+
+	fbConn.setEventError(firstErr)
+	fbConn.setEventError(secondErr)
+
+	got := fbConn.takeEventError()
+	require.ErrorIs(t, got, firstErr)
+	require.NotErrorIs(t, got, secondErr)
+}
+
+func TestSetEventErrorAllowsNewFailureAfterTake(t *testing.T) {
+	t.Parallel()
+
+	fbConn := &FbConn{}
+	firstErr := errors.New("first")
+	secondErr := errors.New("second")
+
+	fbConn.setEventError(firstErr)
+	require.ErrorIs(t, fbConn.takeEventError(), firstErr)
+
+	fbConn.setEventError(secondErr)
+	require.ErrorIs(t, fbConn.takeEventError(), secondErr)
 }

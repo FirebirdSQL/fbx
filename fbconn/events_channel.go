@@ -283,7 +283,11 @@ func (fbConn *FbConn) setEventError(err error) {
 		return
 	}
 	fbConn.eventMu.Lock()
-	fbConn.eventErr = errors.Join(fbConn.eventErr, err)
+	// Keep the first channel error as the primary failure reason.
+	// Follow-up close/cleanup errors should not overwrite the root cause.
+	if fbConn.eventErr == nil {
+		fbConn.eventErr = err
+	}
 	fbConn.eventMu.Unlock()
 }
 
