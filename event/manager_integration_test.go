@@ -114,7 +114,7 @@ func TestManagerAddRemoveEventListener(t *testing.T) {
 		events <- e
 	})
 
-	err = manager.AddEventListener(eventName, listener)
+	listenerHandle, err := manager.AddEventListener(eventName, listener)
 	if skipIfAuxEventPortUnavailable(t, err) {
 		return
 	}
@@ -125,7 +125,7 @@ func TestManagerAddRemoveEventListener(t *testing.T) {
 	require.Equal(t, eventName, got.EventName)
 	require.Equal(t, 1, got.EventCount)
 
-	require.NoError(t, manager.RemoveEventListener(eventName, listener))
+	require.NoError(t, manager.RemoveEventListener(listenerHandle))
 	require.NoError(t, postEvents(ctx, notifier, eventName))
 
 	select {
@@ -165,12 +165,13 @@ func TestManagerMultipleListeners(t *testing.T) {
 		listenerBEvents <- e
 	})
 
-	err = manager.AddEventListener(eventName, listenerA)
+	_, err = manager.AddEventListener(eventName, listenerA)
 	if skipIfAuxEventPortUnavailable(t, err) {
 		return
 	}
 	require.NoError(t, err)
-	require.NoError(t, manager.AddEventListener(eventName, listenerB))
+	_, err = manager.AddEventListener(eventName, listenerB)
+	require.NoError(t, err)
 
 	require.NoError(t, postEvents(ctx, notifier, eventName))
 
@@ -274,7 +275,7 @@ func TestManagerWaitForEventContextDeadlineExceeded(t *testing.T) {
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
-func TestManagerDuplicateSameListenerDeliveredOnce(t *testing.T) {
+func TestManagerDuplicateSameListenerDeliveredPerRegistration(t *testing.T) {
 	connString := requireIntegrationConnString(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -300,20 +301,22 @@ func TestManagerDuplicateSameListenerDeliveredOnce(t *testing.T) {
 	})
 	asyncErrs := make(chan error, 1)
 
-	err = manager.AddEventListener(eventName, listener)
+	_, err = manager.AddEventListener(eventName, listener)
 	if skipIfAuxEventPortUnavailable(t, err) {
 		return
 	}
 	require.NoError(t, err)
-	require.NoError(t, manager.AddEventListener(eventName, listener))
+	_, err = manager.AddEventListener(eventName, listener)
+	require.NoError(t, err)
 
 	primeTimeout := 8 * time.Second
 	require.NoError(t, primeEventCounterIntegration(ctx, notifier, eventName, &delivered, primeTimeout, asyncErrs, manager))
 	base := delivered.Load()
 
 	const posted = int64(5)
+	const registrationCount = int64(2)
 	require.NoError(t, postEventCountIntegration(ctx, notifier, eventName, int(posted)))
-	require.NoError(t, waitForCounterAtLeastIntegration(ctx, &delivered, base+posted, 10*time.Second, asyncErrs, manager, "dedup"))
+	require.NoError(t, waitForCounterAtLeastIntegration(ctx, &delivered, base+posted*registrationCount, 10*time.Second, asyncErrs, manager, "duplicate registration"))
 
 	select {
 	case <-time.After(300 * time.Millisecond):
@@ -321,7 +324,7 @@ func TestManagerDuplicateSameListenerDeliveredOnce(t *testing.T) {
 		t.Fatal(ctx.Err())
 	}
 
-	require.Equal(t, posted, delivered.Load()-base)
+	require.Equal(t, posted*registrationCount, delivered.Load()-base)
 }
 
 func TestManagerDifferentClosureListenersSelectiveRemove(t *testing.T) {
@@ -356,12 +359,13 @@ func TestManagerDifferentClosureListenersSelectiveRemove(t *testing.T) {
 	listenerA := makeListener(&deliveredA)
 	listenerB := makeListener(&deliveredB)
 
-	err = manager.AddEventListener(eventName, listenerA)
+	listenerAHandle, err := manager.AddEventListener(eventName, listenerA)
 	if skipIfAuxEventPortUnavailable(t, err) {
 		return
 	}
 	require.NoError(t, err)
-	require.NoError(t, manager.AddEventListener(eventName, listenerB))
+	_, err = manager.AddEventListener(eventName, listenerB)
+	require.NoError(t, err)
 
 	primeTimeout := 8 * time.Second
 	require.NoError(t, primeEventCounterIntegration(ctx, notifier, eventName, &deliveredA, primeTimeout, asyncErrs, manager))
@@ -384,7 +388,7 @@ func TestManagerDifferentClosureListenersSelectiveRemove(t *testing.T) {
 	require.Equal(t, phase1Posted, deliveredA.Load()-baseA)
 	require.Equal(t, phase1Posted, deliveredB.Load()-baseB)
 
-	require.NoError(t, manager.RemoveEventListener(eventName, listenerA))
+	require.NoError(t, manager.RemoveEventListener(listenerAHandle))
 
 	const phase2Posted = int64(3)
 	require.NoError(t, postEventCountIntegration(ctx, notifier, eventName, int(phase2Posted)))
@@ -480,15 +484,18 @@ func TestManagerWorkflowScenarioFromCmdEvents(t *testing.T) {
 		shippedCount.Add(int64(eventDelta))
 	})
 
-	err = manager.AddEventListener(orderCreated, createdListener)
+	_, err = manager.AddEventListener(orderCreated, createdListener)
 	if skipIfAuxEventPortUnavailable(t, err) {
 		return
 	}
 	require.NoError(t, err)
 
-	require.NoError(t, manager.AddEventListener(paymentConfirmed, paymentListener))
-	require.NoError(t, manager.AddEventListener(paymentConfirmed, auditListener))
-	require.NoError(t, manager.AddEventListener(orderShipped, shippedListener))
+	_, err = manager.AddEventListener(paymentConfirmed, paymentListener)
+	require.NoError(t, err)
+	auditHandle, err := manager.AddEventListener(paymentConfirmed, auditListener)
+	require.NoError(t, err)
+	_, err = manager.AddEventListener(orderShipped, shippedListener)
+	require.NoError(t, err)
 
 	primeTimeout := 8 * time.Second
 	require.NoError(t, primeEventCounterIntegration(ctx, producer, orderCreated, &createdCount, primeTimeout, asyncErrs, manager))
@@ -508,7 +515,7 @@ func TestManagerWorkflowScenarioFromCmdEvents(t *testing.T) {
 	require.NoError(t, waitForCounterAtLeastIntegration(ctx, &shippedCount, phase1Target, 12*time.Second, asyncErrs, manager, "phase1 shipped"))
 
 	auditBeforeRemove := auditCount.Load()
-	require.NoError(t, manager.RemoveEventListener(paymentConfirmed, auditListener))
+	require.NoError(t, manager.RemoveEventListener(auditHandle))
 
 	require.NoError(t, emitOrdersIntegration(ctx, producer, orderCreated, ordersPhase2, 2, 100*time.Millisecond))
 

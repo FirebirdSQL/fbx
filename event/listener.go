@@ -6,6 +6,14 @@ type DatabaseEvent struct {
 	EventCount int
 }
 
+// ListenerHandle uniquely identifies manager listener registration.
+type ListenerHandle uint64
+
+const (
+	// InvalidListenerHandle indicates missing or failed registration.
+	InvalidListenerHandle ListenerHandle = 0
+)
+
 // EventListener receives database events.
 type EventListener interface {
 	EventOccurred(DatabaseEvent)

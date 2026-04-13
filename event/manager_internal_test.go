@@ -11,35 +11,51 @@ import (
 	"rdb.red-soft.ru/fbx/fbconn"
 )
 
-type managerInternalTestListener struct {
-	id int
+func addRegisteredListenerForTest(m *Manager, eventName string, listener EventListener) ListenerHandle {
+	m.nextListenerID++
+	handle := m.nextListenerID
+	m.listeners[eventName] = append(m.listeners[eventName], listenerRegistration{
+		handle:   handle,
+		listener: listener,
+	})
+	m.listenerEventName[handle] = eventName
+	return handle
 }
 
-func (l *managerInternalTestListener) EventOccurred(DatabaseEvent) {}
-
-func TestListenersEqual(t *testing.T) {
+func TestAddEventListenerReturnsUniqueHandles(t *testing.T) {
 	t.Parallel()
 
-	fnA := EventListenerFunc(func(DatabaseEvent) {})
-	fnB := EventListenerFunc(func(DatabaseEvent) {})
-	require.True(t, listenersEqual(fnA, fnA))
-	require.False(t, listenersEqual(fnA, fnB))
+	m := &Manager{
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*gdsEventHandler),
+	}
 
-	l1 := &managerInternalTestListener{id: 1}
-	l2 := l1
-	l3 := &managerInternalTestListener{id: 2}
-	require.True(t, listenersEqual(l1, l2))
-	require.False(t, listenersEqual(l1, l3))
+	existing := EventListenerFunc(func(DatabaseEvent) {})
+	existingHandle := addRegisteredListenerForTest(m, "EVT", existing)
 
-	require.False(t, listenersEqual(l1, fnA))
-	require.True(t, listenersEqual(nil, nil))
-	require.False(t, listenersEqual(nil, l1))
+	first := EventListenerFunc(func(DatabaseEvent) {})
+	second := EventListenerFunc(func(DatabaseEvent) {})
+
+	firstHandle, err := m.AddEventListener("EVT", first)
+	require.NoError(t, err)
+
+	secondHandle, err := m.AddEventListener("EVT", second)
+	require.NoError(t, err)
+
+	require.NotEqual(t, InvalidListenerHandle, firstHandle)
+	require.NotEqual(t, InvalidListenerHandle, secondHandle)
+	require.NotEqual(t, firstHandle, secondHandle)
+	require.NotEqual(t, existingHandle, firstHandle)
+	require.NotEqual(t, existingHandle, secondHandle)
+	require.Len(t, m.listeners["EVT"], 3)
 }
 
-func TestListenersEqualDifferentClosuresFromSameLiteral(t *testing.T) {
+func TestRemoveEventListenerByHandle(t *testing.T) {
 	t.Parallel()
 
-	functions := make([]EventListenerFunc, 0, 2)
+	functions := make([]EventListener, 0, 2)
 	for _, id := range []int{1, 2} {
 		listenerID := id
 		functions = append(functions, EventListenerFunc(func(DatabaseEvent) {
@@ -47,8 +63,19 @@ func TestListenersEqualDifferentClosuresFromSameLiteral(t *testing.T) {
 		}))
 	}
 
-	require.False(t, listenersEqual(functions[0], functions[1]))
-	require.True(t, listenersEqual(functions[0], functions[0]))
+	m := &Manager{
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*gdsEventHandler),
+	}
+
+	firstHandle := addRegisteredListenerForTest(m, "EVT", functions[0])
+	secondHandle := addRegisteredListenerForTest(m, "EVT", functions[1])
+
+	require.NoError(t, m.RemoveEventListener(firstHandle))
+	require.Len(t, m.listeners["EVT"], 1)
+	require.Equal(t, secondHandle, m.listeners["EVT"][0].handle)
 }
 
 func TestIsConnectedManagedDisconnectedDoesNotBlock(t *testing.T) {
@@ -60,7 +87,7 @@ func TestIsConnectedManagedDisconnectedDoesNotBlock(t *testing.T) {
 	m := &Manager{
 		mode:           managerModeManaged,
 		connected:      true,
-		listeners:      make(map[string][]EventListener),
+		listeners:      make(map[string][]listenerRegistration),
 		handlers:       make(map[string]*gdsEventHandler),
 		eventQueue:     make(chan DatabaseEvent, 1),
 		dispatcherStop: stop,
@@ -101,7 +128,7 @@ func TestDisconnectRespectsContextWhenDispatcherDoesNotStop(t *testing.T) {
 
 	m := &Manager{
 		connected:      true,
-		listeners:      make(map[string][]EventListener),
+		listeners:      make(map[string][]listenerRegistration),
 		handlers:       make(map[string]*gdsEventHandler),
 		eventQueue:     make(chan DatabaseEvent, 1),
 		dispatcherStop: stop,
@@ -137,40 +164,23 @@ func TestOperationContextAddsTimeoutForBackground(t *testing.T) {
 	require.True(t, hasDeadline)
 }
 
-func TestAddEventListenerSkipsDuplicate(t *testing.T) {
+func TestAddEventListenerCreatesSeparateRegistrationsForSameListener(t *testing.T) {
 	t.Parallel()
 
 	listener := EventListenerFunc(func(DatabaseEvent) {})
 	m := &Manager{
-		connected: true,
-		listeners: map[string][]EventListener{
-			"EVT": {listener},
-		},
-		handlers: make(map[string]*gdsEventHandler),
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*gdsEventHandler),
 	}
 
-	err := m.AddEventListener("EVT", listener)
+	firstHandle := addRegisteredListenerForTest(m, "EVT", listener)
+
+	secondHandle, err := m.AddEventListener("EVT", listener)
 	require.NoError(t, err)
-	require.Len(t, m.listeners["EVT"], 1)
-}
-
-func TestRemoveEventListenerRemovesAllDuplicates(t *testing.T) {
-	t.Parallel()
-
-	target := EventListenerFunc(func(DatabaseEvent) {})
-	other := EventListenerFunc(func(DatabaseEvent) {})
-	m := &Manager{
-		connected: true,
-		listeners: map[string][]EventListener{
-			"EVT": {target, other, target},
-		},
-		handlers: make(map[string]*gdsEventHandler),
-	}
-
-	err := m.RemoveEventListener("EVT", target)
-	require.NoError(t, err)
-	require.Len(t, m.listeners["EVT"], 1)
-	require.True(t, listenersEqual(m.listeners["EVT"][0], other))
+	require.Len(t, m.listeners["EVT"], 2)
+	require.NotEqual(t, firstHandle, secondHandle)
 }
 
 func TestAddRemoveEventListenerWithDifferentClosuresFromSameLiteral(t *testing.T) {
@@ -187,34 +197,33 @@ func TestAddRemoveEventListenerWithDifferentClosuresFromSameLiteral(t *testing.T
 	second := functions[1]
 
 	m := &Manager{
-		connected: true,
-		listeners: map[string][]EventListener{
-			"EVT": {first},
-		},
-		handlers: make(map[string]*gdsEventHandler),
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*gdsEventHandler),
 	}
 
-	require.NoError(t, m.AddEventListener("EVT", second))
+	firstHandle := addRegisteredListenerForTest(m, "EVT", first)
+	secondHandle := addRegisteredListenerForTest(m, "EVT", second)
+
 	require.Len(t, m.listeners["EVT"], 2)
 
-	require.NoError(t, m.RemoveEventListener("EVT", first))
+	require.NoError(t, m.RemoveEventListener(firstHandle))
 	require.Len(t, m.listeners["EVT"], 1)
-	require.True(t, listenersEqual(m.listeners["EVT"][0], second))
+	require.Equal(t, secondHandle, m.listeners["EVT"][0].handle)
 }
 
 func TestWaitForEventReturnsAsyncErrorWithoutTimeout(t *testing.T) {
 	t.Parallel()
 
 	m := &Manager{
-		connected: true,
-		listeners: map[string][]EventListener{
-			"EVT": {
-				EventListenerFunc(func(DatabaseEvent) {}),
-			},
-		},
-		handlers:       make(map[string]*gdsEventHandler),
-		asyncErrSignal: make(chan struct{}),
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*gdsEventHandler),
+		asyncErrSignal:    make(chan struct{}),
 	}
+	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(DatabaseEvent) {}))
 
 	expectedErr := errors.New("async event channel failed")
 	resultCh := make(chan error, 1)
@@ -248,15 +257,13 @@ func TestOnConnEventErrorUnblocksWaitForEventWithoutTimeout(t *testing.T) {
 	t.Parallel()
 
 	m := &Manager{
-		connected: true,
-		listeners: map[string][]EventListener{
-			"EVT": {
-				EventListenerFunc(func(DatabaseEvent) {}),
-			},
-		},
-		handlers:       make(map[string]*gdsEventHandler),
-		asyncErrSignal: make(chan struct{}),
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*gdsEventHandler),
+		asyncErrSignal:    make(chan struct{}),
 	}
+	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(DatabaseEvent) {}))
 
 	expectedErr := errors.New("event channel read failed")
 	resultCh := make(chan error, 1)
@@ -297,9 +304,10 @@ func TestAddEventListenerSerializesConcurrentFirstRegistration(t *testing.T) {
 	var once sync.Once
 
 	m := &Manager{
-		connected: true,
-		listeners: make(map[string][]EventListener),
-		handlers:  make(map[string]*gdsEventHandler),
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*gdsEventHandler),
 		beforeEnsureEventHandler: func() {
 			once.Do(func() {
 				close(enteredEnsure)
@@ -312,7 +320,8 @@ func TestAddEventListenerSerializesConcurrentFirstRegistration(t *testing.T) {
 	errSecondCh := make(chan error, 1)
 
 	go func() {
-		errFirstCh <- m.AddEventListener("EVT", first)
+		_, err := m.AddEventListener("EVT", first)
+		errFirstCh <- err
 	}()
 
 	select {
@@ -322,7 +331,8 @@ func TestAddEventListenerSerializesConcurrentFirstRegistration(t *testing.T) {
 	}
 
 	go func() {
-		errSecondCh <- m.AddEventListener("EVT", second)
+		_, err := m.AddEventListener("EVT", second)
+		errSecondCh <- err
 	}()
 
 	select {
@@ -376,14 +386,14 @@ func TestWaitForEventIgnoresStaleAsyncErrorAfterSuccessfulAwait(t *testing.T) {
 
 	dummy := EventListenerFunc(func(DatabaseEvent) {})
 	m := &Manager{
-		connected: true,
-		listeners: map[string][]EventListener{
-			"EVT": {dummy},
-		},
-		handlers:       make(map[string]*gdsEventHandler),
-		asyncErr:       errors.New("stale async error"),
-		asyncErrSignal: make(chan struct{}),
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*gdsEventHandler),
+		asyncErr:          errors.New("stale async error"),
+		asyncErrSignal:    make(chan struct{}),
 	}
+	addRegisteredListenerForTest(m, "EVT", dummy)
 
 	notifyDone := make(chan struct{})
 	go func() {

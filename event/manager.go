@@ -4,10 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 	"sync"
 	"time"
-	"unsafe"
 
 	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbconn"
@@ -25,6 +23,11 @@ const (
 	managerOperationTimeout          = 5 * time.Second
 	managerDispatcherShutdownTimeout = 5 * time.Second
 )
+
+type listenerRegistration struct {
+	handle   ListenerHandle
+	listener EventListener
+}
 
 // Manager is a high-level Firebird event manager.
 type Manager struct {
@@ -45,8 +48,10 @@ type Manager struct {
 
 	waitTimeout time.Duration
 
-	listeners map[string][]EventListener
-	handlers  map[string]*gdsEventHandler
+	listeners         map[string][]listenerRegistration
+	listenerEventName map[ListenerHandle]string
+	nextListenerID    ListenerHandle
+	handlers          map[string]*gdsEventHandler
 
 	eventQueue     chan DatabaseEvent
 	dispatcherStop chan struct{}
@@ -80,25 +85,27 @@ func NewManagerConfig(cfg *fbx.ConnConfig) *Manager {
 		connString = cfg.ConnString()
 	}
 	return &Manager{
-		mode:        managerModeDefault,
-		config:      cfgCopy,
-		connString:  connString,
-		ownConn:     true,
-		waitTimeout: defaultManagerWaitTimeout,
-		listeners:   make(map[string][]EventListener),
-		handlers:    make(map[string]*gdsEventHandler),
+		mode:              managerModeDefault,
+		config:            cfgCopy,
+		connString:        connString,
+		ownConn:           true,
+		waitTimeout:       defaultManagerWaitTimeout,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*gdsEventHandler),
 	}
 }
 
 // CreateFor creates a manager over an existing connection.
 func CreateFor(conn *fbx.Conn) *Manager {
 	return &Manager{
-		mode:        managerModeManaged,
-		conn:        conn,
-		ownConn:     false,
-		waitTimeout: defaultManagerWaitTimeout,
-		listeners:   make(map[string][]EventListener),
-		handlers:    make(map[string]*gdsEventHandler),
+		mode:              managerModeManaged,
+		conn:              conn,
+		ownConn:           false,
+		waitTimeout:       defaultManagerWaitTimeout,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*gdsEventHandler),
 	}
 }
 
@@ -176,7 +183,9 @@ func (m *Manager) disconnect(ctx context.Context, strict bool, waitDispatcher bo
 		handlers = append(handlers, handler)
 	}
 	m.handlers = make(map[string]*gdsEventHandler)
-	m.listeners = make(map[string][]EventListener)
+	m.listeners = make(map[string][]listenerRegistration)
+	m.listenerEventName = make(map[ListenerHandle]string)
+	m.nextListenerID = InvalidListenerHandle
 
 	stop := m.dispatcherStop
 	done := m.dispatcherDone
@@ -275,13 +284,13 @@ func (m *Manager) SetWaitTimeout(timeout time.Duration) {
 	m.mu.Unlock()
 }
 
-// AddEventListener adds listener for event name.
-func (m *Manager) AddEventListener(eventName string, listener EventListener) error {
+// AddEventListener adds listener for event name and returns registration handle.
+func (m *Manager) AddEventListener(eventName string, listener EventListener) (ListenerHandle, error) {
 	if eventName == "" {
-		return errors.New("eventName must not be empty")
+		return InvalidListenerHandle, errors.New("eventName must not be empty")
 	}
 	if listener == nil {
-		return errors.New("listener must not be nil")
+		return InvalidListenerHandle, errors.New("listener must not be nil")
 	}
 	m.listenerOpMu.Lock()
 	defer m.listenerOpMu.Unlock()
@@ -289,21 +298,31 @@ func (m *Manager) AddEventListener(eventName string, listener EventListener) err
 	m.mu.Lock()
 	if !m.connected {
 		m.mu.Unlock()
-		return errors.New("can't add event listeners to disconnected manager")
+		return InvalidListenerHandle, errors.New("can't add event listeners to disconnected manager")
 	}
+	if m.listeners == nil {
+		m.listeners = make(map[string][]listenerRegistration)
+	}
+	if m.listenerEventName == nil {
+		m.listenerEventName = make(map[ListenerHandle]string)
+	}
+	m.nextListenerID++
+	if m.nextListenerID == InvalidListenerHandle {
+		m.nextListenerID++
+	}
+	handle := m.nextListenerID
+
 	currentListeners := m.listeners[eventName]
-	for _, existing := range currentListeners {
-		if listenersEqual(existing, listener) {
-			m.mu.Unlock()
-			return nil
-		}
-	}
 	hasListeners := len(currentListeners) > 0
-	m.listeners[eventName] = append(currentListeners, listener)
+	m.listeners[eventName] = append(currentListeners, listenerRegistration{
+		handle:   handle,
+		listener: listener,
+	})
+	m.listenerEventName[handle] = eventName
 	m.mu.Unlock()
 
 	if hasListeners {
-		return nil
+		return handle, nil
 	}
 
 	m.mu.Lock()
@@ -314,44 +333,50 @@ func (m *Manager) AddEventListener(eventName string, listener EventListener) err
 	}
 
 	if err := m.ensureEventHandler(eventName); err != nil {
-		m.removeListenerSilently(eventName, listener)
-		return err
+		m.removeListenerSilently(handle)
+		return InvalidListenerHandle, err
 	}
-	return nil
+	return handle, nil
 }
 
-// RemoveEventListener removes listener for event name.
-func (m *Manager) RemoveEventListener(eventName string, listener EventListener) error {
-	if eventName == "" {
-		return errors.New("eventName must not be empty")
-	}
-	if listener == nil {
-		return errors.New("listener must not be nil")
+// RemoveEventListener removes listener by registration handle.
+func (m *Manager) RemoveEventListener(handle ListenerHandle) error {
+	if handle == InvalidListenerHandle {
+		return errors.New("listener handle must not be invalid")
 	}
 	m.listenerOpMu.Lock()
 	defer m.listenerOpMu.Unlock()
 
 	var handler *gdsEventHandler
 	m.mu.Lock()
-	list := m.listeners[eventName]
-	if len(list) == 0 {
+	eventName, exists := m.listenerEventName[handle]
+	if !exists {
 		m.mu.Unlock()
 		return nil
 	}
 
-	updated := make([]EventListener, 0, len(list))
+	list := m.listeners[eventName]
+	if len(list) == 0 {
+		delete(m.listenerEventName, handle)
+		m.mu.Unlock()
+		return nil
+	}
+
+	updated := make([]listenerRegistration, 0, len(list))
 	removed := false
 	for _, existing := range list {
-		if listenersEqual(existing, listener) {
+		if existing.handle == handle {
 			removed = true
 			continue
 		}
 		updated = append(updated, existing)
 	}
 	if !removed {
+		delete(m.listenerEventName, handle)
 		m.mu.Unlock()
 		return nil
 	}
+	delete(m.listenerEventName, handle)
 
 	if len(updated) > 0 {
 		m.listeners[eventName] = updated
@@ -373,12 +398,13 @@ func (m *Manager) RemoveEventListener(eventName string, listener EventListener) 
 // WaitForEvent waits for one event occurrence for eventName.
 func (m *Manager) WaitForEvent(ctx context.Context, eventName string, timeout time.Duration) (int, error) {
 	listener := newOneTimeEventListener()
-	if err := m.AddEventListener(eventName, listener); err != nil {
+	handle, err := m.AddEventListener(eventName, listener)
+	if err != nil {
 		return -1, err
 	}
 
 	count, awaitErr := listener.awaitWithAsyncError(ctx, timeout, m.asyncErrorSignal(), m.LastError)
-	removeErr := m.RemoveEventListener(eventName, listener)
+	removeErr := m.RemoveEventListener(handle)
 
 	if awaitErr != nil {
 		if removeErr != nil {
@@ -455,16 +481,23 @@ func (m *Manager) ensureEventHandler(eventName string) error {
 	return nil
 }
 
-func (m *Manager) removeListenerSilently(eventName string, listener EventListener) {
+func (m *Manager) removeListenerSilently(handle ListenerHandle) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	eventName, exists := m.listenerEventName[handle]
+	if !exists {
+		return
+	}
+
 	list := m.listeners[eventName]
 	for i, existing := range list {
-		if listenersEqual(existing, listener) {
+		if existing.handle == handle {
 			list = append(list[:i], list[i+1:]...)
 			break
 		}
 	}
+	delete(m.listenerEventName, handle)
 	if len(list) == 0 {
 		delete(m.listeners, eventName)
 		return
@@ -512,10 +545,10 @@ func (m *Manager) dispatcherLoop(stop <-chan struct{}, done chan<- struct{}) {
 
 func (m *Manager) notify(event DatabaseEvent) {
 	m.mu.Lock()
-	listeners := append([]EventListener(nil), m.listeners[event.EventName]...)
+	registrations := append([]listenerRegistration(nil), m.listeners[event.EventName]...)
 	m.mu.Unlock()
-	for _, listener := range listeners {
-		listener.EventOccurred(event)
+	for _, registration := range registrations {
+		registration.listener.EventOccurred(event)
 	}
 }
 
@@ -813,38 +846,4 @@ func (h *gdsEventHandler) isStopping() bool {
 	state := h.state
 	h.mu.Unlock()
 	return state == eventHandlerStateCancelling || state == eventHandlerStateCancelled
-}
-
-func listenersEqual(a, b EventListener) bool {
-	if a == nil || b == nil {
-		return a == b
-	}
-
-	va := reflect.ValueOf(a)
-	vb := reflect.ValueOf(b)
-	if va.Type() != vb.Type() {
-		return false
-	}
-
-	switch va.Kind() {
-	case reflect.Func:
-		return functionDataPointer(a) == functionDataPointer(b)
-	case reflect.Chan, reflect.Map, reflect.Pointer, reflect.Slice, reflect.UnsafePointer:
-		return va.Pointer() == vb.Pointer()
-	default:
-		if !va.Type().Comparable() {
-			return false
-		}
-		return va.Interface() == vb.Interface()
-	}
-}
-
-// functionDataPointer returns runtime data pointer for function value stored in interface.
-// Unlike reflect.Value.Pointer() (code pointer), this identifies the concrete closure instance.
-func functionDataPointer(v any) uintptr {
-	type eface struct {
-		typ  unsafe.Pointer
-		data unsafe.Pointer
-	}
-	return uintptr((*eface)(unsafe.Pointer(&v)).data)
 }
