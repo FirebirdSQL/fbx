@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx/fbproto"
@@ -139,4 +140,43 @@ func TestSetEventErrorAllowsNewFailureAfterTake(t *testing.T) {
 
 	fbConn.setEventError(secondErr)
 	require.ErrorIs(t, fbConn.takeEventError(), secondErr)
+}
+
+func TestSetEventErrorHandlerCalledForFirstFailure(t *testing.T) {
+	t.Parallel()
+
+	fbConn := &FbConn{}
+	called := make(chan error, 2)
+	fbConn.SetEventErrorHandler(func(err error) {
+		called <- err
+	})
+
+	firstErr := errors.New("first")
+	secondErr := errors.New("second")
+
+	fbConn.setEventError(firstErr)
+	fbConn.setEventError(secondErr)
+
+	select {
+	case err := <-called:
+		require.ErrorIs(t, err, firstErr)
+	case <-time.After(time.Second):
+		t.Fatal("event error handler was not called")
+	}
+
+	select {
+	case <-called:
+		t.Fatal("event error handler called more than once for same error cycle")
+	default:
+	}
+
+	_ = fbConn.takeEventError()
+	fbConn.setEventError(secondErr)
+
+	select {
+	case err := <-called:
+		require.ErrorIs(t, err, secondErr)
+	case <-time.After(time.Second):
+		t.Fatal("event error handler was not called after takeEventError")
+	}
 }

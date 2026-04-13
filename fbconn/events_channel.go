@@ -278,17 +278,34 @@ func (fbConn *FbConn) closeEventChannel() {
 	}
 }
 
+// SetEventErrorHandler configures a callback that is invoked when the first
+// asynchronous event-channel error is recorded. Passing nil removes the
+// callback.
+func (fbConn *FbConn) SetEventErrorHandler(handler func(error)) {
+	if fbConn == nil {
+		return
+	}
+	fbConn.eventMu.Lock()
+	fbConn.eventErrHandler = handler
+	fbConn.eventMu.Unlock()
+}
+
 func (fbConn *FbConn) setEventError(err error) {
 	if err == nil {
 		return
 	}
+	var handler func(error)
 	fbConn.eventMu.Lock()
 	// Keep the first channel error as the primary failure reason.
 	// Follow-up close/cleanup errors should not overwrite the root cause.
 	if fbConn.eventErr == nil {
 		fbConn.eventErr = err
+		handler = fbConn.eventErrHandler
 	}
 	fbConn.eventMu.Unlock()
+	if handler != nil {
+		handler(err)
+	}
 }
 
 func (fbConn *FbConn) takeEventError() error {

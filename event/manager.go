@@ -146,6 +146,7 @@ func (m *Manager) Connect(ctx context.Context) error {
 	done := m.dispatcherDone
 	m.mu.Unlock()
 
+	m.bindConnEventErrorHandler(conn)
 	go m.dispatcherLoop(stop, done)
 	return nil
 }
@@ -197,6 +198,7 @@ func (m *Manager) disconnect(ctx context.Context, strict bool, waitDispatcher bo
 	}
 	m.mu.Unlock()
 
+	m.unbindConnEventErrorHandler(conn)
 	if stop != nil {
 		close(stop)
 	}
@@ -524,6 +526,27 @@ func (m *Manager) currentConn() *fbconn.FbConn {
 		return nil
 	}
 	return m.conn.FbConn()
+}
+
+func (m *Manager) bindConnEventErrorHandler(conn *fbx.Conn) {
+	if conn == nil || conn.IsClosed() {
+		return
+	}
+	conn.FbConn().SetEventErrorHandler(m.onConnEventError)
+}
+
+func (m *Manager) unbindConnEventErrorHandler(conn *fbx.Conn) {
+	if conn == nil || conn.IsClosed() {
+		return
+	}
+	conn.FbConn().SetEventErrorHandler(nil)
+}
+
+func (m *Manager) onConnEventError(err error) {
+	if err == nil {
+		return
+	}
+	m.setAsyncError(fmt.Errorf("event channel failed: %w", err))
 }
 
 func (m *Manager) setAsyncError(err error) {

@@ -244,6 +244,48 @@ func TestWaitForEventReturnsAsyncErrorWithoutTimeout(t *testing.T) {
 	require.Len(t, m.listeners["EVT"], 1)
 }
 
+func TestOnConnEventErrorUnblocksWaitForEventWithoutTimeout(t *testing.T) {
+	t.Parallel()
+
+	m := &Manager{
+		connected: true,
+		listeners: map[string][]EventListener{
+			"EVT": {
+				EventListenerFunc(func(DatabaseEvent) {}),
+			},
+		},
+		handlers:       make(map[string]*gdsEventHandler),
+		asyncErrSignal: make(chan struct{}),
+	}
+
+	expectedErr := errors.New("event channel read failed")
+	resultCh := make(chan error, 1)
+
+	go func() {
+		_, err := m.WaitForEvent(context.Background(), "EVT", 0)
+		resultCh <- err
+	}()
+
+	require.Eventually(t, func() bool {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		return len(m.listeners["EVT"]) == 2
+	}, time.Second, 10*time.Millisecond)
+
+	m.onConnEventError(expectedErr)
+
+	select {
+	case err := <-resultCh:
+		require.ErrorIs(t, err, expectedErr)
+	case <-time.After(time.Second):
+		t.Fatal("WaitForEvent blocked after event channel error")
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	require.Len(t, m.listeners["EVT"], 1)
+}
+
 func TestAddEventListenerSerializesConcurrentFirstRegistration(t *testing.T) {
 	t.Parallel()
 

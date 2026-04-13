@@ -92,6 +92,9 @@ type FbConn struct {
 	eventHandles map[int]*EventHandle
 	eventHost    string
 	eventErr     error
+	// eventErrHandler is notified when the first asynchronous event-channel
+	// error is captured. It should be non-blocking and thread-safe.
+	eventErrHandler func(error)
 
 	// Reusable / preallocated resources
 	contextWatcher    *ctxwatch.ContextWatcher
