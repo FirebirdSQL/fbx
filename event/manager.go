@@ -767,19 +767,21 @@ func (h *gdsEventHandler) EventOccurred(handle *fbconn.EventHandle) {
 	h.initialized = true
 	h.mu.Unlock()
 
-	if emitEvent {
-		h.manager.enqueueEvent(DatabaseEvent{
-			EventName:  handle.EventName(),
-			EventCount: handle.EventCount(),
-		})
-	}
-
 	if h.isStopping() {
 		return
 	}
 	if err := h.reRegister(handle); err != nil {
 		h.manager.setAsyncError(fmt.Errorf("re-register failed for %q: %w", h.eventName, err))
 	}
+	if !emitEvent || h.isStopping() {
+		return
+	}
+	// Keep server-side subscription active before potentially blocking on
+	// manager event queue backpressure.
+	h.manager.enqueueEvent(DatabaseEvent{
+		EventName:  handle.EventName(),
+		EventCount: handle.EventCount(),
+	})
 }
 
 func (h *gdsEventHandler) reRegister(handle *fbconn.EventHandle) error {
