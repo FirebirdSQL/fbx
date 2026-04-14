@@ -14,20 +14,17 @@ import (
 func TestArray(t *testing.T) {
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		_, _ = conn.Exec(ctx, "recreate table single_dim(id integer, val smallint[1:3])")
-		for i, tt := range []struct {
-			input    any
-			expected any
-		}{
-			{[]int16(nil), []int16(nil)},
-			{[]int16{}, []int16{0, 0, 0}},
-			{[]int16{1, 2, 3}, []int16{1, 2, 3}},
+		for i, tt := range []any{
+			[]int16(nil),
+			[]int16{},
+			[]int16{1, 2, 3},
 		} {
 			var actual []int16
 			_, err := conn.Exec(
 				ctx,
 				"insert into single_dim(id, val) values(?, ?)",
 				i,
-				tt.input,
+				tt,
 			)
 			assert.NoErrorf(t, err, "%d", i)
 
@@ -37,23 +34,20 @@ func TestArray(t *testing.T) {
 				i,
 			).Scan(&actual)
 			assert.NoErrorf(t, err, "%d", i)
-			assert.Equalf(t, tt.expected, actual, "%d", i)
+			assert.Equalf(t, tt, actual, "%d", i)
 
 		}
 	})
 }
 
 func TestArrayFlatArrayVarchar(t *testing.T) {
-	testCases := []struct {
-		input    []string
-		expected []string
-	}{
-		{nil, []string(nil)},
-		{[]string{}, []string{"", "", "", "", "", ""}},
-		{[]string{"a"}, []string{"a", "", "", "", "", ""}},
-		{[]string{"a", "b"}, []string{"a", "b", "", "", "", ""}},
-		{[]string{"\v", "\t", "\n", "\r", "\f", " "}, []string{"\v", "\t", "\n", "\r", "\f", " "}},
-		{[]string{"a\vb", "a\tb", "a\nb", "a\rb", "a\fb", "a b"}, []string{"a\vb", "a\tb", "a\nb", "a\rb", "a\fb", "a b"}},
+	testCases := [][]string{
+		nil,
+		{},
+		{"a"},
+		{"a", "b"},
+		{"\v", "\t", "\n", "\r", "\f", " "},
+		{"a\vb", "a\tb", "a\nb", "a\rb", "a\fb", "a b"},
 	}
 
 	queryModes := []fbx.QueryExecMode{fbx.QueryExecModeExec}
@@ -67,11 +61,11 @@ func TestArrayFlatArrayVarchar(t *testing.T) {
 					ctx,
 					"insert into single_dim_varchar(id, val) values(?, ?)",
 					i,
-					testCase.input,
+					testCase,
 				)
 				if err != nil {
 					t.Fatalf("i=%d input=%#v queryMode=%s: Scan failed: %s",
-						i, testCase.input, queryMode, err)
+						i, testCase, queryMode, err)
 				}
 
 				err = conn.QueryRow(
@@ -82,11 +76,11 @@ func TestArrayFlatArrayVarchar(t *testing.T) {
 
 				if err != nil {
 					t.Fatalf("i=%d input=%#v queryMode=%s: Scan failed: %s",
-						i, testCase.input, queryMode, err)
+						i, testCase, queryMode, err)
 				}
-				if !reflect.DeepEqual(out, testCase.expected) {
+				if !reflect.DeepEqual(out, testCase) {
 					t.Errorf("i=%d input=%#v queryMode=%s: not equal output=%#v",
-						i, testCase.expected, queryMode, out)
+						i, testCase, queryMode, out)
 				}
 			}
 		}
@@ -137,20 +131,17 @@ func TestArrayNamedSliceType(t *testing.T) {
 		_, _ = conn.Exec(ctx, "recreate table single_dim_namedSliceType(id integer, val smallint[1:3])")
 		type _int16Slice []int16
 
-		for i, tt := range []struct {
-			input    any
-			expected any
-		}{
-			{_int16Slice(nil), _int16Slice(nil)},
-			{_int16Slice{}, _int16Slice{0, 0, 0}},
-			{_int16Slice{1, 2, 3}, _int16Slice{1, 2, 3}},
+		for i, tt := range []any{
+			_int16Slice(nil),
+			_int16Slice{},
+			_int16Slice{1, 2, 3},
 		} {
 			var actual _int16Slice
 			_, err := conn.Exec(
 				ctx,
 				"insert into single_dim_namedSliceType(id, val) values(?, ?)",
 				i,
-				tt.input,
+				tt,
 			)
 			assert.NoErrorf(t, err, "%d", i)
 
@@ -160,7 +151,7 @@ func TestArrayNamedSliceType(t *testing.T) {
 				i,
 			).Scan(&actual)
 			assert.NoErrorf(t, err, "%d", i)
-			assert.Equalf(t, tt.expected, actual, "%d", i)
+			assert.Equalf(t, tt, actual, "%d", i)
 		}
 	})
 }

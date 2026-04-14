@@ -568,19 +568,16 @@ func TestConnQueryScanGoArray(t *testing.T) {
 		_, err := db.Exec("recreate table scan_go_array_test (id integer primary key, array bigint[3])")
 		assert.NoError(t, err)
 		m := fbtype.NewMap()
-		for i, tt := range []struct {
-			input    any
-			expected any
-		}{
-			{[]int64(nil), []int64(nil)},
-			{[]int64{}, []int64{0, 0, 0}},
-			{[]int64{1, 2, 3}, []int64{1, 2, 3}},
+		for i, tt := range []any{
+			[]int64(nil),
+			[]int64{},
+			[]int64{1, 2, 3},
 		} {
 			var actual []int64
 			_, err := db.Exec(
 				"insert into scan_go_array_test values(?, ?)",
 				i,
-				tt.input,
+				tt,
 			)
 			assert.NoErrorf(t, err, "%d", i)
 
@@ -589,7 +586,7 @@ func TestConnQueryScanGoArray(t *testing.T) {
 				i,
 			).Scan(m.SQLScanner(&actual))
 			assert.NoErrorf(t, err, "%d", i)
-			assert.Equalf(t, tt.expected, actual, "%d", i)
+			assert.Equalf(t, tt, actual, "%d", i)
 
 		}
 	})
@@ -600,28 +597,16 @@ func TestConnQueryScanArray(t *testing.T) {
 		_, err := db.Exec("recreate table scan_array_test (id integer primary key, array bigint[3])")
 		assert.NoError(t, err)
 		m := fbtype.NewMap()
-		for i, tt := range []struct {
-			input    any
-			expected any
-		}{
-			{
-				fbtype.Array[int64]{Elements: nil, Dims: nil, Valid: false},
-				fbtype.Array[int64]{Elements: nil, Dims: nil, Valid: false},
-			},
-			{
-				fbtype.Array[int64]{Elements: []int64{}, Dims: []fbtype.ArrayDimension{{Length: 0, LowerBound: 1}}, Valid: true},
-				fbtype.Array[int64]{Elements: []int64{0, 0, 0}, Dims: []fbtype.ArrayDimension{{Length: 3, LowerBound: 1}}, Valid: true},
-			},
-			{
-				fbtype.Array[int64]{Elements: []int64{1, 2, 3}, Dims: []fbtype.ArrayDimension{{Length: 3, LowerBound: 1}}, Valid: true},
-				fbtype.Array[int64]{Elements: []int64{1, 2, 3}, Dims: []fbtype.ArrayDimension{{Length: 3, LowerBound: 1}}, Valid: true},
-			},
+		for i, tt := range []any{
+			fbtype.Array[int64]{Elements: nil, Dims: nil, Valid: false},
+			fbtype.Array[int64]{Elements: []int64{}, Dims: []fbtype.ArrayDimension{{Length: 0, LowerBound: 1}}, Valid: true},
+			fbtype.Array[int64]{Elements: []int64{1, 2, 3}, Dims: []fbtype.ArrayDimension{{Length: 3, LowerBound: 1}}, Valid: true},
 		} {
 			var actual fbtype.Array[int64]
 			_, err := db.Exec(
 				"insert into scan_array_test values(?, ?)",
 				i,
-				tt.input,
+				tt,
 			)
 			assert.NoErrorf(t, err, "%d", i)
 
@@ -630,7 +615,7 @@ func TestConnQueryScanArray(t *testing.T) {
 				i,
 			).Scan(m.SQLScanner(&actual))
 			assert.NoErrorf(t, err, "%d", i)
-			assert.Equalf(t, tt.expected, actual, "%d", i)
+			assert.Equalf(t, tt, actual, "%d", i)
 
 		}
 	})

@@ -130,7 +130,9 @@ func (ps planScanArray) Scan(src []byte, dst any) error {
 		return nil
 	}
 
-	err = array.SetDimensions(ps.arrayData.Dimensions)
+	realIndexes, actualDims := getActualSliceDimensions(ps.arrayData.Dimensions, src, ps.arrayData.TypeId, ps.arrayData.Length)
+
+	err = array.SetDimensions(actualDims)
 	if err != nil {
 		return err
 	}
@@ -143,7 +145,7 @@ func (ps planScanArray) Scan(src []byte, dst any) error {
 		return err
 	}
 
-	err = ps.arrayData.decodeBinary(ps.m, src, array)
+	err = ps.arrayData.decodeBinary(ps.m, src, array, realIndexes)
 
 	return err
 }
@@ -305,7 +307,7 @@ func allElementsCount(dimensions []ArrayDimension) int {
 	return elementCount
 }
 
-func (ad *ArrayData) decodeBinary(m *Map, src []byte, array ArraySetter) error {
+func (ad *ArrayData) decodeBinary(m *Map, src []byte, array ArraySetter, realIndexes []realIndexes) error {
 
 	elementCount := allElementsCount(ad.Dimensions)
 	if elementCount == 0 {
@@ -328,23 +330,32 @@ func (ad *ArrayData) decodeBinary(m *Map, src []byte, array ArraySetter) error {
 	} else {
 		elemLen = length
 	}
+	indexPosition := 0
 	for i := 0; i < elementCount && position < len(src); i++ {
-		elem := array.ScanIndex(i)
 		if ad.TypeId == fbproto.SQL_TYPE_VARYING {
 			elemLen = int(int32(binary.BigEndian.Uint32(src[position:])))
 			position += 4
 		}
 		var elemSrc []byte
+		if i > realIndexes[0].end {
+			if len(realIndexes) > 0 {
+				realIndexes = realIndexes[1:]
+			}
+		}
 		if elemLen >= 0 {
 			elemSrc = src[position : position+elemLen]
 			position += elemLen
 		}
-		err := elementScanPlan.Scan(elemSrc, elem)
+		if i >= realIndexes[0].start {
+			elem := array.ScanIndex(indexPosition)
+			err := elementScanPlan.Scan(elemSrc, elem)
+			if err != nil {
+				return fmt.Errorf("failed to scan array element %d: %w", indexPosition, err)
+			}
+			indexPosition++
+		}
 		if ad.TypeId == fbproto.SQL_TYPE_BOOLEAN {
 			position += 3 // skip padding
-		}
-		if err != nil {
-			return fmt.Errorf("failed to scan array element %d: %w", i, err)
 		}
 	}
 
@@ -459,6 +470,10 @@ func getTypeFromMap(datatype uint32) (*Type, error) {
 }
 
 func isRagged(slice reflect.Value) bool {
+	return isSliceRagged(slice, 0, &[]int{})
+}
+
+func isSliceRagged(slice reflect.Value, lvl int, lens *[]int) bool {
 	if slice.Type().Elem().Kind() != reflect.Slice {
 		return false
 	}
@@ -468,12 +483,19 @@ func isRagged(slice reflect.Value) bool {
 	for i := 0; i < sliceLen; i++ {
 		if i == 0 {
 			innerLen = slice.Index(i).Len()
+			if len(*lens)-1 >= lvl {
+				if (*lens)[lvl] != innerLen {
+					return true
+				}
+			} else {
+				*lens = append(*lens, innerLen)
+			}
 		} else {
 			if slice.Index(i).Len() != innerLen {
 				return true
 			}
 		}
-		if isRagged(slice.Index(i)) {
+		if isSliceRagged(slice.Index(i), lvl+1, lens) {
 			return true
 		}
 	}
@@ -542,4 +564,72 @@ func (a *FlatArray[T]) SetDimensions(dimensions []ArrayDimension) error {
 
 func (a FlatArray[T]) ScanIndex(i int) any {
 	return &a[i]
+}
+
+func getActualSliceDimensions(dims []ArrayDimension, src []byte, typeID, length uint32) ([]realIndexes, []ArrayDimension) {
+	actualLength := getActualArrayLength(src, typeID, length)
+	actualDims := getActualArrayDimensions(dims, actualLength)
+	ind, _ := getActualSlice(make([]realIndexes, 0), dims, actualDims, 0)
+	return ind, actualDims
+}
+
+type realIndexes struct {
+	start int
+	end   int
+}
+
+func elementsInDimensionsCount(dimensions []ArrayDimension, start int) int {
+	total := start
+	for i := 1; i < len(dimensions); i++ {
+		total *= dimensions[i].Length
+	}
+	return total
+}
+
+func getActualArrayLength(buf []byte, typeID, length uint32) int {
+	count := 0
+	switch typeID {
+	case fbproto.SQL_TYPE_VARYING:
+		for len(buf) > 0 {
+			l := int(binary.BigEndian.Uint32(buf[:4])) + 4
+			buf = buf[l:]
+			count++
+		}
+	case fbproto.SQL_TYPE_BOOLEAN, fbproto.SQL_TYPE_SHORT:
+		count = len(buf) / 4
+	default:
+		count = len(buf) / int(length)
+	}
+	return count
+}
+
+func getActualArrayDimensions(dims []ArrayDimension, fact int) []ArrayDimension {
+	expected := allElementsCount(dims)
+	less := expected - fact
+	factDims := make([]ArrayDimension, len(dims))
+	for i := range dims {
+		g := elementsInDimensionsCount(dims[i:], 1)
+		factDims[i].Length = dims[i].Length - (less / g)
+		factDims[i].LowerBound = dims[i].LowerBound
+		less %= g
+	}
+	return factDims
+}
+
+func getActualSlice(sliceOut []realIndexes, dims, factDims []ArrayDimension, nowPos int) ([]realIndexes, int) {
+	if len(dims) > 1 {
+		for i := 0; i < factDims[0].Length; i++ {
+			sliceOut, nowPos = getActualSlice(sliceOut, dims[1:], factDims[1:], nowPos)
+		}
+		nowPos += elementsInDimensionsCount(dims, dims[0].Length-factDims[0].Length)
+	} else {
+		realIndexes := realIndexes{
+			start: nowPos,
+			end:   nowPos + factDims[0].Length - 1,
+		}
+		sliceOut = append(sliceOut, realIndexes)
+		nowPos += dims[0].Length
+		return sliceOut, nowPos
+	}
+	return sliceOut, nowPos
 }
