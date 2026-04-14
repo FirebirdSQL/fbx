@@ -4,9 +4,36 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"rdb.red-soft.ru/fbx/fbproto"
 )
+
+const eventLockRetryInterval = 5 * time.Millisecond
+
+func (fbConn *FbConn) lockEventOperation(ctx context.Context) error {
+	for {
+		err := fbConn.lock()
+		if err == nil {
+			return nil
+		}
+
+		var lockErr *connLockError
+		if !errors.As(err, &lockErr) || lockErr.status != "conn busy" {
+			return err
+		}
+
+		if ctx != context.Background() {
+			select {
+			case <-ctx.Done():
+				return newContextAlreadyDoneError(ctx)
+			case <-time.After(eventLockRetryInterval):
+			}
+			continue
+		}
+		time.Sleep(eventLockRetryInterval)
+	}
+}
 
 // CreateEventHandle creates an event handle for a Firebird event name.
 func (fbConn *FbConn) CreateEventHandle(eventName string, handler EventHandler) (*EventHandle, error) {
@@ -27,7 +54,7 @@ func (fbConn *FbConn) QueueEvent(ctx context.Context, handle *EventHandle) error
 	if _, err := fbConn.ensureEventChannel(ctx); err != nil {
 		return err
 	}
-	if err := fbConn.lock(); err != nil {
+	if err := fbConn.lockEventOperation(ctx); err != nil {
 		return err
 	}
 	defer fbConn.unlock()
@@ -94,7 +121,7 @@ func (fbConn *FbConn) CancelEvent(ctx context.Context, handle *EventHandle) erro
 	if eventErr := fbConn.takeEventError(); eventErr != nil {
 		return eventErr
 	}
-	if err := fbConn.lock(); err != nil {
+	if err := fbConn.lockEventOperation(ctx); err != nil {
 		return err
 	}
 	defer fbConn.unlock()

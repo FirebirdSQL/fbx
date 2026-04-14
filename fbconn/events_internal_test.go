@@ -2,6 +2,7 @@ package fbconn
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -179,4 +180,41 @@ func TestSetEventErrorHandlerCalledForFirstFailure(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("event error handler was not called after takeEventError")
 	}
+}
+
+func TestLockEventOperationWaitsForBusyConnection(t *testing.T) {
+	t.Parallel()
+
+	fbConn := &FbConn{status: connStatusBusy}
+
+	go func() {
+		time.Sleep(25 * time.Millisecond)
+		fbConn.unlock()
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	start := time.Now()
+	err := fbConn.lockEventOperation(ctx)
+	elapsed := time.Since(start)
+
+	require.NoError(t, err)
+	require.True(t, fbConn.IsBusy())
+	require.GreaterOrEqual(t, elapsed, 20*time.Millisecond)
+
+	fbConn.unlock()
+}
+
+func TestLockEventOperationReturnsContextErrorWhileBusy(t *testing.T) {
+	t.Parallel()
+
+	fbConn := &FbConn{status: connStatusBusy}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancel()
+
+	err := fbConn.lockEventOperation(ctx)
+	require.Error(t, err)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
 }

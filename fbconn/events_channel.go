@@ -79,7 +79,7 @@ func (fbConn *FbConn) ensureEventChannel(ctx context.Context) (*eventChannel, er
 }
 
 func (fbConn *FbConn) requestAuxEventPort(ctx context.Context) (*eventChannel, int, error) {
-	if err := fbConn.lock(); err != nil {
+	if err := fbConn.lockEventOperation(ctx); err != nil {
 		return nil, 0, err
 	}
 	defer fbConn.unlock()
