@@ -1,4 +1,4 @@
-package event
+package fbevent
 
 // DatabaseEvent is a delivered Firebird database event.
 type DatabaseEvent struct {

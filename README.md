@@ -57,7 +57,7 @@ func main() {
 
 ## Firebird Events (`POST_EVENT`)
 
-Use package `rdb.red-soft.ru/fbx/event` for high-level event subscriptions.
+Use package `rdb.red-soft.ru/fbx/fbevent` for high-level event subscriptions.
 
 ```go
 package main
@@ -68,7 +68,7 @@ import (
 	"log"
 	"time"
 
-	fbevent "rdb.red-soft.ru/fbx/event"
+	fbevent "rdb.red-soft.ru/fbx/fbevent"
 )
 
 func main() {

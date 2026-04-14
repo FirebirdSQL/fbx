@@ -1,4 +1,4 @@
-package event_test
+package fbevent_test
 
 import (
 	"context"
@@ -12,8 +12,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
-	"rdb.red-soft.ru/fbx/event"
 	"rdb.red-soft.ru/fbx/fbconn"
+	"rdb.red-soft.ru/fbx/fbevent"
 )
 
 var eventNameCounter atomic.Uint64
@@ -24,7 +24,7 @@ func TestManagerWaitForEventTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	manager, err := event.NewManager(connString)
+	manager, err := fbevent.NewManager(connString)
 	require.NoError(t, err)
 
 	require.NoError(t, manager.Connect(ctx))
@@ -47,7 +47,7 @@ func TestManagerWaitForEventTriggered(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	manager, err := event.NewManager(connString)
+	manager, err := fbevent.NewManager(connString)
 	require.NoError(t, err)
 
 	require.NoError(t, manager.Connect(ctx))
@@ -95,7 +95,7 @@ func TestManagerAddRemoveEventListener(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	manager, err := event.NewManager(connString)
+	manager, err := fbevent.NewManager(connString)
 	require.NoError(t, err)
 	require.NoError(t, manager.Connect(ctx))
 	defer func() {
@@ -109,8 +109,8 @@ func TestManagerAddRemoveEventListener(t *testing.T) {
 	}()
 
 	eventName := nextEventName("LISTENER")
-	events := make(chan event.DatabaseEvent, 4)
-	listener := event.EventListenerFunc(func(e event.DatabaseEvent) {
+	events := make(chan fbevent.DatabaseEvent, 4)
+	listener := fbevent.EventListenerFunc(func(e fbevent.DatabaseEvent) {
 		events <- e
 	})
 
@@ -141,7 +141,7 @@ func TestManagerMultipleListeners(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	manager, err := event.NewManager(connString)
+	manager, err := fbevent.NewManager(connString)
 	require.NoError(t, err)
 	require.NoError(t, manager.Connect(ctx))
 	defer func() {
@@ -155,13 +155,13 @@ func TestManagerMultipleListeners(t *testing.T) {
 	}()
 
 	eventName := nextEventName("MULTI")
-	listenerAEvents := make(chan event.DatabaseEvent, 2)
-	listenerBEvents := make(chan event.DatabaseEvent, 2)
+	listenerAEvents := make(chan fbevent.DatabaseEvent, 2)
+	listenerBEvents := make(chan fbevent.DatabaseEvent, 2)
 
-	listenerA := event.EventListenerFunc(func(e event.DatabaseEvent) {
+	listenerA := fbevent.EventListenerFunc(func(e fbevent.DatabaseEvent) {
 		listenerAEvents <- e
 	})
-	listenerB := event.EventListenerFunc(func(e event.DatabaseEvent) {
+	listenerB := fbevent.EventListenerFunc(func(e fbevent.DatabaseEvent) {
 		listenerBEvents <- e
 	})
 
@@ -192,7 +192,7 @@ func TestManagerCreateForDisconnectsWhenConnectionClosed(t *testing.T) {
 	conn, err := fbx.Connect(ctx, connString)
 	require.NoError(t, err)
 
-	manager := event.CreateFor(conn)
+	manager := fbevent.CreateFor(conn)
 	require.NoError(t, manager.Connect(ctx))
 	require.True(t, manager.IsConnected())
 
@@ -207,7 +207,7 @@ func TestManagerLifecycleDefaultConnectDisconnectReconnect(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	manager, err := event.NewManager(connString)
+	manager, err := fbevent.NewManager(connString)
 	require.NoError(t, err)
 
 	require.NoError(t, manager.Connect(ctx))
@@ -241,7 +241,7 @@ func TestManagerCreateForCloseKeepsUnderlyingConnectionAlive(t *testing.T) {
 		require.NoError(t, conn.Close(context.Background()))
 	}()
 
-	manager := event.CreateFor(conn)
+	manager := fbevent.CreateFor(conn)
 	require.NoError(t, manager.Connect(ctx))
 	require.True(t, manager.IsConnected())
 
@@ -257,7 +257,7 @@ func TestManagerWaitForEventContextDeadlineExceeded(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	manager, err := event.NewManager(connString)
+	manager, err := fbevent.NewManager(connString)
 	require.NoError(t, err)
 	require.NoError(t, manager.Connect(ctx))
 	defer func() {
@@ -281,7 +281,7 @@ func TestManagerDuplicateSameListenerDeliveredPerRegistration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	manager, err := event.NewManager(connString)
+	manager, err := fbevent.NewManager(connString)
 	require.NoError(t, err)
 	require.NoError(t, manager.Connect(ctx))
 	defer func() {
@@ -296,7 +296,7 @@ func TestManagerDuplicateSameListenerDeliveredPerRegistration(t *testing.T) {
 
 	eventName := nextEventName("DEDUP")
 	var delivered atomic.Int64
-	listener := event.EventListenerFunc(func(e event.DatabaseEvent) {
+	listener := fbevent.EventListenerFunc(func(e fbevent.DatabaseEvent) {
 		delivered.Add(int64(normalizeIntegrationEventCount(e.EventCount)))
 	})
 	asyncErrs := make(chan error, 1)
@@ -333,7 +333,7 @@ func TestManagerDifferentClosureListenersSelectiveRemove(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
 
-	manager, err := event.NewManager(connString)
+	manager, err := fbevent.NewManager(connString)
 	require.NoError(t, err)
 	require.NoError(t, manager.Connect(ctx))
 	defer func() {
@@ -351,8 +351,8 @@ func TestManagerDifferentClosureListenersSelectiveRemove(t *testing.T) {
 	var deliveredB atomic.Int64
 	asyncErrs := make(chan error, 1)
 
-	makeListener := func(counter *atomic.Int64) event.EventListenerFunc {
-		return event.EventListenerFunc(func(e event.DatabaseEvent) {
+	makeListener := func(counter *atomic.Int64) fbevent.EventListenerFunc {
+		return fbevent.EventListenerFunc(func(e fbevent.DatabaseEvent) {
 			counter.Add(int64(normalizeIntegrationEventCount(e.EventCount)))
 		})
 	}
@@ -428,7 +428,7 @@ func TestManagerWorkflowScenarioFromCmdEvents(t *testing.T) {
 		require.NoError(t, shippingPoster.Close(context.Background()))
 	}()
 
-	manager, err := event.NewManager(connString)
+	manager, err := fbevent.NewManager(connString)
 	require.NoError(t, err)
 	require.NoError(t, manager.Connect(ctx))
 	defer func() {
@@ -456,7 +456,7 @@ func TestManagerWorkflowScenarioFromCmdEvents(t *testing.T) {
 		}
 	}
 
-	createdListener := event.EventListenerFunc(func(dbEvent event.DatabaseEvent) {
+	createdListener := fbevent.EventListenerFunc(func(dbEvent fbevent.DatabaseEvent) {
 		eventDelta := normalizeIntegrationEventCount(dbEvent.EventCount)
 		createdCount.Add(int64(eventDelta))
 
@@ -465,7 +465,7 @@ func TestManagerWorkflowScenarioFromCmdEvents(t *testing.T) {
 		reportAsyncErr(postEventCountIntegration(postCtx, billingPoster, paymentConfirmed, eventDelta))
 	})
 
-	paymentListener := event.EventListenerFunc(func(dbEvent event.DatabaseEvent) {
+	paymentListener := fbevent.EventListenerFunc(func(dbEvent fbevent.DatabaseEvent) {
 		eventDelta := normalizeIntegrationEventCount(dbEvent.EventCount)
 		paidCount.Add(int64(eventDelta))
 
@@ -474,12 +474,12 @@ func TestManagerWorkflowScenarioFromCmdEvents(t *testing.T) {
 		reportAsyncErr(postEventCountIntegration(postCtx, shippingPoster, orderShipped, eventDelta))
 	})
 
-	auditListener := event.EventListenerFunc(func(dbEvent event.DatabaseEvent) {
+	auditListener := fbevent.EventListenerFunc(func(dbEvent fbevent.DatabaseEvent) {
 		eventDelta := normalizeIntegrationEventCount(dbEvent.EventCount)
 		auditCount.Add(int64(eventDelta))
 	})
 
-	shippedListener := event.EventListenerFunc(func(dbEvent event.DatabaseEvent) {
+	shippedListener := fbevent.EventListenerFunc(func(dbEvent fbevent.DatabaseEvent) {
 		eventDelta := normalizeIntegrationEventCount(dbEvent.EventCount)
 		shippedCount.Add(int64(eventDelta))
 	})
@@ -554,7 +554,7 @@ func TestManagerWaitForEventOneShotFromCmdEvents(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	manager, err := event.NewManager(connString)
+	manager, err := fbevent.NewManager(connString)
 	require.NoError(t, err)
 	require.NoError(t, manager.Connect(ctx))
 	defer func() {
@@ -618,14 +618,14 @@ func postEvents(ctx context.Context, conn *fbx.Conn, eventNames ...string) error
 	return err
 }
 
-func waitEvent(t testing.TB, events <-chan event.DatabaseEvent, timeout time.Duration) event.DatabaseEvent {
+func waitEvent(t testing.TB, events <-chan fbevent.DatabaseEvent, timeout time.Duration) fbevent.DatabaseEvent {
 	t.Helper()
 	select {
 	case received := <-events:
 		return received
 	case <-time.After(timeout):
 		t.Fatalf("timed out waiting for event (%s)", timeout)
-		return event.DatabaseEvent{}
+		return fbevent.DatabaseEvent{}
 	}
 }
 
@@ -716,7 +716,7 @@ func primeEventCounterIntegration(
 	counter *atomic.Int64,
 	timeout time.Duration,
 	asyncErrs <-chan error,
-	manager *event.Manager,
+	manager *fbevent.Manager,
 ) error {
 	start := counter.Load()
 	deadline := time.Now().Add(timeout)
@@ -761,7 +761,7 @@ func waitForCounterAtLeastIntegration(
 	target int64,
 	timeout time.Duration,
 	asyncErrs <-chan error,
-	manager *event.Manager,
+	manager *fbevent.Manager,
 	label string,
 ) error {
 	if counter.Load() >= target {
