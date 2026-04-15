@@ -168,15 +168,15 @@ func (m *Manager) Connect(ctx context.Context) error {
 
 // Disconnect stops manager event processing.
 func (m *Manager) Disconnect(ctx context.Context) error {
-	return m.disconnect(ctx, true, true)
+	return m.disconnect(ctx, true, true, errors.New("event manager disconnected"))
 }
 
 // Close disconnects manager if connected.
 func (m *Manager) Close(ctx context.Context) error {
-	return m.disconnect(ctx, false, true)
+	return m.disconnect(ctx, false, true, errors.New("event manager disconnected"))
 }
 
-func (m *Manager) disconnect(ctx context.Context, strict bool, waitDispatcher bool) error {
+func (m *Manager) disconnect(ctx context.Context, strict bool, waitDispatcher bool, disconnectErr error) error {
 	m.mu.Lock()
 	if !m.connected {
 		m.mu.Unlock()
@@ -202,7 +202,9 @@ func (m *Manager) disconnect(ctx context.Context, strict bool, waitDispatcher bo
 	m.eventQueue = nil
 	lifecycleStop := m.lifecycleWatchStop
 	m.lifecycleWatchStop = nil
-	m.asyncErr = nil
+	if disconnectErr != nil {
+		m.setAsyncErrorLocked(disconnectErr)
+	}
 
 	conn := m.conn
 	ownConn := m.ownConn
@@ -265,7 +267,7 @@ func (m *Manager) IsConnected() bool {
 	m.mu.Unlock()
 
 	if connected && mode == managerModeManaged && (conn == nil || conn.IsClosed()) {
-		if err := m.disconnect(context.Background(), false, false); err != nil {
+		if err := m.disconnect(context.Background(), false, false, nil); err != nil {
 			m.setAsyncError(fmt.Errorf("managed manager disconnect failed: %w", err))
 		}
 		return false
@@ -600,12 +602,7 @@ func (m *Manager) setAsyncError(err error) {
 		return
 	}
 	m.mu.Lock()
-	if m.asyncErr == nil {
-		m.asyncErr = err
-		if m.asyncErrSignal != nil {
-			close(m.asyncErrSignal)
-		}
-	}
+	m.setAsyncErrorLocked(err)
 	m.mu.Unlock()
 }
 
@@ -649,10 +646,30 @@ func (m *Manager) handleConnLifecycleTermination(conn *fbx.Conn, generation uint
 	m.mu.Unlock()
 
 	lifecycleErr := errors.New("underlying connection detached")
-	if err := m.disconnect(context.Background(), false, false); err != nil {
+	if err := m.disconnect(context.Background(), false, false, nil); err != nil {
 		lifecycleErr = errors.Join(lifecycleErr, fmt.Errorf("manager disconnect failed after detaching: %w", err))
 	}
 	m.setAsyncError(lifecycleErr)
+}
+
+func (m *Manager) setAsyncErrorLocked(err error) {
+	if err == nil || m.asyncErr != nil {
+		return
+	}
+	m.asyncErr = err
+	closeSignalIfOpen(m.asyncErrSignal)
+}
+
+func closeSignalIfOpen(ch chan struct{}) {
+	if ch == nil {
+		return
+	}
+	select {
+	case <-ch:
+		return
+	default:
+		close(ch)
+	}
 }
 
 func (m *Manager) operationContext(parent context.Context) (context.Context, context.CancelFunc) {

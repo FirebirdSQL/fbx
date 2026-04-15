@@ -293,6 +293,41 @@ func TestOnConnEventErrorUnblocksWaitForEventWithoutTimeout(t *testing.T) {
 	require.Len(t, m.listeners["EVT"], 1)
 }
 
+func TestDisconnectUnblocksWaitForEventWithoutTimeout(t *testing.T) {
+	t.Parallel()
+
+	m := &Manager{
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*gdsEventHandler),
+		asyncErrSignal:    make(chan struct{}),
+	}
+	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(DatabaseEvent) {}))
+
+	resultCh := make(chan error, 1)
+	go func() {
+		_, err := m.WaitForEvent(context.Background(), "EVT", 0)
+		resultCh <- err
+	}()
+
+	require.Eventually(t, func() bool {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		return len(m.listeners["EVT"]) == 2
+	}, time.Second, 10*time.Millisecond)
+
+	require.NoError(t, m.Disconnect(context.Background()))
+
+	select {
+	case err := <-resultCh:
+		require.Error(t, err)
+		require.ErrorContains(t, err, "event manager disconnected")
+	case <-time.After(time.Second):
+		t.Fatal("WaitForEvent blocked after manager disconnect")
+	}
+}
+
 func TestAddEventListenerSerializesConcurrentFirstRegistration(t *testing.T) {
 	t.Parallel()
 
