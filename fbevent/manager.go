@@ -57,6 +57,9 @@ type Manager struct {
 	dispatcherStop chan struct{}
 	dispatcherDone chan struct{}
 
+	lifecycleWatchStop chan struct{}
+	lifecycleWatchGen  uint64
+
 	asyncErr error
 	// asyncErrSignal is closed when the first asynchronous manager error is set.
 	// Waiters can listen on this channel to avoid hanging indefinitely.
@@ -149,11 +152,16 @@ func (m *Manager) Connect(ctx context.Context) error {
 	m.eventQueue = make(chan DatabaseEvent, 256)
 	m.dispatcherStop = make(chan struct{})
 	m.dispatcherDone = make(chan struct{})
+	m.lifecycleWatchStop = make(chan struct{})
+	m.lifecycleWatchGen++
 	stop := m.dispatcherStop
 	done := m.dispatcherDone
+	lifecycleStop := m.lifecycleWatchStop
+	lifecycleGen := m.lifecycleWatchGen
 	m.mu.Unlock()
 
 	m.bindConnEventErrorHandler(conn)
+	m.startConnLifecycleWatcher(conn, lifecycleStop, lifecycleGen)
 	go m.dispatcherLoop(stop, done)
 	return nil
 }
@@ -192,6 +200,8 @@ func (m *Manager) disconnect(ctx context.Context, strict bool, waitDispatcher bo
 	m.dispatcherStop = nil
 	m.dispatcherDone = nil
 	m.eventQueue = nil
+	lifecycleStop := m.lifecycleWatchStop
+	m.lifecycleWatchStop = nil
 	m.asyncErr = nil
 
 	conn := m.conn
@@ -208,6 +218,9 @@ func (m *Manager) disconnect(ctx context.Context, strict bool, waitDispatcher bo
 	m.mu.Unlock()
 
 	m.unbindConnEventErrorHandler(conn)
+	if lifecycleStop != nil {
+		close(lifecycleStop)
+	}
 	if stop != nil {
 		close(stop)
 	}
@@ -601,6 +614,45 @@ func (m *Manager) asyncErrorSignal() <-chan struct{} {
 	ch := m.asyncErrSignal
 	m.mu.Unlock()
 	return ch
+}
+
+func (m *Manager) startConnLifecycleWatcher(conn *fbx.Conn, stop <-chan struct{}, generation uint64) {
+	if conn == nil {
+		return
+	}
+	cleanupDone := conn.FbConn().CleanupDone()
+	go func() {
+		select {
+		case <-stop:
+			return
+		case <-cleanupDone:
+		}
+
+		// Explicit manager disconnect closes stop channel first; do not treat
+		// that path as an asynchronous lifecycle failure.
+		select {
+		case <-stop:
+			return
+		default:
+		}
+
+		m.handleConnLifecycleTermination(conn, generation)
+	}()
+}
+
+func (m *Manager) handleConnLifecycleTermination(conn *fbx.Conn, generation uint64) {
+	m.mu.Lock()
+	if generation != m.lifecycleWatchGen || !m.connected || m.conn != conn {
+		m.mu.Unlock()
+		return
+	}
+	m.mu.Unlock()
+
+	lifecycleErr := errors.New("underlying connection detached")
+	if err := m.disconnect(context.Background(), false, false); err != nil {
+		lifecycleErr = errors.Join(lifecycleErr, fmt.Errorf("manager disconnect failed after detaching: %w", err))
+	}
+	m.setAsyncError(lifecycleErr)
 }
 
 func (m *Manager) operationContext(parent context.Context) (context.Context, context.CancelFunc) {

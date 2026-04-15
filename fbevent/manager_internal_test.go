@@ -429,3 +429,47 @@ func TestWaitForEventIgnoresStaleAsyncErrorAfterSuccessfulAwait(t *testing.T) {
 	defer m.mu.Unlock()
 	require.Len(t, m.listeners["EVT"], 1)
 }
+
+func TestHandleConnLifecycleTerminationDisconnectsAndSignalsAsyncError(t *testing.T) {
+	t.Parallel()
+
+	m := &Manager{
+		connected:         true,
+		mode:              managerModeManaged,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*gdsEventHandler),
+		asyncErrSignal:    make(chan struct{}),
+		lifecycleWatchGen: 1,
+	}
+
+	m.handleConnLifecycleTermination(nil, 1)
+
+	m.mu.Lock()
+	require.False(t, m.connected)
+	m.mu.Unlock()
+	err := m.LastError()
+	require.Error(t, err)
+	require.ErrorContains(t, err, "underlying connection detached")
+}
+
+func TestHandleConnLifecycleTerminationIgnoresStaleGeneration(t *testing.T) {
+	t.Parallel()
+
+	m := &Manager{
+		connected:         true,
+		mode:              managerModeManaged,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*gdsEventHandler),
+		asyncErrSignal:    make(chan struct{}),
+		lifecycleWatchGen: 2,
+	}
+
+	m.handleConnLifecycleTermination(nil, 1)
+
+	m.mu.Lock()
+	require.True(t, m.connected)
+	m.mu.Unlock()
+	require.NoError(t, m.LastError())
+}
