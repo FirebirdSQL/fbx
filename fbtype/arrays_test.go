@@ -18,6 +18,7 @@ func TestArray(t *testing.T) {
 			[]int16(nil),
 			[]int16{},
 			[]int16{1, 2, 3},
+			[]int16{1, 2},
 		} {
 			var actual []int16
 			_, err := conn.Exec(
@@ -105,6 +106,25 @@ func TestArrayArray(t *testing.T) {
 				},
 				Valid: true,
 			}},
+			{fbtype.Array[int32]{
+				Elements: []int32{1, 2},
+				Dims: []fbtype.ArrayDimension{
+					{LowerBound: 1, Length: 1},
+					{LowerBound: 1, Length: 2},
+				},
+				Valid: true,
+			}},
+			{fbtype.Array[int32]{
+				Elements: []int32{1, 2},
+				Dims: []fbtype.ArrayDimension{
+					{LowerBound: 1, Length: 2},
+					{LowerBound: 1, Length: 1},
+				},
+				Valid: true,
+			}},
+			{fbtype.Array[int32]{
+				Valid: false,
+			}},
 		} {
 			var actual fbtype.Array[int32]
 			_, err := conn.Exec(
@@ -135,6 +155,7 @@ func TestArrayNamedSliceType(t *testing.T) {
 			_int16Slice(nil),
 			_int16Slice{},
 			_int16Slice{1, 2, 3},
+			_int16Slice{1, 2},
 		} {
 			var actual _int16Slice
 			_, err := conn.Exec(
@@ -164,7 +185,10 @@ func TestArrayAnySliceArgument(t *testing.T) {
 			arg   any
 			value []int16
 		}{
+			{[]any(nil), []int16(nil)},
+			{[]any{}, []int16{}},
 			{[]any{1, 2, 3}, []int16{1, 2, 3}},
+			{[]any{1, 2}, []int16{1, 2}},
 		} {
 			var actual []int16
 			_, err := conn.Exec(
@@ -219,28 +243,62 @@ func TestArrayAnyArray(t *testing.T) {
 
 func TestArrayEncodeMultipleDimensions(t *testing.T) {
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		_, _ = conn.Exec(ctx, "recreate table multi_dim_Array(val integer[3,4])")
-		_, err := conn.Exec(ctx, `insert into multi_dim_Array(val) values(?)`, [][]int32{{1, 2, 3, 4}, {5, 6, 7, 8}, {9, 10, 11, 12}})
-		assert.NoError(t, err)
+		_, _ = conn.Exec(ctx, "recreate table multi_dim_Array(id integer, val integer[2,3,4])")
+		for i, tt := range []any{
+			[][][]int32(nil),
+			[][][]int32{},
+			[][][]int32{{{1, 2, 3, 4}, {5, 6, 7, 8}, {9, 10, 11, 12}}, {{13, 14, 15, 16}, {17, 18, 19, 20}, {21, 22, 23, 24}}},
+			[][][]int32{{{1, 2, 3, 4}, {5, 6, 7, 8}}, {{9, 10, 11, 12}, {13, 14, 15, 16}}},
+			[][][]int32{{{1, 2}, {3, 4}, {5, 6}}, {{7, 8}, {9, 10}, {11, 12}}},
+			[][][]int32{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}},
+			[][][]int32{{{1, 2, 3, 4}, {5, 6, 7, 8}, {9, 10, 11, 12}}},
+			[][][]int32{{{1, 2}, {3, 4}, {5, 6}}},
+			[][][]int32{{{1, 2}, {3, 4}}},
+			[][][]int32{{{1}}, {{2}}},
+		} {
+			var actual [][][]int32
+			_, err := conn.Exec(
+				ctx,
+				"insert into multi_dim_Array values(?, ?)",
+				i,
+				tt,
+			)
+			assert.NoErrorf(t, err, "%d", i)
 
-		var out [][]int32
-		rows, err := conn.Query(
-			ctx,
-			"select val from multi_dim_Array",
-		)
-		assert.NoError(t, err)
-		for rows.Next() {
-			err = rows.Scan(&out)
-			require.NoError(t, err)
-			require.Equal(t, [][]int32{{1, 2, 3, 4}, {5, 6, 7, 8}, {9, 10, 11, 12}}, out)
+			err = conn.QueryRow(
+				ctx,
+				"select val from multi_dim_Array where id = ?",
+				i,
+			).Scan(&actual)
+			assert.NoErrorf(t, err, "%d", i)
+			assert.Equalf(t, tt, actual, "%d", i)
+
 		}
 	})
 }
 
 func TestArrayEncodeMultipleDimensionsRagged(t *testing.T) {
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		_, _ = conn.Exec(ctx, "recreate table two_dim_ArrayRagged(val integer[3,4])")
-		_, err := conn.Exec(ctx, `insert into two_dim_ArrayRagged(val) values(?)`, [][]int32{{1, 2, 3, 4}, {5}, {9, 10, 11, 12}})
-		require.Error(t, err, "cannot convert to ArrayGetter because it is a ragged multi-dimensional")
+		_, _ = conn.Exec(ctx, "recreate table three_dim_ArrayRagged(id integer, val integer[2,3,4])")
+		for i, tt := range []any{
+			[][][]int32{{{1, 2, 3, 4}, {5}, {9, 10, 11, 12}}},
+			[][][]int32{{{1, 2, 3, 4}, {5, 6, 7, 8}, {9, 10, 11, 12}}, {{13, 14, 15}, {16, 17, 18}, {19, 20, 21}}},
+			[][][]int32{{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, {{10, 11, 12, 13}, {14, 15, 16, 17}, {18, 19, 20, 21}}},
+			[][][]int32{{{1, 2, 3, 4}, {5, 6, 7, 8}}, {{9, 10, 11}, {12, 13, 14}}},
+			[][][]int32{{{1, 2}, {3}, {4, 5}}, {{6, 7}, {8, 9}, {10, 11}}},
+			[][][]int32{{{1, 2}, {3, 4}, {5, 6}}, {{7}, {8, 9}, {10, 11}}},
+			[][][]int32{{{1, 2}, {3, 4}}, {{5, 6}, {7}}},
+			[][][]int32{{{1, 2}, {3}}, {{4, 5}, {6, 7}}},
+			[][][]int32{{{1}}, {{2, 3}}},
+		} {
+			_, err := conn.Exec(
+				ctx,
+				"insert into three_dim_ArrayRagged values(?, ?)",
+				i,
+				tt,
+			)
+			require.EqualErrorf(t, err, "cannot convert to ArrayGetter because it is a ragged multi-dimensional", "test number %d", i)
+
+		}
 	})
 }
