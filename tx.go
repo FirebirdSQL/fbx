@@ -133,6 +133,9 @@ type Tx interface {
 	Rollback(ctx context.Context) error
 
 	Prepare(ctx context.Context, name, sql string) (*fbconn.StatementDescription, error)
+	PrepareBatch(ctx context.Context, sql string) (*PreparedBatch, error)
+	Flush(ctx context.Context, name string) error
+	ExecBatch(ctx context.Context, name string) (BatchResult, error)
 
 	Exec(ctx context.Context, sql string, arguments ...any) (commandTag fbconn.QueryStatus, err error)
 	Query(ctx context.Context, sql string, args ...any) (Rows, error)
@@ -174,6 +177,10 @@ func (tx *dbTx) Commit(ctx context.Context) error {
 		return ErrTxClosed
 	}
 
+	if err := tx.conn.closePreparedBatchesForTx(ctx, tx); err != nil {
+		return err
+	}
+
 	err := tx.tx.Commit(ctx)
 	tx.closed = true
 	if err != nil {
@@ -190,6 +197,10 @@ func (tx *dbTx) Commit(ctx context.Context) error {
 func (tx *dbTx) Rollback(ctx context.Context) error {
 	if tx.closed {
 		return ErrTxClosed
+	}
+
+	if err := tx.conn.closePreparedBatchesForTx(ctx, tx); err != nil {
+		return err
 	}
 
 	err := tx.tx.Rollback(ctx)
@@ -221,6 +232,14 @@ func (tx *dbTx) Prepare(ctx context.Context, name, sql string) (*fbconn.Statemen
 	return tx.conn.prepareTx(ctx, tx, name, sql)
 }
 
+func (tx *dbTx) PrepareBatch(ctx context.Context, sql string) (*PreparedBatch, error) {
+	if tx.closed {
+		return nil, ErrTxClosed
+	}
+
+	return tx.conn.prepareBatchTx(ctx, tx, sql)
+}
+
 // Query delegates to the underlying *Conn
 func (tx *dbTx) Query(ctx context.Context, sql string, args ...any) (Rows, error) {
 	if tx.closed {
@@ -240,6 +259,20 @@ func (tx *dbTx) QueryRow(ctx context.Context, sql string, args ...any) Row {
 
 func (tx *dbTx) Conn() *Conn {
 	return tx.conn
+}
+
+func (tx *dbTx) Flush(ctx context.Context, name string) error {
+	if tx.closed {
+		return ErrTxClosed
+	}
+	return tx.conn.flushTx(ctx, tx, name)
+}
+
+func (tx *dbTx) ExecBatch(ctx context.Context, name string) (BatchResult, error) {
+	if tx.closed {
+		return BatchResult{}, ErrTxClosed
+	}
+	return tx.conn.execBatchTx(ctx, tx, name)
 }
 
 // dbSimulatedNestedTx represents a simulated nested transaction implemented by a savepoint.
@@ -298,6 +331,28 @@ func (sp *dbSimulatedNestedTx) Prepare(ctx context.Context, name, sql string) (*
 	}
 
 	return sp.tx.Prepare(ctx, name, sql)
+}
+
+func (sp *dbSimulatedNestedTx) PrepareBatch(ctx context.Context, sql string) (*PreparedBatch, error) {
+	if sp.closed {
+		return nil, ErrTxClosed
+	}
+
+	return sp.tx.PrepareBatch(ctx, sql)
+}
+
+func (sp *dbSimulatedNestedTx) Flush(ctx context.Context, name string) error {
+	if sp.closed {
+		return ErrTxClosed
+	}
+	return sp.tx.Flush(ctx, name)
+}
+
+func (sp *dbSimulatedNestedTx) ExecBatch(ctx context.Context, name string) (BatchResult, error) {
+	if sp.closed {
+		return BatchResult{}, ErrTxClosed
+	}
+	return sp.tx.ExecBatch(ctx, name)
 }
 
 // Query delegates to the underlying Tx

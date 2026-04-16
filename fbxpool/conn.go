@@ -87,6 +87,14 @@ func (c *Conn) Exec(ctx context.Context, sql string, arguments ...any) (fbconn.Q
 	return c.Conn().Exec(ctx, sql, arguments...)
 }
 
+func (c *Conn) Flush(ctx context.Context, name string) error {
+	return c.Conn().Flush(ctx, name)
+}
+
+func (c *Conn) ExecBatch(ctx context.Context, name string) (fbx.BatchResult, error) {
+	return c.Conn().ExecBatch(ctx, name)
+}
+
 func (c *Conn) Query(ctx context.Context, sql string, args ...any) (fbx.Rows, error) {
 	return c.Conn().Query(ctx, sql, args...)
 }

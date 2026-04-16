@@ -54,6 +54,18 @@ func (tx *Tx) Prepare(ctx context.Context, name, sql string) (*fbconn.StatementD
 	return tx.t.Prepare(ctx, name, sql)
 }
 
+func (tx *Tx) PrepareBatch(ctx context.Context, sql string) (*fbx.PreparedBatch, error) {
+	return tx.t.PrepareBatch(ctx, sql)
+}
+
+func (tx *Tx) Flush(ctx context.Context, name string) error {
+	return tx.t.Flush(ctx, name)
+}
+
+func (tx *Tx) ExecBatch(ctx context.Context, name string) (fbx.BatchResult, error) {
+	return tx.t.ExecBatch(ctx, name)
+}
+
 func (tx *Tx) Exec(ctx context.Context, sql string, arguments ...any) (fbconn.QueryStatus, error) {
 	return tx.t.Exec(ctx, sql, arguments...)
 }

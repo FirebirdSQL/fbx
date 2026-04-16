@@ -34,6 +34,7 @@ type reusableServerMessages struct {
 	reject        OpReject
 	fetchResponse OpFetchResponse
 	sqlResponse   OpSqlResponse
+	batchResp     OpBatchCompletion
 	contAuth      OpContAuth
 	inlineBlob    OpInlineBlob
 }
@@ -264,6 +265,9 @@ func (c *Client) ReadMessage() (ServerMessage, error) {
 		msg = &c.reusable.fetchResponse
 	case Op_sql_response:
 		msg = &c.reusable.sqlResponse
+	case Op_batch_cs:
+		c.reusable.batchResp.Encoding = c.Encoding
+		msg = &c.reusable.batchResp
 	case Op_cont_auth:
 		c.reusable.contAuth.Encoding = c.Encoding
 		msg = &c.reusable.contAuth

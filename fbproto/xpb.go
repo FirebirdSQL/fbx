@@ -206,3 +206,37 @@ func (pb *TPBWriterV3) PutTag(tag byte) {
 func (pb *TPBWriterV3) Bytes() []byte {
 	return pb.w.buf
 }
+
+type BatchPBWriter struct {
+	w *XPBWriter
+}
+
+func NewBatchPBWriter() *BatchPBWriter {
+	return &BatchPBWriter{w: NewXPBWriterFromTag(BatchVersion1)}
+}
+
+func (pb *BatchPBWriter) PutTag(tag byte) {
+	pb.w.AppendByte(tag)
+}
+
+func (pb *BatchPBWriter) PutByte(tag byte, val byte) {
+	pb.w.AppendByte(tag)
+	pb.w.AppendInt32(1)
+	pb.w.AppendByte(val)
+}
+
+func (pb *BatchPBWriter) PutInt32(tag byte, val int32) {
+	pb.w.AppendByte(tag)
+	pb.w.AppendInt32(4)
+	pb.w.AppendInt32(val)
+}
+
+func (pb *BatchPBWriter) PutBuffer(tag byte, bytes []byte) {
+	pb.w.AppendByte(tag)
+	pb.w.AppendInt32(int32(len(bytes)))
+	pb.w.AppendBytes(bytes)
+}
+
+func (pb *BatchPBWriter) Bytes() []byte {
+	return pb.w.buf
+}
