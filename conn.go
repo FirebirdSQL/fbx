@@ -278,6 +278,9 @@ func (c *Conn) Close(ctx context.Context) error {
 // placeholders are referenced positionally as ?. name can be used instead of sql with Query, QueryRow, and
 // Exec to execute the statement.
 //
+// If sql starts with "batch ", Prepare creates a named batch.
+// Use Exec to add rows, Flush to send queued rows, and ExecBatch to execute the batch.
+//
 // The underlying Firebird identifier for the prepared statement will be name if name != sql or a digest of sql if
 // name == sql.
 //
@@ -299,11 +302,17 @@ func (c *Conn) prepareTx(ctx context.Context, tx *dbTx, name string, sql string)
 	return st.Description, nil
 }
 
+// PrepareBatch creates a batch object for INSERT, UPDATE, or DELETE without result sets.
 func (c *Conn) PrepareBatch(ctx context.Context, sql string) (*PreparedBatch, error) {
-	return c.prepareBatchTx(ctx, nil, sql)
+	return c.prepareBatchTx(ctx, nil, sql, BatchOptions{})
 }
 
-func (c *Conn) prepareBatchTx(ctx context.Context, tx *dbTx, sql string) (*PreparedBatch, error) {
+// PrepareBatchWithOptions creates a batch object with additional batch options.
+func (c *Conn) PrepareBatchWithOptions(ctx context.Context, sql string, opts BatchOptions) (*PreparedBatch, error) {
+	return c.prepareBatchTx(ctx, nil, sql, opts)
+}
+
+func (c *Conn) prepareBatchTx(ctx context.Context, tx *dbTx, sql string, opts BatchOptions) (*PreparedBatch, error) {
 	st, err := c.internalPrepare(ctx, tx, "", sql)
 	if err != nil {
 		return nil, err
@@ -322,10 +331,12 @@ func (c *Conn) prepareBatchTx(ctx context.Context, tx *dbTx, sql string) (*Prepa
 	}
 
 	pb := &PreparedBatch{
-		conn: c,
-		tx:   tx,
-		sql:  sql,
-		sd:   st.Description,
+		conn:           c,
+		tx:             tx,
+		sql:            sql,
+		sd:             st.Description,
+		autoFlushBytes: defaultPreparedBatchFlushSize,
+		batchCfg:       normalizeBatchOptions(opts),
 	}
 
 	if tx != nil {
@@ -340,10 +351,12 @@ func (c *Conn) prepareBatchTx(ctx context.Context, tx *dbTx, sql string) (*Prepa
 	return pb, nil
 }
 
+// Flush sends queued rows for a named batch without executing it.
 func (c *Conn) Flush(ctx context.Context, name string) error {
 	return c.flushTx(ctx, nil, name)
 }
 
+// ExecBatch flushes queued rows for a named batch, executes it, and returns the result.
 func (c *Conn) ExecBatch(ctx context.Context, name string) (BatchResult, error) {
 	return c.execBatchTx(ctx, nil, name)
 }
@@ -372,7 +385,7 @@ func (c *Conn) prepareNamedBatchTx(ctx context.Context, tx *dbTx, name, original
 		return nil, fmt.Errorf("prepared query '%s' already exists", name)
 	}
 
-	pb, err := c.prepareBatchTx(ctx, tx, normalizedSQL)
+	pb, err := c.prepareBatchTx(ctx, tx, normalizedSQL, BatchOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -434,7 +447,8 @@ func (c *Conn) internalPrepare(ctx context.Context, tx *dbTx, name, sql string) 
 	return st, nil
 }
 
-// Deallocate releases a prepared statement. Calling Deallocate on a non-existent prepared statement will succeed.
+// Deallocate releases a prepared statement or named batch.
+// Calling Deallocate on a non-existent object will succeed.
 func (c *Conn) Deallocate(ctx context.Context, name string) error {
 	if pb := c.preparedBatches[name]; pb != nil {
 		err := pb.Close(ctx)
@@ -460,7 +474,8 @@ func (c *Conn) Deallocate(ctx context.Context, name string) error {
 	return nil
 }
 
-// DeallocateAll releases all previously prepared statements from the server and client, where it also resets the statement and description cache.
+// DeallocateAll releases all prepared statements and named batches.
+// It also resets the statement cache.
 func (c *Conn) DeallocateAll(ctx context.Context) error {
 	if c.config.StatementCacheCapacity > 0 {
 		c.statementCache = stmtcache.NewLRUCache(c.config.StatementCacheCapacity)

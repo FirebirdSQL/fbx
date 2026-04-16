@@ -133,8 +133,13 @@ type Tx interface {
 	Rollback(ctx context.Context) error
 
 	Prepare(ctx context.Context, name, sql string) (*fbconn.StatementDescription, error)
+	// PrepareBatch creates a batch object inside the transaction.
 	PrepareBatch(ctx context.Context, sql string) (*PreparedBatch, error)
+	// PrepareBatchWithOptions creates a batch object inside the transaction with additional batch options.
+	PrepareBatchWithOptions(ctx context.Context, sql string, opts BatchOptions) (*PreparedBatch, error)
+	// Flush sends queued rows for a named batch without executing it.
 	Flush(ctx context.Context, name string) error
+	// ExecBatch flushes queued rows for a named batch, executes it, and returns the result.
 	ExecBatch(ctx context.Context, name string) (BatchResult, error)
 
 	Exec(ctx context.Context, sql string, arguments ...any) (commandTag fbconn.QueryStatus, err error)
@@ -232,12 +237,18 @@ func (tx *dbTx) Prepare(ctx context.Context, name, sql string) (*fbconn.Statemen
 	return tx.conn.prepareTx(ctx, tx, name, sql)
 }
 
+// PrepareBatch creates a batch object inside the transaction.
 func (tx *dbTx) PrepareBatch(ctx context.Context, sql string) (*PreparedBatch, error) {
+	return tx.PrepareBatchWithOptions(ctx, sql, BatchOptions{})
+}
+
+// PrepareBatchWithOptions creates a batch object inside the transaction with additional batch options.
+func (tx *dbTx) PrepareBatchWithOptions(ctx context.Context, sql string, opts BatchOptions) (*PreparedBatch, error) {
 	if tx.closed {
 		return nil, ErrTxClosed
 	}
 
-	return tx.conn.prepareBatchTx(ctx, tx, sql)
+	return tx.conn.prepareBatchTx(ctx, tx, sql, opts)
 }
 
 // Query delegates to the underlying *Conn
@@ -261,6 +272,7 @@ func (tx *dbTx) Conn() *Conn {
 	return tx.conn
 }
 
+// Flush sends queued rows for a named batch without executing it.
 func (tx *dbTx) Flush(ctx context.Context, name string) error {
 	if tx.closed {
 		return ErrTxClosed
@@ -268,6 +280,7 @@ func (tx *dbTx) Flush(ctx context.Context, name string) error {
 	return tx.conn.flushTx(ctx, tx, name)
 }
 
+// ExecBatch flushes queued rows for a named batch, executes it, and returns the result.
 func (tx *dbTx) ExecBatch(ctx context.Context, name string) (BatchResult, error) {
 	if tx.closed {
 		return BatchResult{}, ErrTxClosed
@@ -333,14 +346,21 @@ func (sp *dbSimulatedNestedTx) Prepare(ctx context.Context, name, sql string) (*
 	return sp.tx.Prepare(ctx, name, sql)
 }
 
+// PrepareBatch creates a batch object inside the transaction.
 func (sp *dbSimulatedNestedTx) PrepareBatch(ctx context.Context, sql string) (*PreparedBatch, error) {
+	return sp.PrepareBatchWithOptions(ctx, sql, BatchOptions{})
+}
+
+// PrepareBatchWithOptions creates a batch object inside the transaction with additional batch options.
+func (sp *dbSimulatedNestedTx) PrepareBatchWithOptions(ctx context.Context, sql string, opts BatchOptions) (*PreparedBatch, error) {
 	if sp.closed {
 		return nil, ErrTxClosed
 	}
 
-	return sp.tx.PrepareBatch(ctx, sql)
+	return sp.tx.PrepareBatchWithOptions(ctx, sql, opts)
 }
 
+// Flush sends queued rows for a named batch without executing it.
 func (sp *dbSimulatedNestedTx) Flush(ctx context.Context, name string) error {
 	if sp.closed {
 		return ErrTxClosed
@@ -348,6 +368,7 @@ func (sp *dbSimulatedNestedTx) Flush(ctx context.Context, name string) error {
 	return sp.tx.Flush(ctx, name)
 }
 
+// ExecBatch flushes queued rows for a named batch, executes it, and returns the result.
 func (sp *dbSimulatedNestedTx) ExecBatch(ctx context.Context, name string) (BatchResult, error) {
 	if sp.closed {
 		return BatchResult{}, ErrTxClosed

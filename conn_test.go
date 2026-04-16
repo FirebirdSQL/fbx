@@ -482,6 +482,7 @@ func TestPrepareBatchUpdateAndDelete(t *testing.T) {
 	defer cancel()
 
 	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		skipIfBatchUnsupported(ctx, t, conn)
 		table := batchTestTableName(t, "fbx_bud")
 
 		_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(50))")
@@ -522,6 +523,7 @@ func TestPrepareNamedBatchUpdateAndDelete(t *testing.T) {
 	defer cancel()
 
 	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		skipIfBatchUnsupported(ctx, t, conn)
 		table := batchTestTableName(t, "fbx_nbv")
 		updateName := batchTestTableName(t, "upd_batch")
 		deleteName := batchTestTableName(t, "del_batch")
@@ -568,6 +570,7 @@ func TestPrepareBatchRejectsResultSetStatements(t *testing.T) {
 	defer cancel()
 
 	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		skipIfBatchUnsupported(ctx, t, conn)
 		table := batchTestTableName(t, "fbx_brr")
 		badBatchName := batchTestTableName(t, "bad_batch")
 

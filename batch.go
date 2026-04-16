@@ -12,6 +12,9 @@
 //
 //	res, err := pb.Exec(ctx)
 //
+// Object batches are manual. Use [PreparedBatch.PendingBytes] and [PreparedBatch.Flush]
+// if you want to control when queued rows are sent.
+//
 // 2) Named API:
 //
 //	_, err := conn.Prepare(ctx, "b1", "batch insert into t(id, note) values (?, ?)")
@@ -22,6 +25,8 @@
 //	_, _ = conn.Exec(ctx, "b1", 2, "two")
 //
 //	res, err := conn.ExecBatch(ctx, "b1")
+//
+// Named batches support built-in auto-flush.
 
 package fbx
 
@@ -37,6 +42,14 @@ const (
 	batchPreparePrefix            = "batch "
 	defaultPreparedBatchFlushSize = 128 * 1024
 )
+
+// BatchOptions configures object-style batches created with PrepareBatchWithOptions.
+// Zero values keep the default behavior.
+type BatchOptions struct {
+	// BufferBytes requests the server-side batch buffer size in bytes.
+	// Zero uses the server default.
+	BufferBytes int
+}
 
 type BatchResult struct {
 	Affected int64
@@ -59,6 +72,7 @@ type PreparedBatch struct {
 	encodedRows    [][]byte
 	pendingBytes   int
 	autoFlushBytes int
+	batchCfg       fbconn.BatchConfig
 	closed         bool
 
 	eqb ExtendedQueryBuilder
@@ -67,6 +81,14 @@ type PreparedBatch struct {
 // Add appends one row to the batch buffer.
 func (b *PreparedBatch) Add(args ...any) error {
 	return b.addEncoded(context.Background(), args, false)
+}
+
+// PendingBytes returns the size of queued encoded rows that have not been sent yet.
+func (b *PreparedBatch) PendingBytes() int {
+	if b == nil {
+		return 0
+	}
+	return b.pendingBytes
 }
 
 func isBatchPrepareSQL(sql string) (normalized string, ok bool) {
@@ -91,6 +113,22 @@ func validateBatchStatement(sd *fbconn.StatementDescription) error {
 	default:
 		return fmt.Errorf("batch supports only insert, update, and delete statements without result sets")
 	}
+}
+
+func defaultPreparedBatchConfig() fbconn.BatchConfig {
+	return fbconn.BatchConfig{
+		RecordCounts: true,
+		DetailedErrs: 1,
+		BufferBytes:  -1,
+	}
+}
+
+func normalizeBatchOptions(opts BatchOptions) fbconn.BatchConfig {
+	cfg := defaultPreparedBatchConfig()
+	if opts.BufferBytes > 0 {
+		cfg.BufferBytes = opts.BufferBytes
+	}
+	return cfg
 }
 
 func (b *PreparedBatch) addEncoded(ctx context.Context, args []any, allowAutoFlush bool) error {
@@ -156,10 +194,7 @@ func (b *PreparedBatch) flushWithSource(ctx context.Context, source string) erro
 		return err
 	}
 	if b.lb == nil {
-		b.lb = st.NewBatch(fbconn.BatchConfig{
-			RecordCounts: true,
-			DetailedErrs: 1,
-		})
+		b.lb = st.NewBatch(b.batchCfg)
 	}
 
 	if err := b.lb.Send(ctx, b.encodedRows); err != nil {
