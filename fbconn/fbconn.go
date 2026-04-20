@@ -2386,8 +2386,10 @@ func getArrayInfo(fbConn *FbConn, ctx context.Context, tx *FBTransaction, fields
 				return nil, err
 			}
 			encoding, err := fbproto.NewEncoding(name)
-			arr.Length = arr.Length / encoding.MaxBytesPerChar * fbConn.Encoding.MaxBytesPerChar // to read an array of text data when connected in any encoding
-			arr.SubType = fbConn.Encoding.CharacterSetId
+			if encoding.MaxBytesPerChar < fbConn.Encoding.MaxBytesPerChar {
+				arr.Length = arr.Length / encoding.MaxBytesPerChar * fbConn.Encoding.MaxBytesPerChar // to read an array of text data when connected in any encoding
+				arr.SubType = fbConn.Encoding.CharacterSetId
+			}
 		}
 
 		if arrays[arr.TableName] == nil {
