@@ -1369,9 +1369,18 @@ func (fbConn *FbConn) getArrayMetadata(ctx context.Context, tx *FBTransaction, t
 		fields += "'" + field + "',"
 	}
 
-	st, err := fbConn.internalPrepareTx(ctx, tx, fmt.Sprintf(`SELECT Y.RDB$FIELD_TYPE, Y.RDB$FIELD_SCALE, Y.RDB$FIELD_LENGTH, 
-       	Y.RDB$FIELD_SUB_TYPE, X.RDB$FIELD_SOURCE, X.RDB$RELATION_NAME, X.RDB$FIELD_NAME
-		FROM RDB$RELATION_FIELDS X, RDB$FIELDS Y 
+	st, err := fbConn.internalPrepareTx(ctx, tx, fmt.Sprintf(`SELECT 
+    Y.RDB$FIELD_TYPE, 
+    Y.RDB$FIELD_SCALE, 
+    Y.RDB$FIELD_LENGTH, 
+    CASE 
+        WHEN Y.RDB$FIELD_TYPE IN (14, 37) THEN Y.RDB$CHARACTER_SET_ID 
+        ELSE Y.RDB$FIELD_SUB_TYPE 
+    END AS RDB$FIELD_SUB_TYPE,
+    X.RDB$FIELD_SOURCE, 
+    X.RDB$RELATION_NAME, 
+    X.RDB$FIELD_NAME
+	FROM RDB$RELATION_FIELDS X, RDB$FIELDS Y 
 		WHERE X.RDB$FIELD_SOURCE = Y.RDB$FIELD_NAME 
   		AND X.RDB$RELATION_NAME IN (%s)
   		AND X.RDB$FIELD_NAME IN (%s)`, tables[:len(tables)-1], fields[:len(fields)-1]))
@@ -2372,7 +2381,13 @@ func getArrayInfo(fbConn *FbConn, ctx context.Context, tx *FBTransaction, fields
 
 		arr.Length = binary.BigEndian.Uint32(metadata["LENGTH"])
 		if arr.TypeId == fbproto.SQL_TYPE_VARYING || arr.TypeId == fbproto.SQL_TYPE_TEXT {
-			arr.Length *= fbConn.Encoding.MaxBytesPerChar // to read an array of text data when connected in any encoding
+			name, err := fbproto.CharacterSetIdIntoName(arr.SubType)
+			if err != nil {
+				return nil, err
+			}
+			encoding, err := fbproto.NewEncoding(name)
+			arr.Length = arr.Length / encoding.MaxBytesPerChar * fbConn.Encoding.MaxBytesPerChar // to read an array of text data when connected in any encoding
+			arr.SubType = fbConn.Encoding.CharacterSetId
 		}
 
 		if arrays[arr.TableName] == nil {
