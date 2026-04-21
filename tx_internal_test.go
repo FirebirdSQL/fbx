@@ -38,3 +38,30 @@ func TestNormalizeTxLockTimeout(t *testing.T) {
 		require.Error(t, err)
 	})
 }
+
+func TestGetTPB(t *testing.T) {
+	t.Parallel()
+
+	t.Run("no options means nil tpb", func(t *testing.T) {
+		tpb, err := TxOptions{}.GetTPB()
+		require.NoError(t, err)
+		require.Nil(t, tpb)
+	})
+
+	t.Run("lock timeout only produces tpb", func(t *testing.T) {
+		tpb, err := TxOptions{LockTimeout: 7 * time.Second}.GetTPB()
+		require.NoError(t, err)
+		require.NotNil(t, tpb)
+		require.NotEmpty(t, tpb)
+	})
+
+	t.Run("unknown access mode fails", func(t *testing.T) {
+		_, err := TxOptions{AccessMode: TxAccessMode("bad-mode")}.GetTPB()
+		require.ErrorContains(t, err, "unknown transaction access mode")
+	})
+
+	t.Run("unknown iso level fails", func(t *testing.T) {
+		_, err := TxOptions{IsoLevel: TxIsoLevel("bad-level")}.GetTPB()
+		require.ErrorContains(t, err, "unknown transaction iso level")
+	})
+}
