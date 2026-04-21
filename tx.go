@@ -54,6 +54,39 @@ func (c *Conn) Begin(ctx context.Context) (Tx, error) {
 // BeginTx starts a transaction with txOptions determining the transaction mode. Unlike database/sql, the context only
 // affects the begin command. i.e. there is no auto-rollback on context cancellation.
 func (c *Conn) BeginTx(ctx context.Context, txOptions TxOptions) (Tx, error) {
+	tpb, err := txOptions.GetTPB()
+	if err != nil {
+		return nil, err
+	}
+
+	return c.beginTxTPB(ctx, tpb)
+}
+
+// BeginTxTPB starts a transaction using a raw Firebird transaction parameter block.
+// The TPB is passed to the server as-is.
+func (c *Conn) BeginTxTPB(ctx context.Context, tpb []byte) (Tx, error) {
+	txTPB := make([]byte, len(tpb))
+	copy(txTPB, tpb)
+
+	return c.beginTxTPB(ctx, txTPB)
+}
+
+func (c *Conn) beginTxTPB(ctx context.Context, tpb []byte) (Tx, error) {
+	fbTx, err := c.fbConn.StartTransactionTPB(ctx, tpb)
+	if err != nil {
+		// begin should never fail unless there is an underlying connection issue or
+		// a context timeout. In either case, the connection is possibly broken.
+		c.die()
+		return nil, err
+	}
+
+	return &dbTx{
+		conn: c,
+		tx:   fbTx,
+	}, nil
+}
+
+func (txOptions TxOptions) GetTPB() ([]byte, error) {
 	lockTimeoutSeconds, err := normalizeTxLockTimeout(txOptions.LockTimeout)
 	if err != nil {
 		return nil, err
@@ -62,12 +95,7 @@ func (c *Conn) BeginTx(ctx context.Context, txOptions TxOptions) (Tx, error) {
 	// If no options are specified, use server / database defaults. This matches Firebird semantics and keeps
 	// database/sql LevelDefault behaving as expected (i.e. do not silently force READ COMMITTED).
 	if txOptions.AccessMode == "" && txOptions.IsoLevel == "" && lockTimeoutSeconds == 0 {
-		fbTx, err := c.fbConn.StartTransactionTPB(ctx, nil)
-		if err != nil {
-			c.die()
-			return nil, err
-		}
-		return &dbTx{conn: c, tx: fbTx}, nil
+		return nil, nil
 	}
 
 	tpb := fbproto.NewTPBWriterV3()
@@ -114,18 +142,7 @@ func (c *Conn) BeginTx(ctx context.Context, txOptions TxOptions) (Tx, error) {
 		tpb.PutTag(fbproto.Isc_tpb_wait)
 	}
 
-	fbTx, err := c.fbConn.StartTransactionTPB(ctx, tpb.Bytes())
-	if err != nil {
-		// begin should never fail unless there is an underlying connection issue or
-		// a context timeout. In either case, the connection is possibly broken.
-		c.die()
-		return nil, err
-	}
-
-	return &dbTx{
-		conn: c,
-		tx:   fbTx,
-	}, nil
+	return tpb.Bytes(), nil
 }
 
 func normalizeTxLockTimeout(lockTimeout time.Duration) (int, error) {
