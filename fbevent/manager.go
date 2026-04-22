@@ -156,14 +156,13 @@ func (m *Manager) Connect(ctx context.Context) error {
 	m.lifecycleWatchGen++
 	stop := m.dispatcherStop
 	done := m.dispatcherDone
-	queue := m.eventQueue
 	lifecycleStop := m.lifecycleWatchStop
 	lifecycleGen := m.lifecycleWatchGen
 	m.mu.Unlock()
 
 	m.bindConnEventErrorHandler(conn)
 	m.startConnLifecycleWatcher(conn, lifecycleStop, lifecycleGen)
-	go m.dispatcherLoop(stop, done, queue)
+	go m.dispatcherLoop(stop, done)
 	return nil
 }
 
@@ -536,7 +535,7 @@ func (m *Manager) enqueueEvent(event DatabaseEvent) {
 	}
 }
 
-func (m *Manager) dispatcherLoop(stop <-chan struct{}, done chan<- struct{}, queue <-chan DatabaseEvent) {
+func (m *Manager) dispatcherLoop(stop <-chan struct{}, done chan<- struct{}) {
 	defer close(done)
 	for {
 		timeout := m.GetWaitTimeout()
@@ -545,7 +544,7 @@ func (m *Manager) dispatcherLoop(stop <-chan struct{}, done chan<- struct{}, que
 		case <-stop:
 			timer.Stop()
 			return
-		case event, ok := <-queue:
+		case event, ok := <-m.eventQueue:
 			timer.Stop()
 			if !ok {
 				return
@@ -818,13 +817,19 @@ func (h *gdsEventHandler) EventOccurred(handle *fbconn.EventHandle) {
 		return
 	}
 
+	// CountEvents must be serialized via opMu: FbConn is not safe for concurrent
+	// use, and user goroutines call QueueEvent/CancelEvent while holding opMu.
+	h.opMu.Lock()
 	conn := h.manager.currentConn()
 	if conn == nil {
+		h.opMu.Unlock()
 		return
 	}
+	countErr := conn.CountEvents(handle)
+	h.opMu.Unlock()
 
-	if err := conn.CountEvents(handle); err != nil {
-		h.manager.setAsyncError(fmt.Errorf("count events failed for %q: %w", h.eventName, err))
+	if countErr != nil {
+		h.manager.setAsyncError(fmt.Errorf("count events failed for %q: %w", h.eventName, countErr))
 		return
 	}
 
