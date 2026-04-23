@@ -14,10 +14,8 @@ import (
 func addRegisteredListenerForTest(m *Manager, eventName string, listener EventListener) ListenerHandle {
 	m.nextListenerID++
 	handle := m.nextListenerID
-	m.listeners[eventName] = append(m.listeners[eventName], listenerRegistration{
-		handle:   handle,
-		listener: listener,
-	})
+	reg := startListenerWorker(handle, listener)
+	m.listeners[eventName] = append(m.listeners[eventName], reg)
 	m.listenerEventName[handle] = eventName
 	return handle
 }
@@ -486,6 +484,76 @@ func TestHandleConnLifecycleTerminationDisconnectsAndSignalsAsyncError(t *testin
 	err := m.LastError()
 	require.Error(t, err)
 	require.ErrorContains(t, err, "underlying connection detached")
+}
+
+func TestNotifyDoesNotDropEventsWhenListenerWorkerBufferFull(t *testing.T) {
+	t.Parallel()
+
+	// More than buffer capacity to guarantee notify blocks on a full buffer.
+	const eventCount = listenerEventBufferSize * 2
+
+	gate := make(chan struct{})
+	var mu sync.Mutex
+	var received []int
+
+	listener := EventListenerFunc(func(event DatabaseEvent) {
+		<-gate // block until explicitly released
+		mu.Lock()
+		received = append(received, event.EventCount)
+		mu.Unlock()
+	})
+
+	stop := make(chan struct{})
+	m := &Manager{
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*gdsEventHandler),
+		dispatcherStop:    stop,
+	}
+	addRegisteredListenerForTest(m, "EVT", listener)
+
+	notifyDone := make(chan struct{})
+	go func() {
+		defer close(notifyDone)
+		for i := 0; i < eventCount; i++ {
+			m.notify(DatabaseEvent{EventName: "EVT", EventCount: i + 1})
+		}
+	}()
+
+	// notify must block once the worker is busy and the channel buffer is full,
+	// proving events are held rather than dropped.
+	select {
+	case <-notifyDone:
+		t.Fatal("notify completed without blocking: slow listener may have caused event drops")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	// Unblock the listener one token per event so the worker drains the channel.
+	go func() {
+		for i := 0; i < eventCount; i++ {
+			gate <- struct{}{}
+		}
+	}()
+
+	select {
+	case <-notifyDone:
+	case <-time.After(time.Second):
+		t.Fatal("notify did not complete after gate was opened")
+	}
+
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(received) == eventCount
+	}, time.Second, 10*time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, received, eventCount)
+	for i, count := range received {
+		require.Equal(t, i+1, count, "event %d delivered out of order", i)
+	}
 }
 
 func TestHandleConnLifecycleTerminationIgnoresStaleGeneration(t *testing.T) {

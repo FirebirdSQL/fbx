@@ -22,11 +22,34 @@ const (
 	defaultManagerWaitTimeout        = time.Second
 	managerOperationTimeout          = 5 * time.Second
 	managerDispatcherShutdownTimeout = 5 * time.Second
+	listenerEventBufferSize          = 32
 )
 
 type listenerRegistration struct {
 	handle   ListenerHandle
 	listener EventListener
+	ch       chan DatabaseEvent
+	stop     chan struct{}
+}
+
+func startListenerWorker(handle ListenerHandle, listener EventListener) listenerRegistration {
+	reg := listenerRegistration{
+		handle:   handle,
+		listener: listener,
+		ch:       make(chan DatabaseEvent, listenerEventBufferSize),
+		stop:     make(chan struct{}),
+	}
+	go func() {
+		for {
+			select {
+			case event := <-reg.ch:
+				reg.listener.EventOccurred(event)
+			case <-reg.stop:
+				return
+			}
+		}
+	}()
+	return reg
 }
 
 // Manager is a high-level Firebird event manager.
@@ -190,6 +213,10 @@ func (m *Manager) disconnect(ctx context.Context, strict bool, waitDispatcher bo
 	for _, handler := range m.handlers {
 		handlers = append(handlers, handler)
 	}
+	var allRegs []listenerRegistration
+	for _, regs := range m.listeners {
+		allRegs = append(allRegs, regs...)
+	}
 	m.handlers = make(map[string]*gdsEventHandler)
 	m.listeners = make(map[string][]listenerRegistration)
 	m.listenerEventName = make(map[ListenerHandle]string)
@@ -219,6 +246,9 @@ func (m *Manager) disconnect(ctx context.Context, strict bool, waitDispatcher bo
 	}
 	m.mu.Unlock()
 
+	for _, reg := range allRegs {
+		close(reg.stop)
+	}
 	m.unbindConnEventErrorHandler(conn)
 	if lifecycleStop != nil {
 		close(lifecycleStop)
@@ -329,10 +359,8 @@ func (m *Manager) AddEventListener(eventName string, listener EventListener) (Li
 
 	currentListeners := m.listeners[eventName]
 	hasListeners := len(currentListeners) > 0
-	m.listeners[eventName] = append(currentListeners, listenerRegistration{
-		handle:   handle,
-		listener: listener,
-	})
+	reg := startListenerWorker(handle, listener)
+	m.listeners[eventName] = append(currentListeners, reg)
 	m.listenerEventName[handle] = eventName
 	m.mu.Unlock()
 
@@ -378,10 +406,12 @@ func (m *Manager) RemoveEventListener(handle ListenerHandle) error {
 	}
 
 	updated := make([]listenerRegistration, 0, len(list))
+	var removedReg listenerRegistration
 	removed := false
 	for _, existing := range list {
 		if existing.handle == handle {
 			removed = true
+			removedReg = existing
 			continue
 		}
 		updated = append(updated, existing)
@@ -396,6 +426,7 @@ func (m *Manager) RemoveEventListener(handle ListenerHandle) error {
 	if len(updated) > 0 {
 		m.listeners[eventName] = updated
 		m.mu.Unlock()
+		close(removedReg.stop)
 		return nil
 	}
 
@@ -404,6 +435,7 @@ func (m *Manager) RemoveEventListener(handle ListenerHandle) error {
 	delete(m.handlers, eventName)
 	m.mu.Unlock()
 
+	close(removedReg.stop)
 	if handler != nil {
 		return handler.unregister(context.Background())
 	}
@@ -498,16 +530,18 @@ func (m *Manager) ensureEventHandler(eventName string) error {
 
 func (m *Manager) removeListenerSilently(handle ListenerHandle) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	eventName, exists := m.listenerEventName[handle]
 	if !exists {
+		m.mu.Unlock()
 		return
 	}
 
+	var toStop chan struct{}
 	list := m.listeners[eventName]
 	for i, existing := range list {
 		if existing.handle == handle {
+			toStop = existing.stop
 			list = append(list[:i], list[i+1:]...)
 			break
 		}
@@ -515,9 +549,14 @@ func (m *Manager) removeListenerSilently(handle ListenerHandle) {
 	delete(m.listenerEventName, handle)
 	if len(list) == 0 {
 		delete(m.listeners, eventName)
-		return
+	} else {
+		m.listeners[eventName] = list
 	}
-	m.listeners[eventName] = list
+	m.mu.Unlock()
+
+	if toStop != nil {
+		close(toStop)
+	}
 }
 
 func (m *Manager) enqueueEvent(event DatabaseEvent) {
@@ -561,9 +600,14 @@ func (m *Manager) dispatcherLoop(stop <-chan struct{}, done chan<- struct{}) {
 func (m *Manager) notify(event DatabaseEvent) {
 	m.mu.Lock()
 	registrations := append([]listenerRegistration(nil), m.listeners[event.EventName]...)
+	stop := m.dispatcherStop
 	m.mu.Unlock()
 	for _, registration := range registrations {
-		registration.listener.EventOccurred(event)
+		select {
+		case registration.ch <- event:
+		case <-stop:
+			return
+		}
 	}
 }
 
