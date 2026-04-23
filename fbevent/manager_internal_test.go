@@ -486,60 +486,89 @@ func TestHandleConnLifecycleTerminationDisconnectsAndSignalsAsyncError(t *testin
 	require.ErrorContains(t, err, "underlying connection detached")
 }
 
-func TestNotifyDoesNotDropEventsWhenListenerWorkerBufferFull(t *testing.T) {
+// TestListenerWorkerSendNeverBlocks verifies that notify returns immediately
+// even when the listener is slow, so the dispatcher and the Firebird event
+// channel goroutine are never stalled by backpressure from user callbacks.
+func TestListenerWorkerSendNeverBlocks(t *testing.T) {
 	t.Parallel()
 
-	// More than buffer capacity to guarantee notify blocks on a full buffer.
-	const eventCount = listenerEventBufferSize * 2
+	const eventCount = 500
 
 	gate := make(chan struct{})
 	var mu sync.Mutex
 	var received []int
 
-	listener := EventListenerFunc(func(event DatabaseEvent) {
-		<-gate // block until explicitly released
-		mu.Lock()
-		received = append(received, event.EventCount)
-		mu.Unlock()
-	})
-
-	stop := make(chan struct{})
 	m := &Manager{
 		connected:         true,
 		listeners:         make(map[string][]listenerRegistration),
 		listenerEventName: make(map[ListenerHandle]string),
 		handlers:          make(map[string]*gdsEventHandler),
-		dispatcherStop:    stop,
 	}
-	addRegisteredListenerForTest(m, "EVT", listener)
+	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(event DatabaseEvent) {
+		<-gate
+		mu.Lock()
+		received = append(received, event.EventCount)
+		mu.Unlock()
+	}))
 
 	notifyDone := make(chan struct{})
 	go func() {
 		defer close(notifyDone)
-		for i := 0; i < eventCount; i++ {
+		for i := range eventCount {
 			m.notify(DatabaseEvent{EventName: "EVT", EventCount: i + 1})
 		}
 	}()
 
-	// notify must block once the worker is busy and the channel buffer is full,
-	// proving events are held rather than dropped.
+	// notify must complete without waiting for the slow listener.
 	select {
 	case <-notifyDone:
-		t.Fatal("notify completed without blocking: slow listener may have caused event drops")
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("notify blocked on slow listener")
 	}
 
-	// Unblock the listener one token per event so the worker drains the channel.
+	// Release the listener and verify all events eventually arrive in order.
 	go func() {
-		for i := 0; i < eventCount; i++ {
+		for range eventCount {
 			gate <- struct{}{}
 		}
 	}()
 
-	select {
-	case <-notifyDone:
-	case <-time.After(time.Second):
-		t.Fatal("notify did not complete after gate was opened")
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(received) == eventCount
+	}, 5*time.Second, 10*time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+	for i, count := range received {
+		require.Equal(t, i+1, count, "event %d delivered out of order", i)
+	}
+}
+
+// TestListenerWorkerDeliversEventsInOrder verifies that the unbounded queue
+// preserves event ordering regardless of how fast events are enqueued.
+func TestListenerWorkerDeliversEventsInOrder(t *testing.T) {
+	t.Parallel()
+
+	const eventCount = 1000
+
+	var mu sync.Mutex
+	var received []int
+
+	w := &listenerWorker{
+		sig:  make(chan struct{}, 1),
+		stop: make(chan struct{}),
+	}
+	go w.run(EventListenerFunc(func(event DatabaseEvent) {
+		mu.Lock()
+		received = append(received, event.EventCount)
+		mu.Unlock()
+	}))
+	defer close(w.stop)
+
+	for i := range eventCount {
+		w.send(DatabaseEvent{EventName: "EVT", EventCount: i + 1})
 	}
 
 	require.Eventually(t, func() bool {
@@ -547,6 +576,55 @@ func TestNotifyDoesNotDropEventsWhenListenerWorkerBufferFull(t *testing.T) {
 		defer mu.Unlock()
 		return len(received) == eventCount
 	}, time.Second, 10*time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+	for i, count := range received {
+		require.Equal(t, i+1, count, "event %d delivered out of order", i)
+	}
+}
+
+// TestListenerWorkerNoEventsLostUnderLoad sends events concurrently with a
+// slow listener and confirms every event is eventually delivered.
+func TestListenerWorkerNoEventsLostUnderLoad(t *testing.T) {
+	t.Parallel()
+
+	const eventCount = 200
+
+	gate := make(chan struct{})
+	var mu sync.Mutex
+	var received []int
+
+	m := &Manager{
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*gdsEventHandler),
+	}
+	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(event DatabaseEvent) {
+		<-gate
+		mu.Lock()
+		received = append(received, event.EventCount)
+		mu.Unlock()
+	}))
+
+	// Send all events — must not block.
+	for i := range eventCount {
+		m.notify(DatabaseEvent{EventName: "EVT", EventCount: i + 1})
+	}
+
+	// Drain the gate to let listener process all events.
+	go func() {
+		for range eventCount {
+			gate <- struct{}{}
+		}
+	}()
+
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(received) == eventCount
+	}, 5*time.Second, 10*time.Millisecond)
 
 	mu.Lock()
 	defer mu.Unlock()

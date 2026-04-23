@@ -22,34 +22,72 @@ const (
 	defaultManagerWaitTimeout        = time.Second
 	managerOperationTimeout          = 5 * time.Second
 	managerDispatcherShutdownTimeout = 5 * time.Second
-	listenerEventBufferSize          = 32
 )
 
 type listenerRegistration struct {
 	handle   ListenerHandle
 	listener EventListener
-	ch       chan DatabaseEvent
-	stop     chan struct{}
+	worker   *listenerWorker
+}
+
+// listenerWorker delivers events to a single listener sequentially without
+// blocking the caller of send. Events are queued in an unbounded slice so
+// that a slow listener never causes backpressure on the dispatcher or the
+// Firebird event-channel goroutine.
+type listenerWorker struct {
+	mu    sync.Mutex
+	queue []DatabaseEvent
+	sig   chan struct{} // capacity 1; poke when queue becomes non-empty
+	stop  chan struct{}
+}
+
+func (w *listenerWorker) send(event DatabaseEvent) {
+	w.mu.Lock()
+	w.queue = append(w.queue, event)
+	w.mu.Unlock()
+	select {
+	case w.sig <- struct{}{}:
+	default:
+	}
+}
+
+func (w *listenerWorker) run(listener EventListener) {
+	for {
+		select {
+		case <-w.stop:
+			return
+		case <-w.sig:
+		}
+		for {
+			select {
+			case <-w.stop:
+				return
+			default:
+			}
+			w.mu.Lock()
+			if len(w.queue) == 0 {
+				w.mu.Unlock()
+				break
+			}
+			event := w.queue[0]
+			w.queue = w.queue[1:]
+			w.mu.Unlock()
+			listener.EventOccurred(event)
+		}
+	}
 }
 
 func startListenerWorker(handle ListenerHandle, listener EventListener) listenerRegistration {
-	reg := listenerRegistration{
+	w := &listenerWorker{
+		sig:  make(chan struct{}, 1),
+		stop: make(chan struct{}),
+	}
+	go w.run(listener)
+	return listenerRegistration{
 		handle:   handle,
 		listener: listener,
-		ch:       make(chan DatabaseEvent, listenerEventBufferSize),
-		stop:     make(chan struct{}),
+		worker:   w,
 	}
-	go func() {
-		for {
-			select {
-			case event := <-reg.ch:
-				reg.listener.EventOccurred(event)
-			case <-reg.stop:
-				return
-			}
-		}
-	}()
-	return reg
 }
 
 // Manager is a high-level Firebird event manager.
@@ -247,7 +285,7 @@ func (m *Manager) disconnect(ctx context.Context, strict bool, waitDispatcher bo
 	m.mu.Unlock()
 
 	for _, reg := range allRegs {
-		close(reg.stop)
+		close(reg.worker.stop)
 	}
 	m.unbindConnEventErrorHandler(conn)
 	if lifecycleStop != nil {
@@ -426,7 +464,7 @@ func (m *Manager) RemoveEventListener(handle ListenerHandle) error {
 	if len(updated) > 0 {
 		m.listeners[eventName] = updated
 		m.mu.Unlock()
-		close(removedReg.stop)
+		close(removedReg.worker.stop)
 		return nil
 	}
 
@@ -435,7 +473,7 @@ func (m *Manager) RemoveEventListener(handle ListenerHandle) error {
 	delete(m.handlers, eventName)
 	m.mu.Unlock()
 
-	close(removedReg.stop)
+	close(removedReg.worker.stop)
 	if handler != nil {
 		return handler.unregister(context.Background())
 	}
@@ -537,11 +575,11 @@ func (m *Manager) removeListenerSilently(handle ListenerHandle) {
 		return
 	}
 
-	var toStop chan struct{}
+	var toStop *listenerWorker
 	list := m.listeners[eventName]
 	for i, existing := range list {
 		if existing.handle == handle {
-			toStop = existing.stop
+			toStop = existing.worker
 			list = append(list[:i], list[i+1:]...)
 			break
 		}
@@ -555,7 +593,7 @@ func (m *Manager) removeListenerSilently(handle ListenerHandle) {
 	m.mu.Unlock()
 
 	if toStop != nil {
-		close(toStop)
+		close(toStop.stop)
 	}
 }
 
@@ -600,14 +638,9 @@ func (m *Manager) dispatcherLoop(stop <-chan struct{}, done chan<- struct{}) {
 func (m *Manager) notify(event DatabaseEvent) {
 	m.mu.Lock()
 	registrations := append([]listenerRegistration(nil), m.listeners[event.EventName]...)
-	stop := m.dispatcherStop
 	m.mu.Unlock()
 	for _, registration := range registrations {
-		select {
-		case registration.ch <- event:
-		case <-stop:
-			return
-		}
+		registration.worker.send(event)
 	}
 }
 
