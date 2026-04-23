@@ -74,6 +74,7 @@ type FbConn struct {
 
 	config *Config
 
+	statusMu         sync.Mutex
 	status           byte // One of connStatus* constants
 	protocolFeatures ProtocolFeatures
 
@@ -751,7 +752,9 @@ func (fbConn *FbConn) receiveMessage() (fbproto.ServerMessage, error) {
 	case *fbproto.ErrorResponse:
 		err := ErrorResponseToFbError(msg)
 		if fbConn.config.OnFbError != nil && !fbConn.config.OnFbError(fbConn, err) {
+			fbConn.statusMu.Lock()
 			fbConn.status = connStatusClosed
+			fbConn.statusMu.Unlock()
 			fbConn.conn.Close() // Ignore error as the connection is already broken and there is already an error to return.
 			close(fbConn.cleanupDone)
 			return nil, err
@@ -785,10 +788,13 @@ func (fbConn *FbConn) Client() *fbproto.Client {
 // sending the exit message to Firebird/RedDatabase server. However, this could block so ctx is available to limit the time to wait. The
 // underlying net.Conn.Close() will always be called regardless of any other errors.
 func (fbConn *FbConn) Close(ctx context.Context) error {
+	fbConn.statusMu.Lock()
 	if fbConn.status == connStatusClosed {
+		fbConn.statusMu.Unlock()
 		return nil
 	}
 	fbConn.status = connStatusClosed
+	fbConn.statusMu.Unlock()
 	fbConn.clearAllInlineBlobCache()
 	fbConn.closeEventChannel()
 
@@ -817,10 +823,13 @@ func (fbConn *FbConn) Close(ctx context.Context) error {
 // asyncClose marks the connection as closed and asynchronously sends a cancel query message and closes the underlying
 // connection.
 func (fbConn *FbConn) asyncClose() {
+	fbConn.statusMu.Lock()
 	if fbConn.status == connStatusClosed {
+		fbConn.statusMu.Unlock()
 		return
 	}
 	fbConn.status = connStatusClosed
+	fbConn.statusMu.Unlock()
 	fbConn.clearAllInlineBlobCache()
 	fbConn.closeEventChannel()
 
@@ -846,16 +855,24 @@ func (fbConn *FbConn) CleanupDone() chan (struct{}) {
 //
 // CleanupDone() can be used to determine if all cleanup has been completed.
 func (fbConn *FbConn) IsClosed() bool {
-	return fbConn.status < connStatusIdle
+	fbConn.statusMu.Lock()
+	s := fbConn.status
+	fbConn.statusMu.Unlock()
+	return s < connStatusIdle
 }
 
 // IsBusy reports if the connection is busy.
 func (fbConn *FbConn) IsBusy() bool {
-	return fbConn.status == connStatusBusy
+	fbConn.statusMu.Lock()
+	s := fbConn.status
+	fbConn.statusMu.Unlock()
+	return s == connStatusBusy
 }
 
 // lock locks the connection.
 func (fbConn *FbConn) lock() error {
+	fbConn.statusMu.Lock()
+	defer fbConn.statusMu.Unlock()
 	switch fbConn.status {
 	case connStatusBusy:
 		return &connLockError{status: "conn busy"} // This only should be possible in case of an application bug.
@@ -869,6 +886,8 @@ func (fbConn *FbConn) lock() error {
 }
 
 func (fbConn *FbConn) unlock() {
+	fbConn.statusMu.Lock()
+	defer fbConn.statusMu.Unlock()
 	switch fbConn.status {
 	case connStatusBusy:
 		fbConn.status = connStatusIdle

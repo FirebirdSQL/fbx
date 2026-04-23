@@ -215,6 +215,7 @@ func (m *Manager) Connect(ctx context.Context) error {
 	m.dispatcherDone = make(chan struct{})
 	m.lifecycleWatchStop = make(chan struct{})
 	m.lifecycleWatchGen++
+	queue := m.eventQueue
 	stop := m.dispatcherStop
 	done := m.dispatcherDone
 	lifecycleStop := m.lifecycleWatchStop
@@ -223,7 +224,7 @@ func (m *Manager) Connect(ctx context.Context) error {
 
 	m.bindConnEventErrorHandler(conn)
 	m.startConnLifecycleWatcher(conn, lifecycleStop, lifecycleGen)
-	go m.dispatcherLoop(stop, done)
+	go m.dispatcherLoop(stop, done, queue)
 	return nil
 }
 
@@ -612,7 +613,7 @@ func (m *Manager) enqueueEvent(event DatabaseEvent) {
 	}
 }
 
-func (m *Manager) dispatcherLoop(stop <-chan struct{}, done chan<- struct{}) {
+func (m *Manager) dispatcherLoop(stop <-chan struct{}, done chan<- struct{}, queue <-chan DatabaseEvent) {
 	defer close(done)
 	for {
 		timeout := m.GetWaitTimeout()
@@ -621,7 +622,7 @@ func (m *Manager) dispatcherLoop(stop <-chan struct{}, done chan<- struct{}) {
 		case <-stop:
 			timer.Stop()
 			return
-		case event, ok := <-m.eventQueue:
+		case event, ok := <-queue:
 			timer.Stop()
 			if !ok {
 				return
