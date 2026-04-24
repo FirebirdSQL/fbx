@@ -1386,7 +1386,7 @@ func (fbConn *FbConn) getArrayMetadata(ctx context.Context, tx *FBTransaction, t
   		AND X.RDB$RELATION_NAME IN (%s)
   		AND X.RDB$FIELD_NAME IN (%s)`,
 		fbproto.Isc_blr_text,
-		fbproto.Isc_blr_varaying,
+		fbproto.Isc_blr_varying,
 		tables[:len(tables)-1],
 		fields[:len(fields)-1],
 	)

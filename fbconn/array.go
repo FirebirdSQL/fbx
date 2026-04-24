@@ -71,7 +71,7 @@ func (arr *Array) generateSDL() []byte {
 	switch dataType {
 	case fbproto.Isc_blr_short, fbproto.Isc_blr_long, fbproto.Isc_blr_int64, fbproto.Isc_blr_quad:
 		sdl = append(sdl, byte(arr.Scale))
-	case fbproto.Isc_blr_text, fbproto.Isc_blr_cstring, fbproto.Isc_blr_varaying:
+	case fbproto.Isc_blr_text, fbproto.Isc_blr_cstring, fbproto.Isc_blr_varying:
 		sdl = append(sdl, length...)
 	}
 
@@ -179,8 +179,8 @@ func getArray(fbConn *FbConn, ctx context.Context, arrayData *Array, arrId []byt
 
 func getSqlTypeFromBlr(datatype uint32) (uint32, error) {
 	switch datatype {
-	case fbproto.Isc_blr_varaying,
-		fbproto.Isc_blr_varaying2:
+	case fbproto.Isc_blr_varying,
+		fbproto.Isc_blr_varying2:
 		return fbproto.SQL_TYPE_VARYING, nil
 
 	case fbproto.Isc_blr_text,

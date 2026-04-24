@@ -38,7 +38,7 @@ func (op *OpSliceResponse) Read(x *XDRReader) error {
 	case Isc_blr_text, Isc_blr_text2, Isc_blr_cstring, Isc_blr_cstring2:
 		elements = op.SliceLengthBytes / op.SliceLengthElements
 		op.SliceLengthBytes += elements * ((4 - op.SliceLengthElements) & 3)
-	case Isc_blr_varaying, Isc_blr_varaying2:
+	case Isc_blr_varying, Isc_blr_varying2:
 		elements = op.SliceLengthBytes / (op.SliceLengthElements + 2)
 		isVariying = true
 	case Isc_blr_short:

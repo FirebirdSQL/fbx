@@ -411,8 +411,8 @@ const (
 	Isc_blr_ex_time_tz      = 30
 	Isc_blr_ex_timestamp_tz = 31
 	Isc_blr_timestamp       = 35
-	Isc_blr_varaying        = 37
-	Isc_blr_varaying2       = 38
+	Isc_blr_varying         = 37
+	Isc_blr_varying2        = 38
 	Isc_blr_cstring         = 40
 	Isc_blr_cstring2        = 41
 	Isc_blr_blob            = 261
