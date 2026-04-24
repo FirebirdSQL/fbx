@@ -196,7 +196,7 @@ func TestArrayAnySliceArgument(t *testing.T) {
 				ctx,
 				"insert into single_dim_AnySliceArgument(id, val) values(?, ?)",
 				i,
-				tt.value,
+				tt.arg,
 			)
 			assert.NoErrorf(t, err, "%d", i)
 
