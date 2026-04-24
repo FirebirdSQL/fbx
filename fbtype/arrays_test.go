@@ -3,6 +3,7 @@ package fbtype_test
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -299,6 +300,53 @@ func TestArrayEncodeMultipleDimensionsRagged(t *testing.T) {
 			)
 			require.EqualErrorf(t, err, "cannot convert to ArrayGetter because it is a ragged multi-dimensional", "test number %d", i)
 
+		}
+	})
+}
+
+func TestArrayInteractionWithCharArraysInDifferentEncodings(t *testing.T) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		_, _ = conn.Exec(ctx, `recreate table different_encodings_char_array(
+		id integer,
+		encoding_NONE char(10)[2] character set NONE,
+		encoding_ASCII char(10)[2] character set ASCII,
+		encoding_UNICODE_FSS char(10)[2] character set UNICODE_FSS,
+		encoding_UTF8 char(10)[2] character set UTF8
+		)`)
+		for i, tt := range [][]string{
+			{"a"},
+			{"a", "b"},
+			{"\v", "\t"},
+			{"a\vb", "a\tb"},
+			{"tensymbol", "tensymbol"},
+		} {
+			_, err := conn.Exec(
+				ctx,
+				"insert into different_encodings_char_array values(?, ?, ?, ?, ?)",
+				i,
+				tt,
+				tt,
+				tt,
+				tt,
+			)
+			assert.NoErrorf(t, err, "%d", i)
+
+			var actual_NONE, actual_ASCII, actual_UNICODE_FSS, actual_UTF8 []string
+			err = conn.QueryRow(
+				ctx,
+				"select encoding_NONE, encoding_ASCII, encoding_UNICODE_FSS, encoding_UTF8 from different_encodings_char_array where id = ?",
+				i,
+			).Scan(&actual_NONE, &actual_ASCII, &actual_UNICODE_FSS, &actual_UTF8)
+			assert.NoErrorf(t, err, "%d", i)
+			var expected []string
+			for _, b := range tt {
+				padding := strings.Repeat(" ", 10-len(b))
+				expected = append(expected, b+padding)
+			}
+			assert.Equalf(t, expected, actual_NONE, "%d", i)
+			assert.Equalf(t, expected, actual_ASCII, "%d", i)
+			assert.Equalf(t, expected, actual_UNICODE_FSS, "%d", i)
+			assert.Equalf(t, expected, actual_UTF8, "%d", i)
 		}
 	})
 }

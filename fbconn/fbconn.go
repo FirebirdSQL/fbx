@@ -1369,12 +1369,13 @@ func (fbConn *FbConn) getArrayMetadata(ctx context.Context, tx *FBTransaction, t
 		fields += "'" + field + "',"
 	}
 
-	st, err := fbConn.internalPrepareTx(ctx, tx, fmt.Sprintf(`SELECT 
+	queryString := fmt.Sprintf(
+		`SELECT 
     Y.RDB$FIELD_TYPE, 
     Y.RDB$FIELD_SCALE, 
     Y.RDB$FIELD_LENGTH, 
     CASE 
-        WHEN Y.RDB$FIELD_TYPE IN (14, 37) THEN Y.RDB$CHARACTER_SET_ID 
+        WHEN Y.RDB$FIELD_TYPE IN (%d, %d) THEN Y.RDB$CHARACTER_SET_ID 
         ELSE Y.RDB$FIELD_SUB_TYPE 
     END AS RDB$FIELD_SUB_TYPE,
     X.RDB$FIELD_SOURCE, 
@@ -1383,7 +1384,14 @@ func (fbConn *FbConn) getArrayMetadata(ctx context.Context, tx *FBTransaction, t
 	FROM RDB$RELATION_FIELDS X, RDB$FIELDS Y 
 		WHERE X.RDB$FIELD_SOURCE = Y.RDB$FIELD_NAME 
   		AND X.RDB$RELATION_NAME IN (%s)
-  		AND X.RDB$FIELD_NAME IN (%s)`, tables[:len(tables)-1], fields[:len(fields)-1]))
+  		AND X.RDB$FIELD_NAME IN (%s)`,
+		fbproto.Isc_blr_text,
+		fbproto.Isc_blr_varaying,
+		tables[:len(tables)-1],
+		fields[:len(fields)-1],
+	)
+
+	st, err := fbConn.internalPrepareTx(ctx, tx, queryString)
 
 	if err != nil {
 		return nil, nil, err
@@ -1433,10 +1441,18 @@ func (fbConn *FbConn) getArrayDimensions(ctx context.Context, tx *FBTransaction,
 		sourcesString += "'" + string(source) + "',"
 	}
 
-	st, err := fbConn.internalPrepareTx(ctx, tx, fmt.Sprintf(`SELECT X.RDB$LOWER_BOUND, X.RDB$UPPER_BOUND, X.RDB$FIELD_NAME
-		FROM RDB$FIELD_DIMENSIONS X 
+	queryString := fmt.Sprintf(
+		`SELECT 
+	X.RDB$LOWER_BOUND, 
+	X.RDB$UPPER_BOUND, 
+	X.RDB$FIELD_NAME
+	FROM RDB$FIELD_DIMENSIONS X 
 		WHERE X.RDB$FIELD_NAME IN (%s) 
-		ORDER BY X.RDB$FIELD_NAME, X.RDB$DIMENSION`, sourcesString[:len(sourcesString)-1]))
+		ORDER BY X.RDB$FIELD_NAME, X.RDB$DIMENSION`,
+		sourcesString[:len(sourcesString)-1],
+	)
+
+	st, err := fbConn.internalPrepareTx(ctx, tx, queryString)
 
 	if err != nil {
 		return nil, err
@@ -2386,6 +2402,9 @@ func getArrayInfo(fbConn *FbConn, ctx context.Context, tx *FBTransaction, fields
 				return nil, err
 			}
 			encoding, err := fbproto.NewEncoding(name)
+			if err != nil {
+				return nil, err
+			}
 			if encoding.MaxBytesPerChar < fbConn.Encoding.MaxBytesPerChar {
 				arr.Length = arr.Length / encoding.MaxBytesPerChar * fbConn.Encoding.MaxBytesPerChar // to read an array of text data when connected in any encoding
 				arr.SubType = fbConn.Encoding.CharacterSetId
