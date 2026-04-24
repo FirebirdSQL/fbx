@@ -48,6 +48,8 @@ func (p *StatementInfo) parseInfo(buf []byte) error {
 				return err
 			}
 		case fbproto.Isc_info_truncated:
+			p.FieldDescriptors = []fbproto.FieldDescriptor{}
+			p.ParametersDescriptors = []fbproto.FieldDescriptor{}
 			return InfoTruncationError{0}
 		default:
 			return fmt.Errorf("unknown statement info item: %d", item)
@@ -74,6 +76,7 @@ func (p *StatementInfo) feedDescriptors(r *ServerInfoBufferReader) error {
 		if len(*p.currentDescriptor) == descriptorCount {
 			return nil
 		}
+		previousItem := item
 		if item, err = r.ReadByte(); err != nil {
 			return err
 		}
@@ -129,6 +132,9 @@ func (p *StatementInfo) feedDescriptors(r *ServerInfoBufferReader) error {
 			}
 			field.NullOk = nullOk == 1
 		case fbproto.Isc_info_truncated:
+			if previousItem == fbproto.Isc_info_sql_describe_end && len(*p.currentDescriptor) > 0 {
+				*p.currentDescriptor = (*p.currentDescriptor)[:len(*p.currentDescriptor)-1]
+			}
 			return InfoTruncationError{Index: field.Index}
 		default:
 			return fmt.Errorf("unknown descriptor info item: %d", item)
