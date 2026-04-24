@@ -150,12 +150,39 @@ func (st *Statement) Exec(ctx context.Context, paramValues [][]byte) *ResultRead
 //
 // ResultReader must be closed before FbConn can be used again.
 func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues [][]byte) *ResultReader {
-	var err error
 	rr := &ResultReader{
 		fbConn:           st.conn,
 		ctx:              ctx,
 		boundTransaction: tx,
 	}
+
+	if err := st.conn.lock(); err != nil {
+		rr.concludeCommand(QueryStatus{}, err)
+		rr.closed = true
+		return rr
+	}
+
+	if ctx != context.Background() {
+		select {
+		case <-ctx.Done():
+			rr.concludeCommand(QueryStatus{}, newContextAlreadyDoneError(ctx))
+			rr.closed = true
+			st.conn.unlock()
+			return rr
+		default:
+		}
+		st.conn.contextWatcher.Watch(ctx)
+	}
+	rr = st.internalExecTx(ctx, tx, rr, paramValues)
+	if rr.err != nil {
+		st.conn.contextWatcher.Unwatch()
+		st.conn.unlock()
+	}
+	return rr
+}
+
+func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *ResultReader, paramValues [][]byte) *ResultReader {
+	var err error
 
 	// Validate parameter count before any wire interaction.
 	if len(paramValues) != len(st.Description.StatementInfo.ParametersDescriptors) {
@@ -176,26 +203,21 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 		return rr
 	}
 
+	for i, param := range st.Description.Parameters {
+		if param.IsArray() && paramValues[i] != nil {
+			arrayId, err := putArray(st.conn, ctx, param.ArrayData, paramValues[i])
+			if err != nil {
+				st.conn.asyncClose()
+				rr.concludeCommand(QueryStatus{}, err)
+				rr.closed = true
+				return rr
+			}
+			paramValues[i] = arrayId
+		}
+	}
+
 	rr.statementDescription = st.Description
 	rr.fieldDescriptions = st.Description.Fields
-
-	if err = st.conn.lock(); err != nil {
-		rr.concludeCommand(QueryStatus{}, err)
-		rr.closed = true
-		return rr
-	}
-
-	if ctx != context.Background() {
-		select {
-		case <-ctx.Done():
-			rr.concludeCommand(QueryStatus{}, newContextAlreadyDoneError(ctx))
-			rr.closed = true
-			st.conn.unlock()
-			return rr
-		default:
-		}
-		st.conn.contextWatcher.Watch(ctx)
-	}
 
 	execKind := fbproto.Op_execute
 	var rowBlr []byte
@@ -224,8 +246,6 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 	}); err != nil {
 		st.conn.asyncClose()
 		rr.concludeCommand(QueryStatus{}, err)
-		st.conn.contextWatcher.Unwatch()
-		st.conn.unlock()
 		rr.closed = true
 		return rr
 	}
@@ -233,8 +253,6 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 	if err = st.conn.flushWithPotentialWriteReadDeadlock(); err != nil {
 		st.conn.asyncClose()
 		rr.concludeCommand(QueryStatus{}, err)
-		st.conn.contextWatcher.Unwatch()
-		st.conn.unlock()
 		rr.closed = true
 		return rr
 	}
@@ -243,8 +261,6 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 	if err != nil {
 		st.conn.asyncClose()
 		rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(ctx, err))
-		st.conn.contextWatcher.Unwatch()
-		st.conn.unlock()
 		rr.closed = true
 		return rr
 	}
@@ -256,8 +272,6 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 			if err != nil {
 				st.conn.asyncClose()
 				rr.concludeCommand(QueryStatus{}, err)
-				st.conn.contextWatcher.Unwatch()
-				st.conn.unlock()
 				rr.closed = true
 				return rr
 			}
@@ -266,15 +280,11 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 				rr.singleton = row
 			case *fbproto.ErrorResponse:
 				rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(d))
-				st.conn.contextWatcher.Unwatch()
-				st.conn.unlock()
 				rr.closed = true
 				return rr
 			}
 		case *fbproto.ErrorResponse:
 			rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(r))
-			st.conn.contextWatcher.Unwatch()
-			st.conn.unlock()
 			rr.closed = true
 			return rr
 		default:
@@ -285,8 +295,6 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 		case *fbproto.OpResponse:
 		case *fbproto.ErrorResponse:
 			rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(r))
-			st.conn.contextWatcher.Unwatch()
-			st.conn.unlock()
 			rr.closed = true
 			return rr
 		default:

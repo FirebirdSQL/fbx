@@ -196,6 +196,9 @@ func GetSelectDescribeInfoItems() []byte {
 		fbproto.Isc_info_sql_sub_type,
 		fbproto.Isc_info_sql_scale,
 		fbproto.Isc_info_sql_length,
+		fbproto.Isc_info_sql_null_ind,
+		fbproto.Isc_info_sql_field,
+		fbproto.Isc_info_sql_relation,
 		fbproto.Isc_info_sql_describe_end,
 	}
 }

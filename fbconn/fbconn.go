@@ -3,12 +3,14 @@ package fbconn
 import (
 	"bufio"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"math"
 	"net"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -938,6 +940,7 @@ type FieldDescription struct {
 	OriginalName      string
 	OriginalTableName string
 	Nullable          bool
+	ArrayData         *Array
 }
 
 func (fbConn *FbConn) convertRowDescription(src []fbproto.FieldDescriptor) []FieldDescription {
@@ -977,7 +980,6 @@ func (fbConn *FbConn) Prepare(ctx context.Context, sql string) (*Statement, erro
 
 // PrepareTx creates a prepared statement
 func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql string) (*Statement, error) {
-	var err error
 	if err := fbConn.lock(); err != nil {
 		return nil, err
 	}
@@ -992,6 +994,12 @@ func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 		fbConn.contextWatcher.Watch(ctx)
 		defer fbConn.contextWatcher.Unwatch()
 	}
+
+	return fbConn.internalPrepareTx(ctx, tx, sql)
+}
+
+func (fbConn *FbConn) internalPrepareTx(ctx context.Context, tx *FBTransaction, sql string) (*Statement, error) {
+	var err error
 
 	if err = fbConn.client.WriteMessage(&fbproto.OpAllocateStatement{}); err != nil {
 		fbConn.asyncClose()
@@ -1055,6 +1063,45 @@ func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 		Parameters:      fbConn.convertRowDescription(statementInfo.ParametersDescriptors),
 		StatementHandle: statementHandle,
 		StatementInfo:   &statementInfo,
+	}
+
+	// checking if arrays in fields and parameters and getting array metadata
+
+	var tables, fields []string
+
+	for _, field := range desc.Fields {
+		if field.Type == fbproto.SQL_TYPE_ARRAY {
+			if !slices.Contains(tables, field.OriginalTableName) {
+				tables = append(tables, field.OriginalTableName)
+			}
+			if !slices.Contains(fields, field.OriginalName) {
+				fields = append(fields, field.OriginalName)
+			}
+		}
+	}
+
+	for _, param := range desc.Parameters {
+		if param.Type == fbproto.SQL_TYPE_ARRAY {
+			if !slices.Contains(tables, param.OriginalTableName) {
+				tables = append(tables, param.OriginalTableName)
+			}
+			if !slices.Contains(fields, param.OriginalName) {
+				fields = append(fields, param.OriginalName)
+			}
+		}
+	}
+
+	if tables != nil {
+		arr, err := getArrayInfo(fbConn, ctx, tx, fields, tables)
+		if err != nil {
+			return nil, err
+		}
+		for i := range desc.Fields {
+			desc.Fields[i].ArrayData = arr[desc.Fields[i].OriginalTableName][desc.Fields[i].OriginalName]
+		}
+		for i := range desc.Parameters {
+			desc.Parameters[i].ArrayData = arr[desc.Parameters[i].OriginalTableName][desc.Parameters[i].OriginalName]
+		}
 	}
 
 	st := &Statement{
@@ -1311,6 +1358,212 @@ func (fbConn *FbConn) Disconnect(ctx context.Context) error {
 	return nil
 }
 
+func (fbConn *FbConn) getArrayMetadata(ctx context.Context, tx *FBTransaction, tableNames, fieldNames []string) ([]map[string][]byte, [][]byte, error) {
+
+	tables := ""
+	for _, table := range tableNames {
+		tables += "'" + table + "',"
+	}
+	fields := ""
+	for _, field := range fieldNames {
+		fields += "'" + field + "',"
+	}
+
+	queryString := fmt.Sprintf(
+		`SELECT 
+    Y.RDB$FIELD_TYPE, 
+    Y.RDB$FIELD_SCALE, 
+    Y.RDB$FIELD_LENGTH, 
+    CASE 
+        WHEN Y.RDB$FIELD_TYPE IN (%d, %d) THEN Y.RDB$CHARACTER_SET_ID 
+        ELSE Y.RDB$FIELD_SUB_TYPE 
+    END AS RDB$FIELD_SUB_TYPE,
+    X.RDB$FIELD_SOURCE, 
+    X.RDB$RELATION_NAME, 
+    X.RDB$FIELD_NAME
+	FROM RDB$RELATION_FIELDS X, RDB$FIELDS Y 
+		WHERE X.RDB$FIELD_SOURCE = Y.RDB$FIELD_NAME 
+  		AND X.RDB$RELATION_NAME IN (%s)
+  		AND X.RDB$FIELD_NAME IN (%s)`,
+		fbproto.Isc_blr_text,
+		fbproto.Isc_blr_varying,
+		tables[:len(tables)-1],
+		fields[:len(fields)-1],
+	)
+
+	st, err := fbConn.internalPrepareTx(ctx, tx, queryString)
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	rr := &ResultReader{
+		fbConn:           fbConn,
+		ctx:              ctx,
+		boundTransaction: tx,
+	}
+
+	result := st.internalExecTx(ctx, tx, rr, nil).readWithoutCommit()
+
+	if result.Err != nil {
+		return nil, nil, result.Err
+	}
+
+	metadataList := make([]map[string][]byte, 0)
+	sources := [][]byte{}
+	for _, row := range result.Rows {
+
+		metadata := make(map[string][]byte)
+
+		metadata["DATATYPE"] = row[0]
+		metadata["SCALE"] = row[1]
+		metadata["LENGTH"] = row[2]
+		if row[3] == nil {
+			metadata["SUBTYPE"] = make([]byte, 4)
+		} else {
+			metadata["SUBTYPE"] = row[3]
+		}
+		metadata["SOURCE"] = row[4]
+		sources = append(sources, row[4])
+
+		metadata["TABLE"] = row[5]
+		metadata["FIELD"] = row[6]
+
+		metadataList = append(metadataList, metadata)
+	}
+
+	return metadataList, sources, nil
+}
+
+func (fbConn *FbConn) getArrayDimensions(ctx context.Context, tx *FBTransaction, sources [][]byte) (map[string][][]int, error) {
+	sourcesString := ""
+	for _, source := range sources {
+		sourcesString += "'" + string(source) + "',"
+	}
+
+	queryString := fmt.Sprintf(
+		`SELECT 
+	X.RDB$LOWER_BOUND, 
+	X.RDB$UPPER_BOUND, 
+	X.RDB$FIELD_NAME
+	FROM RDB$FIELD_DIMENSIONS X 
+		WHERE X.RDB$FIELD_NAME IN (%s) 
+		ORDER BY X.RDB$FIELD_NAME, X.RDB$DIMENSION`,
+		sourcesString[:len(sourcesString)-1],
+	)
+
+	st, err := fbConn.internalPrepareTx(ctx, tx, queryString)
+
+	if err != nil {
+		return nil, err
+	}
+
+	rr := &ResultReader{
+		fbConn:           fbConn,
+		ctx:              ctx,
+		boundTransaction: tx,
+	}
+
+	result := st.internalExecTx(ctx, tx, rr, nil).readWithoutCommit()
+
+	if result.Err != nil {
+		return nil, result.Err
+	}
+
+	dimensions := map[string][][]int{}
+	for _, row := range result.Rows {
+		dimensions[string(row[2])] = append(
+			dimensions[string(row[2])], // val[2] - field name
+			[]int{
+				int(int32(binary.BigEndian.Uint32(row[0]))), // lower bound
+				int(int32(binary.BigEndian.Uint32(row[1]))), // upper bound
+			},
+		)
+	}
+
+	return dimensions, nil
+}
+
+func (fbConn *FbConn) getArray(ctx context.Context, arrayId int64, datatype uint32, length, l int, sdl []byte) ([]byte, error) {
+	tx, err := fbConn.ensureInternalTransaction(ctx, nil, false)
+
+	op_get_slice := fbproto.OpGetSlice{
+		TransactionHandle: tx.Handle,
+		ArrayHandle:       arrayId,
+		SliceLength:       length,
+		SliceDescriptor:   sdl,
+	}
+
+	if err = fbConn.client.WriteMessage(&op_get_slice); err != nil {
+		return nil, err
+	}
+
+	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+		return nil, err
+	}
+
+	msg, err := fbConn.client.ReadSlice(datatype, l)
+
+	if err != nil {
+		fbConn.asyncClose()
+		return nil, normalizeTimeoutError(ctx, err)
+	}
+
+	switch m := msg.(type) {
+	case *fbproto.OpSliceResponse:
+		return m.SliceData, nil
+	case *fbproto.OpResponse:
+		return nil, fmt.Errorf("array getting error: %s", m.Message)
+	case *fbproto.ErrorResponse:
+		fbConn.conn.Close()
+		return nil, ErrorResponseToFbError(m)
+	default:
+		return nil, fmt.Errorf("unexpected response type %T", msg)
+	}
+}
+
+func (fbConn *FbConn) putArray(ctx context.Context, array []byte, length int, sdl []byte) ([]byte, error) {
+	tx, err := fbConn.ensureInternalTransaction(ctx, nil, false)
+
+	op_put_slice := fbproto.OpPutSlice{
+		TransactionHandle: tx.Handle,
+		ArrayHandle:       0,
+		SliceLength:       length,
+		SliceDescriptor:   sdl,
+		Slice:             array,
+	}
+
+	if err = fbConn.client.WriteMessage(&op_put_slice); err != nil {
+		return nil, err
+	}
+
+	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+		return nil, err
+	}
+
+	msg, err := fbConn.client.ReadMessage()
+
+	if err != nil {
+		fbConn.asyncClose()
+		return nil, normalizeTimeoutError(ctx, err)
+	}
+
+	switch m := msg.(type) {
+	case *fbproto.OpResponse:
+		if m.BlobId == 0 {
+			return nil, fmt.Errorf("array putting error: %s", m.Message)
+		}
+		bufId := make([]byte, 8)
+		binary.BigEndian.PutUint64(bufId, uint64(m.BlobId))
+		return bufId, nil
+	case *fbproto.ErrorResponse:
+		fbConn.conn.Close()
+		return nil, ErrorResponseToFbError(m)
+	default:
+		return nil, fmt.Errorf("unexpected response type %T", msg)
+	}
+}
+
 // ResultReader is a reader for the result of a single query.
 type ResultReader struct {
 	fbConn *FbConn
@@ -1380,6 +1633,31 @@ func (rr *ResultReader) Read() *Result {
 	}
 
 	br.QueryStatus, br.Err = rr.Close()
+
+	return br
+}
+
+func (rr *ResultReader) readWithoutCommit() *Result {
+	br := &Result{}
+
+	for rr.NextRow() {
+		if br.FieldDescriptions == nil {
+			br.FieldDescriptions = make([]FieldDescription, len(rr.FieldDescriptions()))
+			copy(br.FieldDescriptions, rr.FieldDescriptions())
+		}
+
+		values := rr.Values()
+		row := make([][]byte, len(values))
+		for i := range row {
+			if values[i] != nil {
+				row[i] = make([]byte, len(values[i]))
+				copy(row[i], values[i])
+			}
+		}
+		br.Rows = append(br.Rows, row)
+	}
+
+	br.QueryStatus, br.Err = rr.closeWithoutCommit()
 
 	return br
 }
@@ -1512,7 +1790,10 @@ func (rr *ResultReader) bufferCurrentFetchRows() bool {
 	rr.clearBufferedFetch()
 	colCount := len(rr.fieldDescriptions)
 
+	var rowsBuf [][][]byte
+
 	for rr.fetchResp.MoreRows() {
+		rowBuf := [][]byte{}
 		row, msg, err := rr.fbConn.client.ReceiveSQLData(rr.statementDescription.StatementInfo.FieldDescriptors)
 		if err != nil {
 			rr.fbConn.asyncClose()
@@ -1529,18 +1810,16 @@ func (rr *ResultReader) bufferCurrentFetchRows() bool {
 			panic(fmt.Sprintf("wrong response message type %T instead expected OpFetchResponse or ErrorResponse", m))
 		}
 
-		rowStart := len(rr.bufferedCols)
 		for i := 0; i < colCount; i++ {
-			col := row.RowData[i]
-			if col == nil {
-				rr.bufferedCols = append(rr.bufferedCols, bufferedCol{length: bufferedColNullLength})
+			col := make([]byte, 0)
+			if row.RowData[i] == nil {
+				rowBuf = append(rowBuf, nil)
 				continue
 			}
-			start := len(rr.bufferedArena)
-			rr.bufferedArena = append(rr.bufferedArena, col...)
-			rr.bufferedCols = append(rr.bufferedCols, bufferedCol{start: start, length: len(col)})
+			col = append(col, row.RowData[i]...)
+			rowBuf = append(rowBuf, col)
 		}
-		rr.bufferedRows = append(rr.bufferedRows, bufferedRow{colStart: rowStart})
+		rowsBuf = append(rowsBuf, rowBuf)
 
 		if rr.fetchResp.EndOfCursor() {
 			rr.eoc = true
@@ -1548,6 +1827,28 @@ func (rr *ResultReader) bufferCurrentFetchRows() bool {
 	}
 	if rr.fetchResp.EndOfCursor() {
 		rr.eoc = true
+	}
+	for _, row := range rowsBuf {
+		rowStart := len(rr.bufferedCols)
+		for j, elem := range row {
+			if IsArrayType(uint32(rr.fieldDescriptions[j].Type)) {
+				array, err := getArray(rr.fbConn, rr.ctx, rr.fieldDescriptions[j].ArrayData, elem)
+				if err != nil {
+					rr.fbConn.asyncClose()
+					rr.concludeCommand(QueryStatus{}, err)
+					return false
+				}
+				elem = array
+			}
+			if elem == nil {
+				rr.bufferedCols = append(rr.bufferedCols, bufferedCol{length: bufferedColNullLength})
+				continue
+			}
+			start := len(rr.bufferedArena)
+			rr.bufferedArena = append(rr.bufferedArena, elem...)
+			rr.bufferedCols = append(rr.bufferedCols, bufferedCol{start: start, length: len(elem)})
+		}
+		rr.bufferedRows = append(rr.bufferedRows, bufferedRow{colStart: rowStart})
 	}
 	return true
 }
@@ -1620,6 +1921,21 @@ func (rr *ResultReader) Close() (QueryStatus, error) {
 				rr.err = err
 			}
 		}
+	}
+	return rr.queryStatus, rr.err
+}
+
+func (rr *ResultReader) closeWithoutCommit() (QueryStatus, error) {
+	if !rr.closed {
+		if rr.err == nil {
+			rr.drainCurrentFetch()
+			if rr.err == nil {
+				if err := rr.populateRowsAffected(); err != nil {
+					rr.err = err
+				}
+			}
+		}
+		rr.closed = true
 	}
 	return rr.queryStatus, rr.err
 }
@@ -2053,4 +2369,61 @@ func (h *CancelRequestContextWatcherHandler) HandleUnwatchAfterCancel() {
 	<-h.cancelFinishedChan
 
 	h.Conn.conn.SetDeadline(time.Time{})
+}
+
+func getArrayInfo(fbConn *FbConn, ctx context.Context, tx *FBTransaction, fields, tables []string) (map[string]map[string]*Array, error) {
+	metadataList, sources, err := fbConn.getArrayMetadata(ctx, tx, tables, fields)
+	if err != nil {
+		return nil, err
+	}
+	dimensions, err := fbConn.getArrayDimensions(ctx, tx, sources)
+	if err != nil {
+		return nil, err
+	}
+
+	arrays := map[string]map[string]*Array{}
+
+	for _, metadata := range metadataList {
+		arr := Array{}
+		arr.FieldName = strings.TrimSpace(string(metadata["FIELD"]))
+		arr.TableName = strings.TrimSpace(string(metadata["TABLE"]))
+		arr.Scale = int32(binary.BigEndian.Uint32(metadata["SCALE"]))
+		arr.BlrTypeId = binary.BigEndian.Uint32(metadata["DATATYPE"])
+		arr.TypeId, err = getSqlTypeFromBlr(binary.BigEndian.Uint32(metadata["DATATYPE"]))
+		if err != nil {
+			return nil, err
+		}
+		arr.SubType = int32(binary.BigEndian.Uint32(metadata["SUBTYPE"]))
+
+		arr.Length = binary.BigEndian.Uint32(metadata["LENGTH"])
+		if arr.TypeId == fbproto.SQL_TYPE_VARYING || arr.TypeId == fbproto.SQL_TYPE_TEXT {
+			name, err := fbproto.CharacterSetIdIntoName(arr.SubType)
+			if err != nil {
+				return nil, err
+			}
+			encoding, err := fbproto.NewEncoding(name)
+			if err != nil {
+				return nil, err
+			}
+			if encoding.MaxBytesPerChar < fbConn.Encoding.MaxBytesPerChar {
+				arr.Length = arr.Length / encoding.MaxBytesPerChar * fbConn.Encoding.MaxBytesPerChar // to read an array of text data when connected in any encoding
+				arr.SubType = fbConn.Encoding.CharacterSetId
+			}
+		}
+
+		if arrays[arr.TableName] == nil {
+			arrays[arr.TableName] = map[string]*Array{}
+		}
+		for _, dimension := range dimensions[string(metadata["SOURCE"])] {
+			arr.Dimensions = append(arr.Dimensions,
+				map[string]int{
+					"Lower": dimension[0],
+					"Upper": dimension[1],
+				},
+			)
+			arr.CurrentDimensions = arr.Dimensions
+		}
+		arrays[arr.TableName][arr.FieldName] = &arr
+	}
+	return arrays, nil
 }
