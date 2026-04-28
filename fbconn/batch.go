@@ -2,6 +2,7 @@ package fbconn
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"rdb.red-soft.ru/fbx/fbproto"
@@ -138,13 +139,7 @@ func (b *Batch) createOnWire(ctx context.Context, parameterBuffer []byte) error 
 			b.st.conn.asyncClose()
 			return err
 		}
-		if err := b.receiveGenericResponse(ctx); err != nil {
-			return err
-		}
-		if err := b.receiveGenericResponse(ctx); err != nil {
-			return err
-		}
-		return nil
+		return b.receiveTwoGenericResponses(ctx)
 	})
 }
 
@@ -180,13 +175,24 @@ func (b *Batch) Send(ctx context.Context, rows [][]byte) error {
 			b.st.conn.asyncClose()
 			return err
 		}
+		if err := b.writeBatchSyncMessage(); err != nil {
+			b.st.conn.asyncClose()
+			return err
+		}
 
 		if err := b.st.conn.flushWithPotentialWriteReadDeadlock(); err != nil {
 			b.st.conn.asyncClose()
 			return err
 		}
-		return nil
+		return b.receiveTwoGenericResponses(ctx)
 	})
+}
+
+func (b *Batch) writeBatchSyncMessage() error {
+	if b.st.conn.protocolVersion >= fbproto.PROTOCOL_VERSION17 {
+		return b.st.conn.client.WriteMessage(&fbproto.OpBatchSync{})
+	}
+	return b.st.conn.client.WriteMessage(&fbproto.OpPing{})
 }
 
 func (b *Batch) Execute(ctx context.Context, tx *FBTransaction) (*BatchCompletion, error) {
@@ -263,16 +269,12 @@ func (b *Batch) release(ctx context.Context, op int) error {
 			b.st.conn.asyncClose()
 			return err
 		}
-		if err := b.receiveGenericResponse(ctx); err != nil {
-			return err
-		}
-		if err := b.receiveGenericResponse(ctx); err != nil {
-			return err
-		}
-		return nil
+		return b.receiveTwoGenericResponses(ctx)
 	})
 
-	b.markClosed()
+	if err == nil || b.st.conn.IsClosed() {
+		b.markClosed()
+	}
 	return err
 }
 
@@ -290,6 +292,12 @@ func (b *Batch) receiveGenericResponse(ctx context.Context) error {
 	default:
 		return fmt.Errorf("received unexpected batch sync response %T", msg)
 	}
+}
+
+func (b *Batch) receiveTwoGenericResponses(ctx context.Context) error {
+	firstErr := b.receiveGenericResponse(ctx)
+	secondErr := b.receiveGenericResponse(ctx)
+	return errors.Join(firstErr, secondErr)
 }
 
 func (b *Batch) withConn(ctx context.Context, fn func() error) error {

@@ -583,8 +583,36 @@ func TestPrepareBatchRejectsResultSetStatements(t *testing.T) {
 		_, err = conn.PrepareBatch(ctx, "insert into "+table+" (id, note) values (?, ?) returning id")
 		require.ErrorContains(t, err, "batch supports only insert, update, and delete statements without result sets")
 
+		_, err = conn.PrepareBatch(ctx, "insert into "+table+" (id, note) values (1, 'no params')")
+		require.ErrorContains(t, err, "statement used in batch must have parameters")
+
 		_, err = conn.Prepare(ctx, badBatchName, "batch select cast(? as integer) from rdb$database")
 		require.ErrorContains(t, err, "batch supports only insert, update, and delete statements without result sets")
+
+		_, err = conn.Prepare(ctx, badBatchName+"_noparams", "batch update "+table+" set note = 'no params' where id = 1")
+		require.ErrorContains(t, err, "statement used in batch must have parameters")
+
+		ensureConnValid(t, conn)
+	})
+}
+
+func TestPrepareBatchRejectsBlobParameters(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		skipIfBatchUnsupported(ctx, t, conn)
+		table := batchTestTableName(t, "fbx_bblob")
+		badBatchName := batchTestTableName(t, "bad_blob_batch")
+
+		_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, payload blob sub_type 0)")
+		require.NoError(t, err)
+
+		_, err = conn.PrepareBatch(ctx, "insert into "+table+" (id, payload) values (?, ?)")
+		require.ErrorContains(t, err, "batch does not support blob parameters")
+
+		_, err = conn.Prepare(ctx, badBatchName, "batch insert into "+table+" (id, payload) values (?, ?)")
+		require.ErrorContains(t, err, "batch does not support blob parameters")
 
 		ensureConnValid(t, conn)
 	})

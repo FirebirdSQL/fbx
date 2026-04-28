@@ -610,6 +610,44 @@ func TestNamedBatchReuseUpdateDelete(t *testing.T) {
 	}, loadBatchDMLRows(t, ctx, conn, table))
 }
 
+func TestNamedBatchExecConsumesOptionsAndQueryRewriter(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	conn := mustConnectString(t, defaultConnTestRunner.CreateConfig(ctx, t).ConnString())
+	defer closeConn(t, conn)
+	skipIfBatchUnsupported(ctx, t, conn)
+
+	table := batchTestTableName(t, "fbx_nb_options")
+	name := batchTestTableName(t, "batch_options")
+
+	_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(50))")
+	require.NoError(t, err)
+
+	_, err = conn.Prepare(ctx, name, "batch insert into "+table+" (id, note) values (?, ?)")
+	require.NoError(t, err)
+	defer func() { require.NoError(t, conn.Deallocate(ctx, name)) }()
+
+	_, err = conn.Exec(ctx, name, fbx.QueryExecModeExec, 1, "one")
+	require.NoError(t, err)
+
+	qr := testQueryRewriter{
+		sql:  name,
+		args: []any{2, "two"},
+	}
+	_, err = conn.Exec(ctx, "rewritten_batch_name", &qr)
+	require.NoError(t, err)
+
+	result, err := conn.ExecBatch(ctx, name)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, result.Affected)
+
+	require.Equal(t, []batchDMLRow{
+		{ID: 1, Note: "one"},
+		{ID: 2, Note: "two"},
+	}, loadBatchDMLRows(t, ctx, conn, table))
+}
+
 func TestPreparedBatchFlushUpdateDelete(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
@@ -689,6 +727,30 @@ func TestPreparedBatchFlushUpdateDelete(t *testing.T) {
 	}, loadBatchDMLRows(t, ctx, checkConn, table))
 }
 
+func TestPreparedBatchFlushCloseKeepsConnectionUsable(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	conn := mustConnectString(t, defaultConnTestRunner.CreateConfig(ctx, t).ConnString())
+	defer closeConn(t, conn)
+	skipIfBatchUnsupported(ctx, t, conn)
+
+	table := batchTestTableName(t, "fbx_pb_flush_close")
+
+	_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(50))")
+	require.NoError(t, err)
+
+	pb, err := conn.PrepareBatch(ctx, "insert into "+table+" (id, note) values (?, ?)")
+	require.NoError(t, err)
+
+	require.NoError(t, pb.Add(1, "flushed"))
+	require.NoError(t, pb.Flush(ctx))
+	require.NoError(t, pb.Close(ctx))
+
+	ensureConnValid(t, conn)
+	require.Empty(t, loadBatchDMLRows(t, ctx, conn, table))
+}
+
 func TestPreparedBatchPartialFailureUpdateDelete(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
@@ -722,6 +784,8 @@ func TestPreparedBatchPartialFailureUpdateDelete(t *testing.T) {
 		{ID: 4, Note: "four"},
 	}, loadBatchDMLRows(t, ctx, conn, updateTable))
 
+	_, err = conn.Exec(ctx, "recreate table "+deleteChildTable+" (id integer not null primary key, parent_id integer not null)")
+	require.NoError(t, err)
 	_, err = conn.Exec(ctx, "recreate table "+deleteParentTable+" (id integer not null primary key)")
 	require.NoError(t, err)
 	_, err = conn.Exec(ctx, "recreate table "+deleteChildTable+" (id integer not null primary key, parent_id integer not null references "+deleteParentTable+"(id))")

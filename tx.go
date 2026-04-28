@@ -182,17 +182,14 @@ func (tx *dbTx) Commit(ctx context.Context) error {
 		return ErrTxClosed
 	}
 
-	if err := tx.conn.closePreparedBatchesForTx(ctx, tx); err != nil {
-		return err
-	}
-
+	cleanupErr := tx.conn.closePreparedBatchesForTx(ctx, tx)
 	err := tx.tx.Commit(ctx)
 	tx.closed = true
 	if err != nil {
-		return err
+		return errors.Join(cleanupErr, err)
 	}
 
-	return nil
+	return cleanupErr
 }
 
 // Rollback rolls back the transaction. Rollback will return ErrTxClosed if the
@@ -204,19 +201,16 @@ func (tx *dbTx) Rollback(ctx context.Context) error {
 		return ErrTxClosed
 	}
 
-	if err := tx.conn.closePreparedBatchesForTx(ctx, tx); err != nil {
-		return err
-	}
-
+	cleanupErr := tx.conn.closePreparedBatchesForTx(ctx, tx)
 	err := tx.tx.Rollback(ctx)
 	tx.closed = true
 	if err != nil {
 		// A rollback failure leaves the connection in an undefined state
 		tx.conn.die()
-		return err
+		return errors.Join(cleanupErr, err)
 	}
 
-	return nil
+	return cleanupErr
 }
 
 // Exec delegates to the underlying *Conn

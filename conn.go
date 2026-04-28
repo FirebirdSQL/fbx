@@ -313,20 +313,17 @@ func (c *Conn) PrepareBatchWithOptions(ctx context.Context, sql string, opts Bat
 }
 
 func (c *Conn) prepareBatchTx(ctx context.Context, tx *dbTx, sql string, opts BatchOptions) (*PreparedBatch, error) {
+	releaseInternalTx := c.shouldReleaseBatchInternalTx(tx)
 	st, err := c.internalPrepare(ctx, tx, "", sql)
 	if err != nil {
-		return nil, err
+		return nil, errors.Join(err, c.rollbackBatchInternalTx(ctx, releaseInternalTx))
 	}
 	if err := validateBatchStatement(st.Description); err != nil {
 		var joinedErr error = err
 		if deallocErr := st.Deallocate(ctx); deallocErr != nil {
 			joinedErr = errors.Join(joinedErr, deallocErr)
 		}
-		if tx == nil {
-			if rollbackErr := c.fbConn.Rollback(ctx); rollbackErr != nil && !errors.Is(rollbackErr, fbconn.ErrTransactionClosed) {
-				joinedErr = errors.Join(joinedErr, rollbackErr)
-			}
-		}
+		joinedErr = errors.Join(joinedErr, c.rollbackBatchInternalTx(ctx, releaseInternalTx))
 		return nil, joinedErr
 	}
 
@@ -344,7 +341,7 @@ func (c *Conn) prepareBatchTx(ctx context.Context, tx *dbTx, sql string, opts Ba
 		return pb, nil
 	}
 
-	if err := st.Deallocate(ctx); err != nil {
+	if err := errors.Join(st.Deallocate(ctx), c.rollbackBatchInternalTx(ctx, releaseInternalTx)); err != nil {
 		return nil, err
 	}
 
@@ -567,13 +564,6 @@ func (c *Conn) execTx(ctx context.Context, tx *dbTx, sql string, arguments ...an
 }
 
 func (c *Conn) exec(ctx context.Context, tx *dbTx, sql string, arguments ...any) (commandTag fbconn.QueryStatus, err error) {
-	if pb := c.preparedBatches[sql]; pb != nil {
-		if err := c.ensurePreparedBatchOwner(tx, sql, pb); err != nil {
-			return fbconn.QueryStatus{}, err
-		}
-		return c.execPreparedBatch(ctx, pb, arguments)
-	}
-
 	mode := c.config.DefaultQueryExecMode
 	var queryRewriter QueryRewriter
 
@@ -596,6 +586,13 @@ optionLoop:
 		if err != nil {
 			return fbconn.QueryStatus{}, fmt.Errorf("rewrite query failed: %w", err)
 		}
+	}
+
+	if pb := c.preparedBatches[sql]; pb != nil {
+		if err := c.ensurePreparedBatchOwner(tx, sql, pb); err != nil {
+			return fbconn.QueryStatus{}, err
+		}
+		return c.execPreparedBatch(ctx, pb, arguments)
 	}
 
 	defer func() {
@@ -718,16 +715,17 @@ func (c *Conn) ensurePreparedBatchOwner(tx *dbTx, name string, pb *PreparedBatch
 }
 
 func (c *Conn) closePreparedBatchesForTx(ctx context.Context, tx *dbTx) error {
+	var joinedErr error
 	for name, pb := range c.preparedBatches {
 		if pb == nil || pb.tx != tx {
 			continue
 		}
 		if err := pb.Close(ctx); err != nil {
-			return err
+			joinedErr = errors.Join(joinedErr, err)
 		}
 		delete(c.preparedBatches, name)
 	}
-	return nil
+	return joinedErr
 }
 
 func (c *Conn) execSQLParams(ctx context.Context, tx *dbTx, sql string, args []any) (fbconn.QueryStatus, error) {

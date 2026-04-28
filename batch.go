@@ -32,6 +32,7 @@ package fbx
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -65,9 +66,10 @@ type PreparedBatch struct {
 	sd *fbconn.StatementDescription
 	st *fbconn.Statement
 
-	activeSt        *fbconn.Statement
-	releaseActiveSt bool
-	lb              *fbconn.Batch
+	activeSt                *fbconn.Statement
+	releaseActiveSt         bool
+	releaseActiveInternalTx bool
+	lb                      *fbconn.Batch
 
 	encodedRows    [][]byte
 	pendingBytes   int
@@ -102,6 +104,14 @@ func isBatchPrepareSQL(sql string) (normalized string, ok bool) {
 func validateBatchStatement(sd *fbconn.StatementDescription) error {
 	if sd == nil {
 		return fmt.Errorf("prepared batch metadata is not initialized")
+	}
+	if len(sd.Parameters) == 0 {
+		return fmt.Errorf("statement used in batch must have parameters")
+	}
+	for i, param := range sd.Parameters {
+		if param.IsBlob() {
+			return fmt.Errorf("batch does not support blob parameters (arg %d)", i)
+		}
 	}
 	if sd.HaveCursorResult() || sd.HaveSingletonResult() {
 		return fmt.Errorf("batch supports only insert, update, and delete statements without result sets")
@@ -198,8 +208,7 @@ func (b *PreparedBatch) flushWithSource(ctx context.Context, source string) erro
 	}
 
 	if err := b.lb.Send(ctx, b.encodedRows); err != nil {
-		_ = b.releaseWireResources(ctx)
-		return err
+		return errors.Join(err, b.releaseWireResources(ctx))
 	}
 	b.Reset()
 	return nil
@@ -227,21 +236,23 @@ func (b *PreparedBatch) Exec(ctx context.Context) (BatchResult, error) {
 	completion, err := b.lb.Execute(ctx, fbTx)
 	closeErr := b.lb.Close(ctx)
 	b.lb = nil
-	if err != nil {
-		return BatchResult{}, err
-	}
 	releaseErr := b.releaseBatchStatement(ctx)
-	result := BatchResult{Affected: completion.Affected()}
-	if closeErr != nil {
-		return result, closeErr
+	return finalizePreparedBatchExec(completion, err, closeErr, releaseErr)
+}
+
+func (c *Conn) shouldReleaseBatchInternalTx(tx *dbTx) bool {
+	return tx == nil && c.config.Autocommit && !c.fbConn.ActiveTx()
+}
+
+func (c *Conn) rollbackBatchInternalTx(ctx context.Context, release bool) error {
+	if !release {
+		return nil
 	}
-	if releaseErr != nil {
-		return result, releaseErr
+	err := c.fbConn.Rollback(ctx)
+	if errors.Is(err, fbconn.ErrTransactionClosed) {
+		return nil
 	}
-	if completion.HasErrors() {
-		return result, batchCompletionError(completion)
-	}
-	return result, nil
+	return err
 }
 
 func (b *PreparedBatch) batchStatement(ctx context.Context) (*fbconn.Statement, error) {
@@ -261,40 +272,70 @@ func (b *PreparedBatch) batchStatement(ctx context.Context) (*fbconn.Statement, 
 		return b.activeSt, nil
 	}
 
+	releaseInternalTx := b.conn.shouldReleaseBatchInternalTx(b.tx)
 	st, err := b.conn.internalPrepare(ctx, nil, "", b.sql)
 	if err != nil {
-		return nil, err
+		return nil, errors.Join(err, b.conn.rollbackBatchInternalTx(ctx, releaseInternalTx))
 	}
 	b.activeSt = st
 	b.releaseActiveSt = true
+	b.releaseActiveInternalTx = releaseInternalTx
 	return st, nil
 }
 
 func (b *PreparedBatch) releaseBatchStatement(ctx context.Context) error {
-	if b.activeSt == nil {
-		return nil
+	var err error
+	if b.activeSt != nil && b.releaseActiveSt {
+		if deallocErr := b.activeSt.Deallocate(ctx); deallocErr != nil {
+			err = errors.Join(err, deallocErr)
+			if b.conn == nil || b.conn.IsClosed() {
+				b.activeSt = nil
+				b.releaseActiveSt = false
+			}
+		} else {
+			b.activeSt = nil
+			b.releaseActiveSt = false
+		}
+	} else if b.activeSt != nil {
+		b.activeSt = nil
 	}
-	st := b.activeSt
-	release := b.releaseActiveSt
-	b.activeSt = nil
-	b.releaseActiveSt = false
-	if release {
-		return st.Deallocate(ctx)
+
+	if b.releaseActiveInternalTx {
+		if rollbackErr := b.conn.rollbackBatchInternalTx(ctx, true); rollbackErr != nil {
+			err = errors.Join(err, rollbackErr)
+			if b.conn == nil || b.conn.IsClosed() {
+				b.releaseActiveInternalTx = false
+			}
+		} else {
+			b.releaseActiveInternalTx = false
+		}
 	}
-	return nil
+
+	return err
 }
 
 func (b *PreparedBatch) releaseWireResources(ctx context.Context) error {
 	var batchErr error
 	if b.lb != nil {
 		batchErr = b.lb.Close(ctx)
+		if batchErr != nil && b.conn != nil && !b.conn.IsClosed() {
+			return batchErr
+		}
 		b.lb = nil
 	}
 	stErr := b.releaseBatchStatement(ctx)
-	if batchErr != nil {
-		return batchErr
+	return errors.Join(batchErr, stErr)
+}
+
+func (b *PreparedBatch) releaseStoredStatement(ctx context.Context) error {
+	if b.st == nil || b.activeSt == b.st {
+		return nil
 	}
-	return stErr
+	err := b.st.Deallocate(ctx)
+	if err == nil || b.conn == nil || b.conn.IsClosed() {
+		b.st = nil
+	}
+	return err
 }
 
 // Reset clears queued rows that have not been sent yet.
@@ -302,6 +343,7 @@ func (b *PreparedBatch) Reset() {
 	if b == nil {
 		return
 	}
+	clear(b.encodedRows)
 	b.encodedRows = b.encodedRows[:0]
 	b.pendingBytes = 0
 }
@@ -311,20 +353,16 @@ func (b *PreparedBatch) Close(ctx context.Context) error {
 	if b == nil || b.closed {
 		return nil
 	}
-	b.closed = true
 	b.Reset()
 
-	wireErr := b.releaseWireResources(ctx)
-
-	var stErr error
-	if b.st != nil && b.activeSt != b.st {
-		stErr = b.st.Deallocate(ctx)
-		b.st = nil
+	err := b.releaseWireResources(ctx)
+	if err == nil {
+		err = errors.Join(err, b.releaseStoredStatement(ctx))
 	}
-	if wireErr != nil {
-		return wireErr
+	if err == nil || b.conn == nil || b.conn.IsClosed() {
+		b.closed = true
 	}
-	return stErr
+	return err
 }
 
 func batchCompletionError(completion *fbconn.BatchCompletion) error {
@@ -336,4 +374,17 @@ func batchCompletionError(completion *fbconn.BatchCompletion) error {
 		return fmt.Errorf("batch failed at row %d: %w", first.Row, first.Err)
 	}
 	return fmt.Errorf("batch failed at row %d", first.Row)
+}
+
+func finalizePreparedBatchExec(completion *fbconn.BatchCompletion, execErr, closeErr, releaseErr error) (BatchResult, error) {
+	if execErr != nil {
+		return BatchResult{}, errors.Join(execErr, closeErr, releaseErr)
+	}
+
+	result := BatchResult{}
+	if completion != nil {
+		result.Affected = completion.Affected()
+	}
+
+	return result, errors.Join(batchCompletionError(completion), closeErr, releaseErr)
 }
