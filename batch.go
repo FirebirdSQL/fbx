@@ -234,10 +234,8 @@ func (b *PreparedBatch) Exec(ctx context.Context) (BatchResult, error) {
 		fbTx = b.tx.tx
 	}
 	completion, err := b.lb.Execute(ctx, fbTx)
-	closeErr := b.lb.Close(ctx)
-	b.lb = nil
-	releaseErr := b.releaseBatchStatement(ctx)
-	return finalizePreparedBatchExec(completion, err, closeErr, releaseErr)
+	releaseErr := b.releaseWireResources(ctx)
+	return finalizePreparedBatchExec(completion, err, nil, releaseErr)
 }
 
 func (c *Conn) shouldReleaseBatchInternalTx(tx *dbTx) bool {

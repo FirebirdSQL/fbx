@@ -722,6 +722,11 @@ func (c *Conn) closePreparedBatchesForTx(ctx context.Context, tx *dbTx) error {
 		}
 		if err := pb.Close(ctx); err != nil {
 			joinedErr = errors.Join(joinedErr, err)
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				continue
+			}
+			delete(c.preparedBatches, name)
+			continue
 		}
 		delete(c.preparedBatches, name)
 	}
