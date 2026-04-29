@@ -50,10 +50,65 @@ type BatchOptions struct {
 	// BufferBytes requests the server-side batch buffer size in bytes.
 	// Zero uses the server default.
 	BufferBytes int
+
+	// ContinueOnError requests Firebird multi-error mode. When enabled, the
+	// server continues executing rows after per-row errors and reports all row
+	// errors it can return in the batch completion response.
+	ContinueOnError bool
+
+	// DetailedErrors requests the number of detailed per-row errors returned by
+	// the server. Zero keeps the driver default.
+	DetailedErrors int
 }
 
 type BatchResult struct {
 	Affected int64
+}
+
+// BatchError describes a single row error returned by batch execution.
+type BatchError struct {
+	Row int
+	Err error
+}
+
+// BatchExecutionError reports one or more row errors returned by batch execution.
+type BatchExecutionError struct {
+	Errors []BatchError
+}
+
+func (e *BatchExecutionError) Error() string {
+	if e == nil || len(e.Errors) == 0 {
+		return "batch failed"
+	}
+
+	first := e.Errors[0]
+	msg := fmt.Sprintf("batch failed at row %d", first.Row)
+	if first.Err != nil {
+		msg = fmt.Sprintf("%s: %v", msg, first.Err)
+	}
+	if len(e.Errors) > 1 {
+		remaining := len(e.Errors) - 1
+		if remaining == 1 {
+			msg = fmt.Sprintf("%s; 1 more batch error", msg)
+		} else {
+			msg = fmt.Sprintf("%s; %d more batch errors", msg, remaining)
+		}
+	}
+	return msg
+}
+
+func (e *BatchExecutionError) Unwrap() []error {
+	if e == nil || len(e.Errors) == 0 {
+		return nil
+	}
+
+	errs := make([]error, 0, len(e.Errors))
+	for _, batchErr := range e.Errors {
+		if batchErr.Err != nil {
+			errs = append(errs, batchErr.Err)
+		}
+	}
+	return errs
 }
 
 type PreparedBatch struct {
@@ -137,6 +192,13 @@ func normalizeBatchOptions(opts BatchOptions) fbconn.BatchConfig {
 	cfg := defaultPreparedBatchConfig()
 	if opts.BufferBytes > 0 {
 		cfg.BufferBytes = opts.BufferBytes
+	}
+	if opts.ContinueOnError {
+		cfg.MultiError = true
+		cfg.DetailedErrs = -1
+	}
+	if opts.DetailedErrors > 0 {
+		cfg.DetailedErrs = opts.DetailedErrors
 	}
 	return cfg
 }
@@ -367,11 +429,17 @@ func batchCompletionError(completion *fbconn.BatchCompletion) error {
 	if completion == nil || len(completion.Errors) == 0 {
 		return nil
 	}
-	first := completion.Errors[0]
-	if first.Err != nil {
-		return fmt.Errorf("batch failed at row %d: %w", first.Row, first.Err)
+
+	batchErr := &BatchExecutionError{
+		Errors: make([]BatchError, len(completion.Errors)),
 	}
-	return fmt.Errorf("batch failed at row %d", first.Row)
+	for i, completionErr := range completion.Errors {
+		batchErr.Errors[i] = BatchError{
+			Row: completionErr.Row,
+			Err: completionErr.Err,
+		}
+	}
+	return batchErr
 }
 
 func finalizePreparedBatchExec(completion *fbconn.BatchCompletion, execErr, closeErr, releaseErr error) (BatchResult, error) {

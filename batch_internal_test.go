@@ -49,6 +49,7 @@ func TestPrepareBatchWithOptionsPropagatesConfig(t *testing.T) {
 	pbDefault, err := conn.PrepareBatch(ctx, "update "+table+" set note = ? where id = ?")
 	require.NoError(t, err)
 	require.Equal(t, -1, pbDefault.batchCfg.BufferBytes)
+	require.False(t, pbDefault.batchCfg.MultiError)
 	require.True(t, pbDefault.batchCfg.RecordCounts)
 	require.Equal(t, 1, pbDefault.batchCfg.DetailedErrs)
 	require.NoError(t, pbDefault.Close(ctx))
@@ -58,9 +59,29 @@ func TestPrepareBatchWithOptionsPropagatesConfig(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, 2048, pbConn.batchCfg.BufferBytes)
+	require.False(t, pbConn.batchCfg.MultiError)
 	require.True(t, pbConn.batchCfg.RecordCounts)
 	require.Equal(t, 1, pbConn.batchCfg.DetailedErrs)
 	require.NoError(t, pbConn.Close(ctx))
+
+	pbMulti, err := conn.PrepareBatchWithOptions(ctx, "update "+table+" set note = ? where id = ?", BatchOptions{
+		ContinueOnError: true,
+	})
+	require.NoError(t, err)
+	require.True(t, pbMulti.batchCfg.MultiError)
+	require.True(t, pbMulti.batchCfg.RecordCounts)
+	require.Equal(t, -1, pbMulti.batchCfg.DetailedErrs)
+	require.NoError(t, pbMulti.Close(ctx))
+
+	pbMultiDetailed, err := conn.PrepareBatchWithOptions(ctx, "update "+table+" set note = ? where id = ?", BatchOptions{
+		ContinueOnError: true,
+		DetailedErrors:  2,
+	})
+	require.NoError(t, err)
+	require.True(t, pbMultiDetailed.batchCfg.MultiError)
+	require.True(t, pbMultiDetailed.batchCfg.RecordCounts)
+	require.Equal(t, 2, pbMultiDetailed.batchCfg.DetailedErrs)
+	require.NoError(t, pbMultiDetailed.Close(ctx))
 
 	txi, err := conn.Begin(ctx)
 	require.NoError(t, err)
@@ -423,6 +444,37 @@ func TestFinalizePreparedBatchExecJoinsErrors(t *testing.T) {
 		require.ErrorContains(t, err, "duplicate key")
 		require.ErrorContains(t, err, "close failed")
 		require.ErrorContains(t, err, "release failed")
+
+		var batchErr *BatchExecutionError
+		require.ErrorAs(t, err, &batchErr)
+		require.Equal(t, []BatchError{{Row: 2, Err: completion.Errors[0].Err}}, batchErr.Errors)
+	})
+
+	t.Run("multiple batch row errors are exposed", func(t *testing.T) {
+		completion := &fbconn.BatchCompletion{
+			UpdateCounts: []int64{1, -1, 1, -1},
+			Errors: []fbconn.BatchError{
+				{Row: 1, Err: errors.New("first duplicate")},
+				{Row: 3, Err: errors.New("second duplicate")},
+				{Row: 5},
+			},
+		}
+
+		result, err := finalizePreparedBatchExec(completion, nil, nil, nil)
+
+		require.EqualValues(t, 2, result.Affected)
+		require.ErrorContains(t, err, "batch failed at row 1")
+		require.ErrorContains(t, err, "2 more batch errors")
+
+		var batchErr *BatchExecutionError
+		require.ErrorAs(t, err, &batchErr)
+		require.Len(t, batchErr.Errors, 3)
+		require.Equal(t, 1, batchErr.Errors[0].Row)
+		require.EqualError(t, batchErr.Errors[0].Err, "first duplicate")
+		require.Equal(t, 3, batchErr.Errors[1].Row)
+		require.EqualError(t, batchErr.Errors[1].Err, "second duplicate")
+		require.Equal(t, 5, batchErr.Errors[2].Row)
+		require.Nil(t, batchErr.Errors[2].Err)
 	})
 }
 

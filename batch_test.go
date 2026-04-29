@@ -821,6 +821,51 @@ func TestPreparedBatchPartialFailureUpdateDelete(t *testing.T) {
 	require.Equal(t, []int32{2}, remainingIDs)
 }
 
+func TestPreparedBatchContinueOnErrorReportsAllRowErrors(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	conn := mustConnectString(t, defaultConnTestRunner.CreateConfig(ctx, t).ConnString())
+	defer closeConn(t, conn)
+	skipIfBatchUnsupported(ctx, t, conn)
+
+	table := batchTestTableName(t, "fbx_pb_multi_err")
+
+	_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(50) unique)")
+	require.NoError(t, err)
+	seedBatchDMLRows(t, ctx, conn, table)
+
+	pb, err := conn.PrepareBatchWithOptions(ctx, "update "+table+" set note = ? where id = ?", fbx.BatchOptions{
+		ContinueOnError: true,
+	})
+	require.NoError(t, err)
+	defer pb.Close(ctx)
+
+	require.NoError(t, pb.Add("same-note", 1))
+	require.NoError(t, pb.Add("same-note", 2))
+	require.NoError(t, pb.Add("third-note", 3))
+	require.NoError(t, pb.Add("third-note", 4))
+
+	result, err := pb.Exec(ctx)
+	require.Error(t, err)
+	require.EqualValues(t, 2, result.Affected)
+
+	var batchErr *fbx.BatchExecutionError
+	require.ErrorAs(t, err, &batchErr)
+	require.Len(t, batchErr.Errors, 2)
+	require.Equal(t, 1, batchErr.Errors[0].Row)
+	require.Error(t, batchErr.Errors[0].Err)
+	require.Equal(t, 3, batchErr.Errors[1].Row)
+	require.Error(t, batchErr.Errors[1].Err)
+
+	require.Equal(t, []batchDMLRow{
+		{ID: 1, Note: "same-note"},
+		{ID: 2, Note: "two"},
+		{ID: 3, Note: "third-note"},
+		{ID: 4, Note: "four"},
+	}, loadBatchDMLRows(t, ctx, conn, table))
+}
+
 func TestTxNestedPrepareBatchCommitAndRollback(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
