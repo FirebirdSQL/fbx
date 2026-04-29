@@ -19,8 +19,6 @@ func (tx *FBTransaction) Commit(ctx context.Context) error {
 	if tx.Closed {
 		return ErrTransactionClosed
 	}
-	tx.Closed = true
-	defer tx.Connection.clearInlineBlobCache(tx.Handle)
 	var err error
 
 	if err = tx.Connection.lock(); err != nil {
@@ -38,6 +36,8 @@ func (tx *FBTransaction) Commit(ctx context.Context) error {
 		defer tx.Connection.contextWatcher.Unwatch()
 	}
 
+	tx.Closed = true
+	defer tx.Connection.clearInlineBlobCache(tx.Handle)
 	delete(tx.Connection.activeTransactions, tx)
 
 	opCommit := fbproto.OpCommit{
@@ -71,8 +71,6 @@ func (tx *FBTransaction) Rollback(ctx context.Context) error {
 	if tx.Closed {
 		return ErrTransactionClosed
 	}
-	tx.Closed = true
-	defer tx.Connection.clearInlineBlobCache(tx.Handle)
 	var err error
 
 	if err = tx.Connection.lock(); err != nil {
@@ -90,6 +88,8 @@ func (tx *FBTransaction) Rollback(ctx context.Context) error {
 		defer tx.Connection.contextWatcher.Unwatch()
 	}
 
+	tx.Closed = true
+	defer tx.Connection.clearInlineBlobCache(tx.Handle)
 	delete(tx.Connection.activeTransactions, tx)
 
 	opRollback := fbproto.OpRollback{

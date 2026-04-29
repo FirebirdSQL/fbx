@@ -350,12 +350,10 @@ func (st *Statement) internalClose(ctx context.Context, closeOption int) error {
 		tx = st.transaction
 	}
 
-	if closeOption == fbproto.DSQL_close && (!st.cursorOpened || tx.Closed) {
+	if closeOption == fbproto.DSQL_close && (!st.cursorOpened || (tx != nil && tx.Closed)) {
 		st.cursorOpened = false
 		return nil
 	}
-
-	st.closed = true
 
 	var err error
 	if err = st.conn.lock(); err != nil {
@@ -373,21 +371,24 @@ func (st *Statement) internalClose(ctx context.Context, closeOption int) error {
 		defer st.conn.contextWatcher.Unwatch()
 	}
 
-	st.cursorOpened = false
-	st.closed = closeOption == fbproto.DSQL_drop
-
 	if err = st.conn.client.WriteMessage(&fbproto.OpFreeStatement{StatementHandle: st.Description.StatementHandle, Option: closeOption}); err != nil {
 		st.conn.asyncClose()
+		st.cursorOpened = false
+		st.closed = closeOption == fbproto.DSQL_drop
 		return err
 	}
 
 	if closeOption == fbproto.DSQL_drop {
 		if err = st.conn.flushWithPotentialWriteReadDeadlock(); err != nil {
 			st.conn.asyncClose()
+			st.cursorOpened = false
+			st.closed = true
 			return err
 		}
 	}
 
+	st.cursorOpened = false
+	st.closed = closeOption == fbproto.DSQL_drop
 	return nil
 }
 

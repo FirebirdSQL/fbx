@@ -51,3 +51,51 @@ func TestBatchCloseCanceledContextKeepsBatchOpen(t *testing.T) {
 	require.Same(t, b, st.activeBatch)
 	require.False(t, conn.IsClosed())
 }
+
+func TestStatementDeallocateCanceledContextKeepsStatementOpen(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	conn := &FbConn{status: connStatusIdle}
+	st := &Statement{
+		conn: conn,
+		Description: &StatementDescription{
+			StatementHandle: 1,
+		},
+	}
+
+	err := st.Deallocate(ctx)
+
+	require.Error(t, err)
+	require.False(t, st.closed)
+	require.False(t, conn.IsClosed())
+}
+
+func TestTransactionEndCanceledContextKeepsTransactionOpen(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		end  func(context.Context, *FBTransaction) error
+	}{
+		{name: "commit", end: func(ctx context.Context, tx *FBTransaction) error { return tx.Commit(ctx) }},
+		{name: "rollback", end: func(ctx context.Context, tx *FBTransaction) error { return tx.Rollback(ctx) }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+
+			conn := &FbConn{
+				status:             connStatusIdle,
+				activeTransactions: make(map[*FBTransaction]struct{}),
+			}
+			tx := &FBTransaction{Connection: conn, Handle: 1}
+			conn.activeTransactions[tx] = struct{}{}
+
+			err := tt.end(ctx, tx)
+
+			require.Error(t, err)
+			require.False(t, tx.Closed)
+			require.Contains(t, conn.activeTransactions, tx)
+			require.False(t, conn.IsClosed())
+		})
+	}
+}
