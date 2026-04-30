@@ -257,6 +257,7 @@ const (
 	Isc_dpb_session_time_zone     = 91
 	Isc_dpb_max_blob_cache_size   = 103
 	Isc_dpb_max_inline_blob_size  = 104
+	Isc_dpb_search_path           = 105
 
 	// backup
 	Isc_spb_bkp_file               = 5
@@ -428,6 +429,7 @@ const (
 	Isc_sdl_long_integer  = 11
 	Isc_sdl_do2           = 34
 	Isc_sdl_do1           = 35
+	Isc_sdl_schema        = 37
 	Isc_sdl_short_integer = 10
 	Isc_sdl_element       = 36
 	Isc_sdl_eoc           = 255
