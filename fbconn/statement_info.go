@@ -115,6 +115,10 @@ func (p *StatementInfo) feedDescriptors(r *ServerInfoBufferReader) error {
 			if field.OriginalTableName, err = r.ReadStringValue(); err != nil {
 				return err
 			}
+		case fbproto.Isc_info_sql_relation_schema:
+			if field.Schema, err = r.ReadStringValue(); err != nil {
+				return err
+			}
 		case fbproto.Isc_info_sql_relation_alias:
 			if field.TableAliasName, err = r.ReadStringValue(); err != nil {
 				return err

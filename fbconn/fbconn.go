@@ -10,6 +10,7 @@ import (
 	"math"
 	"net"
 	"os"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -78,6 +79,8 @@ type FbConn struct {
 
 	status           byte // One of connStatus* constants
 	protocolFeatures ProtocolFeatures
+
+	serverMajorVersion int
 
 	protocolVersion int
 	inlineBlobSize  int
@@ -655,6 +658,44 @@ connectLoop:
 		}
 	}
 
+	opInfoDatabase := fbproto.OpInfoDatabase{
+		Parameters:   []byte{fbproto.Isc_info_firebird_version, fbproto.Isc_info_end},
+		BufferLength: 256,
+	}
+
+	if err = fbConn.client.WriteMessage(&opInfoDatabase); err != nil {
+		fbConn.conn.Close()
+		return nil, newPerDialConnectError("failed to send opInfoDatabase", err)
+	}
+	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+		fbConn.conn.Close()
+		return nil, newPerDialConnectError("failed to flush opInfoDatabase", err)
+	}
+
+	msg, err = fbConn.receiveMessage()
+	if err != nil {
+		fbConn.conn.Close()
+		return nil, newPerDialConnectError("failed", err)
+	}
+	switch m := msg.(type) {
+	case *fbproto.OpResponse:
+		if len(m.Data) > 0 && m.Data[0] == fbproto.Isc_info_firebird_version {
+			re := regexp.MustCompile(`-V[0-9]+`)
+			versionString := re.FindString(string(m.Data))
+			fbConn.serverMajorVersion, err = strconv.Atoi(versionString[2:])
+			if err != nil {
+				fbConn.conn.Close()
+				return nil, err
+			}
+		} else {
+			fbConn.conn.Close()
+			return nil, newPerDialConnectError("error while trying to get server version", fmt.Errorf("unexpected response"))
+		}
+	case *fbproto.ErrorResponse:
+		fbConn.conn.Close()
+		return nil, ErrorResponseToFbError(m)
+	}
+
 	return fbConn, nil
 }
 
@@ -942,6 +983,7 @@ type FieldDescription struct {
 	OwnerName         string
 	OriginalName      string
 	OriginalTableName string
+	Schema            string
 	Nullable          bool
 	ArrayData         *Array
 }
@@ -962,6 +1004,7 @@ func (fbConn *FbConn) convertRowDescription(src []fbproto.FieldDescriptor) []Fie
 		res[i].OwnerName = src[i].OwnerName
 		res[i].OriginalName = src[i].OriginalName
 		res[i].OriginalTableName = src[i].OriginalTableName
+		res[i].Schema = src[i].Schema
 		res[i].Nullable = src[i].Nullable
 	}
 
@@ -2434,15 +2477,11 @@ func (h *CancelRequestContextWatcherHandler) HandleUnwatchAfterCancel() {
 }
 
 func getArrayInfo(fbConn *FbConn, ctx context.Context, tx *FBTransaction, fields, tables []string) (map[string]map[string]*Array, error) {
-	serverVersion, err := getServerMajorVersion(ctx, tx, fbConn)
+	metadataList, sources, err := fbConn.getArrayMetadata(ctx, tx, fbConn.serverMajorVersion, tables, fields)
 	if err != nil {
 		return nil, err
 	}
-	metadataList, sources, err := fbConn.getArrayMetadata(ctx, tx, serverVersion, tables, fields)
-	if err != nil {
-		return nil, err
-	}
-	dimensions, err := fbConn.getArrayDimensions(ctx, tx, serverVersion, sources)
+	dimensions, err := fbConn.getArrayDimensions(ctx, tx, fbConn.serverMajorVersion, sources)
 	if err != nil {
 		return nil, err
 	}
@@ -2453,7 +2492,7 @@ func getArrayInfo(fbConn *FbConn, ctx context.Context, tx *FBTransaction, fields
 		arr := Array{}
 		arr.FieldName = strings.TrimSpace(string(metadata["FIELD"]))
 		arr.TableName = strings.TrimSpace(string(metadata["TABLE"]))
-		if serverVersion >= 6 {
+		if fbConn.serverMajorVersion >= 6 {
 			arr.Schema = strings.TrimSpace(string(metadata["SCHEMA"]))
 		}
 		arr.Scale = int32(binary.BigEndian.Uint32(metadata["SCALE"]))
@@ -2499,36 +2538,4 @@ func getArrayInfo(fbConn *FbConn, ctx context.Context, tx *FBTransaction, fields
 		arrays[arr.TableName][arr.FieldName] = &arr
 	}
 	return arrays, nil
-}
-
-func getServerMajorVersion(ctx context.Context, tx *FBTransaction, conn *FbConn) (int, error) {
-	st, err := conn.internalPrepareTx(ctx, tx, "select rdb$get_context('SYSTEM','ENGINE_VERSION') from rdb$database")
-	if err != nil {
-		return 0, err
-	}
-
-	rr := &ResultReader{
-		fbConn:           conn,
-		ctx:              ctx,
-		boundTransaction: tx,
-	}
-
-	result := st.internalExecTx(ctx, tx, rr, nil).readWithoutCommit()
-
-	if result.Err != nil {
-		return 0, result.Err
-	}
-
-	if len(result.Rows) > 0 && len(result.Rows[0]) > 0 && result.Rows[0][0] != nil {
-		version := string(result.Rows[0][0])
-		if len(version) > 0 {
-			ver, err := strconv.Atoi(version[0:1])
-			if err != nil {
-				return 0, err
-			}
-			return ver, nil
-		}
-	}
-	return 0, fmt.Errorf("failed to get engine version")
-
 }
