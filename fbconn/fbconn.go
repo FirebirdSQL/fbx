@@ -1143,10 +1143,20 @@ func (fbConn *FbConn) internalPrepareTx(ctx context.Context, tx *FBTransaction, 
 			return nil, err
 		}
 		for i := range desc.Fields {
-			desc.Fields[i].ArrayData = arr[desc.Fields[i].OriginalTableName][desc.Fields[i].OriginalName]
+			metadataKey := metadataMapKey{
+				schema: desc.Fields[i].Schema,
+				table:  desc.Fields[i].OriginalTableName,
+				field:  desc.Fields[i].OriginalName,
+			}
+			desc.Fields[i].ArrayData = arr[metadataKey]
 		}
 		for i := range desc.Parameters {
-			desc.Parameters[i].ArrayData = arr[desc.Parameters[i].OriginalTableName][desc.Parameters[i].OriginalName]
+			metadataKey := metadataMapKey{
+				schema: desc.Parameters[i].Schema,
+				table:  desc.Parameters[i].OriginalTableName,
+				field:  desc.Parameters[i].OriginalName,
+			}
+			desc.Parameters[i].ArrayData = arr[metadataKey]
 		}
 	}
 
@@ -2476,7 +2486,7 @@ func (h *CancelRequestContextWatcherHandler) HandleUnwatchAfterCancel() {
 	h.Conn.conn.SetDeadline(time.Time{})
 }
 
-func getArrayInfo(fbConn *FbConn, ctx context.Context, tx *FBTransaction, fields, tables []string) (map[string]map[string]*Array, error) {
+func getArrayInfo(fbConn *FbConn, ctx context.Context, tx *FBTransaction, fields, tables []string) (map[metadataMapKey]*Array, error) {
 	metadataList, sources, err := fbConn.getArrayMetadata(ctx, tx, fbConn.serverMajorVersion, tables, fields)
 	if err != nil {
 		return nil, err
@@ -2486,7 +2496,7 @@ func getArrayInfo(fbConn *FbConn, ctx context.Context, tx *FBTransaction, fields
 		return nil, err
 	}
 
-	arrays := map[string]map[string]*Array{}
+	arrays := map[metadataMapKey]*Array{}
 
 	for _, metadata := range metadataList {
 		arr := Array{}
@@ -2519,14 +2529,17 @@ func getArrayInfo(fbConn *FbConn, ctx context.Context, tx *FBTransaction, fields
 			}
 		}
 
-		if arrays[arr.TableName] == nil {
-			arrays[arr.TableName] = map[string]*Array{}
+		metadataKey := metadataMapKey{
+			schema: arr.Schema,
+			table:  arr.TableName,
+			field:  arr.FieldName,
 		}
-		key := dimensionsMapKey{
+
+		dimensionsKey := dimensionsMapKey{
 			source: strings.TrimSpace(string(metadata["SOURCE"])),
 			schema: strings.TrimSpace(string(metadata["SCHEMA"])),
 		}
-		for _, dimension := range dimensions[key] {
+		for _, dimension := range dimensions[dimensionsKey] {
 			arr.Dimensions = append(arr.Dimensions,
 				map[string]int{
 					"Lower": dimension[0],
@@ -2535,7 +2548,7 @@ func getArrayInfo(fbConn *FbConn, ctx context.Context, tx *FBTransaction, fields
 			)
 			arr.CurrentDimensions = arr.Dimensions
 		}
-		arrays[arr.TableName][arr.FieldName] = &arr
+		arrays[metadataKey] = &arr
 	}
 	return arrays, nil
 }

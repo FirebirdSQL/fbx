@@ -13,6 +13,12 @@ type dimensionsMapKey struct {
 	schema string
 }
 
+type metadataMapKey struct {
+	schema string
+	table  string
+	field  string
+}
+
 // Array struct contains the information about array
 type Array struct {
 	TableName         string

@@ -350,3 +350,56 @@ func TestArrayInteractionWithCharArraysInDifferentEncodings(t *testing.T) {
 		}
 	})
 }
+
+func TestArrayMetadataUsesSchema(t *testing.T) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
+		if getServerMajorVersionForConn(ctx, tb, conn) < 6 {
+			tb.Skip("schemas are supported only in Firebird/RedDatabase 6+")
+		}
+
+		_, _ = conn.Exec(ctx, `drop table if exists FBX_ARRAY_SCHEMA_1.T_ARRAY_META`)
+		_, _ = conn.Exec(ctx, `drop table if exists FBX_ARRAY_SCHEMA_2.T_ARRAY_META`)
+		_, _ = conn.Exec(ctx, `drop schema if exists FBX_ARRAY_SCHEMA_1`)
+		_, _ = conn.Exec(ctx, `drop schema if exists FBX_ARRAY_SCHEMA_2`)
+
+		require.NoError(tb, execNoStatus(ctx, conn, `create schema FBX_ARRAY_SCHEMA_1`))
+		require.NoError(tb, execNoStatus(ctx, conn, `create schema FBX_ARRAY_SCHEMA_2`))
+
+		require.NoError(tb, execNoStatus(ctx, conn, `
+			create table FBX_ARRAY_SCHEMA_1.T_ARRAY_META (
+				ID integer,
+				VAL smallint[1:2]
+			)
+		`))
+		require.NoError(tb, execNoStatus(ctx, conn, `
+			create table FBX_ARRAY_SCHEMA_2.T_ARRAY_META (
+				ID integer,
+				VAL smallint[1:3]
+			)
+		`))
+
+		rows, err := conn.Query(ctx, `
+			select S1.VAL, S2.VAL
+			from FBX_ARRAY_SCHEMA_1.T_ARRAY_META S1
+			cross join FBX_ARRAY_SCHEMA_2.T_ARRAY_META S2
+		`)
+		require.NoError(tb, err)
+		defer rows.Close()
+
+		fields := rows.FieldDescriptions()
+		require.Len(tb, fields, 2)
+		require.NotNil(tb, fields[0].ArrayData)
+		require.NotNil(tb, fields[1].ArrayData)
+
+		require.Equal(tb, "FBX_ARRAY_SCHEMA_1", fields[0].Schema)
+		require.Equal(tb, "FBX_ARRAY_SCHEMA_2", fields[1].Schema)
+
+		assert.Equal(tb, "FBX_ARRAY_SCHEMA_1", fields[0].ArrayData.Schema)
+		assert.Equal(tb, "FBX_ARRAY_SCHEMA_2", fields[1].ArrayData.Schema)
+	})
+}
+
+func execNoStatus(ctx context.Context, conn *fbx.Conn, sql string, args ...any) error {
+	_, err := conn.Exec(ctx, sql, args...)
+	return err
+}
