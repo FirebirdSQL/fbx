@@ -391,6 +391,9 @@ func TestArrayMetadataUsesSchema(t *testing.T) {
 		require.NotNil(tb, fields[0].ArrayData)
 		require.NotNil(tb, fields[1].ArrayData)
 
+		assert.Equal(tb, []map[string]int{{"Lower": 1, "Upper": 2}}, fields[0].ArrayData.Dimensions)
+		assert.Equal(tb, []map[string]int{{"Lower": 1, "Upper": 3}}, fields[1].ArrayData.Dimensions)
+
 		require.Equal(tb, "FBX_ARRAY_SCHEMA_1", fields[0].Schema)
 		require.Equal(tb, "FBX_ARRAY_SCHEMA_2", fields[1].Schema)
 

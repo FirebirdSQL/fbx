@@ -29,7 +29,7 @@ func (op *OpInfoDatabase) Write(x *XDRWriter) error {
 		return err
 	}
 
-	// p_info_object (unused)
+	// p_info_buffer_length
 	if err = x.WriteInt32(op.BufferLength); err != nil {
 		return err
 	}

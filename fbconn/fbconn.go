@@ -682,6 +682,10 @@ connectLoop:
 		if len(m.Data) > 0 && m.Data[0] == fbproto.Isc_info_firebird_version {
 			re := regexp.MustCompile(`-V[0-9]+`)
 			versionString := re.FindString(string(m.Data))
+			if len(versionString) < 3 {
+				fbConn.conn.Close()
+				return nil, newPerDialConnectError("error while trying to get server version", fmt.Errorf("version parsing error"))
+			}
 			fbConn.serverMajorVersion, err = strconv.Atoi(versionString[2:])
 			if err != nil {
 				fbConn.conn.Close()
