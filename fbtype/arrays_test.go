@@ -406,3 +406,27 @@ func execNoStatus(ctx context.Context, conn *fbx.Conn, sql string, args ...any) 
 	_, err := conn.Exec(ctx, sql, args...)
 	return err
 }
+
+func TestArraySingleQuoteInName(t *testing.T) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		_, _ = conn.Exec(ctx, `recreate table "WEIRD'NAME"(id integer, val smallint[1:3])`)
+		input := []int16{1, 2, 3}
+
+		var output []int16
+		_, err := conn.Exec(
+			ctx,
+			`insert into "WEIRD'NAME"(id, val) values(?, ?)`,
+			1,
+			input,
+		)
+		assert.NoError(t, err)
+
+		err = conn.QueryRow(
+			ctx,
+			`select val from "WEIRD'NAME" where id = ?`,
+			1,
+		).Scan(&output)
+		assert.NoError(t, err)
+		assert.Equal(t, input, output)
+	})
+}
