@@ -8,10 +8,22 @@ import (
 	"rdb.red-soft.ru/fbx/fbproto"
 )
 
+type dimensionsMapKey struct {
+	source string
+	schema string
+}
+
+type metadataMapKey struct {
+	schema string
+	table  string
+	field  string
+}
+
 // Array struct contains the information about array
 type Array struct {
 	TableName         string
 	FieldName         string
+	Schema            string
 	Dimensions        []map[string]int
 	CurrentDimensions []map[string]int
 	Length            uint32
@@ -86,6 +98,14 @@ func (arr *Array) generateSDL() []byte {
 		byte(len(arr.FieldName)),
 	}...)
 	sdl = append(sdl, []byte(arr.FieldName)...)
+
+	if arr.Schema != "" {
+		sdl = append(sdl, []byte{
+			fbproto.Isc_sdl_schema,
+			byte(len(arr.Schema)),
+		}...)
+		sdl = append(sdl, []byte(arr.Schema)...)
+	}
 
 	for i, b := range dimensions {
 		if b["Lower"] == 1 {

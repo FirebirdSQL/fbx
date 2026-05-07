@@ -10,6 +10,7 @@ import (
 	"math"
 	"net"
 	"os"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -78,6 +79,8 @@ type FbConn struct {
 
 	status           byte // One of connStatus* constants
 	protocolFeatures ProtocolFeatures
+
+	serverMajorVersion int
 
 	protocolVersion int
 	inlineBlobSize  int
@@ -591,6 +594,9 @@ connectLoop:
 		app = "fbx"
 	}
 	dpb.PutString(fbproto.Isc_dpb_process_name, app)
+	if search_path, ok := config.RuntimeParams["search_path"]; ok {
+		dpb.PutString(fbproto.Isc_dpb_search_path, search_path)
+	}
 	//FIXME: fbx is timezone need? where get timezone?
 	//dpb.AppendTag(fbproto.Isc_dpb_session_time_zone)
 	dpb.PutString(fbproto.Isc_dpb_auth_plugin_list, authManager.BuildList())
@@ -650,6 +656,48 @@ connectLoop:
 			fbConn.conn.Close()
 			return nil, newPerDialConnectError("ValidateConnect failed", err)
 		}
+	}
+
+	opInfoDatabase := fbproto.OpInfoDatabase{
+		Parameters:   []byte{fbproto.Isc_info_firebird_version, fbproto.Isc_info_end},
+		BufferLength: 256,
+	}
+
+	if err = fbConn.client.WriteMessage(&opInfoDatabase); err != nil {
+		fbConn.conn.Close()
+		return nil, newPerDialConnectError("failed to send opInfoDatabase", err)
+	}
+	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+		fbConn.conn.Close()
+		return nil, newPerDialConnectError("failed to flush opInfoDatabase", err)
+	}
+
+	msg, err = fbConn.receiveMessage()
+	if err != nil {
+		fbConn.conn.Close()
+		return nil, newPerDialConnectError("failed", err)
+	}
+	switch m := msg.(type) {
+	case *fbproto.OpResponse:
+		if len(m.Data) > 0 && m.Data[0] == fbproto.Isc_info_firebird_version {
+			re := regexp.MustCompile(`-V[0-9]+`)
+			versionString := re.FindString(string(m.Data))
+			if len(versionString) < 3 {
+				fbConn.conn.Close()
+				return nil, newPerDialConnectError("error while trying to get server version", fmt.Errorf("version parsing error"))
+			}
+			fbConn.serverMajorVersion, err = strconv.Atoi(versionString[2:])
+			if err != nil {
+				fbConn.conn.Close()
+				return nil, err
+			}
+		} else {
+			fbConn.conn.Close()
+			return nil, newPerDialConnectError("error while trying to get server version", fmt.Errorf("unexpected response"))
+		}
+	case *fbproto.ErrorResponse:
+		fbConn.conn.Close()
+		return nil, ErrorResponseToFbError(m)
 	}
 
 	return fbConn, nil
@@ -939,6 +987,7 @@ type FieldDescription struct {
 	OwnerName         string
 	OriginalName      string
 	OriginalTableName string
+	Schema            string
 	Nullable          bool
 	ArrayData         *Array
 }
@@ -959,6 +1008,7 @@ func (fbConn *FbConn) convertRowDescription(src []fbproto.FieldDescriptor) []Fie
 		res[i].OwnerName = src[i].OwnerName
 		res[i].OriginalName = src[i].OriginalName
 		res[i].OriginalTableName = src[i].OriginalTableName
+		res[i].Schema = src[i].Schema
 		res[i].Nullable = src[i].Nullable
 	}
 
@@ -1097,10 +1147,20 @@ func (fbConn *FbConn) internalPrepareTx(ctx context.Context, tx *FBTransaction, 
 			return nil, err
 		}
 		for i := range desc.Fields {
-			desc.Fields[i].ArrayData = arr[desc.Fields[i].OriginalTableName][desc.Fields[i].OriginalName]
+			metadataKey := metadataMapKey{
+				schema: desc.Fields[i].Schema,
+				table:  desc.Fields[i].OriginalTableName,
+				field:  desc.Fields[i].OriginalName,
+			}
+			desc.Fields[i].ArrayData = arr[metadataKey]
 		}
 		for i := range desc.Parameters {
-			desc.Parameters[i].ArrayData = arr[desc.Parameters[i].OriginalTableName][desc.Parameters[i].OriginalName]
+			metadataKey := metadataMapKey{
+				schema: desc.Parameters[i].Schema,
+				table:  desc.Parameters[i].OriginalTableName,
+				field:  desc.Parameters[i].OriginalName,
+			}
+			desc.Parameters[i].ArrayData = arr[metadataKey]
 		}
 	}
 
@@ -1358,7 +1418,7 @@ func (fbConn *FbConn) Disconnect(ctx context.Context) error {
 	return nil
 }
 
-func (fbConn *FbConn) getArrayMetadata(ctx context.Context, tx *FBTransaction, tableNames, fieldNames []string) ([]map[string][]byte, [][]byte, error) {
+func (fbConn *FbConn) getArrayMetadata(ctx context.Context, tx *FBTransaction, serverVersion int, tableNames, fieldNames []string) ([]map[string][]byte, []dimensionsMapKey, error) {
 
 	tables := ""
 	for _, table := range tableNames {
@@ -1369,27 +1429,54 @@ func (fbConn *FbConn) getArrayMetadata(ctx context.Context, tx *FBTransaction, t
 		fields += "'" + field + "',"
 	}
 
-	queryString := fmt.Sprintf(
-		`SELECT 
+	var queryString string
+	if serverVersion < 6 {
+		queryString = fmt.Sprintf(
+			`SELECT 
     Y.RDB$FIELD_TYPE, 
     Y.RDB$FIELD_SCALE, 
     Y.RDB$FIELD_LENGTH, 
     CASE 
-        WHEN Y.RDB$FIELD_TYPE IN (%d, %d) THEN Y.RDB$CHARACTER_SET_ID 
-        ELSE Y.RDB$FIELD_SUB_TYPE 
+		WHEN Y.RDB$FIELD_TYPE IN (%d, %d) THEN Y.RDB$CHARACTER_SET_ID 
+		ELSE Y.RDB$FIELD_SUB_TYPE 
     END AS RDB$FIELD_SUB_TYPE,
     X.RDB$FIELD_SOURCE, 
     X.RDB$RELATION_NAME, 
     X.RDB$FIELD_NAME
-	FROM RDB$RELATION_FIELDS X, RDB$FIELDS Y 
+		FROM RDB$RELATION_FIELDS X, RDB$FIELDS Y 
 		WHERE X.RDB$FIELD_SOURCE = Y.RDB$FIELD_NAME 
-  		AND X.RDB$RELATION_NAME IN (%s)
-  		AND X.RDB$FIELD_NAME IN (%s)`,
-		fbproto.Isc_blr_text,
-		fbproto.Isc_blr_varying,
-		tables[:len(tables)-1],
-		fields[:len(fields)-1],
-	)
+		  AND X.RDB$RELATION_NAME IN (%s)
+		  AND X.RDB$FIELD_NAME IN (%s)`,
+			fbproto.Isc_blr_text,
+			fbproto.Isc_blr_varying,
+			tables[:len(tables)-1],
+			fields[:len(fields)-1],
+		)
+	} else {
+		queryString = fmt.Sprintf(
+			`SELECT 
+    Y.RDB$FIELD_TYPE, 
+    Y.RDB$FIELD_SCALE, 
+    Y.RDB$FIELD_LENGTH, 
+    CASE 
+		WHEN Y.RDB$FIELD_TYPE IN (%d, %d) THEN Y.RDB$CHARACTER_SET_ID 
+		ELSE Y.RDB$FIELD_SUB_TYPE 
+    END AS RDB$FIELD_SUB_TYPE,
+    X.RDB$FIELD_SOURCE, 
+    X.RDB$RELATION_NAME, 
+    X.RDB$FIELD_NAME,
+    X.RDB$SCHEMA_NAME
+    	FROM RDB$RELATION_FIELDS X, RDB$FIELDS Y 
+		WHERE X.RDB$FIELD_SOURCE = Y.RDB$FIELD_NAME 
+		  AND X.RDB$SCHEMA_NAME = Y.RDB$SCHEMA_NAME 
+		  AND X.RDB$RELATION_NAME IN (%s)
+		  AND X.RDB$FIELD_NAME IN (%s)`,
+			fbproto.Isc_blr_text,
+			fbproto.Isc_blr_varying,
+			tables[:len(tables)-1],
+			fields[:len(fields)-1],
+		)
+	}
 
 	st, err := fbConn.internalPrepareTx(ctx, tx, queryString)
 
@@ -1410,7 +1497,7 @@ func (fbConn *FbConn) getArrayMetadata(ctx context.Context, tx *FBTransaction, t
 	}
 
 	metadataList := make([]map[string][]byte, 0)
-	sources := [][]byte{}
+	sources := []dimensionsMapKey{}
 	for _, row := range result.Rows {
 
 		metadata := make(map[string][]byte)
@@ -1424,10 +1511,17 @@ func (fbConn *FbConn) getArrayMetadata(ctx context.Context, tx *FBTransaction, t
 			metadata["SUBTYPE"] = row[3]
 		}
 		metadata["SOURCE"] = row[4]
-		sources = append(sources, row[4])
+		var key dimensionsMapKey
 
 		metadata["TABLE"] = row[5]
 		metadata["FIELD"] = row[6]
+		if serverVersion < 6 {
+			key = dimensionsMapKey{source: string(row[4])}
+		} else {
+			metadata["SCHEMA"] = row[7]
+			key = dimensionsMapKey{source: string(row[4]), schema: string(row[7])}
+		}
+		sources = append(sources, key)
 
 		metadataList = append(metadataList, metadata)
 	}
@@ -1435,22 +1529,43 @@ func (fbConn *FbConn) getArrayMetadata(ctx context.Context, tx *FBTransaction, t
 	return metadataList, sources, nil
 }
 
-func (fbConn *FbConn) getArrayDimensions(ctx context.Context, tx *FBTransaction, sources [][]byte) (map[string][][]int, error) {
+func (fbConn *FbConn) getArrayDimensions(ctx context.Context, tx *FBTransaction, serverVersion int, sources []dimensionsMapKey) (map[dimensionsMapKey][][]int, error) {
+
 	sourcesString := ""
 	for _, source := range sources {
-		sourcesString += "'" + string(source) + "',"
+		sourcesString += "'" + strings.TrimSpace(string(source.source)) + "',"
+	}
+	schemasString := ""
+	for _, source := range sources {
+		schemasString += "'" + strings.TrimSpace(string(source.schema)) + "',"
 	}
 
-	queryString := fmt.Sprintf(
-		`SELECT 
+	var queryString string
+	if serverVersion < 6 {
+		queryString = fmt.Sprintf(
+			`SELECT 
 	X.RDB$LOWER_BOUND, 
 	X.RDB$UPPER_BOUND, 
 	X.RDB$FIELD_NAME
 	FROM RDB$FIELD_DIMENSIONS X 
 		WHERE X.RDB$FIELD_NAME IN (%s) 
 		ORDER BY X.RDB$FIELD_NAME, X.RDB$DIMENSION`,
-		sourcesString[:len(sourcesString)-1],
-	)
+			sourcesString[:len(sourcesString)-1],
+		)
+	} else {
+		queryString = fmt.Sprintf(
+			`SELECT 
+    X.RDB$LOWER_BOUND, 
+    X.RDB$UPPER_BOUND, 
+    X.RDB$FIELD_NAME,
+    X.RDB$SCHEMA_NAME
+    FROM RDB$FIELD_DIMENSIONS X 
+		WHERE X.RDB$FIELD_NAME IN (%s) AND X.RDB$SCHEMA_NAME IN (%s)
+        ORDER BY X.RDB$FIELD_NAME, X.RDB$SCHEMA_NAME, X.RDB$DIMENSION`,
+			sourcesString[:len(sourcesString)-1],
+			schemasString[:len(schemasString)-1],
+		)
+	}
 
 	st, err := fbConn.internalPrepareTx(ctx, tx, queryString)
 
@@ -1470,10 +1585,14 @@ func (fbConn *FbConn) getArrayDimensions(ctx context.Context, tx *FBTransaction,
 		return nil, result.Err
 	}
 
-	dimensions := map[string][][]int{}
+	dimensions := map[dimensionsMapKey][][]int{}
 	for _, row := range result.Rows {
-		dimensions[string(row[2])] = append(
-			dimensions[string(row[2])], // val[2] - field name
+		key := dimensionsMapKey{source: strings.TrimSpace(string(row[2]))} // row[2] - field name
+		if serverVersion >= 6 {
+			key.schema = strings.TrimSpace(string(row[3])) // row[3] - schema name
+		}
+		dimensions[key] = append(
+			dimensions[key],
 			[]int{
 				int(int32(binary.BigEndian.Uint32(row[0]))), // lower bound
 				int(int32(binary.BigEndian.Uint32(row[1]))), // upper bound
@@ -2371,22 +2490,25 @@ func (h *CancelRequestContextWatcherHandler) HandleUnwatchAfterCancel() {
 	h.Conn.conn.SetDeadline(time.Time{})
 }
 
-func getArrayInfo(fbConn *FbConn, ctx context.Context, tx *FBTransaction, fields, tables []string) (map[string]map[string]*Array, error) {
-	metadataList, sources, err := fbConn.getArrayMetadata(ctx, tx, tables, fields)
+func getArrayInfo(fbConn *FbConn, ctx context.Context, tx *FBTransaction, fields, tables []string) (map[metadataMapKey]*Array, error) {
+	metadataList, sources, err := fbConn.getArrayMetadata(ctx, tx, fbConn.serverMajorVersion, tables, fields)
 	if err != nil {
 		return nil, err
 	}
-	dimensions, err := fbConn.getArrayDimensions(ctx, tx, sources)
+	dimensions, err := fbConn.getArrayDimensions(ctx, tx, fbConn.serverMajorVersion, sources)
 	if err != nil {
 		return nil, err
 	}
 
-	arrays := map[string]map[string]*Array{}
+	arrays := map[metadataMapKey]*Array{}
 
 	for _, metadata := range metadataList {
 		arr := Array{}
 		arr.FieldName = strings.TrimSpace(string(metadata["FIELD"]))
 		arr.TableName = strings.TrimSpace(string(metadata["TABLE"]))
+		if fbConn.serverMajorVersion >= 6 {
+			arr.Schema = strings.TrimSpace(string(metadata["SCHEMA"]))
+		}
 		arr.Scale = int32(binary.BigEndian.Uint32(metadata["SCALE"]))
 		arr.BlrTypeId = binary.BigEndian.Uint32(metadata["DATATYPE"])
 		arr.TypeId, err = getSqlTypeFromBlr(binary.BigEndian.Uint32(metadata["DATATYPE"]))
@@ -2411,10 +2533,17 @@ func getArrayInfo(fbConn *FbConn, ctx context.Context, tx *FBTransaction, fields
 			}
 		}
 
-		if arrays[arr.TableName] == nil {
-			arrays[arr.TableName] = map[string]*Array{}
+		metadataKey := metadataMapKey{
+			schema: arr.Schema,
+			table:  arr.TableName,
+			field:  arr.FieldName,
 		}
-		for _, dimension := range dimensions[string(metadata["SOURCE"])] {
+
+		dimensionsKey := dimensionsMapKey{
+			source: strings.TrimSpace(string(metadata["SOURCE"])),
+			schema: strings.TrimSpace(string(metadata["SCHEMA"])),
+		}
+		for _, dimension := range dimensions[dimensionsKey] {
 			arr.Dimensions = append(arr.Dimensions,
 				map[string]int{
 					"Lower": dimension[0],
@@ -2423,7 +2552,7 @@ func getArrayInfo(fbConn *FbConn, ctx context.Context, tx *FBTransaction, fields
 			)
 			arr.CurrentDimensions = arr.Dimensions
 		}
-		arrays[arr.TableName][arr.FieldName] = &arr
+		arrays[metadataKey] = &arr
 	}
 	return arrays, nil
 }

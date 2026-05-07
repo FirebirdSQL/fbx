@@ -257,6 +257,7 @@ const (
 	Isc_dpb_session_time_zone     = 91
 	Isc_dpb_max_blob_cache_size   = 103
 	Isc_dpb_max_inline_blob_size  = 104
+	Isc_dpb_search_path           = 105
 
 	// backup
 	Isc_spb_bkp_file               = 5
@@ -428,6 +429,7 @@ const (
 	Isc_sdl_long_integer  = 11
 	Isc_sdl_do2           = 34
 	Isc_sdl_do1           = 35
+	Isc_sdl_schema        = 37
 	Isc_sdl_short_integer = 10
 	Isc_sdl_element       = 36
 	Isc_sdl_eoc           = 255
@@ -470,28 +472,29 @@ const (
 	Isc_info_tra_lock_timeout       = 10
 
 	// SQL information items
-	Isc_info_sql_select         = 4
-	Isc_info_sql_bind           = 5
-	Isc_info_sql_num_variables  = 6
-	Isc_info_sql_describe_vars  = 7
-	Isc_info_sql_describe_end   = 8
-	Isc_info_sql_sqlda_seq      = 9
-	Isc_info_sql_message_seq    = 10
-	Isc_info_sql_type           = 11
-	Isc_info_sql_sub_type       = 12
-	Isc_info_sql_scale          = 13
-	Isc_info_sql_length         = 14
-	Isc_info_sql_null_ind       = 15
-	Isc_info_sql_field          = 16
-	Isc_info_sql_relation       = 17
-	Isc_info_sql_owner          = 18
-	Isc_info_sql_alias          = 19
-	Isc_info_sql_sqlda_start    = 20
-	Isc_info_sql_stmt_type      = 21
-	Isc_info_sql_get_plan       = 22
-	Isc_info_sql_records        = 23
-	Isc_info_sql_batch_fetch    = 24
-	Isc_info_sql_relation_alias = 25
+	Isc_info_sql_select          = 4
+	Isc_info_sql_bind            = 5
+	Isc_info_sql_num_variables   = 6
+	Isc_info_sql_describe_vars   = 7
+	Isc_info_sql_describe_end    = 8
+	Isc_info_sql_sqlda_seq       = 9
+	Isc_info_sql_message_seq     = 10
+	Isc_info_sql_type            = 11
+	Isc_info_sql_sub_type        = 12
+	Isc_info_sql_scale           = 13
+	Isc_info_sql_length          = 14
+	Isc_info_sql_null_ind        = 15
+	Isc_info_sql_field           = 16
+	Isc_info_sql_relation        = 17
+	Isc_info_sql_owner           = 18
+	Isc_info_sql_alias           = 19
+	Isc_info_sql_sqlda_start     = 20
+	Isc_info_sql_stmt_type       = 21
+	Isc_info_sql_get_plan        = 22
+	Isc_info_sql_records         = 23
+	Isc_info_sql_batch_fetch     = 24
+	Isc_info_sql_relation_alias  = 25
+	Isc_info_sql_relation_schema = 33
 
 	Isc_info_sql_stmt_select         = 1
 	Isc_info_sql_stmt_insert         = 2
