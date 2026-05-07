@@ -1422,11 +1422,11 @@ func (fbConn *FbConn) getArrayMetadata(ctx context.Context, tx *FBTransaction, s
 
 	tables := ""
 	for _, table := range tableNames {
-		tables += "'" + table + "',"
+		tables += "'" + strings.ReplaceAll(table, "'", "''") + "',"
 	}
 	fields := ""
 	for _, field := range fieldNames {
-		fields += "'" + field + "',"
+		fields += "'" + strings.ReplaceAll(field, "'", "''") + "',"
 	}
 
 	var queryString string
@@ -1516,10 +1516,10 @@ func (fbConn *FbConn) getArrayMetadata(ctx context.Context, tx *FBTransaction, s
 		metadata["TABLE"] = row[5]
 		metadata["FIELD"] = row[6]
 		if serverVersion < 6 {
-			key = dimensionsMapKey{source: string(row[4])}
+			key = dimensionsMapKey{source: strings.TrimSpace(string(row[4]))}
 		} else {
 			metadata["SCHEMA"] = row[7]
-			key = dimensionsMapKey{source: string(row[4]), schema: string(row[7])}
+			key = dimensionsMapKey{source: strings.TrimSpace(string(row[4])), schema: strings.TrimSpace(string(row[7]))}
 		}
 		sources = append(sources, key)
 
@@ -1532,12 +1532,10 @@ func (fbConn *FbConn) getArrayMetadata(ctx context.Context, tx *FBTransaction, s
 func (fbConn *FbConn) getArrayDimensions(ctx context.Context, tx *FBTransaction, serverVersion int, sources []dimensionsMapKey) (map[dimensionsMapKey][][]int, error) {
 
 	sourcesString := ""
-	for _, source := range sources {
-		sourcesString += "'" + strings.TrimSpace(string(source.source)) + "',"
-	}
 	schemasString := ""
 	for _, source := range sources {
-		schemasString += "'" + strings.TrimSpace(string(source.schema)) + "',"
+		sourcesString += "'" + strings.ReplaceAll(string(source.source), "'", "''") + "',"
+		schemasString += "'" + strings.ReplaceAll(string(source.schema), "'", "''") + "',"
 	}
 
 	var queryString string
