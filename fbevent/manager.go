@@ -27,21 +27,33 @@ const (
 type listenerRegistration struct {
 	handle   ListenerHandle
 	listener EventListener
-	worker   *listenerWorker
 }
 
-// listenerWorker delivers events to a single listener sequentially without
-// blocking the caller of send. Events are queued in an unbounded slice so
-// that a slow listener never causes backpressure on the dispatcher or the
-// Firebird event-channel goroutine.
-type listenerWorker struct {
-	mu    sync.Mutex
-	queue []DatabaseEvent
-	sig   chan struct{} // capacity 1; poke when queue becomes non-empty
-	stop  chan struct{}
+// eventDeliveryWorker delivers events to manager listeners sequentially without
+// blocking dispatcherLoop. Events are queued in an unbounded slice so that user
+// callbacks do not run on the dispatcher goroutine.
+type eventDeliveryWorker struct {
+	manager *Manager
+	mu      sync.Mutex
+	queue   []DatabaseEvent
+	sig     chan struct{} // capacity 1; poke when queue becomes non-empty
+	stop    chan struct{}
 }
 
-func (w *listenerWorker) send(event DatabaseEvent) {
+func newEventDeliveryWorker(manager *Manager) *eventDeliveryWorker {
+	return &eventDeliveryWorker{
+		manager: manager,
+		sig:     make(chan struct{}, 1),
+		stop:    make(chan struct{}),
+	}
+}
+
+func (w *eventDeliveryWorker) send(event DatabaseEvent) {
+	select {
+	case <-w.stop:
+		return
+	default:
+	}
 	w.mu.Lock()
 	w.queue = append(w.queue, event)
 	w.mu.Unlock()
@@ -51,7 +63,7 @@ func (w *listenerWorker) send(event DatabaseEvent) {
 	}
 }
 
-func (w *listenerWorker) run(listener EventListener) {
+func (w *eventDeliveryWorker) run() {
 	for {
 		select {
 		case <-w.stop:
@@ -72,21 +84,8 @@ func (w *listenerWorker) run(listener EventListener) {
 			event := w.queue[0]
 			w.queue = w.queue[1:]
 			w.mu.Unlock()
-			listener.EventOccurred(event)
+			w.manager.notify(event)
 		}
-	}
-}
-
-func startListenerWorker(handle ListenerHandle, listener EventListener) listenerRegistration {
-	w := &listenerWorker{
-		sig:  make(chan struct{}, 1),
-		stop: make(chan struct{}),
-	}
-	go w.run(listener)
-	return listenerRegistration{
-		handle:   handle,
-		listener: listener,
-		worker:   w,
 	}
 }
 
@@ -115,6 +114,7 @@ type Manager struct {
 	handlers          map[string]*gdsEventHandler
 
 	eventQueue     chan DatabaseEvent
+	delivery       *eventDeliveryWorker
 	dispatcherStop chan struct{}
 	dispatcherDone chan struct{}
 
@@ -211,11 +211,13 @@ func (m *Manager) Connect(ctx context.Context) error {
 	m.asyncErr = nil
 	m.asyncErrSignal = make(chan struct{})
 	m.eventQueue = make(chan DatabaseEvent, 256)
+	m.delivery = newEventDeliveryWorker(m)
 	m.dispatcherStop = make(chan struct{})
 	m.dispatcherDone = make(chan struct{})
 	m.lifecycleWatchStop = make(chan struct{})
 	m.lifecycleWatchGen++
 	queue := m.eventQueue
+	delivery := m.delivery
 	stop := m.dispatcherStop
 	done := m.dispatcherDone
 	lifecycleStop := m.lifecycleWatchStop
@@ -224,7 +226,8 @@ func (m *Manager) Connect(ctx context.Context) error {
 
 	m.bindConnEventErrorHandler(conn)
 	m.startConnLifecycleWatcher(conn, lifecycleStop, lifecycleGen)
-	go m.dispatcherLoop(stop, done, queue)
+	go delivery.run()
+	go m.dispatcherLoop(stop, done, queue, delivery)
 	return nil
 }
 
@@ -263,9 +266,11 @@ func (m *Manager) disconnect(ctx context.Context, strict bool, waitDispatcher bo
 
 	stop := m.dispatcherStop
 	done := m.dispatcherDone
+	delivery := m.delivery
 	m.dispatcherStop = nil
 	m.dispatcherDone = nil
 	m.eventQueue = nil
+	m.delivery = nil
 	lifecycleStop := m.lifecycleWatchStop
 	m.lifecycleWatchStop = nil
 	if disconnectErr != nil {
@@ -286,11 +291,14 @@ func (m *Manager) disconnect(ctx context.Context, strict bool, waitDispatcher bo
 	m.mu.Unlock()
 
 	for _, reg := range allRegs {
-		close(reg.worker.stop)
+		closeListenerIfNeeded(reg.listener)
 	}
 	m.unbindConnEventErrorHandler(conn)
 	if lifecycleStop != nil {
 		close(lifecycleStop)
+	}
+	if delivery != nil {
+		close(delivery.stop)
 	}
 	if stop != nil {
 		close(stop)
@@ -398,7 +406,10 @@ func (m *Manager) AddEventListener(eventName string, listener EventListener) (Li
 
 	currentListeners := m.listeners[eventName]
 	hasListeners := len(currentListeners) > 0
-	reg := startListenerWorker(handle, listener)
+	reg := listenerRegistration{
+		handle:   handle,
+		listener: listener,
+	}
 	m.listeners[eventName] = append(currentListeners, reg)
 	m.listenerEventName[handle] = eventName
 	m.mu.Unlock()
@@ -465,7 +476,7 @@ func (m *Manager) RemoveEventListener(handle ListenerHandle) error {
 	if len(updated) > 0 {
 		m.listeners[eventName] = updated
 		m.mu.Unlock()
-		close(removedReg.worker.stop)
+		closeListenerIfNeeded(removedReg.listener)
 		return nil
 	}
 
@@ -474,7 +485,7 @@ func (m *Manager) RemoveEventListener(handle ListenerHandle) error {
 	delete(m.handlers, eventName)
 	m.mu.Unlock()
 
-	close(removedReg.worker.stop)
+	closeListenerIfNeeded(removedReg.listener)
 	if handler != nil {
 		return handler.unregister(context.Background())
 	}
@@ -576,11 +587,11 @@ func (m *Manager) removeListenerSilently(handle ListenerHandle) {
 		return
 	}
 
-	var toStop *listenerWorker
+	var removedListener EventListener
 	list := m.listeners[eventName]
 	for i, existing := range list {
 		if existing.handle == handle {
-			toStop = existing.worker
+			removedListener = existing.listener
 			list = append(list[:i], list[i+1:]...)
 			break
 		}
@@ -593,9 +604,7 @@ func (m *Manager) removeListenerSilently(handle ListenerHandle) {
 	}
 	m.mu.Unlock()
 
-	if toStop != nil {
-		close(toStop.stop)
-	}
+	closeListenerIfNeeded(removedListener)
 }
 
 func (m *Manager) enqueueEvent(event DatabaseEvent) {
@@ -613,7 +622,7 @@ func (m *Manager) enqueueEvent(event DatabaseEvent) {
 	}
 }
 
-func (m *Manager) dispatcherLoop(stop <-chan struct{}, done chan<- struct{}, queue <-chan DatabaseEvent) {
+func (m *Manager) dispatcherLoop(stop <-chan struct{}, done chan<- struct{}, queue <-chan DatabaseEvent, delivery *eventDeliveryWorker) {
 	defer close(done)
 	for {
 		timeout := m.GetWaitTimeout()
@@ -627,7 +636,9 @@ func (m *Manager) dispatcherLoop(stop <-chan struct{}, done chan<- struct{}, que
 			if !ok {
 				return
 			}
-			m.notify(event)
+			if delivery != nil {
+				delivery.send(event)
+			}
 		case <-timer.C:
 			if !m.IsConnected() {
 				return
@@ -641,7 +652,7 @@ func (m *Manager) notify(event DatabaseEvent) {
 	registrations := append([]listenerRegistration(nil), m.listeners[event.EventName]...)
 	m.mu.Unlock()
 	for _, registration := range registrations {
-		registration.worker.send(event)
+		registration.listener.EventOccurred(event)
 	}
 }
 

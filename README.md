@@ -97,3 +97,17 @@ func main() {
 	fmt.Printf("TEST_EVENT count delta: %d\n", count)
 }
 ```
+
+For stream-style processing, use a channel subscription:
+
+```go
+sub, err := manager.Subscribe("TEST_EVENT", 16)
+if err != nil {
+	log.Fatal(err)
+}
+defer sub.Close()
+
+for event := range sub.C {
+	fmt.Printf("%s count delta: %d\n", event.EventName, event.EventCount)
+}
+```

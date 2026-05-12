@@ -14,7 +14,10 @@ import (
 func addRegisteredListenerForTest(m *Manager, eventName string, listener EventListener) ListenerHandle {
 	m.nextListenerID++
 	handle := m.nextListenerID
-	reg := startListenerWorker(handle, listener)
+	reg := listenerRegistration{
+		handle:   handle,
+		listener: listener,
+	}
 	m.listeners[eventName] = append(m.listeners[eventName], reg)
 	m.listenerEventName[handle] = eventName
 	return handle
@@ -486,10 +489,10 @@ func TestHandleConnLifecycleTerminationDisconnectsAndSignalsAsyncError(t *testin
 	require.ErrorContains(t, err, "underlying connection detached")
 }
 
-// TestListenerWorkerSendNeverBlocks verifies that notify returns immediately
-// even when the listener is slow, so the dispatcher and the Firebird event
-// channel goroutine are never stalled by backpressure from user callbacks.
-func TestListenerWorkerSendNeverBlocks(t *testing.T) {
+// TestDeliveryWorkerSendNeverBlocks verifies that queueing for delivery returns
+// immediately even when the listener is slow, so dispatcherLoop is never stalled
+// by user callbacks.
+func TestDeliveryWorkerSendNeverBlocks(t *testing.T) {
 	t.Parallel()
 
 	const eventCount = 500
@@ -511,19 +514,22 @@ func TestListenerWorkerSendNeverBlocks(t *testing.T) {
 		mu.Unlock()
 	}))
 
-	notifyDone := make(chan struct{})
+	delivery := newEventDeliveryWorker(m)
+	go delivery.run()
+	defer close(delivery.stop)
+
+	sendDone := make(chan struct{})
 	go func() {
-		defer close(notifyDone)
+		defer close(sendDone)
 		for i := range eventCount {
-			m.notify(DatabaseEvent{EventName: "EVT", EventCount: i + 1})
+			delivery.send(DatabaseEvent{EventName: "EVT", EventCount: i + 1})
 		}
 	}()
 
-	// notify must complete without waiting for the slow listener.
 	select {
-	case <-notifyDone:
+	case <-sendDone:
 	case <-time.After(500 * time.Millisecond):
-		t.Fatal("notify blocked on slow listener")
+		t.Fatal("delivery send blocked on slow listener")
 	}
 
 	// Release the listener and verify all events eventually arrive in order.
@@ -546,9 +552,9 @@ func TestListenerWorkerSendNeverBlocks(t *testing.T) {
 	}
 }
 
-// TestListenerWorkerDeliversEventsInOrder verifies that the unbounded queue
+// TestDeliveryWorkerDeliversEventsInOrder verifies that the unbounded queue
 // preserves event ordering regardless of how fast events are enqueued.
-func TestListenerWorkerDeliversEventsInOrder(t *testing.T) {
+func TestDeliveryWorkerDeliversEventsInOrder(t *testing.T) {
 	t.Parallel()
 
 	const eventCount = 1000
@@ -556,19 +562,24 @@ func TestListenerWorkerDeliversEventsInOrder(t *testing.T) {
 	var mu sync.Mutex
 	var received []int
 
-	w := &listenerWorker{
-		sig:  make(chan struct{}, 1),
-		stop: make(chan struct{}),
+	m := &Manager{
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*gdsEventHandler),
 	}
-	go w.run(EventListenerFunc(func(event DatabaseEvent) {
+	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(event DatabaseEvent) {
 		mu.Lock()
 		received = append(received, event.EventCount)
 		mu.Unlock()
 	}))
-	defer close(w.stop)
+
+	delivery := newEventDeliveryWorker(m)
+	go delivery.run()
+	defer close(delivery.stop)
 
 	for i := range eventCount {
-		w.send(DatabaseEvent{EventName: "EVT", EventCount: i + 1})
+		delivery.send(DatabaseEvent{EventName: "EVT", EventCount: i + 1})
 	}
 
 	require.Eventually(t, func() bool {
@@ -584,9 +595,9 @@ func TestListenerWorkerDeliversEventsInOrder(t *testing.T) {
 	}
 }
 
-// TestListenerWorkerNoEventsLostUnderLoad sends events concurrently with a
+// TestDeliveryWorkerNoEventsLostUnderLoad sends events concurrently with a
 // slow listener and confirms every event is eventually delivered.
-func TestListenerWorkerNoEventsLostUnderLoad(t *testing.T) {
+func TestDeliveryWorkerNoEventsLostUnderLoad(t *testing.T) {
 	t.Parallel()
 
 	const eventCount = 200
@@ -608,9 +619,12 @@ func TestListenerWorkerNoEventsLostUnderLoad(t *testing.T) {
 		mu.Unlock()
 	}))
 
-	// Send all events — must not block.
+	delivery := newEventDeliveryWorker(m)
+	go delivery.run()
+	defer close(delivery.stop)
+
 	for i := range eventCount {
-		m.notify(DatabaseEvent{EventName: "EVT", EventCount: i + 1})
+		delivery.send(DatabaseEvent{EventName: "EVT", EventCount: i + 1})
 	}
 
 	// Drain the gate to let listener process all events.
@@ -631,6 +645,54 @@ func TestListenerWorkerNoEventsLostUnderLoad(t *testing.T) {
 	require.Len(t, received, eventCount)
 	for i, count := range received {
 		require.Equal(t, i+1, count, "event %d delivered out of order", i)
+	}
+}
+
+func TestDeliveryWorkerDeliversCallbacksSequentiallyForManager(t *testing.T) {
+	t.Parallel()
+
+	firstEntered := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	secondCalled := make(chan struct{})
+
+	m := &Manager{
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*gdsEventHandler),
+	}
+	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(DatabaseEvent) {
+		close(firstEntered)
+		<-releaseFirst
+	}))
+	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(DatabaseEvent) {
+		close(secondCalled)
+	}))
+
+	delivery := newEventDeliveryWorker(m)
+	go delivery.run()
+	defer close(delivery.stop)
+
+	delivery.send(DatabaseEvent{EventName: "EVT", EventCount: 1})
+
+	select {
+	case <-firstEntered:
+	case <-time.After(time.Second):
+		t.Fatal("first callback was not invoked")
+	}
+
+	select {
+	case <-secondCalled:
+		t.Fatal("second callback ran while first callback was still active")
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	close(releaseFirst)
+
+	select {
+	case <-secondCalled:
+	case <-time.After(time.Second):
+		t.Fatal("second callback was not invoked after first callback returned")
 	}
 }
 
