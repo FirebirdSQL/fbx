@@ -203,6 +203,12 @@ func (pb *TPBWriterV3) PutTag(tag byte) {
 	pb.w.AppendByte(tag)
 }
 
+func (pb *TPBWriterV3) PutInt32(tag byte, val int32) {
+	pb.w.AppendByte(tag)
+	pb.w.AppendByte(4)
+	pb.w.AppendInt32(val)
+}
+
 func (pb *TPBWriterV3) Bytes() []byte {
 	return pb.w.buf
 }

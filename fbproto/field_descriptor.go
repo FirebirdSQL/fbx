@@ -19,6 +19,7 @@ type FieldDescriptor struct {
 	OwnerName         string
 	OriginalName      string
 	OriginalTableName string
+	Schema            string
 	Nullable          bool
 }
 

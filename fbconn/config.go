@@ -441,6 +441,7 @@ func parseEnvSettings() map[string]string {
 		"FBSERVICEFILE":        "servicefile",
 		"FBTZ":                 "timezone",
 		"FBOPTIONS":            "options",
+		"FBSEARCHPATH":         "search_path",
 	}
 
 	for envname, realname := range nameMap {

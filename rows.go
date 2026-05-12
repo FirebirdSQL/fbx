@@ -267,7 +267,22 @@ func (rows *baseRows) Scan(dest ...any) error {
 		rows.scanPlans = make([]fbtype.ScanPlan, len(values))
 		rows.scanTypes = make([]reflect.Type, len(values))
 		for i := range dest {
-			typeMetadata := fbtype.NewTypeMetadata(fieldDescriptions[i].Type, fieldDescriptions[i].Subtype, fieldDescriptions[i].Length, fieldDescriptions[i].Scale)
+			typeMetadata := fbtype.NewTypeMetadata(
+				fieldDescriptions[i].Type,
+				fieldDescriptions[i].Subtype,
+				fieldDescriptions[i].Length,
+				fieldDescriptions[i].Scale,
+			)
+			arr := fieldDescriptions[i].ArrayData
+			if arr != nil {
+				arrayData, err := fbtype.NewArrayData(arr.TypeId, arr.SubType, arr.Length, arr.Scale, arr.Dimensions)
+				if err != nil {
+					err = ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: err}
+					rows.fatal(err)
+					return err
+				}
+				typeMetadata.SetArrayMetadata(arrayData)
+			}
 			rows.scanPlans[i] = m.PlanScan(typeMetadata, dest[i])
 			rows.scanTypes[i] = reflect.TypeOf(dest[i])
 		}
@@ -288,12 +303,28 @@ func (rows *baseRows) Scan(dest ...any) error {
 		}
 
 		if rows.scanTypes[i] != reflect.TypeOf(dst) {
-			typeMetadata := fbtype.NewTypeMetadata(fieldDescriptions[i].Type, fieldDescriptions[i].Subtype, fieldDescriptions[i].Length, fieldDescriptions[i].Scale)
+			typeMetadata := fbtype.NewTypeMetadata(
+				fieldDescriptions[i].Type,
+				fieldDescriptions[i].Subtype,
+				fieldDescriptions[i].Length,
+				fieldDescriptions[i].Scale,
+			)
+			arr := fieldDescriptions[i].ArrayData
+			if arr != nil {
+				arrayData, err := fbtype.NewArrayData(arr.TypeId, arr.SubType, arr.Length, arr.Scale, arr.Dimensions)
+				if err != nil {
+					err = ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: err}
+					rows.fatal(err)
+					return err
+				}
+				typeMetadata.SetArrayMetadata(arrayData)
+			}
 			rows.scanPlans[i] = m.PlanScan(typeMetadata, dest[i])
 			rows.scanTypes[i] = reflect.TypeOf(dest[i])
 		}
 
 		err := rows.scanPlans[i].Scan(values[i], dst)
+
 		if err != nil {
 			err = ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: err}
 			rows.fatal(err)

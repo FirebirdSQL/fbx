@@ -790,6 +790,25 @@ func (p *Pool) BeginTx(ctx context.Context, txOptions fbx.TxOptions) (fbx.Tx, er
 	return &Tx{t: t, c: c}, nil
 }
 
+// BeginTxTPB acquires a connection from the Pool and starts a transaction with a raw TPB.
+// Unlike database/sql, the context only affects the begin command. i.e. there is no auto-rollback on context cancellation.
+// *fbxpool.Tx is returned, which implements the fbx.Tx interface.
+// Commit or Rollback must be called on the returned transaction to finalize the transaction block.
+func (p *Pool) BeginTxTPB(ctx context.Context, tpb []byte) (fbx.Tx, error) {
+	c, err := p.Acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	t, err := c.BeginTxTPB(ctx, tpb)
+	if err != nil {
+		c.Release()
+		return nil, err
+	}
+
+	return &Tx{t: t, c: c}, nil
+}
+
 // Ping acquires a connection from the Pool and executes an empty sql statement against it.
 // If the sql returns without error, the database Ping is considered successful, otherwise, the error is returned.
 func (p *Pool) Ping(ctx context.Context) error {

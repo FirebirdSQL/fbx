@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbconn"
+	"rdb.red-soft.ru/fbx/fbproto"
 )
 
 func TestTransactionSuccessfulCommit(t *testing.T) {
@@ -379,6 +380,92 @@ func TestBeginReadOnly(t *testing.T) {
 	if fbErr, ok := err.(*fbconn.FbError); !ok || fbErr.Code != "25006" {
 		t.Errorf("Expected error SQLSTATE 25006, but got %#v", err)
 	}
+}
+
+func TestBeginLockTimeout(t *testing.T) {
+	t.Parallel()
+
+	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
+	defer closeConn(t, conn)
+
+	tx, err := conn.BeginTx(context.Background(), fbx.TxOptions{LockTimeout: 7 * time.Second})
+	require.NoError(t, err)
+	defer tx.Rollback(context.Background())
+
+	var lockTimeout int
+	err = tx.QueryRow(
+		context.Background(),
+		"select mon$lock_timeout from mon$transactions where mon$transaction_id = current_transaction",
+	).Scan(&lockTimeout)
+	require.NoError(t, err)
+	require.Equal(t, 7, lockTimeout)
+}
+
+func TestBeginLockTimeoutPreservesDefaultTxMode(t *testing.T) {
+	t.Parallel()
+
+	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
+	defer closeConn(t, conn)
+
+	defaultTx, err := conn.BeginTx(context.Background(), fbx.TxOptions{})
+	require.NoError(t, err)
+	defer defaultTx.Rollback(context.Background())
+
+	var defaultIso int
+	var defaultReadOnly int
+	err = defaultTx.QueryRow(
+		context.Background(),
+		"select mon$isolation_mode, mon$read_only from mon$transactions where mon$transaction_id = current_transaction",
+	).Scan(&defaultIso, &defaultReadOnly)
+	require.NoError(t, err)
+
+	require.NoError(t, defaultTx.Rollback(context.Background()))
+
+	tx, err := conn.BeginTx(context.Background(), fbx.TxOptions{LockTimeout: 7 * time.Second})
+	require.NoError(t, err)
+	defer tx.Rollback(context.Background())
+
+	var iso int
+	var readOnly int
+	var lockTimeout int
+	err = tx.QueryRow(
+		context.Background(),
+		"select mon$isolation_mode, mon$read_only, mon$lock_timeout from mon$transactions where mon$transaction_id = current_transaction",
+	).Scan(&iso, &readOnly, &lockTimeout)
+	require.NoError(t, err)
+
+	require.Equal(t, defaultIso, iso, "lock timeout only must not force isolation mode")
+	require.Equal(t, defaultReadOnly, readOnly, "lock timeout only must not force access mode")
+	require.Equal(t, 7, lockTimeout)
+}
+
+func TestBeginCustomTPB(t *testing.T) {
+	t.Parallel()
+
+	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
+	defer closeConn(t, conn)
+
+	customTPB := fbproto.NewTPBWriterV3()
+	customTPB.PutTag(fbproto.Isc_tpb_read)
+	customTPB.PutTag(fbproto.Isc_tpb_concurrency)
+	customTPB.PutTag(fbproto.Isc_tpb_wait)
+	customTPB.PutInt32(fbproto.Isc_tpb_lock_timeout, 11)
+
+	tx, err := conn.BeginTxTPB(context.Background(), customTPB.Bytes())
+	require.NoError(t, err)
+	defer tx.Rollback(context.Background())
+
+	var iso int
+	var readOnly int
+	var lockTimeout int
+	err = tx.QueryRow(
+		context.Background(),
+		"select mon$isolation_mode, mon$read_only, mon$lock_timeout from mon$transactions where mon$transaction_id = current_transaction",
+	).Scan(&iso, &readOnly, &lockTimeout)
+	require.NoError(t, err)
+	require.Equal(t, 1, iso)
+	require.Equal(t, 1, readOnly)
+	require.Equal(t, 11, lockTimeout)
 }
 
 func TestTxNestedTransactionCommit(t *testing.T) {

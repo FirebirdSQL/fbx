@@ -102,7 +102,7 @@ func (fbConn *FbConn) getInfoStatement(statementHandle int, itemsParser func([]b
 	msgBuilder := func() fbproto.ClientMessage {
 		return &fbproto.OpInfoSQL{
 			StatementHandle:           statementHandle,
-			StatementInformationItems: GetSelectDescribeInfoItemsContinue(continueIndex),
+			StatementInformationItems: GetSelectDescribeInfoItemsContinue(continueIndex, fbConn.serverMajorVersion),
 			MaxBufferLength:           infoSize,
 		}
 	}
@@ -167,11 +167,42 @@ func (fbConn *FbConn) getServerInfo(msgBuilder func() fbproto.ClientMessage, tru
 	return nil
 }
 
-func GetSelectDescribeInfoItemsContinue(index int) []byte {
-	return append(append([]byte{fbproto.Isc_info_sql_sqlda_start, 2}, utils.Int16_to_bytes(int16(index))...), GetSelectDescribeInfoItems()...)
+func GetSelectDescribeInfoItemsContinue(index, serverVersion int) []byte {
+	return append(append([]byte{fbproto.Isc_info_sql_sqlda_start, 2}, utils.Int16_to_bytes(int16(index))...), GetSelectDescribeInfoItems(serverVersion)...)
 }
 
-func GetSelectDescribeInfoItems() []byte {
+func GetSelectDescribeInfoItems(serverVersion int) []byte {
+	if serverVersion < 6 {
+		return []byte{
+			fbproto.Isc_info_sql_stmt_type,
+			fbproto.Isc_info_sql_select,
+			fbproto.Isc_info_sql_describe_vars,
+			fbproto.Isc_info_sql_sqlda_seq,
+			fbproto.Isc_info_sql_type,
+			fbproto.Isc_info_sql_sub_type,
+			fbproto.Isc_info_sql_scale,
+			fbproto.Isc_info_sql_length,
+			fbproto.Isc_info_sql_null_ind,
+			fbproto.Isc_info_sql_field,
+			fbproto.Isc_info_sql_relation,
+			fbproto.Isc_info_sql_owner,
+			fbproto.Isc_info_sql_alias,
+			fbproto.Isc_info_sql_describe_end,
+
+			fbproto.Isc_info_sql_bind,
+			fbproto.Isc_info_sql_describe_vars,
+			fbproto.Isc_info_sql_sqlda_seq,
+			fbproto.Isc_info_sql_type,
+			fbproto.Isc_info_sql_sub_type,
+			fbproto.Isc_info_sql_scale,
+			fbproto.Isc_info_sql_length,
+			fbproto.Isc_info_sql_null_ind,
+			fbproto.Isc_info_sql_field,
+			fbproto.Isc_info_sql_relation,
+			fbproto.Isc_info_sql_describe_end,
+		}
+	}
+
 	return []byte{
 		fbproto.Isc_info_sql_stmt_type,
 		fbproto.Isc_info_sql_select,
@@ -184,6 +215,7 @@ func GetSelectDescribeInfoItems() []byte {
 		fbproto.Isc_info_sql_null_ind,
 		fbproto.Isc_info_sql_field,
 		fbproto.Isc_info_sql_relation,
+		fbproto.Isc_info_sql_relation_schema, // request information about the schema if server version is 6 or more
 		fbproto.Isc_info_sql_owner,
 		fbproto.Isc_info_sql_alias,
 		fbproto.Isc_info_sql_describe_end,
@@ -195,6 +227,10 @@ func GetSelectDescribeInfoItems() []byte {
 		fbproto.Isc_info_sql_sub_type,
 		fbproto.Isc_info_sql_scale,
 		fbproto.Isc_info_sql_length,
+		fbproto.Isc_info_sql_null_ind,
+		fbproto.Isc_info_sql_field,
+		fbproto.Isc_info_sql_relation,
+		fbproto.Isc_info_sql_relation_schema, // request information about the schema if server version is 6 or more
 		fbproto.Isc_info_sql_describe_end,
 	}
 }

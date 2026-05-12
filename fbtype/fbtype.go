@@ -47,10 +47,11 @@ type Type struct {
 }
 
 type TypeMetadata struct {
-	TypeID  uint32
-	SubType int32
-	Length  uint32
-	Scale   int32
+	TypeID    uint32
+	SubType   int32
+	Length    uint32
+	Scale     int32
+	ArrayData *ArrayData
 }
 
 func NewTypeMetadata(typeId uint32, subType int32, length uint32, scale int32) TypeMetadata {
@@ -62,6 +63,10 @@ func NewTypeMetadata(typeId uint32, subType int32, length uint32, scale int32) T
 	tm.Scale = scale
 
 	return tm
+}
+
+func (tm *TypeMetadata) SetArrayMetadata(arrayData *ArrayData) {
+	tm.ArrayData = arrayData
 }
 
 // Map is the mapping between Firebird server types and Go type handling logic. It can encode values for
@@ -1858,24 +1863,20 @@ type sqlScannerWrapper struct {
 }
 
 func (w *sqlScannerWrapper) Scan(src any) error {
-	//t, ok := w.m.TypeForValue(w.v)
-	//if !ok {
-	//	return fmt.Errorf("cannot convert to sql.Scanner: cannot find registered type for %T", w.v)
-	//}
-	//
-	//var bufSrc []byte
-	//if src != nil {
-	//	switch src := src.(type) {
-	//	case string:
-	//		bufSrc = []byte(src)
-	//	case []byte:
-	//		bufSrc = src
-	//	default:
-	//		bufSrc = []byte(fmt.Sprint(bufSrc))
-	//	}
-	//}
-	//return w.m.Scan(t.TypeID, TextFormatCode, bufSrc, w.v)
-	panic("not implemented")
+	_, err := getArrayDecodeType(w.v)
+	if err != nil {
+		return err
+	}
+	if src == nil {
+		return nil
+	}
+	array, ok := src.(ArraySQLScanner)
+	if !ok {
+		return fmt.Errorf("cannot convert to sql.Scanner: cannot find registered type for %T", w.v)
+	}
+	sp := planScanArray{m: w.m, arrayData: array.ArrayData}
+
+	return sp.Scan(array.ArrayBuffer, w.v)
 }
 
 var valuerReflectType = reflect.TypeFor[driver.Valuer]()

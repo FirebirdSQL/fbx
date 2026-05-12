@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"time"
 
 	"rdb.red-soft.ru/fbx/fbconn"
 	"rdb.red-soft.ru/fbx/fbproto"
@@ -33,6 +34,10 @@ const (
 type TxOptions struct {
 	IsoLevel   TxIsoLevel
 	AccessMode TxAccessMode
+	// LockTimeout controls lock wait timeout for WAIT transactions.
+	// Zero means server/database default behavior.
+	// Value must be a positive whole number of seconds in range [1..32767].
+	LockTimeout time.Duration
 }
 
 var ErrTxClosed = errors.New("tx is closed")
@@ -49,52 +54,25 @@ func (c *Conn) Begin(ctx context.Context) (Tx, error) {
 // BeginTx starts a transaction with txOptions determining the transaction mode. Unlike database/sql, the context only
 // affects the begin command. i.e. there is no auto-rollback on context cancellation.
 func (c *Conn) BeginTx(ctx context.Context, txOptions TxOptions) (Tx, error) {
-	// If no options are specified, use server / database defaults. This matches Firebird semantics and keeps
-	// database/sql LevelDefault behaving as expected (i.e. do not silently force READ COMMITTED).
-	if txOptions.AccessMode == "" && txOptions.IsoLevel == "" {
-		fbTx, err := c.fbConn.StartTransactionTPB(ctx, nil)
-		if err != nil {
-			c.die()
-			return nil, err
-		}
-		return &dbTx{conn: c, tx: fbTx}, nil
+	tpb, err := txOptions.GetTPB()
+	if err != nil {
+		return nil, err
 	}
 
-	tpb := fbproto.NewTPBWriterV3()
-	mode := txOptions.AccessMode
-	level := txOptions.IsoLevel
-	if mode == "" {
-		mode = ReadWrite
-	}
-	if level == "" {
-		level = ReadCommitted
-	}
-	switch mode {
-	case ReadOnly:
-		tpb.PutTag(fbproto.Isc_tpb_read)
-	case ReadWrite:
-		tpb.PutTag(fbproto.Isc_tpb_write)
-	default:
-		return nil, fmt.Errorf("unknown transaction access mode: %s", mode)
-	}
-	tpb.PutTag(fbproto.Isc_tpb_wait)
-	switch level {
-	case Serializable:
-		tpb.PutTag(fbproto.Isc_tpb_consistency)
-	case RepeatableRead:
-		tpb.PutTag(fbproto.Isc_tpb_concurrency)
-	case ReadCommitted:
-		tpb.PutTag(fbproto.Isc_tpb_read_committed)
-		if txOptions.AccessMode == ReadWrite {
-			tpb.PutTag(fbproto.Isc_tpb_no_rec_version)
-		} else {
-			tpb.PutTag(fbproto.Isc_tpb_rec_version)
-		}
-	default:
-		return nil, fmt.Errorf("unknown transaction iso level: %s", level)
-	}
+	return c.beginTxTPB(ctx, tpb)
+}
 
-	fbTx, err := c.fbConn.StartTransactionTPB(ctx, tpb.Bytes())
+// BeginTxTPB starts a transaction using a raw Firebird transaction parameter block.
+// The TPB is passed to the server as-is.
+func (c *Conn) BeginTxTPB(ctx context.Context, tpb []byte) (Tx, error) {
+	txTPB := make([]byte, len(tpb))
+	copy(txTPB, tpb)
+
+	return c.beginTxTPB(ctx, txTPB)
+}
+
+func (c *Conn) beginTxTPB(ctx context.Context, tpb []byte) (Tx, error) {
+	fbTx, err := c.fbConn.StartTransactionTPB(ctx, tpb)
 	if err != nil {
 		// begin should never fail unless there is an underlying connection issue or
 		// a context timeout. In either case, the connection is possibly broken.
@@ -106,6 +84,79 @@ func (c *Conn) BeginTx(ctx context.Context, txOptions TxOptions) (Tx, error) {
 		conn: c,
 		tx:   fbTx,
 	}, nil
+}
+
+func (txOptions TxOptions) GetTPB() ([]byte, error) {
+	lockTimeoutSeconds, err := normalizeTxLockTimeout(txOptions.LockTimeout)
+	if err != nil {
+		return nil, err
+	}
+
+	// If no options are specified, use server / database defaults. This matches Firebird semantics and keeps
+	// database/sql LevelDefault behaving as expected (i.e. do not silently force READ COMMITTED).
+	if txOptions.AccessMode == "" && txOptions.IsoLevel == "" && lockTimeoutSeconds == 0 {
+		return nil, nil
+	}
+
+	tpb := fbproto.NewTPBWriterV3()
+	mode := txOptions.AccessMode
+	level := txOptions.IsoLevel
+	if mode == "" {
+		mode = ReadWrite
+	}
+	if level == "" {
+		level = ReadCommitted
+	}
+
+	if txOptions.AccessMode != "" || txOptions.IsoLevel != "" {
+		switch mode {
+		case ReadOnly:
+			tpb.PutTag(fbproto.Isc_tpb_read)
+		case ReadWrite:
+			tpb.PutTag(fbproto.Isc_tpb_write)
+		default:
+			return nil, fmt.Errorf("unknown transaction access mode: %s", mode)
+		}
+
+		switch level {
+		case Serializable:
+			tpb.PutTag(fbproto.Isc_tpb_consistency)
+		case RepeatableRead:
+			tpb.PutTag(fbproto.Isc_tpb_concurrency)
+		case ReadCommitted:
+			tpb.PutTag(fbproto.Isc_tpb_read_committed)
+			if txOptions.AccessMode == ReadWrite {
+				tpb.PutTag(fbproto.Isc_tpb_no_rec_version)
+			} else {
+				tpb.PutTag(fbproto.Isc_tpb_rec_version)
+			}
+		default:
+			return nil, fmt.Errorf("unknown transaction iso level: %s", level)
+		}
+	}
+
+	if lockTimeoutSeconds > 0 {
+		tpb.PutTag(fbproto.Isc_tpb_wait)
+		tpb.PutInt32(fbproto.Isc_tpb_lock_timeout, int32(lockTimeoutSeconds))
+	} else if txOptions.AccessMode != "" || txOptions.IsoLevel != "" {
+		tpb.PutTag(fbproto.Isc_tpb_wait)
+	}
+
+	return tpb.Bytes(), nil
+}
+
+func normalizeTxLockTimeout(lockTimeout time.Duration) (int, error) {
+	if lockTimeout == 0 {
+		return 0, nil
+	}
+	if lockTimeout < 0 {
+		return 0, fmt.Errorf("lock timeout must be >= 0")
+	}
+	seconds := int(lockTimeout.Seconds())
+	if seconds < 1 || seconds > 32767 {
+		return 0, fmt.Errorf("lock timeout must be in range [1..32767] seconds")
+	}
+	return seconds, nil
 }
 
 // Tx represents a database transaction.
