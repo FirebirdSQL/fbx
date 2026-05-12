@@ -131,10 +131,9 @@ func (fbConn *FbConn) getInfoSQlRecords(statementHandle int, itemsParser func([]
 func (fbConn *FbConn) getServerInfo(msgBuilder func() fbproto.ClientMessage, truncationHandler func(err InfoTruncationError), itemsParser func([]byte) error) error {
 	var err error
 	for {
-		if err = fbConn.client.WriteMessage(msgBuilder()); err != nil {
-			return err
-		}
-		if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+		if err = fbConn.withWriteLockAndFlush(func() error {
+			return fbConn.client.WriteMessage(msgBuilder())
+		}); err != nil {
 			return err
 		}
 
