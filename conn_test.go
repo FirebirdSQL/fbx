@@ -116,6 +116,13 @@ func TestConfigContainsConnStr(t *testing.T) {
 	assert.Equal(t, connStr, config.ConnString())
 }
 
+func TestParseConfigCreateDatabase(t *testing.T) {
+	config, err := fbx.ParseConfig("user=jack password=secret host=localhost port=3050 database=new.fdb create_database=true")
+	require.NoError(t, err)
+	assert.True(t, config.CreateDatabase)
+	assert.Empty(t, config.RuntimeParams["create_database"])
+}
+
 func TestConfigCopyReturnsEqualConfig(t *testing.T) {
 	connString := "firebird://jack:secret@localhost:3050/mydb?application_name=fbxtest&connect_timeout=5"
 	original, err := fbx.ParseConfig(connString)

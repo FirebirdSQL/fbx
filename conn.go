@@ -132,6 +132,17 @@ func Connect(ctx context.Context, connString string) (*Conn, error) {
 	return connect(ctx, connConfig)
 }
 
+// CreateDatabase creates a Firebird/RedDatabase database and returns an attached connection to it.
+// The connection string accepts the same options as Connect.
+func CreateDatabase(ctx context.Context, connString string) (*Conn, error) {
+	connConfig, err := ParseConfig(connString)
+	if err != nil {
+		return nil, err
+	}
+	connConfig.CreateDatabase = true
+	return connect(ctx, connConfig)
+}
+
 // ConnectWithOptions behaves exactly like Connect with the addition of options. At the present options is only used to
 // provide a GetSSLPassword function.
 func ConnectWithOptions(ctx context.Context, connString string, options ParseConfigOptions) (*Conn, error) {
@@ -142,6 +153,16 @@ func ConnectWithOptions(ctx context.Context, connString string, options ParseCon
 	return connect(ctx, connConfig)
 }
 
+// CreateDatabaseWithOptions behaves exactly like CreateDatabase with the addition of ParseConfigOptions.
+func CreateDatabaseWithOptions(ctx context.Context, connString string, options ParseConfigOptions) (*Conn, error) {
+	connConfig, err := ParseConfigWithOptions(connString, options)
+	if err != nil {
+		return nil, err
+	}
+	connConfig.CreateDatabase = true
+	return connect(ctx, connConfig)
+}
+
 // ConnectConfig establishes a connection with a Firebird server with a configuration struct.
 // connConfig must have been created by ParseConfig.
 func ConnectConfig(ctx context.Context, connConfig *ConnConfig) (*Conn, error) {
@@ -149,6 +170,14 @@ func ConnectConfig(ctx context.Context, connConfig *ConnConfig) (*Conn, error) {
 	// connections with the same config.
 	connConfig = connConfig.Copy()
 
+	return connect(ctx, connConfig)
+}
+
+// CreateDatabaseConfig creates a Firebird/RedDatabase database using connConfig and returns an attached connection to it.
+// connConfig must have been created by ParseConfig.
+func CreateDatabaseConfig(ctx context.Context, connConfig *ConnConfig) (*Conn, error) {
+	connConfig = connConfig.Copy()
+	connConfig.CreateDatabase = true
 	return connect(ctx, connConfig)
 }
 

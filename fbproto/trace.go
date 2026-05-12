@@ -28,6 +28,8 @@ func (t *tracer) traceRequest(sender byte, msg ClientMessage) {
 		t.traceConnectMessage(sender, msg)
 	case *OpAttach:
 		t.traceAttachMessage(sender, msg)
+	case *OpCreate:
+		t.traceCreateMessage(sender, msg)
 	case *OpAllocateStatement:
 		t.traceAllocateMessage(sender, msg)
 	case *OpPrepareStatement:
@@ -375,6 +377,16 @@ func (t *tracer) traceCryptMessage(sender byte, _ *OpCrypt) {
 
 func (t *tracer) traceAttachMessage(sender byte, msg *OpAttach) {
 	t.writeTrace(sender, "Attach", func() {
+		fmt.Fprintf(t.buf, " file=%s", traceDoubleQuotedString([]byte(msg.File)))
+		fmt.Fprintf(t.buf, " dpbLen=%d", len(msg.DPB))
+		if t.FullLogMode {
+			fmt.Fprintf(t.buf, " DPB=%s", traceSingleQuotedString(msg.DPB))
+		}
+	})
+}
+
+func (t *tracer) traceCreateMessage(sender byte, msg *OpCreate) {
+	t.writeTrace(sender, "Create", func() {
 		fmt.Fprintf(t.buf, " file=%s", traceDoubleQuotedString([]byte(msg.File)))
 		fmt.Fprintf(t.buf, " dpbLen=%d", len(msg.DPB))
 		if t.FullLogMode {

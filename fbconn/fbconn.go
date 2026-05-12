@@ -126,6 +126,18 @@ func Connect(ctx context.Context, connString string) (*FbConn, error) {
 	return ConnectConfig(ctx, config)
 }
 
+// CreateDatabase creates a Firebird/RedDatabase database and returns an attached connection to it.
+// The connection string accepts the same options as Connect.
+func CreateDatabase(ctx context.Context, connString string) (*FbConn, error) {
+	config, err := ParseConfig(connString)
+	if err != nil {
+		return nil, err
+	}
+	config.CreateDatabase = true
+
+	return ConnectConfig(ctx, config)
+}
+
 // Connect establishes a connection to a Firebird/RedDatabase server using the environment and connString (in URL or keyword/value
 // format) and ParseConfigOptions to provide additional configuration. See documentation for [ParseConfig] for details.
 // ctx can be used to cancel a connect attempt.
@@ -134,6 +146,17 @@ func ConnectWithOptions(ctx context.Context, connString string, parseConfigOptio
 	if err != nil {
 		return nil, err
 	}
+
+	return ConnectConfig(ctx, config)
+}
+
+// CreateDatabaseWithOptions behaves exactly like CreateDatabase with the addition of ParseConfigOptions.
+func CreateDatabaseWithOptions(ctx context.Context, connString string, parseConfigOptions ParseConfigOptions) (*FbConn, error) {
+	config, err := ParseConfigWithOptions(connString, parseConfigOptions)
+	if err != nil {
+		return nil, err
+	}
+	config.CreateDatabase = true
 
 	return ConnectConfig(ctx, config)
 }
@@ -176,6 +199,14 @@ func ConnectConfig(ctx context.Context, config *Config) (*FbConn, error) {
 	}
 
 	return fbConn, nil
+}
+
+// CreateDatabaseConfig creates a Firebird/RedDatabase database using config and returns an attached connection to it.
+// config must have been constructed with [ParseConfig].
+func CreateDatabaseConfig(ctx context.Context, config *Config) (*FbConn, error) {
+	config = config.Copy()
+	config.CreateDatabase = true
+	return ConnectConfig(ctx, config)
 }
 
 func (fbConn *FbConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *auth.AuthManager, respond bool) error {
@@ -577,6 +608,9 @@ connectLoop:
 		dpb = fbproto.NewDPBWriterV2FromBytes(config.DPB)
 	}
 	dpb.PutInt32(fbproto.Isc_dpb_sql_dialect, 3)
+	if config.CreateDatabase {
+		dpb.PutInt32(fbproto.Isc_dpb_set_db_sql_dialect, 3)
+	}
 	dpb.PutString(fbproto.Isc_dpb_lc_ctype, config.Encoding)
 	if config.User != "" {
 		dpb.PutString(fbproto.Isc_dpb_user_name, config.User)
@@ -622,22 +656,32 @@ connectLoop:
 		dpb.PutBuffer(authSpecific)
 	}
 
-	opAttach := fbproto.OpAttach{
-		File: config.Database,
-		DPB:  dpb.Bytes(),
+	var attachOrCreate fbproto.ClientMessage
+	attachAction := "opAttach"
+	if config.CreateDatabase {
+		attachAction = "opCreate"
+		attachOrCreate = &fbproto.OpCreate{
+			File: config.Database,
+			DPB:  dpb.Bytes(),
+		}
+	} else {
+		attachOrCreate = &fbproto.OpAttach{
+			File: config.Database,
+			DPB:  dpb.Bytes(),
+		}
 	}
 
 	if err = fbConn.withWriteLockAndFlush(func() error {
-		return fbConn.client.WriteMessage(&opAttach)
+		return fbConn.client.WriteMessage(attachOrCreate)
 	}); err != nil {
 		fbConn.conn.Close()
-		return nil, newPerDialConnectError("failed to flush opAttach", err)
+		return nil, newPerDialConnectError("failed to flush "+attachAction, err)
 	}
 
 	msg, err := fbConn.receiveMessage()
 	if err != nil {
 		fbConn.conn.Close()
-		return nil, newPerDialConnectError("attachment failed", err)
+		return nil, newPerDialConnectError(attachAction+" failed", err)
 	}
 	switch m := msg.(type) {
 	case *fbproto.OpResponse:
