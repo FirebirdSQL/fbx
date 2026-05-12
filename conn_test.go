@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -20,30 +21,6 @@ import (
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
 )
-
-func TestCrateDBConnect(t *testing.T) {
-	t.Parallel()
-
-	connString := os.Getenv("FBX_TEST_CRATEDB_CONN_STRING")
-	if connString == "" {
-		t.Skipf("Skipping due to missing environment variable %v", "FBX_TEST_CRATEDB_CONN_STRING")
-	}
-
-	conn, err := fbx.Connect(context.Background(), connString)
-	require.Nil(t, err)
-	defer closeConn(t, conn)
-
-	assert.Equal(t, connString, conn.Config().ConnString())
-
-	var result int
-	err = conn.QueryRow(context.Background(), "select 1 +1").Scan(&result)
-	if err != nil {
-		t.Fatalf("QueryRow Scan unexpectedly failed: %v", err)
-	}
-	if result != 2 {
-		t.Errorf("bad result: %d", result)
-	}
-}
 
 func TestConnect(t *testing.T) {
 	t.Parallel()
@@ -82,6 +59,53 @@ func TestConnect(t *testing.T) {
 	}
 }
 
+func TestCreateDatabase(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	config := newCreateDatabaseTestConfig(t, "created.fdb")
+	conn, err := fbx.CreateDatabaseConfig(ctx, config)
+	require.NoError(t, err)
+	defer closeConn(t, conn)
+
+	var result int32
+	err = conn.QueryRow(ctx, "select 1 from rdb$database").Scan(&result)
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), result)
+}
+
+func TestCreateDatabaseExistingDatabase(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	config := newCreateDatabaseTestConfig(t, "existing.fdb")
+	conn, err := fbx.CreateDatabaseConfig(ctx, config)
+	require.NoError(t, err)
+	closeConn(t, conn)
+
+	conn, err = fbx.CreateDatabaseConfig(ctx, config)
+	if conn != nil {
+		closeConn(t, conn)
+	}
+	require.Error(t, err)
+
+	var fbErr *fbconn.FbError
+	require.ErrorAs(t, err, &fbErr)
+	assert.Truef(t,
+		fbErr.Code == "HY000" || fbErr.Code == "08001",
+		"unexpected SQLSTATE: %s (%s)", fbErr.Code, fbErr.Message,
+	)
+	assert.Truef(t,
+		strings.Contains(fbErr.Message, "database or file exists") ||
+			strings.Contains(fbErr.Message, "Error while trying to create file"),
+		"unexpected error message: %s", fbErr.Message,
+	)
+}
+
 func TestConnectWithPreferSimpleProtocol(t *testing.T) {
 	t.Parallel()
 
@@ -100,6 +124,31 @@ func TestConnectWithPreferSimpleProtocol(t *testing.T) {
 	require.Equal(t, fbtype.Text{String: "42", Valid: true}, s)
 
 	ensureConnValid(t, conn)
+}
+
+func newCreateDatabaseTestConfig(t testing.TB, filename string) *fbx.ConnConfig {
+	t.Helper()
+
+	connString := os.Getenv("FBX_TEST_DATABASE")
+	if connString == "" {
+		t.Skipf("Skipping due to missing environment variable %v", "FBX_TEST_DATABASE")
+	}
+
+	config := mustParseConfig(t, connString)
+
+	dir, err := os.MkdirTemp("", "fbx-create-db-*")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = os.RemoveAll(dir)
+	})
+	require.NoError(t, os.MkdirAll(dir, 0o777))
+	require.NoError(t, os.Chmod(dir, 0o777))
+
+	config.Database = filepath.Join(dir, fmt.Sprintf("fbx-create-%d-%s", time.Now().UnixNano(), filename))
+	t.Cleanup(func() {
+		_ = os.Remove(config.Database)
+	})
+	return config
 }
 
 func TestConnectConfigRequiresConnConfigFromParseConfig(t *testing.T) {
