@@ -103,6 +103,19 @@ func TestParseConfig(t *testing.T) {
 			},
 		},
 		{
+			name:       "database url create database",
+			connString: "firebird://jack:secret@localhost:5432/mydb?create_database=true",
+			config: &fbconn.Config{
+				User:           "jack",
+				Password:       "secret",
+				Host:           "localhost",
+				Port:           5432,
+				Database:       "mydb",
+				CreateDatabase: true,
+				RuntimeParams:  map[string]string{},
+			},
+		},
+		{
 			name:       "database url missing password",
 			connString: "firebird://jack@localhost:5432/mydb",
 			config: &fbconn.Config{
@@ -252,6 +265,19 @@ func TestParseConfig(t *testing.T) {
 				Port:           5432,
 				Database:       "mydb",
 				FetchBatchSize: 77,
+				RuntimeParams:  map[string]string{},
+			},
+		},
+		{
+			name:       "Key/value create database",
+			connString: "user=jack password=secret host=localhost port=5432 dbname=mydb create_database=true",
+			config: &fbconn.Config{
+				User:           "jack",
+				Password:       "secret",
+				Host:           "localhost",
+				Port:           5432,
+				Database:       "mydb",
+				CreateDatabase: true,
 				RuntimeParams:  map[string]string{},
 			},
 		},
@@ -520,6 +546,7 @@ func assertConfigsEqual(t *testing.T, expected, actual *fbconn.Config, testName 
 
 	assert.Equalf(t, expected.Host, actual.Host, "%s - Host", testName)
 	assert.Equalf(t, expected.Database, actual.Database, "%s - Database", testName)
+	assert.Equalf(t, expected.CreateDatabase, actual.CreateDatabase, "%s - CreateDatabase", testName)
 	assert.Equalf(t, expected.Port, actual.Port, "%s - Port", testName)
 	assert.Equalf(t, expected.User, actual.User, "%s - User", testName)
 	assert.Equalf(t, expected.Password, actual.Password, "%s - Password", testName)
