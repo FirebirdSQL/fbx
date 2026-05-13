@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -561,13 +562,21 @@ func (c *Conn) execPrepared(ctx context.Context, tx *dbTx, st *fbconn.Statement,
 		return fbconn.QueryStatus{}, err
 	}
 
+	defer c.eqb.reset() // Allow c.eqb internal memory to be GC'ed as soon as possible.
+
 	var result *fbconn.Result
 	if tx != nil {
 		result = st.ExecTx(ctx, tx.tx, c.eqb.ParamValues).Read()
 	} else {
 		result = st.Exec(ctx, c.eqb.ParamValues).Read()
 	}
-	c.eqb.reset() // Allow c.eqb internal memory to be GC'ed as soon as possible.
+	re := regexp.MustCompile(`(?i)set\s+search_path\s+to`)
+	if result.Err == nil && re.MatchString(st.Description.SQL) {
+		err = c.DeallocateAll(ctx)
+		if err != nil {
+			return result.QueryStatus, err
+		}
+	}
 	return result.QueryStatus, result.Err
 }
 

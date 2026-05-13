@@ -848,3 +848,54 @@ func TestErrNoRows(t *testing.T) {
 
 	require.ErrorIs(t, fbx.ErrNoRows, sql.ErrNoRows, "fbx.ErrNowRows must match fbx.ErrNoRows")
 }
+
+func TestConnDeallocateAllAfterSetSearch_path(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		if getServerMajorVersionForConn(ctx, t, conn) < 6 {
+			t.Skip("schemas are supported only in Firebird/RedDatabase 6+")
+		}
+
+		_, err := conn.Exec(ctx, "drop table if exists test1.test")
+		_, err = conn.Exec(ctx, "drop table if exists test2.test")
+		_, err = conn.Exec(ctx, "drop schema if exists test1")
+		_, err = conn.Exec(ctx, "drop schema if exists test2")
+
+		_, err = conn.Exec(ctx, "create schema test1")
+		require.NoError(t, err)
+		_, err = conn.Exec(ctx, "create schema test2")
+		require.NoError(t, err)
+
+		_, err = conn.Exec(ctx, "create table test1.test(val integer)")
+		require.NoError(t, err)
+		_, err = conn.Exec(ctx, "create table test2.test(val integer)")
+		require.NoError(t, err)
+
+		test1Input := 1
+		test2Input := 2
+
+		_, err = conn.Exec(ctx, "insert into test1.test values(?)", test1Input)
+		require.NoError(t, err)
+		_, err = conn.Exec(ctx, "insert into test2.test values(?)", test2Input)
+		require.NoError(t, err)
+
+		_, err = conn.Exec(ctx, "set search_path to test1")
+		require.NoError(t, err)
+
+		var output1, output2 int
+		statement := "select val from test"
+
+		err = conn.QueryRow(ctx, statement).Scan(&output1)
+		require.NoError(t, err)
+		assert.Equal(t, test1Input, output1)
+
+		_, err = conn.Exec(ctx, "set search_path to test2")
+		require.NoError(t, err)
+
+		err = conn.QueryRow(ctx, statement).Scan(&output2)
+		require.NoError(t, err)
+		assert.Equal(t, test2Input, output2)
+	})
+}
