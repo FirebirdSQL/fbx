@@ -13,7 +13,9 @@
 //	res, err := pb.Exec(ctx)
 //
 // Object batches are manual. Use [PreparedBatch.PendingBytes] and [PreparedBatch.Flush]
-// if you want to control when queued rows are sent.
+// if you want to control when queued rows are sent. [PreparedBatch.Reset] clears
+// only the local queue; [PreparedBatch.Cancel] additionally discards rows that
+// have already been flushed to the server.
 //
 // 2) Named API:
 //
@@ -427,7 +429,9 @@ func (b *PreparedBatch) releaseStoredStatement(ctx context.Context) error {
 	return err
 }
 
-// Reset clears queued rows that have not been sent yet.
+// Reset clears queued rows that have not been sent yet. Rows already
+// transmitted to the server by Flush remain in the server-side batch buffer
+// and will still be applied on the next Exec; use Cancel to discard them too.
 func (b *PreparedBatch) Reset() {
 	if b == nil {
 		return
@@ -435,6 +439,36 @@ func (b *PreparedBatch) Reset() {
 	clear(b.encodedRows)
 	b.encodedRows = b.encodedRows[:0]
 	b.pendingBytes = 0
+}
+
+// Cancel discards every row queued for this batch — both the local buffer and
+// any rows already flushed to the server — without executing them. The prepared
+// statement and any owned transaction remain alive, so the batch can be reused
+// via Add/Flush/Exec just as if it had been freshly prepared.
+//
+// Cancel is a no-op on a batch with nothing flushed (it becomes a local Reset).
+// It returns an error when the batch is closed or still has pending cleanup
+// from a prior Exec; in that case close the batch instead.
+func (b *PreparedBatch) Cancel(ctx context.Context) error {
+	if b == nil {
+		return fmt.Errorf("prepared batch is nil")
+	}
+	if b.closed {
+		return fmt.Errorf("prepared batch is closed")
+	}
+	if b.cleanupPending {
+		return fmt.Errorf("prepared batch has pending cleanup after execution; close the batch before reusing it")
+	}
+	b.Reset()
+	if b.lb == nil {
+		return nil
+	}
+	// fbconn.Batch.Cancel maps to Op_batch_cancel, which discards the
+	// server-side message buffer but keeps the batch context alive. We
+	// deliberately do not nil b.lb here so that the next Flush/Exec reuses
+	// the same server batch instead of attempting a duplicate
+	// Op_batch_create on the same statement.
+	return b.lb.Cancel(ctx)
 }
 
 // Close releases batch resources.

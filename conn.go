@@ -358,6 +358,13 @@ func (c *Conn) ExecBatch(ctx context.Context, name string) (BatchResult, error) 
 	return c.execBatchTx(ctx, nil, name)
 }
 
+// CancelBatch discards every row queued for a named batch — both the local
+// buffer and any rows already flushed to the server. The prepared batch
+// statement is kept and can be reused via Exec/Flush/ExecBatch.
+func (c *Conn) CancelBatch(ctx context.Context, name string) error {
+	return c.cancelBatchTx(ctx, nil, name)
+}
+
 func preparedStatementNameAndKey(name, sql string) (psName, psKey string) {
 	if name == sql {
 		digest := sha256.Sum256([]byte(sql))
@@ -693,6 +700,17 @@ func (c *Conn) execBatchTx(ctx context.Context, tx *dbTx, name string) (BatchRes
 		return BatchResult{}, err
 	}
 	return pb.Exec(ctx)
+}
+
+func (c *Conn) cancelBatchTx(ctx context.Context, tx *dbTx, name string) error {
+	pb := c.preparedBatches[name]
+	if pb == nil {
+		return fmt.Errorf("prepared batch %q not found", name)
+	}
+	if err := c.ensurePreparedBatchOwner(tx, name, pb); err != nil {
+		return err
+	}
+	return pb.Cancel(ctx)
 }
 
 func (c *Conn) ensurePreparedBatchOwner(tx *dbTx, name string, pb *PreparedBatch) error {

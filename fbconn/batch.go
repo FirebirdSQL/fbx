@@ -235,25 +235,41 @@ func (b *Batch) Execute(ctx context.Context, tx *FBTransaction) (*BatchCompletio
 	return completion, nil
 }
 
+// Cancel sends Op_batch_cancel to the server. Per the Firebird protocol
+// this discards every message that the server has accumulated for this
+// batch but keeps the server-side batch context alive, so the same Batch
+// object can be reused for new Send/Execute calls.
 func (b *Batch) Cancel(ctx context.Context) error {
-	return b.release(ctx, fbproto.Op_batch_cancel)
-}
-
-func (b *Batch) Close(ctx context.Context) error {
-	return b.release(ctx, fbproto.Op_batch_rls)
-}
-
-func (b *Batch) release(ctx context.Context, op int) error {
 	if b == nil || b.state == batchStateClosed {
 		return nil
 	}
+	if b.state != batchStateCreated {
+		// Nothing was sent yet — there is nothing to cancel server-side.
+		return nil
+	}
+	return b.sendReleaseOp(ctx, fbproto.Op_batch_cancel)
+}
 
+// Close sends Op_batch_rls to the server, releasing the server-side batch
+// context entirely. The Batch must not be used after Close returns.
+func (b *Batch) Close(ctx context.Context) error {
+	if b == nil || b.state == batchStateClosed {
+		return nil
+	}
 	if b.state != batchStateCreated {
 		b.markClosed()
 		return nil
 	}
 
-	err := b.withConn(ctx, func() error {
+	err := b.sendReleaseOp(ctx, fbproto.Op_batch_rls)
+	if err == nil || b.st.conn.IsClosed() {
+		b.markClosed()
+	}
+	return err
+}
+
+func (b *Batch) sendReleaseOp(ctx context.Context, op int) error {
+	return b.withConn(ctx, func() error {
 		if err := b.st.conn.client.WriteMessage(&fbproto.OpBatchRelease{
 			Kind:            op,
 			StatementHandle: b.st.Description.StatementHandle,
@@ -271,11 +287,6 @@ func (b *Batch) release(ctx context.Context, op int) error {
 		}
 		return b.receiveTwoGenericResponses(ctx)
 	})
-
-	if err == nil || b.st.conn.IsClosed() {
-		b.markClosed()
-	}
-	return err
 }
 
 func (b *Batch) receiveGenericResponse(ctx context.Context) error {

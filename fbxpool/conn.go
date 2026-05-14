@@ -107,6 +107,12 @@ func (c *Conn) ExecBatch(ctx context.Context, name string) (fbx.BatchResult, err
 	return c.Conn().ExecBatch(ctx, name)
 }
 
+// CancelBatch discards every row queued for a named batch — both the local
+// buffer and any rows already flushed to the server.
+func (c *Conn) CancelBatch(ctx context.Context, name string) error {
+	return c.Conn().CancelBatch(ctx, name)
+}
+
 func (c *Conn) Query(ctx context.Context, sql string, args ...any) (fbx.Rows, error) {
 	return c.Conn().Query(ctx, sql, args...)
 }

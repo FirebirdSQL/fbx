@@ -486,6 +486,40 @@ func TestPreparedBatchResetClearsBufferedRows(t *testing.T) {
 	require.Nil(t, backing[1])
 }
 
+func TestPreparedBatchCancelGuards(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("nil receiver returns descriptive error", func(t *testing.T) {
+		var pb *PreparedBatch
+		require.EqualError(t, pb.Cancel(ctx), "prepared batch is nil")
+	})
+
+	t.Run("closed batch refuses cancel", func(t *testing.T) {
+		pb := &PreparedBatch{closed: true}
+		require.EqualError(t, pb.Cancel(ctx), "prepared batch is closed")
+	})
+
+	t.Run("cleanup pending refuses cancel", func(t *testing.T) {
+		pb := &PreparedBatch{cleanupPending: true}
+		require.ErrorContains(t, pb.Cancel(ctx),
+			"prepared batch has pending cleanup after execution")
+	})
+
+	t.Run("no wire state — Cancel clears local buffer and returns nil", func(t *testing.T) {
+		row1 := []byte("row-one")
+		row2 := []byte("row-two")
+		pb := &PreparedBatch{
+			encodedRows:  [][]byte{row1, row2},
+			pendingBytes: len(row1) + len(row2),
+		}
+
+		require.NoError(t, pb.Cancel(ctx))
+		require.Zero(t, pb.pendingBytes)
+		require.Len(t, pb.encodedRows, 0)
+		require.Nil(t, pb.lb)
+	})
+}
+
 func TestFinalizePreparedBatchExecJoinsErrors(t *testing.T) {
 	t.Run("execute error keeps cleanup errors", func(t *testing.T) {
 		execErr := errors.New("execute failed")

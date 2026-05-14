@@ -141,6 +141,10 @@ type Tx interface {
 	Flush(ctx context.Context, name string) error
 	// ExecBatch flushes queued rows for a named batch, executes it, and returns the result.
 	ExecBatch(ctx context.Context, name string) (BatchResult, error)
+	// CancelBatch discards every row queued for a named batch — both the local
+	// buffer and any rows already flushed to the server. The prepared batch
+	// statement is kept and can be reused.
+	CancelBatch(ctx context.Context, name string) error
 
 	Exec(ctx context.Context, sql string, arguments ...any) (commandTag fbconn.QueryStatus, err error)
 	Query(ctx context.Context, sql string, args ...any) (Rows, error)
@@ -286,6 +290,16 @@ func (tx *dbTx) ExecBatch(ctx context.Context, name string) (BatchResult, error)
 	return tx.conn.execBatchTx(ctx, tx, name)
 }
 
+// CancelBatch discards every row queued for a named batch — both the local
+// buffer and any rows already flushed to the server. The prepared batch
+// statement is kept and can be reused.
+func (tx *dbTx) CancelBatch(ctx context.Context, name string) error {
+	if tx.closed {
+		return ErrTxClosed
+	}
+	return tx.conn.cancelBatchTx(ctx, tx, name)
+}
+
 // dbSimulatedNestedTx represents a simulated nested transaction implemented by a savepoint.
 type dbSimulatedNestedTx struct {
 	tx           Tx
@@ -372,6 +386,16 @@ func (sp *dbSimulatedNestedTx) ExecBatch(ctx context.Context, name string) (Batc
 		return BatchResult{}, ErrTxClosed
 	}
 	return sp.tx.ExecBatch(ctx, name)
+}
+
+// CancelBatch discards every row queued for a named batch — both the local
+// buffer and any rows already flushed to the server. The prepared batch
+// statement is kept and can be reused.
+func (sp *dbSimulatedNestedTx) CancelBatch(ctx context.Context, name string) error {
+	if sp.closed {
+		return ErrTxClosed
+	}
+	return sp.tx.CancelBatch(ctx, name)
 }
 
 // Query delegates to the underlying Tx
