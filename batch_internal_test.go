@@ -514,6 +514,7 @@ func TestFinalizePreparedBatchExecJoinsErrors(t *testing.T) {
 		result, err := finalizePreparedBatchExec(completion, nil, closeErr, releaseErr)
 
 		require.EqualValues(t, 1, result.Affected)
+		require.Equal(t, []int64{1}, result.UpdateCounts)
 		require.ErrorContains(t, err, "batch failed at row 2")
 		require.ErrorContains(t, err, "duplicate key")
 		require.ErrorContains(t, err, "close failed")
@@ -537,6 +538,7 @@ func TestFinalizePreparedBatchExecJoinsErrors(t *testing.T) {
 		result, err := finalizePreparedBatchExec(completion, nil, nil, nil)
 
 		require.EqualValues(t, 2, result.Affected)
+		require.Equal(t, []int64{1, -1, 1, -1}, result.UpdateCounts)
 		require.ErrorContains(t, err, "batch failed at row 1")
 		require.ErrorContains(t, err, "2 more batch errors")
 

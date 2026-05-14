@@ -61,8 +61,22 @@ type BatchOptions struct {
 	DetailedErrors int
 }
 
+// BatchResult is returned by PreparedBatch.Exec and Conn.ExecBatch.
 type BatchResult struct {
+	// Affected is the sum of positive per-row update counts. If the server
+	// returned no per-row counts (RecordCounts disabled), Affected falls back
+	// to the server-reported total record count.
 	Affected int64
+
+	// UpdateCounts holds the per-row update count reported by the server when
+	// RecordCounts mode is enabled (the driver default). Each element matches
+	// a row sent to the server in submission order. A negative value is a
+	// Firebird sentinel indicating that the row did not produce an update
+	// count — typically because the row failed and was skipped in MultiError
+	// mode; use BatchExecutionError.Errors to discover the cause.
+	//
+	// UpdateCounts is nil when the server returned no per-row counts.
+	UpdateCounts []int64
 }
 
 // BatchError describes a single row error returned by batch execution.
@@ -465,6 +479,9 @@ func finalizePreparedBatchExec(completion *fbconn.BatchCompletion, execErr, clos
 	result := BatchResult{}
 	if completion != nil {
 		result.Affected = completion.Affected()
+		if len(completion.UpdateCounts) > 0 {
+			result.UpdateCounts = append(make([]int64, 0, len(completion.UpdateCounts)), completion.UpdateCounts...)
+		}
 	}
 
 	return result, errors.Join(batchCompletionError(completion), closeErr, releaseErr)

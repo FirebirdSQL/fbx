@@ -777,6 +777,15 @@ func TestPreparedBatchPartialFailureUpdateDelete(t *testing.T) {
 	updateResult, err := pbUpdate.Exec(ctx)
 	require.ErrorContains(t, err, "batch failed at row 1")
 	require.EqualValues(t, 1, updateResult.Affected)
+	require.NotEmpty(t, updateResult.UpdateCounts, "default batch mode should still report per-row counts up to the failure")
+	require.Greater(t, updateResult.UpdateCounts[0], int64(0), "row 0 succeeded — count must be positive")
+	var updateSum int64
+	for _, n := range updateResult.UpdateCounts {
+		if n > 0 {
+			updateSum += n
+		}
+	}
+	require.Equal(t, updateResult.Affected, updateSum, "Affected must equal sum of positive UpdateCounts")
 	require.Equal(t, []batchDMLRow{
 		{ID: 1, Note: "same-note"},
 		{ID: 2, Note: "two"},
@@ -849,6 +858,20 @@ func TestPreparedBatchContinueOnErrorReportsAllRowErrors(t *testing.T) {
 	result, err := pb.Exec(ctx)
 	require.Error(t, err)
 	require.EqualValues(t, 2, result.Affected)
+
+	require.Len(t, result.UpdateCounts, 4, "server must report one count per submitted row")
+	require.Greater(t, result.UpdateCounts[0], int64(0), "row 0 succeeded — count must be positive")
+	require.LessOrEqual(t, result.UpdateCounts[1], int64(0), "row 1 failed — count must be sentinel/zero")
+	require.Greater(t, result.UpdateCounts[2], int64(0), "row 2 succeeded — count must be positive")
+	require.LessOrEqual(t, result.UpdateCounts[3], int64(0), "row 3 failed — count must be sentinel/zero")
+
+	var sum int64
+	for _, n := range result.UpdateCounts {
+		if n > 0 {
+			sum += n
+		}
+	}
+	require.Equal(t, result.Affected, sum, "Affected must equal sum of positive UpdateCounts")
 
 	var batchErr *fbx.BatchExecutionError
 	require.ErrorAs(t, err, &batchErr)
