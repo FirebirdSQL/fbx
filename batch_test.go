@@ -260,7 +260,7 @@ func TestPreparedBatchPendingBytes(t *testing.T) {
 	require.Equal(t, 0, pb.PendingBytes())
 }
 
-func TestPreparedBatchPendingBytesReset(t *testing.T) {
+func TestPreparedBatchPendingBytesClearPending(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
@@ -268,7 +268,7 @@ func TestPreparedBatchPendingBytesReset(t *testing.T) {
 	defer closeConn(t, conn)
 	skipIfBatchUnsupported(ctx, t, conn)
 
-	table := batchTestTableName(t, "fbx_pb_pending_reset")
+	table := batchTestTableName(t, "fbx_pb_pending_clear")
 
 	_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(50))")
 	require.NoError(t, err)
@@ -280,7 +280,7 @@ func TestPreparedBatchPendingBytesReset(t *testing.T) {
 	require.NoError(t, pb.Add(1, "drop me"))
 	require.Greater(t, pb.PendingBytes(), 0)
 
-	pb.Reset()
+	pb.ClearPending()
 	require.Equal(t, 0, pb.PendingBytes())
 
 	require.NoError(t, pb.Add(10, "kept"))

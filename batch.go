@@ -13,9 +13,9 @@
 //	res, err := pb.Exec(ctx)
 //
 // Object batches are manual. Use [PreparedBatch.PendingBytes] and [PreparedBatch.Flush]
-// if you want to control when queued rows are sent. [PreparedBatch.Reset] clears
-// only the local queue; [PreparedBatch.Cancel] additionally discards rows that
-// have already been flushed to the server.
+// if you want to control when queued rows are sent. [PreparedBatch.ClearPending]
+// drops only locally buffered rows; [PreparedBatch.Cancel] additionally discards
+// rows that have already been flushed to the server.
 //
 // 2) Named API:
 //
@@ -295,7 +295,7 @@ func (b *PreparedBatch) flushWithSource(ctx context.Context, source string) erro
 	if err := b.lb.Send(ctx, b.encodedRows); err != nil {
 		return errors.Join(err, b.releaseWireResources(ctx))
 	}
-	b.Reset()
+	b.ClearPending()
 	return nil
 }
 
@@ -429,10 +429,13 @@ func (b *PreparedBatch) releaseStoredStatement(ctx context.Context) error {
 	return err
 }
 
-// Reset clears queued rows that have not been sent yet. Rows already
-// transmitted to the server by Flush remain in the server-side batch buffer
-// and will still be applied on the next Exec; use Cancel to discard them too.
-func (b *PreparedBatch) Reset() {
+// ClearPending discards rows that are still buffered locally and have not been
+// transmitted to the server yet. Rows already sent by a prior Flush remain in
+// the server-side batch buffer and will still be applied on the next Exec; use
+// Cancel to discard those too.
+//
+// ClearPending performs no wire I/O and never returns an error.
+func (b *PreparedBatch) ClearPending() {
 	if b == nil {
 		return
 	}
@@ -459,7 +462,7 @@ func (b *PreparedBatch) Cancel(ctx context.Context) error {
 	if b.cleanupPending {
 		return fmt.Errorf("prepared batch has pending cleanup after execution; close the batch before reusing it")
 	}
-	b.Reset()
+	b.ClearPending()
 	if b.lb == nil {
 		return nil
 	}
@@ -476,7 +479,7 @@ func (b *PreparedBatch) Close(ctx context.Context) error {
 	if b == nil || b.closed {
 		return nil
 	}
-	b.Reset()
+	b.ClearPending()
 
 	err := b.releaseWireResources(ctx)
 	if err == nil {

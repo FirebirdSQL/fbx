@@ -467,7 +467,7 @@ func TestNamedBatchFlushDeallocateReleasesOwnedInternalTransaction(t *testing.T)
 	require.False(t, conn.fbConn.ActiveTx())
 }
 
-func TestPreparedBatchResetClearsBufferedRows(t *testing.T) {
+func TestPreparedBatchClearPendingClearsBufferedRows(t *testing.T) {
 	row1 := []byte("row-one")
 	row2 := []byte("row-two")
 
@@ -478,7 +478,7 @@ func TestPreparedBatchResetClearsBufferedRows(t *testing.T) {
 
 	backing := pb.encodedRows[:len(pb.encodedRows)]
 
-	pb.Reset()
+	pb.ClearPending()
 
 	require.Zero(t, pb.pendingBytes)
 	require.Len(t, pb.encodedRows, 0)
