@@ -70,16 +70,25 @@ type BatchResult struct {
 	// to the server-reported total record count.
 	Affected int64
 
-	// UpdateCounts holds the per-row update count reported by the server when
-	// RecordCounts mode is enabled (the driver default). Each element matches
-	// a row sent to the server in submission order. A negative value is a
-	// Firebird sentinel indicating that the row did not produce an update
-	// count — typically because the row failed and was skipped in MultiError
-	// mode; use BatchExecutionError.Errors to discover the cause.
+	// UpdateCounts holds per-row update counts in submission order, when
+	// RecordCounts is enabled (the default). Negative values are Firebird
+	// sentinels for failed/skipped rows; use BatchExecutionError.Errors for
+	// the cause.
 	//
-	// UpdateCounts is nil when the server returned no per-row counts.
+	// Length: with BatchOptions.ContinueOnError there is one entry per
+	// submitted row; in the default stop-on-first-error mode the slice may
+	// be shorter (only rows processed before the failure are reported).
+	//
+	// Nil when the server returned no per-row counts.
 	UpdateCounts []int64
 }
+
+// ErrBatchRowFailed marks a per-row batch failure that the server reported
+// without a detailed status vector. It is wrapped into BatchError.Err when
+// MultiError mode is in effect and the server exceeds the DetailedErrors
+// budget — Firebird then sends only the row number for the remaining errors.
+// Use errors.Is to detect such rows from a BatchExecutionError.
+var ErrBatchRowFailed = errors.New("batch row failed")
 
 // BatchError describes a single row error returned by batch execution.
 type BatchError struct {
@@ -444,16 +453,15 @@ func (b *PreparedBatch) ClearPending() {
 	b.pendingBytes = 0
 }
 
-// Cancel performs a full reset of the batch: it drops locally queued rows,
-// releases the server-side batch context, deallocates any internally owned
-// prepared statement, and rolls back any internally owned transaction. The
-// PreparedBatch itself remains valid — the next Add/Flush/Exec cycle re-prepares
-// whatever the batch needs as if it had been freshly opened. For batches
-// bound to an explicit transaction the user's statement and transaction are
-// left alone; only the server-side batch buffer is dropped.
+// Cancel performs a full reset: drops queued rows, releases the server-side
+// batch context, and rolls back any internally owned statement and
+// transaction. PreparedBatch stays valid — the next Add/Flush/Exec re-prepares
+// what it needs. For tx-scoped batches the user's statement and tx are left
+// alone.
 //
-// Cancel returns an error when the batch is closed or still has pending cleanup
-// from a prior Exec; in that case call Close instead.
+// Returns an error if the batch is closed or has pending cleanup from a prior
+// Exec (call Close instead). On context cancellation, retry with a fresh
+// context to free server-side resources.
 func (b *PreparedBatch) Cancel(ctx context.Context) error {
 	if b == nil {
 		return fmt.Errorf("prepared batch is nil")
@@ -468,7 +476,10 @@ func (b *PreparedBatch) Cancel(ctx context.Context) error {
 	return b.releaseWireResources(ctx)
 }
 
-// Close releases batch resources.
+// Close releases every resource owned by the batch and marks it unusable.
+// Idempotent. Must be called even after Exec returns an error, otherwise the
+// prepared statement and any internal transaction stay allocated. On context
+// cancellation, retry with a fresh context to free server-side resources.
 func (b *PreparedBatch) Close(ctx context.Context) error {
 	if b == nil || b.closed {
 		return nil
@@ -494,9 +505,16 @@ func batchCompletionError(completion *fbconn.BatchCompletion) error {
 		Errors: make([]BatchError, len(completion.Errors)),
 	}
 	for i, completionErr := range completion.Errors {
+		err := completionErr.Err
+		if err == nil {
+			// Simplified errors (no detailed status vector) — synthesize a
+			// sentinel so errors.Is can recognize them and so Unwrap does
+			// not silently drop these rows.
+			err = fmt.Errorf("%w at row %d", ErrBatchRowFailed, completionErr.Row)
+		}
 		batchErr.Errors[i] = BatchError{
 			Row: completionErr.Row,
-			Err: completionErr.Err,
+			Err: err,
 		}
 	}
 	return batchErr

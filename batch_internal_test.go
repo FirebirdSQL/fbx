@@ -486,6 +486,46 @@ func TestPreparedBatchClearPendingClearsBufferedRows(t *testing.T) {
 	require.Nil(t, backing[1])
 }
 
+func TestBatchExecutionErrorSurfacesSimplifiedRows(t *testing.T) {
+	// Server returns mixed detailed + simplified row errors in MultiError mode.
+	completion := &fbconn.BatchCompletion{
+		UpdateCounts: []int64{-1, 1, -1, 1, -1},
+		Errors: []fbconn.BatchError{
+			{Row: 0, Err: errors.New("detailed: unique violation")},
+			{Row: 2}, // simplified (server exhausted DetailedErrors budget)
+			{Row: 4}, // simplified
+		},
+	}
+
+	err := batchCompletionError(completion)
+	require.Error(t, err)
+
+	// errors.As reaches BatchExecutionError, errors are not silently dropped.
+	var batchErr *BatchExecutionError
+	require.ErrorAs(t, err, &batchErr)
+	require.Len(t, batchErr.Errors, 3)
+
+	// Detailed row keeps its original error verbatim.
+	require.EqualError(t, batchErr.Errors[0].Err, "detailed: unique violation")
+	require.NotErrorIs(t, batchErr.Errors[0].Err, ErrBatchRowFailed,
+		"detailed errors must not be tagged as ErrBatchRowFailed")
+
+	// Simplified rows now carry the sentinel so errors.Is finds them.
+	require.ErrorIs(t, batchErr.Errors[1].Err, ErrBatchRowFailed)
+	require.ErrorIs(t, batchErr.Errors[2].Err, ErrBatchRowFailed)
+	require.Contains(t, batchErr.Errors[1].Err.Error(), "row 2",
+		"the wrapped sentinel should mention the originating row")
+
+	// Unwrap exposes every per-row error to errors.Is traversal.
+	unwrapped := batchErr.Unwrap()
+	require.Len(t, unwrapped, 3,
+		"Unwrap must include every row error, including simplified ones")
+
+	// And errors.Is on the whole BatchExecutionError finds the sentinel.
+	require.ErrorIs(t, err, ErrBatchRowFailed,
+		"errors.Is on the outer BatchExecutionError should find ErrBatchRowFailed")
+}
+
 func TestPreparedBatchCancelGuards(t *testing.T) {
 	ctx := context.Background()
 
@@ -584,7 +624,8 @@ func TestFinalizePreparedBatchExecJoinsErrors(t *testing.T) {
 		require.Equal(t, 3, batchErr.Errors[1].Row)
 		require.EqualError(t, batchErr.Errors[1].Err, "second duplicate")
 		require.Equal(t, 5, batchErr.Errors[2].Row)
-		require.Nil(t, batchErr.Errors[2].Err)
+		require.ErrorIs(t, batchErr.Errors[2].Err, ErrBatchRowFailed,
+			"simplified errors must wrap ErrBatchRowFailed so errors.Is can see them")
 	})
 }
 
