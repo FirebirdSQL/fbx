@@ -28,6 +28,8 @@ func (t *tracer) traceRequest(sender byte, msg ClientMessage) {
 		t.traceConnectMessage(sender, msg)
 	case *OpAttach:
 		t.traceAttachMessage(sender, msg)
+	case *OpCreate:
+		t.traceCreateMessage(sender, msg)
 	case *OpAllocateStatement:
 		t.traceAllocateMessage(sender, msg)
 	case *OpPrepareStatement:
@@ -62,6 +64,8 @@ func (t *tracer) traceRequest(sender byte, msg ClientMessage) {
 		t.traceCloseBlobMessage(sender, msg)
 	case *OpCancelBlob:
 		t.traceCancelBlobMessage(sender, msg)
+	case *OpCancel:
+		t.traceCancelMessage(sender, msg)
 	case *OpSeekBlob:
 		t.traceSeekBlobMessage(sender, msg)
 	case *OpInfoBlob:
@@ -181,6 +185,24 @@ func (t *tracer) traceCloseBlobMessage(sender byte, msg *OpCloseBlob) {
 func (t *tracer) traceCancelBlobMessage(sender byte, msg *OpCancelBlob) {
 	t.writeTrace(sender, "CancelBlob", func() {
 		fmt.Fprintf(t.buf, " handle=%d", msg.BlobHandle)
+	})
+}
+
+func (t *tracer) traceCancelMessage(sender byte, msg *OpCancel) {
+	t.writeTrace(sender, "Cancel", func() {
+		kindText := "unknown"
+		switch msg.Kind {
+		case Fb_cancel_disable:
+			kindText = "disable"
+		case Fb_cancel_enable:
+			kindText = "enable"
+		case Fb_cancel_raise:
+			kindText = "raise"
+		case Fb_cancel_abort:
+			kindText = "abort"
+		}
+
+		fmt.Fprintf(t.buf, " kind=%d(%s)", msg.Kind, kindText)
 	})
 }
 
@@ -355,6 +377,16 @@ func (t *tracer) traceCryptMessage(sender byte, _ *OpCrypt) {
 
 func (t *tracer) traceAttachMessage(sender byte, msg *OpAttach) {
 	t.writeTrace(sender, "Attach", func() {
+		fmt.Fprintf(t.buf, " file=%s", traceDoubleQuotedString([]byte(msg.File)))
+		fmt.Fprintf(t.buf, " dpbLen=%d", len(msg.DPB))
+		if t.FullLogMode {
+			fmt.Fprintf(t.buf, " DPB=%s", traceSingleQuotedString(msg.DPB))
+		}
+	})
+}
+
+func (t *tracer) traceCreateMessage(sender byte, msg *OpCreate) {
+	t.writeTrace(sender, "Create", func() {
 		fmt.Fprintf(t.buf, " file=%s", traceDoubleQuotedString([]byte(msg.File)))
 		fmt.Fprintf(t.buf, " dpbLen=%d", len(msg.DPB))
 		if t.FullLogMode {

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -133,6 +134,17 @@ func Connect(ctx context.Context, connString string) (*Conn, error) {
 	return connect(ctx, connConfig)
 }
 
+// CreateDatabase creates a Firebird/RedDatabase database and returns an attached connection to it.
+// The connection string accepts the same options as Connect.
+func CreateDatabase(ctx context.Context, connString string) (*Conn, error) {
+	connConfig, err := ParseConfig(connString)
+	if err != nil {
+		return nil, err
+	}
+	connConfig.CreateDatabase = true
+	return connect(ctx, connConfig)
+}
+
 // ConnectWithOptions behaves exactly like Connect with the addition of options. At the present options is only used to
 // provide a GetSSLPassword function.
 func ConnectWithOptions(ctx context.Context, connString string, options ParseConfigOptions) (*Conn, error) {
@@ -143,6 +155,16 @@ func ConnectWithOptions(ctx context.Context, connString string, options ParseCon
 	return connect(ctx, connConfig)
 }
 
+// CreateDatabaseWithOptions behaves exactly like CreateDatabase with the addition of ParseConfigOptions.
+func CreateDatabaseWithOptions(ctx context.Context, connString string, options ParseConfigOptions) (*Conn, error) {
+	connConfig, err := ParseConfigWithOptions(connString, options)
+	if err != nil {
+		return nil, err
+	}
+	connConfig.CreateDatabase = true
+	return connect(ctx, connConfig)
+}
+
 // ConnectConfig establishes a connection with a Firebird server with a configuration struct.
 // connConfig must have been created by ParseConfig.
 func ConnectConfig(ctx context.Context, connConfig *ConnConfig) (*Conn, error) {
@@ -150,6 +172,14 @@ func ConnectConfig(ctx context.Context, connConfig *ConnConfig) (*Conn, error) {
 	// connections with the same config.
 	connConfig = connConfig.Copy()
 
+	return connect(ctx, connConfig)
+}
+
+// CreateDatabaseConfig creates a Firebird/RedDatabase database using connConfig and returns an attached connection to it.
+// connConfig must have been created by ParseConfig.
+func CreateDatabaseConfig(ctx context.Context, connConfig *ConnConfig) (*Conn, error) {
+	connConfig = connConfig.Copy()
+	connConfig.CreateDatabase = true
 	return connect(ctx, connConfig)
 }
 
@@ -663,13 +693,21 @@ func (c *Conn) execPrepared(ctx context.Context, tx *dbTx, st *fbconn.Statement,
 		return fbconn.QueryStatus{}, err
 	}
 
+	defer c.eqb.reset() // Allow c.eqb internal memory to be GC'ed as soon as possible.
+
 	var result *fbconn.Result
 	if tx != nil {
 		result = st.ExecTx(ctx, tx.tx, c.eqb.ParamValues).Read()
 	} else {
 		result = st.Exec(ctx, c.eqb.ParamValues).Read()
 	}
-	c.eqb.reset() // Allow c.eqb internal memory to be GC'ed as soon as possible.
+	re := regexp.MustCompile(`(?i)set\s+search_path\s+to`)
+	if result.Err == nil && re.MatchString(st.Description.SQL) {
+		err = c.DeallocateAll(ctx)
+		if err != nil {
+			return result.QueryStatus, err
+		}
+	}
 	return result.QueryStatus, result.Err
 }
 

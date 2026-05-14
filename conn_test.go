@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 	"sync"
@@ -113,6 +114,13 @@ func TestConfigContainsConnStr(t *testing.T) {
 	config, err := fbx.ParseConfig(connStr)
 	require.NoError(t, err)
 	assert.Equal(t, connStr, config.ConnString())
+}
+
+func TestParseConfigCreateDatabase(t *testing.T) {
+	config, err := fbx.ParseConfig("user=jack password=secret host=localhost port=3050 database=new.fdb create_database=true")
+	require.NoError(t, err)
+	assert.True(t, config.CreateDatabase)
+	assert.Empty(t, config.RuntimeParams["create_database"])
 }
 
 func TestConfigCopyReturnsEqualConfig(t *testing.T) {
@@ -769,11 +777,13 @@ func TestFatalRxError(t *testing.T) {
 	require.NoError(t, err)
 
 	var wg sync.WaitGroup
+	queryStarted := make(chan struct{})
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		var n int32
 		var s string
+		close(queryStarted)
 		err := conn.QueryRow(context.Background(), "select 1, fbsleep(10) from rdb$database").Scan(&n, &s)
 		if err == nil {
 			t.Errorf("Expected QueryRow Scan to return an error, but got nil")
@@ -788,8 +798,14 @@ func TestFatalRxError(t *testing.T) {
 		t.Errorf("Expected QueryRow Scan to return fatal FbError, but instead received %v", err)
 	}()
 
-	if err := conn.FbConn().Disconnect(context.Background()); err != nil {
-		t.Fatalf("Unable to disconnect: %v", err)
+	<-queryStarted
+	deadline := time.Now().Add(2 * time.Second)
+	for !conn.FbConn().IsBusy() && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	if err := conn.FbConn().Conn().Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("Unable to force-close socket: %v", err)
 	}
 
 	wg.Wait()
@@ -1035,4 +1051,55 @@ func TestErrNoRows(t *testing.T) {
 	require.Equal(t, "no rows in result set", fbx.ErrNoRows.Error())
 
 	require.ErrorIs(t, fbx.ErrNoRows, sql.ErrNoRows, "fbx.ErrNowRows must match fbx.ErrNoRows")
+}
+
+func TestConnDeallocateAllAfterSetSearch_path(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		if getServerMajorVersionForConn(ctx, t, conn) < 6 {
+			t.Skip("schemas are supported only in Firebird/RedDatabase 6+")
+		}
+
+		_, err := conn.Exec(ctx, "drop table if exists test1.test")
+		_, err = conn.Exec(ctx, "drop table if exists test2.test")
+		_, err = conn.Exec(ctx, "drop schema if exists test1")
+		_, err = conn.Exec(ctx, "drop schema if exists test2")
+
+		_, err = conn.Exec(ctx, "create schema test1")
+		require.NoError(t, err)
+		_, err = conn.Exec(ctx, "create schema test2")
+		require.NoError(t, err)
+
+		_, err = conn.Exec(ctx, "create table test1.test(val integer)")
+		require.NoError(t, err)
+		_, err = conn.Exec(ctx, "create table test2.test(val integer)")
+		require.NoError(t, err)
+
+		test1Input := 1
+		test2Input := 2
+
+		_, err = conn.Exec(ctx, "insert into test1.test values(?)", test1Input)
+		require.NoError(t, err)
+		_, err = conn.Exec(ctx, "insert into test2.test values(?)", test2Input)
+		require.NoError(t, err)
+
+		_, err = conn.Exec(ctx, "set search_path to test1")
+		require.NoError(t, err)
+
+		var output1, output2 int
+		statement := "select val from test"
+
+		err = conn.QueryRow(ctx, statement).Scan(&output1)
+		require.NoError(t, err)
+		assert.Equal(t, test1Input, output1)
+
+		_, err = conn.Exec(ctx, "set search_path to test2")
+		require.NoError(t, err)
+
+		err = conn.QueryRow(ctx, statement).Scan(&output2)
+		require.NoError(t, err)
+		assert.Equal(t, test2Input, output2)
+	})
 }

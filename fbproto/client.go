@@ -367,3 +367,21 @@ func (c *Client) Untrace() {
 }
 
 const cryptoChunkSize = 16 * 1024
+
+func (c *Client) ReadSlice(datatype uint32, length int) (ServerMessage, error) {
+	opcode, err := c.xdrReader.ReadInt32()
+	if err != nil {
+		return nil, err
+	}
+	var msg ServerMessage
+	switch opcode {
+	case Op_slice_response:
+		msg = &OpSliceResponse{DataType: datatype, SliceLengthElements: length}
+	case Op_response:
+		msg = &OpResponse{Encoding: c.Encoding}
+	default:
+		return nil, fmt.Errorf("unexpected response opcode: %d", opcode)
+	}
+	err = msg.Read(c.xdrReader)
+	return msg, err
+}

@@ -151,6 +151,7 @@ func assertConfigsEqual(t *testing.T, expected, actual *fbx.ConnConfig, testName
 	assert.Equalf(t, expected.DefaultQueryExecMode, actual.DefaultQueryExecMode, "%s - DefaultQueryExecMode", testName)
 	assert.Equalf(t, expected.Host, actual.Host, "%s - Host", testName)
 	assert.Equalf(t, expected.Database, actual.Database, "%s - Database", testName)
+	assert.Equalf(t, expected.CreateDatabase, actual.CreateDatabase, "%s - CreateDatabase", testName)
 	assert.Equalf(t, expected.Port, actual.Port, "%s - Port", testName)
 	assert.Equalf(t, expected.User, actual.User, "%s - User", testName)
 	assert.Equalf(t, expected.Password, actual.Password, "%s - Password", testName)

@@ -131,6 +131,11 @@ func (c *Conn) BeginTx(ctx context.Context, txOptions fbx.TxOptions) (fbx.Tx, er
 	return c.Conn().BeginTx(ctx, txOptions)
 }
 
+// BeginTxTPB starts a transaction block from the *Conn using a raw TPB passed to the server as-is.
+func (c *Conn) BeginTxTPB(ctx context.Context, tpb []byte) (fbx.Tx, error) {
+	return c.Conn().BeginTxTPB(ctx, tpb)
+}
+
 func (c *Conn) Ping(ctx context.Context) error {
 	return c.Conn().Ping(ctx)
 }
