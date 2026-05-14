@@ -444,14 +444,16 @@ func (b *PreparedBatch) ClearPending() {
 	b.pendingBytes = 0
 }
 
-// Cancel discards every row queued for this batch — both the local buffer and
-// any rows already flushed to the server — without executing them. The prepared
-// statement and any owned transaction remain alive, so the batch can be reused
-// via Add/Flush/Exec just as if it had been freshly prepared.
+// Cancel performs a full reset of the batch: it drops locally queued rows,
+// releases the server-side batch context, deallocates any internally owned
+// prepared statement, and rolls back any internally owned transaction. The
+// PreparedBatch itself remains valid — the next Add/Flush/Exec cycle re-prepares
+// whatever the batch needs as if it had been freshly opened. For batches
+// bound to an explicit transaction the user's statement and transaction are
+// left alone; only the server-side batch buffer is dropped.
 //
-// Cancel is a no-op on a batch with nothing flushed (it becomes a local Reset).
-// It returns an error when the batch is closed or still has pending cleanup
-// from a prior Exec; in that case close the batch instead.
+// Cancel returns an error when the batch is closed or still has pending cleanup
+// from a prior Exec; in that case call Close instead.
 func (b *PreparedBatch) Cancel(ctx context.Context) error {
 	if b == nil {
 		return fmt.Errorf("prepared batch is nil")
@@ -463,15 +465,7 @@ func (b *PreparedBatch) Cancel(ctx context.Context) error {
 		return fmt.Errorf("prepared batch has pending cleanup after execution; close the batch before reusing it")
 	}
 	b.ClearPending()
-	if b.lb == nil {
-		return nil
-	}
-	// fbconn.Batch.Cancel maps to Op_batch_cancel, which discards the
-	// server-side message buffer but keeps the batch context alive. We
-	// deliberately do not nil b.lb here so that the next Flush/Exec reuses
-	// the same server batch instead of attempting a duplicate
-	// Op_batch_create on the same statement.
-	return b.lb.Cancel(ctx)
+	return b.releaseWireResources(ctx)
 }
 
 // Close releases batch resources.
