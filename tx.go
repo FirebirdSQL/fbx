@@ -259,16 +259,13 @@ func (tx *dbTx) Rollback(ctx context.Context) error {
 
 	cleanupErr := tx.conn.closePreparedBatchesForTx(ctx, tx)
 	err := tx.tx.Rollback(ctx)
+	tx.closed = true
 	if err != nil {
-		tx.closed = tx.tx.Closed || tx.conn.IsClosed()
-		// A rollback failure leaves the connection in an undefined state
-		if tx.closed {
-			tx.conn.die()
-		}
+		// A rollback failure leaves the connection in an undefined state.
+		tx.conn.die()
 		return errors.Join(cleanupErr, err)
 	}
 
-	tx.closed = true
 	return cleanupErr
 }
 
