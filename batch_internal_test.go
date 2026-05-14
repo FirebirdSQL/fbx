@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"reflect"
+	"sync/atomic"
 	"testing"
 	"unsafe"
 
@@ -29,6 +30,38 @@ func forceStatementActiveBatch(t testing.TB, st *fbconn.Statement) {
 	require.True(t, field.IsValid())
 
 	reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Set(reflect.ValueOf(&fbconn.Batch{}))
+}
+
+type cancelOnDoneCallContext struct {
+	context.Context
+
+	cancelOnCall int32
+	doneCalls    atomic.Int32
+	closed       chan struct{}
+}
+
+func newCancelOnDoneCallContext(cancelOnCall int32) *cancelOnDoneCallContext {
+	closed := make(chan struct{})
+	close(closed)
+	return &cancelOnDoneCallContext{
+		Context:      context.Background(),
+		cancelOnCall: cancelOnCall,
+		closed:       closed,
+	}
+}
+
+func (ctx *cancelOnDoneCallContext) Done() <-chan struct{} {
+	if ctx.doneCalls.Add(1) >= ctx.cancelOnCall {
+		return ctx.closed
+	}
+	return nil
+}
+
+func (ctx *cancelOnDoneCallContext) Err() error {
+	if ctx.doneCalls.Load() >= ctx.cancelOnCall {
+		return context.Canceled
+	}
+	return nil
 }
 
 func TestPrepareBatchWithOptionsPropagatesConfig(t *testing.T) {
@@ -232,6 +265,47 @@ func TestPreparedBatchExecCanceledCleanupCanRetry(t *testing.T) {
 	require.True(t, pb.closed)
 	require.Nil(t, pb.lb)
 	require.False(t, conn.fbConn.ActiveTx())
+}
+
+func TestPreparedBatchExecCanceledCleanupDoesNotReexecute(t *testing.T) {
+	ctx := context.Background()
+
+	conn := mustConnect(t, mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE")))
+	defer func() {
+		err := conn.Close(ctx)
+		require.NoError(t, err)
+	}()
+	skipIfBatchUnsupported(ctx, t, conn)
+
+	table := "batch_exec_cleanup_no_reexecute"
+	_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, n integer not null)")
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, "insert into "+table+" (id, n) values (?, ?)", 1, 0)
+	require.NoError(t, err)
+
+	pb, err := conn.PrepareBatch(ctx, "update "+table+" set n = n + 1 where id = ?")
+	require.NoError(t, err)
+	defer pb.Close(ctx)
+
+	require.NoError(t, pb.Add(1))
+	require.NoError(t, pb.Flush(ctx))
+
+	cleanupCanceledCtx := newCancelOnDoneCallContext(3)
+	result, err := pb.Exec(cleanupCanceledCtx)
+	require.ErrorIs(t, err, context.Canceled)
+	require.EqualValues(t, 1, result.Affected)
+	require.NotNil(t, pb.lb)
+
+	result, err = pb.Exec(ctx)
+	require.Error(t, err, "Exec after a successful execute with pending cleanup must not reexecute the previous batch")
+	require.Zero(t, result.Affected)
+
+	require.NoError(t, pb.Close(ctx))
+
+	var n int
+	err = conn.QueryRow(ctx, "select n from "+table+" where id = ?", 1).Scan(&n)
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
 }
 
 func TestPreparedBatchFlushCanceledCanRetry(t *testing.T) {

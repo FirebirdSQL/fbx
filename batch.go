@@ -130,6 +130,7 @@ type PreparedBatch struct {
 	pendingBytes   int
 	autoFlushBytes int
 	batchCfg       fbconn.BatchConfig
+	cleanupPending bool
 	closed         bool
 
 	eqb ExtendedQueryBuilder
@@ -210,6 +211,9 @@ func (b *PreparedBatch) addEncoded(ctx context.Context, args []any, allowAutoFlu
 	if b.closed {
 		return fmt.Errorf("prepared batch is closed")
 	}
+	if b.cleanupPending {
+		return fmt.Errorf("prepared batch has pending cleanup after execution; close the batch before reusing it")
+	}
 	if b.sd == nil {
 		return fmt.Errorf("prepared batch metadata is not initialized")
 	}
@@ -257,6 +261,9 @@ func (b *PreparedBatch) flushWithSource(ctx context.Context, source string) erro
 	if b.closed {
 		return fmt.Errorf("prepared batch is closed")
 	}
+	if b.cleanupPending {
+		return fmt.Errorf("prepared batch has pending cleanup after execution; close the batch before reusing it")
+	}
 	if len(b.encodedRows) == 0 {
 		return nil
 	}
@@ -284,6 +291,9 @@ func (b *PreparedBatch) Exec(ctx context.Context) (BatchResult, error) {
 	if b.closed {
 		return BatchResult{}, fmt.Errorf("prepared batch is closed")
 	}
+	if b.cleanupPending {
+		return BatchResult{}, fmt.Errorf("prepared batch has pending cleanup after execution; close the batch before reusing it")
+	}
 	if err := b.flushWithSource(ctx, "exec-final"); err != nil {
 		return BatchResult{}, err
 	}
@@ -296,6 +306,7 @@ func (b *PreparedBatch) Exec(ctx context.Context) (BatchResult, error) {
 		fbTx = b.tx.tx
 	}
 	completion, err := b.lb.Execute(ctx, fbTx)
+	b.cleanupPending = true
 	releaseErr := b.releaseWireResources(ctx)
 	return finalizePreparedBatchExec(completion, err, nil, releaseErr)
 }
@@ -384,7 +395,11 @@ func (b *PreparedBatch) releaseWireResources(ctx context.Context) error {
 		b.lb = nil
 	}
 	stErr := b.releaseBatchStatement(ctx)
-	return errors.Join(batchErr, stErr)
+	err := errors.Join(batchErr, stErr)
+	if err == nil {
+		b.cleanupPending = false
+	}
+	return err
 }
 
 func (b *PreparedBatch) releaseStoredStatement(ctx context.Context) error {
