@@ -626,6 +626,28 @@ func TestPrepareBatchRejectsBlobParameters(t *testing.T) {
 	})
 }
 
+func TestPrepareBatchRejectsArrayParameters(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		skipIfBatchUnsupported(ctx, t, conn)
+		table := batchTestTableName(t, "fbx_barr")
+		badBatchName := batchTestTableName(t, "bad_array_batch")
+
+		_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, val smallint[1:3])")
+		require.NoError(t, err)
+
+		_, err = conn.PrepareBatch(ctx, "insert into "+table+" (id, val) values (?, ?)")
+		require.ErrorContains(t, err, "batch does not support array parameters")
+
+		_, err = conn.Prepare(ctx, badBatchName, "batch insert into "+table+" (id, val) values (?, ?)")
+		require.ErrorContains(t, err, "batch does not support array parameters")
+
+		ensureConnValid(t, conn)
+	})
+}
+
 func TestPrepareBadSQLFailure(t *testing.T) {
 	t.Parallel()
 

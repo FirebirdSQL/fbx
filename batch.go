@@ -193,6 +193,9 @@ func validateBatchStatement(sd *fbconn.StatementDescription) error {
 		if param.IsBlob() {
 			return fmt.Errorf("batch does not support blob parameters (arg %d)", i)
 		}
+		if param.IsArray() {
+			return fmt.Errorf("batch does not support array parameters (arg %d)", i)
+		}
 	}
 	if sd.HaveCursorResult() || sd.HaveSingletonResult() {
 		return fmt.Errorf("batch supports only insert, update, and delete statements without result sets")
