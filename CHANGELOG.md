@@ -1,4 +1,19 @@
 # Change Log
+# [0.4] - 
+
+### Added
+- RS-282573. Batch operations support.
+- RS-274728. Arrays support.
+- RS-294862. Schemas support.
+- RS-294553. Database creation.
+ 
+### Improved
+- RS-289421. Support user-defined TPB.
+- RS-288962. Allow to configure transaction lock timeout.
+
+### Fixed
+- RS-282552. Fixed asynchronous fb_cancel_raise handling.
+- RS-285658. Truncated statement info handling.
 
 # [0.3] - 06.04.2026
 
