@@ -1,5 +1,5 @@
 # Change Log
-# [0.4] - 
+# [0.4] - 15.05.2026
 
 ### Added
 - RS-282573. Batch operations support.
@@ -12,7 +12,7 @@
 - RS-288962. Allow to configure transaction lock timeout.
 
 ### Fixed
-- RS-282552. Fixed asynchronous fb_cancel_raise handling.
+- RS-282552. Asynchronous fb_cancel_raise handling.
 - RS-285658. Truncated statement info handling.
 
 # [0.3] - 06.04.2026
