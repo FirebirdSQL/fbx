@@ -73,7 +73,7 @@ import (
 )
 
 func main() {
-	url := "firebird://sysdba:masterkey@localhost:3060/employee"
+	url := "firebird://sysdba:masterkey@localhost:3050/employee"
 	conn, err := fbx.Connect(context.Background(), url)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Unable to connect to database: %v\n", err)

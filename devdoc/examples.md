@@ -4,7 +4,7 @@ Small examples for the main fbx features. Most snippets assume:
 
 ```go
 ctx := context.Background()
-dsn := "firebird://sysdba:masterkey@localhost:3060/employee"
+dsn := "firebird://sysdba:masterkey@localhost:3050/employee"
 ```
 
 ## Native Connection and Query
@@ -24,7 +24,7 @@ err = conn.QueryRow(ctx, "select first_name from employee where emp_no=?", 2).Sc
 
 ```go
 config, err := fbx.ParseConfig(
-	"user=sysdba password=masterkey host=localhost port=3060 database=employee " +
+	"user=sysdba password=masterkey host=localhost port=3050 database=employee " +
 		"target_session_attrs=read-write fetch_batch_size=1000 wire_crypt=true " +
 		"auth_plugin_list=Srp256,Srp,Legacy_Auth",
 )
@@ -66,7 +66,7 @@ err = db.QueryRowContext(ctx, "select count(*) from employee").Scan(&count)
 ## Database Creation
 
 ```go
-conn, err := fbx.CreateDatabase(ctx, "firebird://sysdba:masterkey@localhost:3060/newdb.fdb")
+conn, err := fbx.CreateDatabase(ctx, "firebird://sysdba:masterkey@localhost:3050/newdb.fdb")
 if err != nil {
 	return err
 }
