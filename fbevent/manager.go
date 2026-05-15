@@ -112,6 +112,9 @@ type Manager struct {
 	listenerEventName map[ListenerHandle]string
 	nextListenerID    ListenerHandle
 	handlers          map[string]*gdsEventHandler
+	notificationOpMu  sync.Mutex
+	notifications     *notificationQueue
+	notificationNames map[string]ListenerHandle
 
 	eventQueue     chan DatabaseEvent
 	delivery       *eventDeliveryWorker
@@ -262,6 +265,10 @@ func (m *Manager) disconnect(ctx context.Context, strict bool, waitDispatcher bo
 	m.handlers = make(map[string]*gdsEventHandler)
 	m.listeners = make(map[string][]listenerRegistration)
 	m.listenerEventName = make(map[ListenerHandle]string)
+	m.notificationNames = make(map[string]ListenerHandle)
+	if m.notifications != nil {
+		m.notifications.clear()
+	}
 	m.nextListenerID = InvalidListenerHandle
 
 	stop := m.dispatcherStop
