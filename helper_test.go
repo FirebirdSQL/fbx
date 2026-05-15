@@ -58,6 +58,14 @@ func getServerMajorVersionForConn(ctx context.Context, t testing.TB, conn interf
 	return serverMajorVersionValue
 }
 
+func skipIfBatchUnsupported(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+	t.Helper()
+	serverMajorVersion := getServerMajorVersionForConn(ctx, t, conn)
+	if serverMajorVersion < 4 {
+		t.Skipf("batch is not supported by server engine version %d", serverMajorVersion)
+	}
+}
+
 func parseEngineMajorVersion(version string) (int, bool) {
 	match := engineMajorRegexp.FindString(version)
 	if match == "" {

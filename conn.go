@@ -68,6 +68,7 @@ type Conn struct {
 	fbConn             *fbconn.FbConn
 	config             *ConnConfig // config used when establishing this connection
 	preparedStatements map[string]*fbconn.Statement
+	preparedBatches    map[string]*PreparedBatch
 	statementCache     stmtcache.Cache
 
 	queryTracer   QueryTracer
@@ -280,6 +281,7 @@ func connect(ctx context.Context, config *ConnConfig) (c *Conn, err error) {
 	}
 
 	c.preparedStatements = make(map[string]*fbconn.Statement)
+	c.preparedBatches = make(map[string]*PreparedBatch)
 	c.doneChan = make(chan struct{})
 	c.closedChan = make(chan error)
 	c.wbuf = make([]byte, 0, 1024)
@@ -306,6 +308,9 @@ func (c *Conn) Close(ctx context.Context) error {
 // placeholders are referenced positionally as ?. name can be used instead of sql with Query, QueryRow, and
 // Exec to execute the statement.
 //
+// If sql starts with "batch ", Prepare creates a named batch.
+// Use Exec to add rows, Flush to send queued rows, and ExecBatch to execute the batch.
+//
 // The underlying Firebird identifier for the prepared statement will be name if name != sql or a digest of sql if
 // name == sql.
 //
@@ -316,11 +321,118 @@ func (c *Conn) Prepare(ctx context.Context, name, sql string) (sd *fbconn.Statem
 }
 
 func (c *Conn) prepareTx(ctx context.Context, tx *dbTx, name string, sql string) (*fbconn.StatementDescription, error) {
+	if normalizedSQL, ok := isBatchPrepareSQL(sql); ok {
+		return c.prepareNamedBatchTx(ctx, tx, name, sql, normalizedSQL)
+	}
+
 	st, err := c.internalPrepare(ctx, tx, name, sql)
 	if err != nil {
 		return nil, err
 	}
 	return st.Description, nil
+}
+
+// PrepareBatch creates a batch object for INSERT, UPDATE, or DELETE without result sets.
+func (c *Conn) PrepareBatch(ctx context.Context, sql string) (*PreparedBatch, error) {
+	return c.prepareBatchTx(ctx, nil, sql, BatchOptions{})
+}
+
+// PrepareBatchWithOptions creates a batch object with additional batch options.
+func (c *Conn) PrepareBatchWithOptions(ctx context.Context, sql string, opts BatchOptions) (*PreparedBatch, error) {
+	return c.prepareBatchTx(ctx, nil, sql, opts)
+}
+
+func (c *Conn) prepareBatchTx(ctx context.Context, tx *dbTx, sql string, opts BatchOptions) (*PreparedBatch, error) {
+	releaseInternalTx := c.shouldReleaseBatchInternalTx(tx)
+	st, err := c.internalPrepare(ctx, tx, "", sql)
+	if err != nil {
+		return nil, errors.Join(err, c.rollbackBatchInternalTx(ctx, releaseInternalTx))
+	}
+	if err := validateBatchStatement(st.Description); err != nil {
+		var joinedErr error = err
+		if deallocErr := st.Deallocate(ctx); deallocErr != nil {
+			joinedErr = errors.Join(joinedErr, deallocErr)
+		}
+		joinedErr = errors.Join(joinedErr, c.rollbackBatchInternalTx(ctx, releaseInternalTx))
+		return nil, joinedErr
+	}
+
+	pb := &PreparedBatch{
+		conn:           c,
+		tx:             tx,
+		sql:            sql,
+		sd:             st.Description,
+		autoFlushBytes: defaultPreparedBatchFlushSize,
+		batchCfg:       normalizeBatchOptions(opts),
+	}
+
+	if tx != nil {
+		pb.st = st
+		return pb, nil
+	}
+
+	if err := errors.Join(st.Deallocate(ctx), c.rollbackBatchInternalTx(ctx, releaseInternalTx)); err != nil {
+		return nil, err
+	}
+
+	return pb, nil
+}
+
+// Flush sends queued rows for a named batch without executing it.
+func (c *Conn) Flush(ctx context.Context, name string) error {
+	return c.flushTx(ctx, nil, name)
+}
+
+// ExecBatch flushes queued rows for a named batch, executes it, and returns the result.
+func (c *Conn) ExecBatch(ctx context.Context, name string) (BatchResult, error) {
+	return c.execBatchTx(ctx, nil, name)
+}
+
+// CancelBatch discards every row queued for a named batch — both the local
+// buffer and any rows already flushed to the server. The prepared batch
+// statement is kept and can be reused via Exec/Flush/ExecBatch.
+func (c *Conn) CancelBatch(ctx context.Context, name string) error {
+	return c.cancelBatchTx(ctx, nil, name)
+}
+
+func preparedStatementNameAndKey(name, sql string) (psName, psKey string) {
+	if name == sql {
+		digest := sha256.Sum256([]byte(sql))
+		return "stmt_" + hex.EncodeToString(digest[0:24]), sql
+	}
+	return name, name
+}
+
+func (c *Conn) prepareNamedBatchTx(ctx context.Context, tx *dbTx, name, originalSQL, normalizedSQL string) (*fbconn.StatementDescription, error) {
+	psName, psKey := preparedStatementNameAndKey(name, originalSQL)
+
+	if existing := c.preparedBatches[psKey]; existing != nil {
+		if existing.sql != normalizedSQL {
+			return nil, fmt.Errorf("prepared query '%s' already exists", name)
+		}
+		if err := c.ensurePreparedBatchOwner(tx, psKey, existing); err != nil {
+			return nil, err
+		}
+		return existing.sd, nil
+	}
+	if _, exists := c.preparedStatements[psKey]; exists {
+		return nil, fmt.Errorf("prepared query '%s' already exists", name)
+	}
+
+	pb, err := c.prepareBatchTx(ctx, tx, normalizedSQL, BatchOptions{})
+	if err != nil {
+		return nil, err
+	}
+	pb.name = psName
+	pb.autoFlushBytes = defaultPreparedBatchFlushSize
+	pb.sd.Name = psName
+	if pb.st != nil {
+		pb.st.Description.Name = psName
+	}
+	if psKey != "" {
+		c.preparedBatches[psKey] = pb
+	}
+	return pb.sd, nil
 }
 
 func (c *Conn) internalPrepare(ctx context.Context, tx *dbTx, name, sql string) (sd *fbconn.Statement, err error) {
@@ -330,6 +442,9 @@ func (c *Conn) internalPrepare(ctx context.Context, tx *dbTx, name, sql string) 
 
 	var st *fbconn.Statement
 	if name != "" {
+		if _, ok := c.preparedBatches[name]; ok {
+			return nil, fmt.Errorf("prepared query '%s' already exists", name)
+		}
 		var ok bool
 		if st, ok = c.preparedStatements[name]; ok {
 			if sql != c.preparedStatements[name].Description.SQL {
@@ -348,15 +463,7 @@ func (c *Conn) internalPrepare(ctx context.Context, tx *dbTx, name, sql string) 
 		}()
 	}
 
-	var psName, psKey string
-	if name == sql {
-		digest := sha256.Sum256([]byte(sql))
-		psName = "stmt_" + hex.EncodeToString(digest[0:24])
-		psKey = sql
-	} else {
-		psName = name
-		psKey = name
-	}
+	psName, psKey := preparedStatementNameAndKey(name, sql)
 
 	if tx != nil {
 		st, err = c.fbConn.PrepareTx(ctx, tx.tx, sql)
@@ -374,8 +481,18 @@ func (c *Conn) internalPrepare(ctx context.Context, tx *dbTx, name, sql string) 
 	return st, nil
 }
 
-// Deallocate releases a prepared statement. Calling Deallocate on a non-existent prepared statement will succeed.
+// Deallocate releases a prepared statement or named batch.
+// Calling Deallocate on a non-existent object will succeed.
 func (c *Conn) Deallocate(ctx context.Context, name string) error {
+	if pb := c.preparedBatches[name]; pb != nil {
+		err := pb.Close(ctx)
+		if err != nil {
+			return err
+		}
+		delete(c.preparedBatches, name)
+		return nil
+	}
+
 	st := c.preparedStatements[name]
 
 	if st != nil {
@@ -391,7 +508,8 @@ func (c *Conn) Deallocate(ctx context.Context, name string) error {
 	return nil
 }
 
-// DeallocateAll releases all previously prepared statements from the server and client, where it also resets the statement and description cache.
+// DeallocateAll releases all prepared statements and named batches.
+// It also resets the statement cache.
 func (c *Conn) DeallocateAll(ctx context.Context) error {
 	if c.config.StatementCacheCapacity > 0 {
 		c.statementCache = stmtcache.NewLRUCache(c.config.StatementCacheCapacity)
@@ -402,7 +520,13 @@ func (c *Conn) DeallocateAll(ctx context.Context) error {
 			return err
 		}
 	}
+	for name := range c.preparedBatches {
+		if err := c.Deallocate(ctx, name); err != nil {
+			return err
+		}
+	}
 	c.preparedStatements = map[string]*fbconn.Statement{}
+	c.preparedBatches = map[string]*PreparedBatch{}
 
 	return nil
 }
@@ -501,6 +625,13 @@ optionLoop:
 		}
 	}
 
+	if pb := c.preparedBatches[sql]; pb != nil {
+		if err := c.ensurePreparedBatchOwner(tx, sql, pb); err != nil {
+			return fbconn.QueryStatus{}, err
+		}
+		return c.execPreparedBatch(ctx, pb, arguments)
+	}
+
 	defer func() {
 		if err != nil {
 			if sc := c.statementCache; sc != nil {
@@ -578,6 +709,84 @@ func (c *Conn) execPrepared(ctx context.Context, tx *dbTx, st *fbconn.Statement,
 		}
 	}
 	return result.QueryStatus, result.Err
+}
+
+func (c *Conn) execPreparedBatch(ctx context.Context, pb *PreparedBatch, arguments []any) (fbconn.QueryStatus, error) {
+	if err := pb.addEncoded(ctx, arguments, true); err != nil {
+		return fbconn.QueryStatus{}, err
+	}
+	return fbconn.QueryStatus{}, nil
+}
+
+func (c *Conn) flushTx(ctx context.Context, tx *dbTx, name string) error {
+	pb := c.preparedBatches[name]
+	if pb == nil {
+		return fmt.Errorf("prepared batch %q not found", name)
+	}
+	if err := c.ensurePreparedBatchOwner(tx, name, pb); err != nil {
+		return err
+	}
+	return pb.Flush(ctx)
+}
+
+func (c *Conn) execBatchTx(ctx context.Context, tx *dbTx, name string) (BatchResult, error) {
+	pb := c.preparedBatches[name]
+	if pb == nil {
+		return BatchResult{}, fmt.Errorf("prepared batch %q not found", name)
+	}
+	if err := c.ensurePreparedBatchOwner(tx, name, pb); err != nil {
+		return BatchResult{}, err
+	}
+	return pb.Exec(ctx)
+}
+
+func (c *Conn) cancelBatchTx(ctx context.Context, tx *dbTx, name string) error {
+	pb := c.preparedBatches[name]
+	if pb == nil {
+		return fmt.Errorf("prepared batch %q not found", name)
+	}
+	if err := c.ensurePreparedBatchOwner(tx, name, pb); err != nil {
+		return err
+	}
+	return pb.Cancel(ctx)
+}
+
+func (c *Conn) ensurePreparedBatchOwner(tx *dbTx, name string, pb *PreparedBatch) error {
+	if pb == nil {
+		return fmt.Errorf("prepared batch %q not found", name)
+	}
+	if pb.tx == nil {
+		if tx != nil {
+			return fmt.Errorf("prepared batch %q belongs to connection scope", name)
+		}
+		return nil
+	}
+	if pb.tx.closed {
+		return ErrTxClosed
+	}
+	if tx == nil || tx != pb.tx {
+		return fmt.Errorf("prepared batch %q belongs to a different transaction", name)
+	}
+	return nil
+}
+
+func (c *Conn) closePreparedBatchesForTx(ctx context.Context, tx *dbTx) error {
+	var joinedErr error
+	for name, pb := range c.preparedBatches {
+		if pb == nil || pb.tx != tx {
+			continue
+		}
+		if err := pb.Close(ctx); err != nil {
+			joinedErr = errors.Join(joinedErr, err)
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				continue
+			}
+			delete(c.preparedBatches, name)
+			continue
+		}
+		delete(c.preparedBatches, name)
+	}
+	return joinedErr
 }
 
 func (c *Conn) execSQLParams(ctx context.Context, tx *dbTx, sql string, args []any) (fbconn.QueryStatus, error) {
@@ -709,6 +918,12 @@ optionLoop:
 
 	c.eqb.reset()
 	rows := c.getRows(ctx, sql, args)
+
+	if pb := c.preparedBatches[sql]; pb != nil {
+		err := fmt.Errorf("prepared batch %q cannot be queried; use Exec/Flush/ExecBatch", sql)
+		rows.fatal(err)
+		return rows, err
+	}
 
 	var err error
 	st, _ := c.preparedStatements[sql]

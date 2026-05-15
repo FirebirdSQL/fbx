@@ -422,6 +422,232 @@ func TestPrepare(t *testing.T) {
 	}
 }
 
+type batchDMLRow struct {
+	ID   int32
+	Note string
+}
+
+func batchTestTableName(t testing.TB, prefix string) string {
+	t.Helper()
+
+	var b strings.Builder
+	b.Grow(len(prefix) + len(t.Name()) + 1)
+	b.WriteString(prefix)
+	b.WriteByte('_')
+	for _, r := range t.Name() {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r + ('a' - 'A'))
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+
+	name := b.String()
+	if len(name) > 63 {
+		name = name[:63]
+	}
+	return name
+}
+
+func seedBatchDMLRows(t testing.TB, ctx context.Context, conn *fbx.Conn, table string) {
+	t.Helper()
+
+	for _, row := range []batchDMLRow{
+		{ID: 1, Note: "one"},
+		{ID: 2, Note: "two"},
+		{ID: 3, Note: "three"},
+		{ID: 4, Note: "four"},
+	} {
+		_, err := conn.Exec(ctx, "insert into "+table+" (id, note) values (?, ?)", row.ID, row.Note)
+		require.NoError(t, err)
+	}
+}
+
+func loadBatchDMLRows(t testing.TB, ctx context.Context, conn *fbx.Conn, table string) []batchDMLRow {
+	t.Helper()
+
+	rows, err := conn.Query(ctx, fmt.Sprintf("select id, note from %s order by id", table))
+	require.NoError(t, err)
+	defer rows.Close()
+
+	var result []batchDMLRow
+	for rows.Next() {
+		var row batchDMLRow
+		require.NoError(t, rows.Scan(&row.ID, &row.Note))
+		result = append(result, row)
+	}
+	require.NoError(t, rows.Err())
+	return result
+}
+
+func TestPrepareBatchUpdateAndDelete(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		skipIfBatchUnsupported(ctx, t, conn)
+		table := batchTestTableName(t, "fbx_bud")
+
+		_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(50))")
+		require.NoError(t, err)
+		seedBatchDMLRows(t, ctx, conn, table)
+
+		pbUpdate, err := conn.PrepareBatch(ctx, "update "+table+" set note = ? where id = ?")
+		require.NoError(t, err)
+		defer pbUpdate.Close(ctx)
+
+		require.NoError(t, pbUpdate.Add("one-updated", 1))
+		require.NoError(t, pbUpdate.Add("two-updated", 2))
+
+		updateResult, err := pbUpdate.Exec(ctx)
+		require.NoError(t, err)
+		require.EqualValues(t, 2, updateResult.Affected)
+
+		pbDelete, err := conn.PrepareBatch(ctx, "delete from "+table+" where id = ?")
+		require.NoError(t, err)
+		defer pbDelete.Close(ctx)
+
+		require.NoError(t, pbDelete.Add(3))
+		require.NoError(t, pbDelete.Add(4))
+
+		deleteResult, err := pbDelete.Exec(ctx)
+		require.NoError(t, err)
+		require.EqualValues(t, 2, deleteResult.Affected)
+
+		require.Equal(t, []batchDMLRow{
+			{ID: 1, Note: "one-updated"},
+			{ID: 2, Note: "two-updated"},
+		}, loadBatchDMLRows(t, ctx, conn, table))
+	})
+}
+
+func TestPrepareNamedBatchUpdateAndDelete(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		skipIfBatchUnsupported(ctx, t, conn)
+		table := batchTestTableName(t, "fbx_nbv")
+		updateName := batchTestTableName(t, "upd_batch")
+		deleteName := batchTestTableName(t, "del_batch")
+
+		_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(50))")
+		require.NoError(t, err)
+		seedBatchDMLRows(t, ctx, conn, table)
+
+		_, err = conn.Prepare(ctx, updateName, "batch update "+table+" set note = ? where id = ?")
+		require.NoError(t, err)
+		defer func() { require.NoError(t, conn.Deallocate(ctx, updateName)) }()
+
+		_, err = conn.Exec(ctx, updateName, "one-named", 1)
+		require.NoError(t, err)
+		_, err = conn.Exec(ctx, updateName, "two-named", 2)
+		require.NoError(t, err)
+
+		updateResult, err := conn.ExecBatch(ctx, updateName)
+		require.NoError(t, err)
+		require.EqualValues(t, 2, updateResult.Affected)
+
+		_, err = conn.Prepare(ctx, deleteName, "batch delete from "+table+" where id = ?")
+		require.NoError(t, err)
+		defer func() { require.NoError(t, conn.Deallocate(ctx, deleteName)) }()
+
+		_, err = conn.Exec(ctx, deleteName, 3)
+		require.NoError(t, err)
+		_, err = conn.Exec(ctx, deleteName, 4)
+		require.NoError(t, err)
+
+		deleteResult, err := conn.ExecBatch(ctx, deleteName)
+		require.NoError(t, err)
+		require.EqualValues(t, 2, deleteResult.Affected)
+
+		require.Equal(t, []batchDMLRow{
+			{ID: 1, Note: "one-named"},
+			{ID: 2, Note: "two-named"},
+		}, loadBatchDMLRows(t, ctx, conn, table))
+	})
+}
+
+func TestPrepareBatchRejectsResultSetStatements(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		skipIfBatchUnsupported(ctx, t, conn)
+		table := batchTestTableName(t, "fbx_brr")
+		badBatchName := batchTestTableName(t, "bad_batch")
+
+		_, err := conn.PrepareBatch(ctx, "select cast(? as integer) from rdb$database")
+		require.ErrorContains(t, err, "batch supports only insert, update, and delete statements without result sets")
+
+		_, err = conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(50))")
+		require.NoError(t, err)
+
+		_, err = conn.PrepareBatch(ctx, "insert into "+table+" (id, note) values (?, ?) returning id")
+		require.ErrorContains(t, err, "batch supports only insert, update, and delete statements without result sets")
+
+		_, err = conn.PrepareBatch(ctx, "insert into "+table+" (id, note) values (1, 'no params')")
+		require.ErrorContains(t, err, "statement used in batch must have parameters")
+
+		_, err = conn.Prepare(ctx, badBatchName, "batch select cast(? as integer) from rdb$database")
+		require.ErrorContains(t, err, "batch supports only insert, update, and delete statements without result sets")
+
+		_, err = conn.Prepare(ctx, badBatchName+"_noparams", "batch update "+table+" set note = 'no params' where id = 1")
+		require.ErrorContains(t, err, "statement used in batch must have parameters")
+
+		ensureConnValid(t, conn)
+	})
+}
+
+func TestPrepareBatchRejectsBlobParameters(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		skipIfBatchUnsupported(ctx, t, conn)
+		table := batchTestTableName(t, "fbx_bblob")
+		badBatchName := batchTestTableName(t, "bad_blob_batch")
+
+		_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, payload blob sub_type 0)")
+		require.NoError(t, err)
+
+		_, err = conn.PrepareBatch(ctx, "insert into "+table+" (id, payload) values (?, ?)")
+		require.ErrorContains(t, err, "batch does not support blob parameters")
+
+		_, err = conn.Prepare(ctx, badBatchName, "batch insert into "+table+" (id, payload) values (?, ?)")
+		require.ErrorContains(t, err, "batch does not support blob parameters")
+
+		ensureConnValid(t, conn)
+	})
+}
+
+func TestPrepareBatchRejectsArrayParameters(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		skipIfBatchUnsupported(ctx, t, conn)
+		table := batchTestTableName(t, "fbx_barr")
+		badBatchName := batchTestTableName(t, "bad_array_batch")
+
+		_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, val smallint[1:3])")
+		require.NoError(t, err)
+
+		_, err = conn.PrepareBatch(ctx, "insert into "+table+" (id, val) values (?, ?)")
+		require.ErrorContains(t, err, "batch does not support array parameters")
+
+		_, err = conn.Prepare(ctx, badBatchName, "batch insert into "+table+" (id, val) values (?, ?)")
+		require.ErrorContains(t, err, "batch does not support array parameters")
+
+		ensureConnValid(t, conn)
+	})
+}
+
 func TestPrepareBadSQLFailure(t *testing.T) {
 	t.Parallel()
 

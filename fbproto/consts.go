@@ -605,6 +605,19 @@ const (
 	Op_crypt                = 96
 	Op_crypt_key_callback   = 97
 	Op_cond_accept          = 98
+	Op_batch_create         = 99
+	Op_batch_msg            = 100
+	Op_batch_exec           = 101
+	Op_batch_rls            = 102
+	Op_batch_cs             = 103
+	Op_batch_regblob        = 104
+	Op_batch_blob_stream    = 105
+	Op_batch_set_bpb        = 106
+	Op_repl_data            = 107
+	Op_repl_req             = 108
+	Op_batch_cancel         = 109
+	Op_batch_sync           = 110
+	Op_info_batch           = 111
 	Op_inline_blob          = 114
 )
 
@@ -680,6 +693,32 @@ const (
 const (
 	Isc_blob_untyped = 0
 	Isc_blob_text    = 1
+)
+
+const (
+	BatchVersion1 = 1
+
+	BatchTagMultiError     = 1
+	BatchTagRecordCounts   = 2
+	BatchTagBufferBytes    = 3
+	BatchTagBlobPolicy     = 4
+	BatchTagDetailedErrors = 5
+
+	BatchInfoBufferBytes = 10
+	BatchInfoDataBytes   = 11
+	BatchInfoBlobsBytes  = 12
+	BatchInfoBlobAlign   = 13
+	BatchInfoBlobHeader  = 14
+
+	BatchBlobNone     = 0
+	BatchBlobIDEngine = 1
+	BatchBlobIDUser   = 2
+	BatchBlobStream   = 3
+
+	BatchBlobSegHdrAlign = 2
+
+	BatchExecuteFailed = -1
+	BatchSuccessNoInfo = -2
 )
 const (
 	BLOB_SUB_TYPE_BINARY = Isc_blob_untyped

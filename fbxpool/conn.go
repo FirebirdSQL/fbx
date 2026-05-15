@@ -87,6 +87,32 @@ func (c *Conn) Exec(ctx context.Context, sql string, arguments ...any) (fbconn.Q
 	return c.Conn().Exec(ctx, sql, arguments...)
 }
 
+// PrepareBatch creates a batch object for INSERT, UPDATE, or DELETE without result sets.
+func (c *Conn) PrepareBatch(ctx context.Context, sql string) (*fbx.PreparedBatch, error) {
+	return c.Conn().PrepareBatch(ctx, sql)
+}
+
+// PrepareBatchWithOptions creates a batch object with additional batch options.
+func (c *Conn) PrepareBatchWithOptions(ctx context.Context, sql string, opts fbx.BatchOptions) (*fbx.PreparedBatch, error) {
+	return c.Conn().PrepareBatchWithOptions(ctx, sql, opts)
+}
+
+// Flush sends queued rows for a named batch without executing it.
+func (c *Conn) Flush(ctx context.Context, name string) error {
+	return c.Conn().Flush(ctx, name)
+}
+
+// ExecBatch flushes queued rows for a named batch, executes it, and returns the result.
+func (c *Conn) ExecBatch(ctx context.Context, name string) (fbx.BatchResult, error) {
+	return c.Conn().ExecBatch(ctx, name)
+}
+
+// CancelBatch discards every row queued for a named batch — both the local
+// buffer and any rows already flushed to the server.
+func (c *Conn) CancelBatch(ctx context.Context, name string) error {
+	return c.Conn().CancelBatch(ctx, name)
+}
+
 func (c *Conn) Query(ctx context.Context, sql string, args ...any) (fbx.Rows, error) {
 	return c.Conn().Query(ctx, sql, args...)
 }

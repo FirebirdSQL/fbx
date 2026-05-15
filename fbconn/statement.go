@@ -1,6 +1,7 @@
 package fbconn
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 
@@ -79,6 +80,23 @@ func (sd *StatementDescription) GetAffectedCount() int64 {
 	return sd.StatementInfo.Counts.SelectCount + sd.StatementInfo.Counts.InsertCount + sd.StatementInfo.Counts.UpdateCount + sd.StatementInfo.Counts.DeleteCount
 }
 
+func (sd *StatementDescription) EncodeBatchRow(values [][]byte) ([]byte, error) {
+	if sd == nil || sd.StatementInfo == nil {
+		return nil, fmt.Errorf("statement description is not initialized")
+	}
+
+	var buf bytes.Buffer
+	x := fbproto.NewXDRWriter(&buf)
+
+	if err := fbproto.WriteRowData(x, sd.StatementInfo.ParametersDescriptors, values); err != nil {
+		return nil, err
+	}
+
+	// row := fbproto.AppendRowData(nil, b.sd.StatementInfo.ParametersDescriptors, b.eqb.ParamValues)
+
+	return buf.Bytes(), nil
+}
+
 type Statement struct {
 	conn         *FbConn
 	Description  *StatementDescription
@@ -87,6 +105,7 @@ type Statement struct {
 	closed       bool
 	timeout      int
 	cursorFlags  int
+	activeBatch  *Batch
 }
 
 // SetTimeout sets statement timeout (milliseconds).
@@ -102,6 +121,20 @@ func (st *Statement) SetCursorFlags(flags int) {
 // SetInlineBlobSize sets inline blob size for this statement.
 func (st *Statement) SetInlineBlobSize(size int) {
 	st.conn.inlineBlobSize = size
+}
+
+func (st *Statement) NewBatch(cfg BatchConfig) *Batch {
+	b := &Batch{st: st, cfg: cfg.normalize()}
+	if st.closed {
+		b.err = fmt.Errorf("statement is closed")
+		return b
+	}
+	if st.activeBatch != nil && !st.activeBatch.isClosed() {
+		b.err = fmt.Errorf("batch is already opened for this statement")
+		return b
+	}
+	st.activeBatch = b
+	return b
 }
 
 // Exec executed a prepared statement inside bound transaction
@@ -325,6 +358,9 @@ func (st *Statement) internalClose(ctx context.Context, closeOption int) error {
 	if st.closed {
 		return nil
 	}
+	if closeOption == fbproto.DSQL_drop && st.activeBatch != nil && !st.activeBatch.isClosed() {
+		return fmt.Errorf("statement has active batch")
+	}
 
 	var tx *FBTransaction
 	if st.transaction == nil && st.conn.internalTransaction != nil {
@@ -333,12 +369,10 @@ func (st *Statement) internalClose(ctx context.Context, closeOption int) error {
 		tx = st.transaction
 	}
 
-	if closeOption == fbproto.DSQL_close && (!st.cursorOpened || tx.Closed) {
+	if closeOption == fbproto.DSQL_close && (!st.cursorOpened || (tx != nil && tx.Closed)) {
 		st.cursorOpened = false
 		return nil
 	}
-
-	st.closed = true
 
 	var err error
 	if err = st.conn.lock(); err != nil {
@@ -360,25 +394,22 @@ func (st *Statement) internalClose(ctx context.Context, closeOption int) error {
 		defer st.conn.contextWatcher.Unwatch()
 	}
 
-	st.cursorOpened = false
-	st.closed = closeOption == fbproto.DSQL_drop
+	if err = st.conn.client.WriteMessage(&fbproto.OpFreeStatement{StatementHandle: st.Description.StatementHandle, Option: closeOption}); err != nil {
+		st.conn.asyncClose()
+		return err
+	}
 
 	if closeOption == fbproto.DSQL_drop {
-		if err = st.conn.withWriteLockAndFlush(func() error {
-			return st.conn.client.WriteMessage(&fbproto.OpFreeStatement{StatementHandle: st.Description.StatementHandle, Option: closeOption})
-		}); err != nil {
+		if err = st.conn.flushWithPotentialWriteReadDeadlock(); err != nil {
 			st.conn.asyncClose()
-			return err
-		}
-	} else {
-		if err = st.conn.withWriteLock(func() error {
-			return st.conn.client.WriteMessage(&fbproto.OpFreeStatement{StatementHandle: st.Description.StatementHandle, Option: closeOption})
-		}); err != nil {
-			st.conn.asyncClose()
+			st.cursorOpened = false
+			st.closed = true
 			return err
 		}
 	}
 
+	st.cursorOpened = false
+	st.closed = closeOption == fbproto.DSQL_drop
 	return nil
 }
 

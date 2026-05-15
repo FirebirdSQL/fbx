@@ -8,7 +8,7 @@ import (
 
 // https://firebirdsql.org/file/documentation/html/en/firebirddocs/wireprotocol/firebird-wire-protocol.html#wireprotocol-responses-generic
 
-const opResponseDataCapMax = 64*1024
+const opResponseDataCapMax = 64 * 1024
 
 type OpResponse struct {
 	Encoding    *Encoding
@@ -17,6 +17,18 @@ type OpResponse struct {
 	SqlErr      int
 	Data        []byte
 	GdsCodes    []int
+	SqlState    string
+	Message     string
+	WarnMessage string
+	Failure     bool
+	Warnings    bool
+	Line        int
+	Position    int
+}
+
+type statusVectorResult struct {
+	GdsCodes    []int
+	SqlErr      int
 	SqlState    string
 	Message     string
 	WarnMessage string
@@ -49,6 +61,152 @@ func (op *OpResponse) resetForRead() {
 	op.Warnings = false
 	op.Line = 0
 	op.Position = 0
+}
+
+func (sv statusVectorResult) toErrorResponse() ErrorResponse {
+	return ErrorResponse{
+		GdsCodes: append([]int(nil), sv.GdsCodes...),
+		SqlErr:   sv.SqlErr,
+		SqlState: sv.SqlState,
+		Message:  sv.Message,
+		Line:     sv.Line,
+		Position: sv.Position,
+	}
+}
+
+func readStatusVector(x *XDRReader, encoding *Encoding) (statusVectorResult, error) {
+	var (
+		sv             statusVectorResult
+		err            error
+		currentMsgPtr  *string = &sv.Message
+		numArg         int
+		gdsCode        int
+		firstSeen      = true
+		currentIsError bool
+	)
+
+	readLineColState := 0
+	for {
+		var tag int
+		if tag, err = x.ReadInt32(); err != nil {
+			return sv, err
+		}
+		if tag == Isc_arg_end {
+			break
+		}
+
+		switch tag {
+		case Isc_arg_gds:
+			if gdsCode, err = x.ReadInt32(); err != nil {
+				return sv, err
+			}
+			if firstSeen {
+				firstSeen = false
+				if gdsCode > 0 {
+					sv.Failure = true
+				}
+			}
+			if gdsCode != 0 {
+				currentMsgPtr = &sv.Message
+				currentIsError = true
+				numArg = 0
+				if gdsCode != Isc_random && gdsCode != Isc_sqlerr {
+					sv.GdsCodes = append(sv.GdsCodes, gdsCode)
+				}
+				if msg, ok := errmsgs[gdsCode]; ok {
+					*currentMsgPtr += msg.message
+				} else {
+					*currentMsgPtr += fmt.Sprintf("unknown gds_code: %d\n", gdsCode)
+				}
+				if gdsCode == Isc_dsql_line_col_error {
+					readLineColState = 1
+				}
+			}
+		case Isc_arg_warning:
+			wCode, err := x.ReadInt32()
+			if err != nil {
+				return sv, err
+			}
+			if firstSeen {
+				firstSeen = false
+				if wCode > 0 {
+					sv.Warnings = true
+				}
+			}
+			if wCode != 0 {
+				sv.Warnings = true
+				currentMsgPtr = &sv.WarnMessage
+				currentIsError = false
+				numArg = 0
+
+				if wCode != Isc_random {
+					sv.GdsCodes = append(sv.GdsCodes, wCode)
+				}
+				if msg, ok := errmsgs[wCode]; ok {
+					*currentMsgPtr += msg.message
+				} else {
+					*currentMsgPtr += fmt.Sprintf("unknown warning code %d", wCode)
+				}
+			}
+		case Isc_arg_number:
+			num, err := x.ReadInt32()
+			if err != nil {
+				return sv, err
+			}
+			if currentIsError && gdsCode == Isc_sqlerr {
+				sv.SqlErr = num
+			}
+			numArg++
+			*currentMsgPtr = strings.Replace(*currentMsgPtr, "@"+strconv.Itoa(numArg), strconv.Itoa(num), 1)
+			if readLineColState == 1 {
+				sv.Line = num
+				readLineColState = 2
+			} else if readLineColState == 2 {
+				sv.Position = num
+				readLineColState = 0
+			}
+		case Isc_arg_string:
+			str, err := x.ReadString(encoding)
+			if err != nil {
+				return sv, err
+			}
+			numArg++
+			*currentMsgPtr = strings.Replace(*currentMsgPtr, "@"+strconv.Itoa(numArg), str, 1)
+		case Isc_arg_interpreted:
+			str, err := x.ReadString(encoding)
+			if err != nil {
+				return sv, err
+			}
+			*currentMsgPtr += str
+		case Isc_arg_sql_state:
+			if sv.SqlState, err = x.ReadString(encoding); err != nil {
+				return sv, err
+			}
+		default:
+			panic(fmt.Sprintf("unknown isc tag: %d", tag))
+		}
+	}
+
+	if sv.SqlState == "" {
+		if sv.Failure || sv.Warnings {
+			sv.SqlState = "HY000"
+			for _, gdsCode := range sv.GdsCodes {
+				if msg, ok := errmsgs[gdsCode]; ok {
+					if msg.sqlstate == "00000" {
+						continue
+					}
+					sv.SqlState = msg.sqlstate
+					if sv.SqlState != "22000" && sv.SqlState != "42000" && sv.SqlState != "HY000" {
+						break
+					}
+				}
+			}
+		} else {
+			sv.SqlState = "00000"
+		}
+	}
+
+	return sv, nil
 }
 
 func (op *OpResponse) Read(x *XDRReader) error {
@@ -88,142 +246,19 @@ func (op *OpResponse) Read(x *XDRReader) error {
 		}
 	}
 
-	// p_resp_status_vector
-	var (
-		currentMsgPtr  *string = &op.Message
-		numArg         int     = 0
-		gdsCode        int     = 0
-		firstSeen              = true
-		currentIsError         = false
-	)
-
-	readLineColState := 0
-	for {
-		var tag int
-		if tag, err = x.ReadInt32(); err != nil {
-			return err
-		}
-		if tag == Isc_arg_end {
-			break
-		}
-
-		switch tag {
-		case Isc_arg_gds:
-			if gdsCode, err = x.ReadInt32(); err != nil {
-				return err
-			}
-			if firstSeen {
-				firstSeen = false
-				if gdsCode > 0 {
-					op.Failure = true
-				}
-			}
-			if gdsCode != 0 {
-				currentMsgPtr = &op.Message
-				currentIsError = true
-				numArg = 0
-				if gdsCode != Isc_random && gdsCode != Isc_sqlerr {
-					op.GdsCodes = append(op.GdsCodes, gdsCode)
-				}
-				if msg, ok := errmsgs[gdsCode]; ok {
-					*currentMsgPtr += msg.message
-				} else {
-					*currentMsgPtr += fmt.Sprintf("unknown gds_code: %d\n", gdsCode)
-				}
-				// next two arguments will be line and column
-				if gdsCode == Isc_dsql_line_col_error {
-					readLineColState = 1
-				}
-			}
-		case Isc_arg_warning:
-			wCode, err := x.ReadInt32()
-			if err != nil {
-				return err
-			}
-			if firstSeen {
-				firstSeen = false
-				if wCode > 0 {
-					op.Warnings = true
-				}
-			}
-			if wCode != 0 {
-				op.Warnings = true
-				currentMsgPtr = &op.WarnMessage
-				currentIsError = false
-				numArg = 0
-
-				if wCode != Isc_random {
-					op.GdsCodes = append(op.GdsCodes, wCode)
-				}
-				if msg, ok := errmsgs[wCode]; ok {
-					*currentMsgPtr += msg.message
-				} else {
-					*currentMsgPtr += fmt.Sprintf("unknown warning code %d", wCode)
-				}
-			}
-		case Isc_arg_number:
-			if num, err := x.ReadInt32(); err == nil {
-				if currentIsError && gdsCode == Isc_sqlerr {
-					op.SqlErr = num
-				}
-				numArg++
-				*currentMsgPtr = strings.Replace(*currentMsgPtr, "@"+strconv.Itoa(numArg), strconv.Itoa(num), 1)
-				if readLineColState == 1 {
-					op.Line = num
-					readLineColState = 2
-				} else if readLineColState == 2 {
-					op.Position = num
-					readLineColState = 0
-				}
-			} else {
-				return err
-			}
-		case Isc_arg_string:
-			if str, err := x.ReadString(op.Encoding); err == nil {
-				numArg++
-				*currentMsgPtr = strings.Replace(*currentMsgPtr, "@"+strconv.Itoa(numArg), str, 1)
-			} else {
-				return err
-			}
-		case Isc_arg_interpreted:
-			if str, err := x.ReadString(op.Encoding); err == nil {
-				*currentMsgPtr += str
-			} else {
-				return err
-			}
-		case Isc_arg_sql_state:
-			if str, err := x.ReadString(op.Encoding); err == nil {
-				op.SqlState = str
-			} else {
-				return err
-			}
-		default:
-			panic(fmt.Sprintf("unknown isc tag: %d", tag))
-		}
+	sv, err := readStatusVector(x, op.Encoding)
+	if err != nil {
+		return err
 	}
-
-	// Try to find sqlstate from collected gds codes, simulate fb_sqlstate from gds.cpp behavior
-	// For errors HY000 is fallback value.
-	// Skip any informational 00000 values.
-	// Accept 22000, 42000 values, but keep search more for exact sqlstate if possible
-	if op.SqlState == "" {
-		if op.Failure || op.Warnings {
-			op.SqlState = "HY000"
-			for _, gdsCode := range op.GdsCodes {
-				if msg, ok := errmsgs[gdsCode]; ok {
-					if msg.sqlstate == "00000" {
-						continue
-					}
-					op.SqlState = msg.sqlstate
-					if op.SqlState != "22000" && op.SqlState != "42000" && op.SqlState != "HY000" {
-						break
-					}
-				}
-			}
-		} else {
-			op.SqlState = "00000"
-		}
-	}
+	op.GdsCodes = append(op.GdsCodes[:0], sv.GdsCodes...)
+	op.SqlErr = sv.SqlErr
+	op.SqlState = sv.SqlState
+	op.Message = sv.Message
+	op.WarnMessage = sv.WarnMessage
+	op.Failure = sv.Failure
+	op.Warnings = sv.Warnings
+	op.Line = sv.Line
+	op.Position = sv.Position
 
 	return nil
 }
