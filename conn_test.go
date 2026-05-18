@@ -87,9 +87,21 @@ func TestCreateDatabaseExistingDatabase(t *testing.T) {
 	require.NoError(t, err)
 	closeConn(t, conn)
 
-	conn, err = fbx.CreateDatabaseConfig(ctx, config)
-	if conn != nil {
-		closeConn(t, conn)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		conn, err = fbx.CreateDatabaseConfig(ctx, config)
+		if conn != nil {
+			closeConn(t, conn)
+		}
+
+		var retryErr *fbconn.FbError
+		if !errors.As(err, &retryErr) ||
+			!strings.Contains(strings.ToLower(retryErr.Message), "object database is in use") ||
+			time.Now().After(deadline) {
+			break
+		}
+
+		time.Sleep(100 * time.Millisecond)
 	}
 	require.Error(t, err)
 
@@ -102,7 +114,7 @@ func TestCreateDatabaseExistingDatabase(t *testing.T) {
 	assert.Truef(t,
 		strings.Contains(fbErr.Message, "database or file exists") ||
 			strings.Contains(fbErr.Message, "Error while trying to create file"),
-		"unexpected error message: %s", fbErr.Message,
+		"unexpected error message: %s", fbErr.Message,	
 	)
 }
 
