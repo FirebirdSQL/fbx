@@ -7,8 +7,8 @@ import (
 	"io"
 
 	"rdb.red-soft.ru/fbx/fbproto"
-	"rdb.red-soft.ru/fbx/fbproto/utils"
 	"rdb.red-soft.ru/fbx/fbproto/vax"
+	"rdb.red-soft.ru/fbx/internal/fbio"
 )
 
 type ServerInfoBufferReader struct {
@@ -168,7 +168,7 @@ func (fbConn *FbConn) getServerInfo(msgBuilder func() fbproto.ClientMessage, tru
 }
 
 func GetSelectDescribeInfoItemsContinue(index, serverVersion int) []byte {
-	return append(append([]byte{fbproto.Isc_info_sql_sqlda_start, 2}, utils.Int16_to_bytes(int16(index))...), GetSelectDescribeInfoItems(serverVersion)...)
+	return append(fbio.AppendInt16LE([]byte{fbproto.Isc_info_sql_sqlda_start, 2}, int16(index)), GetSelectDescribeInfoItems(serverVersion)...)
 }
 
 func GetSelectDescribeInfoItems(serverVersion int) []byte {
