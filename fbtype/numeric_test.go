@@ -79,6 +79,26 @@ func TestNumericBinaryScanToFloat64_Local(t *testing.T) {
 	assert.InDelta(t, 12.34, dst.Float64, 1e-9)
 }
 
+func TestNumericValidNilIntIsZero_Local(t *testing.T) {
+	n := fbtype.Numeric{Valid: true}
+
+	value, err := n.Value()
+	require.NoError(t, err)
+	assert.Equal(t, "0", value)
+
+	jsonBytes, err := n.MarshalJSON()
+	require.NoError(t, err)
+	assert.Equal(t, []byte("0"), jsonBytes)
+
+	intValue, err := n.Int64Value()
+	require.NoError(t, err)
+	assert.Equal(t, fbtype.Int8{Int64: 0, Valid: true}, intValue)
+
+	buf, err := fbtype.EncodeNumericBinaryFB(nil, n, 0, 4)
+	require.NoError(t, err)
+	assert.Equal(t, []byte{0, 0, 0, 0}, buf)
+}
+
 func TestNumericBinaryScanToFloat64_DB(t *testing.T) {
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
 		var f fbtype.Float8

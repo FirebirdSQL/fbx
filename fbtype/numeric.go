@@ -118,6 +118,10 @@ func (n *Numeric) ScanScientific(src string) error {
 }
 
 func (n *Numeric) toBigInt() (*big.Int, error) {
+	if n.Int == nil {
+		return big.NewInt(0), nil
+	}
+
 	if n.Exp == 0 {
 		return n.Int, nil
 	}
@@ -219,6 +223,10 @@ func (n *Numeric) UnmarshalJSON(src []byte) error {
 }
 
 func (n Numeric) numberTextBytes() []byte {
+	if n.Int == nil {
+		return []byte("0")
+	}
+
 	intStr := n.Int.String()
 
 	buf := &bytes.Buffer{}
@@ -706,7 +714,9 @@ func EncodeNumericBinaryFB(buf []byte, n Numeric, scale int32, length uint32) ([
 	expDiff := int64(n.Exp - scale)
 
 	var scaled big.Int
-	scaled.Set(n.Int)
+	if n.Int != nil {
+		scaled.Set(n.Int)
+	}
 
 	if expDiff > 0 {
 		var pow big.Int
@@ -789,7 +799,9 @@ func EncodeNumericBinaryFBRoundHalfAwayFromZero(buf []byte, n Numeric, scale int
 	expDiff := int64(n.Exp - scale)
 
 	var scaled big.Int
-	scaled.Set(n.Int)
+	if n.Int != nil {
+		scaled.Set(n.Int)
+	}
 
 	if expDiff > 0 {
 		var pow big.Int
