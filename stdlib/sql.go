@@ -537,7 +537,7 @@ func (c *Conn) ResetSession(ctx context.Context) error {
 
 	// Discard connection if it has an open transaction. This can happen if the
 	// application did not properly commit or rollback a transaction.
-	if c.conn.FbConn().ActiveTx() {
+	if c.conn.FbConn().ActiveExplicitTx() {
 		return driver.ErrBadConn
 	}
 
