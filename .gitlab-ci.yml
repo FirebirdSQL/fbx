@@ -81,6 +81,7 @@ test:fb:
   variables:
       FB_DOWNLOAD_URL: "http://minio.red-soft.biz/3rdparty/firebird/Firebird-${FB_VERSION}-linux-x64.tar.gz"
   before_script:
+    - sed -i 's|http://deb.debian.org|https://mirror.yandex.ru|g; s|http://security.debian.org|https://mirror.yandex.ru|g; s|deb.debian.org|mirror.yandex.ru|g; s|security.debian.org|mirror.yandex.ru|g' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
     - apt update && apt install -y libtommath1 libicu76
     - ln -s /usr/lib/x86_64-linux-gnu/libtommath.so.1 /usr/lib/x86_64-linux-gnu/libtommath.so.0
     - ln -s /usr/lib/x86_64-linux-gnu/libncursesw.so.6 /usr/lib/x86_64-linux-gnu/libncurses.so.5
