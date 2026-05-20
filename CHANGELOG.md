@@ -1,5 +1,11 @@
 # Change Log
-# [0.4] - 15.05.2026
+
+# [0.4.1] - 20.05.2026
+
+### Fixed
+- RS-294553. Fixed races in database creation tests.
+
+# [0.4.0] - 15.05.2026
 
 ### Added
 - RS-282573. Batch operations support.
