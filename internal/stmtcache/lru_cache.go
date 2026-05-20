@@ -1,39 +1,54 @@
 package stmtcache
 
 import (
-	"container/list"
-
 	"rdb.red-soft.ru/fbx/fbconn"
 )
 
+// lruNode is a typed doubly-linked list node with freelist support.
+type lruNode struct {
+	st   *fbconn.Statement
+	prev *lruNode
+	next *lruNode
+}
+
 // LRUCache implements Cache with a Least Recently Used (LRU) cache.
 type LRUCache struct {
-	cap          int
-	m            map[string]*list.Element
-	l            *list.List
+	m    map[string]*lruNode
+	head *lruNode
+
+	tail     *lruNode
+	len      int
+	cap      int
+	freelist *lruNode
+
 	invalidStmts []*fbconn.Statement
 	invalidSet   map[string]struct{}
 }
 
 // NewLRUCache creates a new LRUCache. cap is the maximum size of the cache.
 func NewLRUCache(cap int) *LRUCache {
+	head := &lruNode{}
+	tail := &lruNode{}
+	head.next = tail
+	tail.prev = head
+
 	return &LRUCache{
 		cap:        cap,
-		m:          make(map[string]*list.Element),
-		l:          list.New(),
+		m:          make(map[string]*lruNode, cap),
+		head:       head,
+		tail:       tail,
 		invalidSet: make(map[string]struct{}),
 	}
 }
 
 // Get returns the statement description for sql. Returns nil if not found.
 func (c *LRUCache) Get(key string) *fbconn.Statement {
-	if el, ok := c.m[key]; ok {
-		c.l.MoveToFront(el)
-		return el.Value.(*fbconn.Statement)
+	node, ok := c.m[key]
+	if !ok {
+		return nil
 	}
-
-	return nil
-
+	c.moveToFront(node)
+	return node.st
 }
 
 // Put stores sd in the cache. Put panics if sd.SQL is "". Put does nothing if sd.SQL already exists in the cache or
@@ -52,37 +67,45 @@ func (c *LRUCache) Put(st *fbconn.Statement) {
 		return
 	}
 
-	if c.l.Len() == c.cap {
+	if c.len == c.cap {
 		c.invalidateOldest()
 	}
 
-	el := c.l.PushFront(st)
-	c.m[st.Description.SQL] = el
+	node := c.allocNode()
+	node.st = st
+	c.insertAfter(c.head, node)
+	c.m[st.Description.SQL] = node
+	c.len++
 }
 
 // Invalidate invalidates statement description identified by sql. Does nothing if not found.
 func (c *LRUCache) Invalidate(sql string) {
-	if el, ok := c.m[sql]; ok {
-		delete(c.m, sql)
-		st := el.Value.(*fbconn.Statement)
-		c.invalidStmts = append(c.invalidStmts, st)
-		c.invalidSet[sql] = struct{}{}
-		c.l.Remove(el)
+	node, ok := c.m[sql]
+	if !ok {
+		return
 	}
+	delete(c.m, sql)
+	c.invalidStmts = append(c.invalidStmts, node.st)
+	c.invalidSet[sql] = struct{}{}
+	c.unlink(node)
+	c.len--
+	c.freeNode(node)
 }
 
 // InvalidateAll invalidates all statement descriptions.
 func (c *LRUCache) InvalidateAll() {
-	el := c.l.Front()
-	for el != nil {
-		st := el.Value.(*fbconn.Statement)
-		c.invalidStmts = append(c.invalidStmts, st)
-		c.invalidSet[st.Description.SQL] = struct{}{}
-		el = el.Next()
+	for node := c.head.next; node != c.tail; {
+		next := node.next
+		c.invalidStmts = append(c.invalidStmts, node.st)
+		c.invalidSet[node.st.Description.SQL] = struct{}{}
+		c.freeNode(node)
+		node = next
 	}
 
-	c.m = make(map[string]*list.Element)
-	c.l = list.New()
+	clear(c.m)
+	c.head.next = c.tail
+	c.tail.prev = c.head
+	c.len = 0
 }
 
 // GetInvalidated returns a slice of all statement descriptions invalidated since the last call to RemoveInvalidated.
@@ -94,13 +117,13 @@ func (c *LRUCache) GetInvalidated() []*fbconn.Statement {
 // call to GetInvalidated and RemoveInvalidated or RemoveInvalidated may remove statement descriptions that were
 // never seen by the call to GetInvalidated.
 func (c *LRUCache) RemoveInvalidated() {
-	c.invalidStmts = nil
-	c.invalidSet = make(map[string]struct{})
+	c.invalidStmts = c.invalidStmts[:0]
+	clear(c.invalidSet)
 }
 
 // Len returns the number of cached prepared statement descriptions.
 func (c *LRUCache) Len() int {
-	return c.l.Len()
+	return c.len
 }
 
 // Cap returns the maximum number of cached prepared statement descriptions.
@@ -109,10 +132,56 @@ func (c *LRUCache) Cap() int {
 }
 
 func (c *LRUCache) invalidateOldest() {
-	oldest := c.l.Back()
-	st := oldest.Value.(*fbconn.Statement)
-	c.invalidStmts = append(c.invalidStmts, st)
-	c.invalidSet[st.Description.SQL] = struct{}{}
-	delete(c.m, st.Description.SQL)
-	c.l.Remove(oldest)
+	node := c.tail.prev
+	if node == c.head {
+		return
+	}
+	c.invalidStmts = append(c.invalidStmts, node.st)
+	c.invalidSet[node.st.Description.SQL] = struct{}{}
+	delete(c.m, node.st.Description.SQL)
+	c.unlink(node)
+	c.len--
+	c.freeNode(node)
+}
+
+// List operations - sentinel nodes eliminate nil checks.
+
+func (c *LRUCache) insertAfter(at, node *lruNode) {
+	node.prev = at
+	node.next = at.next
+	at.next.prev = node
+	at.next = node
+}
+
+func (c *LRUCache) unlink(node *lruNode) {
+	node.prev.next = node.next
+	node.next.prev = node.prev
+}
+
+func (c *LRUCache) moveToFront(node *lruNode) {
+	if node.prev == c.head {
+		return
+	}
+	c.unlink(node)
+	c.insertAfter(c.head, node)
+}
+
+// Node pool operations - reuse evicted nodes to avoid allocations.
+
+func (c *LRUCache) allocNode() *lruNode {
+	if c.freelist != nil {
+		node := c.freelist
+		c.freelist = node.next
+		node.next = nil
+		node.prev = nil
+		return node
+	}
+	return &lruNode{}
+}
+
+func (c *LRUCache) freeNode(node *lruNode) {
+	node.st = nil
+	node.prev = nil
+	node.next = c.freelist
+	c.freelist = node
 }
