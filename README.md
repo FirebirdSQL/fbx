@@ -43,22 +43,6 @@ Firebird values, tracing hooks, and modern Red Database / Firebird features.
 
 ## Example Usage
 
-**go.mod**
-
-```txt
-module fbxdemo
-
-replace rdb.red-soft.ru/fbx v0.0.0 => go.gitflic.ru/red-soft/fbx main
-
-go 1.24.2
-
-require rdb.red-soft.ru/fbx v0.0.0
-```
-
-```shell
-go mod tidy
-```
-
 **main.go**
 
 ```go
@@ -92,6 +76,11 @@ func main() {
 
 	fmt.Println(name, phone, ext)
 }
+```
+
+```shell
+go mod init fbxdemo
+go mod tidy
 ```
 
 See [devdoc/examples.md](devdoc/examples.md) for focused feature snippets.
