@@ -296,8 +296,15 @@ func allElementsCount(dimensions []ArrayDimension) int {
 		return 0
 	}
 
-	elementCount := dimensions[0].Length
-	for _, d := range dimensions[1:] {
+	maxInt := int(^uint(0) >> 1)
+	elementCount := 1
+	for _, d := range dimensions {
+		if d.Length <= 0 {
+			return 0
+		}
+		if elementCount > maxInt/d.Length {
+			return 0
+		}
 		elementCount *= d.Length
 	}
 

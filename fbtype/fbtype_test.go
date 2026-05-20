@@ -78,6 +78,12 @@ type _float32Slice []float32
 type _float64Slice []float64
 type _byteSlice []byte
 
+type stringerInt16 int16
+
+func (s stringerInt16) String() string {
+	return fmt.Sprintf("stringer-%d", s)
+}
+
 // unregisteredTypeID represents an actual type that is not registered. Cannot use 0 because that represents that the type
 // is not known (e.g. when using the simple protocol).
 const unregisteredTypeID = uint32(1)
@@ -102,6 +108,30 @@ func TestMapScanNilIsNoOp(t *testing.T) {
 	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 0, 3, 0)
 	err := m.Scan(typeMetadata, []byte("foo"), nil)
 	assert.NoError(t, err)
+}
+
+func TestStringerWithUnderlyingIntEncodesAsInt(t *testing.T) {
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 0, 2, 0)
+
+	buf, err := m.Encode(typeMetadata, stringerInt16(200), nil)
+	require.NoError(t, err)
+	assert.Equal(t, []byte{0, 0, 0, 200}, buf)
+}
+
+func TestArraySetDimensionsOverflowDoesNotPanic(t *testing.T) {
+	maxInt := int(^uint(0) >> 1)
+	var a fbtype.FlatArray[int]
+	var err error
+
+	require.NotPanics(t, func() {
+		err = (&a).SetDimensions([]fbtype.ArrayDimension{
+			{LowerBound: 1, Length: maxInt/2 + 1},
+			{LowerBound: 1, Length: 3},
+		})
+	})
+	require.NoError(t, err)
+	assert.Len(t, a, 0)
 }
 
 func TestMapScanBinaryFormatInterfacePtr(t *testing.T) {
