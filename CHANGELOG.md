@@ -3,7 +3,7 @@
 # [0.4.1] - 20.05.2026
 
 ### Fixed
-- RS-294553. Fixed races in database creation tests.
+- RS-304089. Fixed races in database creation tests.
 
 # [0.4.0] - 15.05.2026
 
