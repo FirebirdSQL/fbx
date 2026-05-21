@@ -3,8 +3,11 @@ package fbevent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 )
+
+const defaultMaxNotificationQueue = 4096
 
 // Notification is a pgx-like event notification returned by WaitForNotification.
 //
@@ -47,7 +50,7 @@ func (m *Manager) Listen(ctx context.Context, eventName string) error {
 	m.mu.Unlock()
 
 	listener := EventListenerFunc(func(event DatabaseEvent) {
-		queue.push(&Notification{
+		queue.push(m, &Notification{
 			Channel: event.EventName,
 			Count:   event.EventCount,
 		})
@@ -125,7 +128,9 @@ func (m *Manager) WaitForNotification(ctx context.Context) (*Notification, error
 		}
 
 		select {
-		case <-queue.signal:
+		case notification := <-queue.events:
+			return notification, nil
+		case <-queue.done:
 		case <-asyncErrSignal:
 		case <-ctx.Done():
 			return nil, ctx.Err()
@@ -144,52 +149,67 @@ func (m *Manager) ensureNotificationQueue() *notificationQueue {
 }
 
 type notificationQueue struct {
-	mu     sync.Mutex
-	queue  []*Notification
-	signal chan struct{}
+	events       chan *Notification
+	done         chan struct{}
+	closeOnce    sync.Once
+	overflowOnce sync.Once
 }
 
 func newNotificationQueue() *notificationQueue {
+	return newNotificationQueueWithLimit(defaultMaxNotificationQueue)
+}
+
+func newNotificationQueueWithLimit(maxQueueSize int) *notificationQueue {
+	if maxQueueSize <= 0 {
+		maxQueueSize = defaultMaxNotificationQueue
+	}
 	return &notificationQueue{
-		signal: make(chan struct{}, 1),
+		events: make(chan *Notification, maxQueueSize),
+		done:   make(chan struct{}),
 	}
 }
 
-func (q *notificationQueue) push(notification *Notification) {
+func (q *notificationQueue) push(manager *Manager, notification *Notification) {
 	if notification == nil {
 		return
 	}
 
-	q.mu.Lock()
-	q.queue = append(q.queue, notification)
-	q.mu.Unlock()
+	select {
+	case q.events <- notification:
+		return
+	case <-q.done:
+		return
+	default:
+	}
+
+	q.overflowOnce.Do(func() {
+		manager.setAsyncError(fmt.Errorf("event notification queue overflow: max size %d", cap(q.events)))
+	})
 
 	select {
-	case q.signal <- struct{}{}:
-	default:
+	case q.events <- notification:
+	case <-q.done:
 	}
 }
 
 func (q *notificationQueue) pop() *Notification {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	if len(q.queue) == 0 {
+	select {
+	case notification := <-q.events:
+		return notification
+	default:
 		return nil
 	}
-
-	notification := q.queue[0]
-	copy(q.queue, q.queue[1:])
-	q.queue[len(q.queue)-1] = nil
-	q.queue = q.queue[:len(q.queue)-1]
-	return notification
 }
 
-func (q *notificationQueue) clear() {
-	q.mu.Lock()
-	for i := range q.queue {
-		q.queue[i] = nil
-	}
-	q.queue = nil
-	q.mu.Unlock()
+func (q *notificationQueue) close() {
+	q.closeOnce.Do(func() {
+		close(q.done)
+		for {
+			select {
+			case <-q.events:
+			default:
+				return
+			}
+		}
+	})
 }

@@ -22,6 +22,7 @@ const (
 	defaultManagerWaitTimeout        = time.Second
 	managerOperationTimeout          = 5 * time.Second
 	managerDispatcherShutdownTimeout = 5 * time.Second
+	defaultMaxEventDeliveryQueue     = 4096
 )
 
 type listenerRegistration struct {
@@ -29,37 +30,46 @@ type listenerRegistration struct {
 	listener EventListener
 }
 
-// eventDeliveryWorker delivers events to manager listeners sequentially without
-// blocking dispatcherLoop. Events are queued in an unbounded slice so that user
-// callbacks do not run on the dispatcher goroutine.
+// eventDeliveryWorker delivers events to manager listeners sequentially.
+// The queue is bounded so a stuck listener cannot grow memory without limit.
 type eventDeliveryWorker struct {
-	manager *Manager
-	mu      sync.Mutex
-	queue   []DatabaseEvent
-	sig     chan struct{} // capacity 1; poke when queue becomes non-empty
-	stop    chan struct{}
+	manager      *Manager
+	queue        chan DatabaseEvent
+	stop         chan struct{}
+	overflowOnce sync.Once
 }
 
 func newEventDeliveryWorker(manager *Manager) *eventDeliveryWorker {
+	return newEventDeliveryWorkerWithQueueSize(manager, defaultMaxEventDeliveryQueue)
+}
+
+func newEventDeliveryWorkerWithQueueSize(manager *Manager, maxQueueSize int) *eventDeliveryWorker {
+	if maxQueueSize <= 0 {
+		maxQueueSize = defaultMaxEventDeliveryQueue
+	}
 	return &eventDeliveryWorker{
 		manager: manager,
-		sig:     make(chan struct{}, 1),
+		queue:   make(chan DatabaseEvent, maxQueueSize),
 		stop:    make(chan struct{}),
 	}
 }
 
 func (w *eventDeliveryWorker) send(event DatabaseEvent) {
 	select {
+	case w.queue <- event:
+		return
 	case <-w.stop:
 		return
 	default:
 	}
-	w.mu.Lock()
-	w.queue = append(w.queue, event)
-	w.mu.Unlock()
+
+	w.overflowOnce.Do(func() {
+		w.manager.setAsyncError(fmt.Errorf("event delivery queue overflow: max size %d", cap(w.queue)))
+	})
+
 	select {
-	case w.sig <- struct{}{}:
-	default:
+	case w.queue <- event:
+	case <-w.stop:
 	}
 }
 
@@ -68,22 +78,7 @@ func (w *eventDeliveryWorker) run() {
 		select {
 		case <-w.stop:
 			return
-		case <-w.sig:
-		}
-		for {
-			select {
-			case <-w.stop:
-				return
-			default:
-			}
-			w.mu.Lock()
-			if len(w.queue) == 0 {
-				w.mu.Unlock()
-				break
-			}
-			event := w.queue[0]
-			w.queue = w.queue[1:]
-			w.mu.Unlock()
+		case event := <-w.queue:
 			w.manager.notify(event)
 		}
 	}
@@ -267,7 +262,8 @@ func (m *Manager) disconnect(ctx context.Context, strict bool, waitDispatcher bo
 	m.listenerEventName = make(map[ListenerHandle]string)
 	m.notificationNames = make(map[string]ListenerHandle)
 	if m.notifications != nil {
-		m.notifications.clear()
+		m.notifications.close()
+		m.notifications = nil
 	}
 	m.nextListenerID = InvalidListenerHandle
 

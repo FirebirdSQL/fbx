@@ -489,10 +489,9 @@ func TestHandleConnLifecycleTerminationDisconnectsAndSignalsAsyncError(t *testin
 	require.ErrorContains(t, err, "underlying connection detached")
 }
 
-// TestDeliveryWorkerSendNeverBlocks verifies that queueing for delivery returns
-// immediately even when the listener is slow, so dispatcherLoop is never stalled
-// by user callbacks.
-func TestDeliveryWorkerSendNeverBlocks(t *testing.T) {
+// TestDeliveryWorkerSendNeverBlocksWithinQueueCapacity verifies that queueing
+// for delivery returns immediately while the bounded queue still has room.
+func TestDeliveryWorkerSendNeverBlocksWithinQueueCapacity(t *testing.T) {
 	t.Parallel()
 
 	const eventCount = 500
@@ -552,7 +551,7 @@ func TestDeliveryWorkerSendNeverBlocks(t *testing.T) {
 	}
 }
 
-// TestDeliveryWorkerDeliversEventsInOrder verifies that the unbounded queue
+// TestDeliveryWorkerDeliversEventsInOrder verifies that the bounded queue
 // preserves event ordering regardless of how fast events are enqueued.
 func TestDeliveryWorkerDeliversEventsInOrder(t *testing.T) {
 	t.Parallel()
@@ -646,6 +645,64 @@ func TestDeliveryWorkerNoEventsLostUnderLoad(t *testing.T) {
 	for i, count := range received {
 		require.Equal(t, i+1, count, "event %d delivered out of order", i)
 	}
+}
+
+func TestDeliveryWorkerQueueOverflowSetsAsyncErrorAndBackpressures(t *testing.T) {
+	t.Parallel()
+
+	gate := make(chan struct{})
+	received := make(chan int, 3)
+
+	m := &Manager{
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*gdsEventHandler),
+		asyncErrSignal:    make(chan struct{}),
+	}
+	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(event DatabaseEvent) {
+		received <- event.EventCount
+		<-gate
+	}))
+
+	delivery := newEventDeliveryWorkerWithQueueSize(m, 1)
+	go delivery.run()
+	defer close(delivery.stop)
+
+	delivery.send(DatabaseEvent{EventName: "EVT", EventCount: 1})
+	require.Equal(t, 1, <-received)
+
+	delivery.send(DatabaseEvent{EventName: "EVT", EventCount: 2})
+
+	sendDone := make(chan struct{})
+	go func() {
+		delivery.send(DatabaseEvent{EventName: "EVT", EventCount: 3})
+		close(sendDone)
+	}()
+
+	require.Eventually(t, func() bool {
+		err := m.LastError()
+		return err != nil && err.Error() == "event delivery queue overflow: max size 1"
+	}, time.Second, 10*time.Millisecond)
+
+	select {
+	case <-sendDone:
+		t.Fatal("delivery send completed while bounded queue was full")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	gate <- struct{}{}
+
+	select {
+	case <-sendDone:
+	case <-time.After(time.Second):
+		t.Fatal("delivery send did not resume after queue space was freed")
+	}
+
+	require.Equal(t, 2, <-received)
+	gate <- struct{}{}
+	require.Equal(t, 3, <-received)
+	gate <- struct{}{}
 }
 
 func TestDeliveryWorkerDeliversCallbacksSequentiallyForManager(t *testing.T) {
