@@ -13,7 +13,7 @@ package fbx
 //
 //func encodeCopyValue(m *fbtype.Map, buf []byte, typeid uint32, arg any) ([]byte, error) {
 //	sp := len(buf)
-//	buf = pgio.AppendInt32(buf, -1)
+//	buf = fbio.AppendInt32BE(buf, -1)
 //	argBuf, err := m.Encode(typeid, BinaryFormatCode, arg, buf)
 //	if err != nil {
 //		if argBuf2, err2 := tryScanStringCopyValueThenEncode(m, buf, typeid, arg); err2 == nil {
@@ -25,7 +25,7 @@ package fbx
 //
 //	if argBuf != nil {
 //		buf = argBuf
-//		pgio.SetInt32(buf[sp:], int32(len(buf[sp:])-4))
+//		fbio.SetInt32BE(buf[sp:], int32(len(buf[sp:])-4))
 //	}
 //	return buf, nil
 //}

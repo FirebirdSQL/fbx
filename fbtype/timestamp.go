@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"rdb.red-soft.ru/fbx/internal/pgio"
+	"rdb.red-soft.ru/fbx/internal/fbio"
 )
 
 const (
@@ -335,8 +335,8 @@ func encodeTimestampBinary(t time.Time, buf []byte) ([]byte, error) {
 
 	ticks := uint32(usec / 100)
 
-	buf = pgio.AppendInt32(buf, days)
-	buf = pgio.AppendInt32(buf, int32(ticks))
+	buf = fbio.AppendInt32BE(buf, days)
+	buf = fbio.AppendInt32BE(buf, int32(ticks))
 
 	return buf, nil
 }

@@ -8,7 +8,7 @@ import (
 	"math"
 	"strconv"
 
-	"rdb.red-soft.ru/fbx/internal/pgio"
+	"rdb.red-soft.ru/fbx/internal/fbio"
 )
 
 type Float64Scanner interface {
@@ -118,7 +118,7 @@ type encodePlanFloat8CodecBinaryFloat64 struct{}
 
 func (encodePlanFloat8CodecBinaryFloat64) Encode(value any, buf []byte) (newBuf []byte, err error) {
 	n := value.(float64)
-	return pgio.AppendUint64(buf, math.Float64bits(n)), nil
+	return fbio.AppendUint64BE(buf, math.Float64bits(n)), nil
 }
 
 type encodePlanFloat8CodecBinaryString struct{}
@@ -129,7 +129,7 @@ func (encodePlanFloat8CodecBinaryString) Encode(value any, buf []byte) ([]byte, 
 	if err != nil {
 		return nil, err
 	}
-	return pgio.AppendUint64(buf, math.Float64bits(n)), nil
+	return fbio.AppendUint64BE(buf, math.Float64bits(n)), nil
 }
 
 type encodePlanFloat8CodecBinaryFloat64Valuer struct{}
@@ -144,7 +144,7 @@ func (encodePlanFloat8CodecBinaryFloat64Valuer) Encode(value any, buf []byte) (n
 		return nil, nil
 	}
 
-	return pgio.AppendUint64(buf, math.Float64bits(n.Float64)), nil
+	return fbio.AppendUint64BE(buf, math.Float64bits(n.Float64)), nil
 }
 
 type encodePlanFloat8CodecBinaryInt64Valuer struct{}
@@ -160,7 +160,7 @@ func (encodePlanFloat8CodecBinaryInt64Valuer) Encode(value any, buf []byte) (new
 	}
 
 	f := float64(n.Int64)
-	return pgio.AppendUint64(buf, math.Float64bits(f)), nil
+	return fbio.AppendUint64BE(buf, math.Float64bits(f)), nil
 }
 
 func (Float8Codec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {

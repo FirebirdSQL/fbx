@@ -2,12 +2,10 @@ package fbproto
 
 import (
 	"fmt"
-
-	"rdb.red-soft.ru/fbx/fbproto/utils"
 )
 
 type SQLData struct {
-	Nulls         *utils.BitSet
+	Nulls         *BitSet
 	RowData       [][]byte
 	RowDescriptor []FieldDescriptor
 }
@@ -79,9 +77,9 @@ func ReadRowData(x *XDRReader, rowDescriptor []FieldDescriptor, scratch *rowScra
 		scratch = &rowScratch{}
 	}
 	scratch.reset(count, l+pad)
-	var nullsBitset *utils.BitSet
+	var nullsBitset *BitSet
 	if err = x.ReadBytesInto(scratch.nulls); err == nil {
-		nullsBitset = utils.NewBitSetFromBytes(l, scratch.nulls[:l])
+		nullsBitset = NewBitSetFromBytes(l, scratch.nulls[:l])
 	} else {
 		return nil, err
 	}
@@ -126,7 +124,7 @@ func ReadRowData(x *XDRReader, rowDescriptor []FieldDescriptor, scratch *rowScra
 // https://firebirdsql.org/file/documentation/html/en/firebirddocs/wireprotocol/firebird-wire-protocol.html#wireprotocol-row-data-format
 func WriteRowData(x *XDRWriter, rowDescriptor []FieldDescriptor, values [][]byte) error {
 	var err error
-	nulls := utils.NewBitSet(len(rowDescriptor))
+	nulls := NewBitSet(len(rowDescriptor))
 	for n, value := range values {
 		if value == nil {
 			nulls.Set(n)
@@ -220,7 +218,7 @@ func CalculateBatchMessageLength(rowDescriptor []FieldDescriptor) int {
 }
 
 // func AppendRowData(buf []byte, rowDescriptor []FieldDescriptor, values [][]byte) []byte {
-// 	nulls := utils.NewBitSet(len(rowDescriptor))
+// 	nulls := NewBitSet(len(rowDescriptor))
 // 	for i, value := range values {
 // 		if value == nil {
 // 			nulls.Set(i)
@@ -242,7 +240,7 @@ func CalculateBatchMessageLength(rowDescriptor []FieldDescriptor) int {
 
 // 		switch {
 // 		case l == 0:
-// 			buf = pgio.AppendInt32(buf, int32(valueBufLen))
+// 			buf = fbio.AppendInt32BE(buf, int32(valueBufLen))
 // 			buf = append(buf, valueBuf...)
 // 			for pad := (4 - valueBufLen) & 3; pad > 0; pad-- {
 // 				buf = append(buf, field.GetPaddingByte())

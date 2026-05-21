@@ -19,7 +19,7 @@ import (
 	"rdb.red-soft.ru/fbx/fbconn"
 	"rdb.red-soft.ru/fbx/fbconn/ctxwatch"
 	"rdb.red-soft.ru/fbx/fbproto"
-	"rdb.red-soft.ru/fbx/fbproto/utils"
+	"rdb.red-soft.ru/fbx/internal/fbio"
 )
 
 func TestConnect(t *testing.T) {
@@ -876,7 +876,7 @@ func TestConnExecPreparedMaxNumberOfParams(t *testing.T) {
 	sql := buildSQL(paramCount)
 
 	args := make([][]byte, paramCount)
-	zero := utils.Int32_to_bytes(0)
+	zero := fbio.AppendInt32LE(nil, 0)
 	for i := range args {
 		args[i] = zero
 	}
@@ -929,7 +929,7 @@ func TestConnExecParamsTooManyParams(t *testing.T) {
 	sql := buildSQL(paramCount)
 
 	args := make([][]byte, paramCount)
-	zero := utils.Int32_to_bytes(0)
+	zero := fbio.AppendInt32LE(nil, 0)
 	for i := range args {
 		args[i] = zero
 	}

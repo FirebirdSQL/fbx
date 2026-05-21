@@ -5,13 +5,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx/fbproto"
-	"rdb.red-soft.ru/fbx/fbproto/utils"
+	"rdb.red-soft.ru/fbx/internal/fbio"
 )
 
 func tagLengthValue(tag byte, value int) []byte {
-	data := utils.Int32_to_bytes(int32(value))
+	data := fbio.AppendInt32LE(nil, int32(value))
 	buf := []byte{tag}                                           // tag
-	buf = append(buf, utils.Int16_to_bytes(int16(len(data)))...) // data length
+	buf = fbio.AppendInt16LE(buf, int16(len(data))) // data length
 	return append(buf, data...)                                  // data
 }
 
