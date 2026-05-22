@@ -58,6 +58,14 @@ func getServerMajorVersionForConn(ctx context.Context, t testing.TB, conn interf
 	return serverMajorVersionValue
 }
 
+func skipIfBatchUnsupported(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+	t.Helper()
+	serverMajorVersion := getServerMajorVersionForConn(ctx, t, conn)
+	if serverMajorVersion < 4 {
+		t.Skipf("batch is not supported by server engine version %d", serverMajorVersion)
+	}
+}
+
 func parseEngineMajorVersion(version string) (int, bool) {
 	match := engineMajorRegexp.FindString(version)
 	if match == "" {
@@ -143,6 +151,7 @@ func assertConfigsEqual(t *testing.T, expected, actual *fbx.ConnConfig, testName
 	assert.Equalf(t, expected.DefaultQueryExecMode, actual.DefaultQueryExecMode, "%s - DefaultQueryExecMode", testName)
 	assert.Equalf(t, expected.Host, actual.Host, "%s - Host", testName)
 	assert.Equalf(t, expected.Database, actual.Database, "%s - Database", testName)
+	assert.Equalf(t, expected.CreateDatabase, actual.CreateDatabase, "%s - CreateDatabase", testName)
 	assert.Equalf(t, expected.Port, actual.Port, "%s - Port", testName)
 	assert.Equalf(t, expected.User, actual.User, "%s - User", testName)
 	assert.Equalf(t, expected.Password, actual.Password, "%s - Password", testName)

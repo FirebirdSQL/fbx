@@ -99,6 +99,10 @@ func (fbConn *FbConn) openOrCreateBlob(ctx context.Context, tx *FBTransaction, m
 		}
 		defer fbConn.unlock()
 
+		if err := fbConn.beforeRequest(); err != nil {
+			return 0, 0, err
+		}
+
 		if ctx != context.Background() {
 			select {
 			case <-ctx.Done():
@@ -116,11 +120,9 @@ func (fbConn *FbConn) openOrCreateBlob(ctx context.Context, tx *FBTransaction, m
 		}
 	}
 
-	if err := fbConn.client.WriteMessage(msg); err != nil {
-		fbConn.asyncClose()
-		return 0, 0, err
-	}
-	if err := fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+	if err := fbConn.withWriteLockAndFlush(func() error {
+		return fbConn.client.WriteMessage(msg)
+	}); err != nil {
 		fbConn.asyncClose()
 		return 0, 0, err
 	}
@@ -173,14 +175,12 @@ func (b *remoteBlob) GetSegmentInto(ctx context.Context, dst []byte) (int, bool,
 	}
 	defer unlock()
 
-	if err := b.conn.client.WriteMessage(&fbproto.OpGetSegment{
-		BlobHandle: b.handle,
-		Length:     reqLen,
+	if err := b.conn.withWriteLockAndFlush(func() error {
+		return b.conn.client.WriteMessage(&fbproto.OpGetSegment{
+			BlobHandle: b.handle,
+			Length:     reqLen,
+		})
 	}); err != nil {
-		b.conn.asyncClose()
-		return 0, false, err
-	}
-	if err := b.conn.flushWithPotentialWriteReadDeadlock(); err != nil {
 		b.conn.asyncClose()
 		return 0, false, err
 	}
@@ -271,16 +271,17 @@ func (b *remoteBlob) PutSegments(ctx context.Context, segments [][]byte) (int, e
 		}
 		batch := segments[batchStart:batchEnd]
 
-		for _, segment := range batch {
-			if err := b.conn.client.WriteMessage(&fbproto.OpPutSegment{
-				BlobHandle: b.handle,
-				Segment:    segment,
-			}); err != nil {
-				b.conn.asyncClose()
-				return written, err
+		if err := b.conn.withWriteLockAndFlush(func() error {
+			for _, segment := range batch {
+				if err := b.conn.client.WriteMessage(&fbproto.OpPutSegment{
+					BlobHandle: b.handle,
+					Segment:    segment,
+				}); err != nil {
+					return err
+				}
 			}
-		}
-		if err := b.conn.flushWithPotentialWriteReadDeadlock(); err != nil {
+			return nil
+		}); err != nil {
 			b.conn.asyncClose()
 			return written, err
 		}
@@ -350,14 +351,12 @@ func (b *remoteBlob) PutSegment(ctx context.Context, segment []byte) error {
 	}
 	defer unlock()
 
-	if err := b.conn.client.WriteMessage(&fbproto.OpPutSegment{
-		BlobHandle: b.handle,
-		Segment:    segment,
+	if err := b.conn.withWriteLockAndFlush(func() error {
+		return b.conn.client.WriteMessage(&fbproto.OpPutSegment{
+			BlobHandle: b.handle,
+			Segment:    segment,
+		})
 	}); err != nil {
-		b.conn.asyncClose()
-		return err
-	}
-	if err := b.conn.flushWithPotentialWriteReadDeadlock(); err != nil {
 		b.conn.asyncClose()
 		return err
 	}
@@ -408,15 +407,13 @@ func (b *remoteBlob) Seek(ctx context.Context, offset int, seekMode int) (int64,
 	}
 	defer unlock()
 
-	if err := b.conn.client.WriteMessage(&fbproto.OpSeekBlob{
-		BlobHandle: b.handle,
-		SeekMode:   seekMode,
-		Offset:     offset,
+	if err := b.conn.withWriteLockAndFlush(func() error {
+		return b.conn.client.WriteMessage(&fbproto.OpSeekBlob{
+			BlobHandle: b.handle,
+			SeekMode:   seekMode,
+			Offset:     offset,
+		})
 	}); err != nil {
-		b.conn.asyncClose()
-		return 0, err
-	}
-	if err := b.conn.flushWithPotentialWriteReadDeadlock(); err != nil {
 		b.conn.asyncClose()
 		return 0, err
 	}
@@ -471,11 +468,9 @@ func (b *remoteBlob) release(ctx context.Context, msg fbproto.ClientMessage) err
 	}
 	defer unlock()
 
-	if err := b.conn.client.WriteMessage(msg); err != nil {
-		b.conn.asyncClose()
-		return err
-	}
-	if err := b.conn.flushWithPotentialWriteReadDeadlock(); err != nil {
+	if err := b.conn.withWriteLockAndFlush(func() error {
+		return b.conn.client.WriteMessage(msg)
+	}); err != nil {
 		b.conn.asyncClose()
 		return err
 	}
@@ -589,6 +584,11 @@ func (b *remoteBlob) lockConn(ctx context.Context) (func(), error) {
 	}
 
 	if err := b.conn.lock(); err != nil {
+		return nil, err
+	}
+
+	if err := b.conn.beforeRequest(); err != nil {
+		b.conn.unlock()
 		return nil, err
 	}
 

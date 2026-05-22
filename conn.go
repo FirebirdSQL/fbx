@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -67,6 +68,7 @@ type Conn struct {
 	fbConn             *fbconn.FbConn
 	config             *ConnConfig // config used when establishing this connection
 	preparedStatements map[string]*fbconn.Statement
+	preparedBatches    map[string]*PreparedBatch
 	statementCache     stmtcache.Cache
 
 	queryTracer   QueryTracer
@@ -132,6 +134,17 @@ func Connect(ctx context.Context, connString string) (*Conn, error) {
 	return connect(ctx, connConfig)
 }
 
+// CreateDatabase creates a Firebird/RedDatabase database and returns an attached connection to it.
+// The connection string accepts the same options as Connect.
+func CreateDatabase(ctx context.Context, connString string) (*Conn, error) {
+	connConfig, err := ParseConfig(connString)
+	if err != nil {
+		return nil, err
+	}
+	connConfig.CreateDatabase = true
+	return connect(ctx, connConfig)
+}
+
 // ConnectWithOptions behaves exactly like Connect with the addition of options. At the present options is only used to
 // provide a GetSSLPassword function.
 func ConnectWithOptions(ctx context.Context, connString string, options ParseConfigOptions) (*Conn, error) {
@@ -142,6 +155,16 @@ func ConnectWithOptions(ctx context.Context, connString string, options ParseCon
 	return connect(ctx, connConfig)
 }
 
+// CreateDatabaseWithOptions behaves exactly like CreateDatabase with the addition of ParseConfigOptions.
+func CreateDatabaseWithOptions(ctx context.Context, connString string, options ParseConfigOptions) (*Conn, error) {
+	connConfig, err := ParseConfigWithOptions(connString, options)
+	if err != nil {
+		return nil, err
+	}
+	connConfig.CreateDatabase = true
+	return connect(ctx, connConfig)
+}
+
 // ConnectConfig establishes a connection with a Firebird server with a configuration struct.
 // connConfig must have been created by ParseConfig.
 func ConnectConfig(ctx context.Context, connConfig *ConnConfig) (*Conn, error) {
@@ -149,6 +172,14 @@ func ConnectConfig(ctx context.Context, connConfig *ConnConfig) (*Conn, error) {
 	// connections with the same config.
 	connConfig = connConfig.Copy()
 
+	return connect(ctx, connConfig)
+}
+
+// CreateDatabaseConfig creates a Firebird/RedDatabase database using connConfig and returns an attached connection to it.
+// connConfig must have been created by ParseConfig.
+func CreateDatabaseConfig(ctx context.Context, connConfig *ConnConfig) (*Conn, error) {
+	connConfig = connConfig.Copy()
+	connConfig.CreateDatabase = true
 	return connect(ctx, connConfig)
 }
 
@@ -250,6 +281,7 @@ func connect(ctx context.Context, config *ConnConfig) (c *Conn, err error) {
 	}
 
 	c.preparedStatements = make(map[string]*fbconn.Statement)
+	c.preparedBatches = make(map[string]*PreparedBatch)
 	c.doneChan = make(chan struct{})
 	c.closedChan = make(chan error)
 	c.wbuf = make([]byte, 0, 1024)
@@ -276,6 +308,9 @@ func (c *Conn) Close(ctx context.Context) error {
 // placeholders are referenced positionally as ?. name can be used instead of sql with Query, QueryRow, and
 // Exec to execute the statement.
 //
+// If sql starts with "batch ", Prepare creates a named batch.
+// Use Exec to add rows, Flush to send queued rows, and ExecBatch to execute the batch.
+//
 // The underlying Firebird identifier for the prepared statement will be name if name != sql or a digest of sql if
 // name == sql.
 //
@@ -286,11 +321,118 @@ func (c *Conn) Prepare(ctx context.Context, name, sql string) (sd *fbconn.Statem
 }
 
 func (c *Conn) prepareTx(ctx context.Context, tx *dbTx, name string, sql string) (*fbconn.StatementDescription, error) {
+	if normalizedSQL, ok := isBatchPrepareSQL(sql); ok {
+		return c.prepareNamedBatchTx(ctx, tx, name, sql, normalizedSQL)
+	}
+
 	st, err := c.internalPrepare(ctx, tx, name, sql)
 	if err != nil {
 		return nil, err
 	}
 	return st.Description, nil
+}
+
+// PrepareBatch creates a batch object for INSERT, UPDATE, or DELETE without result sets.
+func (c *Conn) PrepareBatch(ctx context.Context, sql string) (*PreparedBatch, error) {
+	return c.prepareBatchTx(ctx, nil, sql, BatchOptions{})
+}
+
+// PrepareBatchWithOptions creates a batch object with additional batch options.
+func (c *Conn) PrepareBatchWithOptions(ctx context.Context, sql string, opts BatchOptions) (*PreparedBatch, error) {
+	return c.prepareBatchTx(ctx, nil, sql, opts)
+}
+
+func (c *Conn) prepareBatchTx(ctx context.Context, tx *dbTx, sql string, opts BatchOptions) (*PreparedBatch, error) {
+	releaseInternalTx := c.shouldReleaseBatchInternalTx(tx)
+	st, err := c.internalPrepare(ctx, tx, "", sql)
+	if err != nil {
+		return nil, errors.Join(err, c.rollbackBatchInternalTx(ctx, releaseInternalTx))
+	}
+	if err := validateBatchStatement(st.Description); err != nil {
+		var joinedErr error = err
+		if deallocErr := st.Deallocate(ctx); deallocErr != nil {
+			joinedErr = errors.Join(joinedErr, deallocErr)
+		}
+		joinedErr = errors.Join(joinedErr, c.rollbackBatchInternalTx(ctx, releaseInternalTx))
+		return nil, joinedErr
+	}
+
+	pb := &PreparedBatch{
+		conn:           c,
+		tx:             tx,
+		sql:            sql,
+		sd:             st.Description,
+		autoFlushBytes: defaultPreparedBatchFlushSize,
+		batchCfg:       normalizeBatchOptions(opts),
+	}
+
+	if tx != nil {
+		pb.st = st
+		return pb, nil
+	}
+
+	if err := errors.Join(st.Deallocate(ctx), c.rollbackBatchInternalTx(ctx, releaseInternalTx)); err != nil {
+		return nil, err
+	}
+
+	return pb, nil
+}
+
+// Flush sends queued rows for a named batch without executing it.
+func (c *Conn) Flush(ctx context.Context, name string) error {
+	return c.flushTx(ctx, nil, name)
+}
+
+// ExecBatch flushes queued rows for a named batch, executes it, and returns the result.
+func (c *Conn) ExecBatch(ctx context.Context, name string) (BatchResult, error) {
+	return c.execBatchTx(ctx, nil, name)
+}
+
+// CancelBatch discards every row queued for a named batch — both the local
+// buffer and any rows already flushed to the server. The prepared batch
+// statement is kept and can be reused via Exec/Flush/ExecBatch.
+func (c *Conn) CancelBatch(ctx context.Context, name string) error {
+	return c.cancelBatchTx(ctx, nil, name)
+}
+
+func preparedStatementNameAndKey(name, sql string) (psName, psKey string) {
+	if name == sql {
+		digest := sha256.Sum256([]byte(sql))
+		return "stmt_" + hex.EncodeToString(digest[0:24]), sql
+	}
+	return name, name
+}
+
+func (c *Conn) prepareNamedBatchTx(ctx context.Context, tx *dbTx, name, originalSQL, normalizedSQL string) (*fbconn.StatementDescription, error) {
+	psName, psKey := preparedStatementNameAndKey(name, originalSQL)
+
+	if existing := c.preparedBatches[psKey]; existing != nil {
+		if existing.sql != normalizedSQL {
+			return nil, fmt.Errorf("prepared query '%s' already exists", name)
+		}
+		if err := c.ensurePreparedBatchOwner(tx, psKey, existing); err != nil {
+			return nil, err
+		}
+		return existing.sd, nil
+	}
+	if _, exists := c.preparedStatements[psKey]; exists {
+		return nil, fmt.Errorf("prepared query '%s' already exists", name)
+	}
+
+	pb, err := c.prepareBatchTx(ctx, tx, normalizedSQL, BatchOptions{})
+	if err != nil {
+		return nil, err
+	}
+	pb.name = psName
+	pb.autoFlushBytes = defaultPreparedBatchFlushSize
+	pb.sd.Name = psName
+	if pb.st != nil {
+		pb.st.Description.Name = psName
+	}
+	if psKey != "" {
+		c.preparedBatches[psKey] = pb
+	}
+	return pb.sd, nil
 }
 
 func (c *Conn) internalPrepare(ctx context.Context, tx *dbTx, name, sql string) (sd *fbconn.Statement, err error) {
@@ -300,6 +442,9 @@ func (c *Conn) internalPrepare(ctx context.Context, tx *dbTx, name, sql string) 
 
 	var st *fbconn.Statement
 	if name != "" {
+		if _, ok := c.preparedBatches[name]; ok {
+			return nil, fmt.Errorf("prepared query '%s' already exists", name)
+		}
 		var ok bool
 		if st, ok = c.preparedStatements[name]; ok {
 			if sql != c.preparedStatements[name].Description.SQL {
@@ -318,15 +463,7 @@ func (c *Conn) internalPrepare(ctx context.Context, tx *dbTx, name, sql string) 
 		}()
 	}
 
-	var psName, psKey string
-	if name == sql {
-		digest := sha256.Sum256([]byte(sql))
-		psName = "stmt_" + hex.EncodeToString(digest[0:24])
-		psKey = sql
-	} else {
-		psName = name
-		psKey = name
-	}
+	psName, psKey := preparedStatementNameAndKey(name, sql)
 
 	if tx != nil {
 		st, err = c.fbConn.PrepareTx(ctx, tx.tx, sql)
@@ -344,8 +481,18 @@ func (c *Conn) internalPrepare(ctx context.Context, tx *dbTx, name, sql string) 
 	return st, nil
 }
 
-// Deallocate releases a prepared statement. Calling Deallocate on a non-existent prepared statement will succeed.
+// Deallocate releases a prepared statement or named batch.
+// Calling Deallocate on a non-existent object will succeed.
 func (c *Conn) Deallocate(ctx context.Context, name string) error {
+	if pb := c.preparedBatches[name]; pb != nil {
+		err := pb.Close(ctx)
+		if err != nil {
+			return err
+		}
+		delete(c.preparedBatches, name)
+		return nil
+	}
+
 	st := c.preparedStatements[name]
 
 	if st != nil {
@@ -361,7 +508,8 @@ func (c *Conn) Deallocate(ctx context.Context, name string) error {
 	return nil
 }
 
-// DeallocateAll releases all previously prepared statements from the server and client, where it also resets the statement and description cache.
+// DeallocateAll releases all prepared statements and named batches.
+// It also resets the statement cache.
 func (c *Conn) DeallocateAll(ctx context.Context) error {
 	if c.config.StatementCacheCapacity > 0 {
 		c.statementCache = stmtcache.NewLRUCache(c.config.StatementCacheCapacity)
@@ -372,7 +520,13 @@ func (c *Conn) DeallocateAll(ctx context.Context) error {
 			return err
 		}
 	}
+	for name := range c.preparedBatches {
+		if err := c.Deallocate(ctx, name); err != nil {
+			return err
+		}
+	}
 	c.preparedStatements = map[string]*fbconn.Statement{}
+	c.preparedBatches = map[string]*PreparedBatch{}
 
 	return nil
 }
@@ -471,6 +625,13 @@ optionLoop:
 		}
 	}
 
+	if pb := c.preparedBatches[sql]; pb != nil {
+		if err := c.ensurePreparedBatchOwner(tx, sql, pb); err != nil {
+			return fbconn.QueryStatus{}, err
+		}
+		return c.execPreparedBatch(ctx, pb, arguments)
+	}
+
 	defer func() {
 		if err != nil {
 			if sc := c.statementCache; sc != nil {
@@ -532,14 +693,100 @@ func (c *Conn) execPrepared(ctx context.Context, tx *dbTx, st *fbconn.Statement,
 		return fbconn.QueryStatus{}, err
 	}
 
+	defer c.eqb.reset() // Allow c.eqb internal memory to be GC'ed as soon as possible.
+
 	var result *fbconn.Result
 	if tx != nil {
 		result = st.ExecTx(ctx, tx.tx, c.eqb.ParamValues).Read()
 	} else {
 		result = st.Exec(ctx, c.eqb.ParamValues).Read()
 	}
-	c.eqb.reset() // Allow c.eqb internal memory to be GC'ed as soon as possible.
+	re := regexp.MustCompile(`(?i)set\s+search_path\s+to`)
+	if result.Err == nil && re.MatchString(st.Description.SQL) {
+		err = c.DeallocateAll(ctx)
+		if err != nil {
+			return result.QueryStatus, err
+		}
+	}
 	return result.QueryStatus, result.Err
+}
+
+func (c *Conn) execPreparedBatch(ctx context.Context, pb *PreparedBatch, arguments []any) (fbconn.QueryStatus, error) {
+	if err := pb.addEncoded(ctx, arguments, true); err != nil {
+		return fbconn.QueryStatus{}, err
+	}
+	return fbconn.QueryStatus{}, nil
+}
+
+func (c *Conn) flushTx(ctx context.Context, tx *dbTx, name string) error {
+	pb := c.preparedBatches[name]
+	if pb == nil {
+		return fmt.Errorf("prepared batch %q not found", name)
+	}
+	if err := c.ensurePreparedBatchOwner(tx, name, pb); err != nil {
+		return err
+	}
+	return pb.Flush(ctx)
+}
+
+func (c *Conn) execBatchTx(ctx context.Context, tx *dbTx, name string) (BatchResult, error) {
+	pb := c.preparedBatches[name]
+	if pb == nil {
+		return BatchResult{}, fmt.Errorf("prepared batch %q not found", name)
+	}
+	if err := c.ensurePreparedBatchOwner(tx, name, pb); err != nil {
+		return BatchResult{}, err
+	}
+	return pb.Exec(ctx)
+}
+
+func (c *Conn) cancelBatchTx(ctx context.Context, tx *dbTx, name string) error {
+	pb := c.preparedBatches[name]
+	if pb == nil {
+		return fmt.Errorf("prepared batch %q not found", name)
+	}
+	if err := c.ensurePreparedBatchOwner(tx, name, pb); err != nil {
+		return err
+	}
+	return pb.Cancel(ctx)
+}
+
+func (c *Conn) ensurePreparedBatchOwner(tx *dbTx, name string, pb *PreparedBatch) error {
+	if pb == nil {
+		return fmt.Errorf("prepared batch %q not found", name)
+	}
+	if pb.tx == nil {
+		if tx != nil {
+			return fmt.Errorf("prepared batch %q belongs to connection scope", name)
+		}
+		return nil
+	}
+	if pb.tx.closed {
+		return ErrTxClosed
+	}
+	if tx == nil || tx != pb.tx {
+		return fmt.Errorf("prepared batch %q belongs to a different transaction", name)
+	}
+	return nil
+}
+
+func (c *Conn) closePreparedBatchesForTx(ctx context.Context, tx *dbTx) error {
+	var joinedErr error
+	for name, pb := range c.preparedBatches {
+		if pb == nil || pb.tx != tx {
+			continue
+		}
+		if err := pb.Close(ctx); err != nil {
+			joinedErr = errors.Join(joinedErr, err)
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				continue
+			}
+			delete(c.preparedBatches, name)
+			continue
+		}
+		delete(c.preparedBatches, name)
+	}
+	return joinedErr
 }
 
 func (c *Conn) execSQLParams(ctx context.Context, tx *dbTx, sql string, args []any) (fbconn.QueryStatus, error) {
@@ -672,6 +919,12 @@ optionLoop:
 	c.eqb.reset()
 	rows := c.getRows(ctx, sql, args)
 
+	if pb := c.preparedBatches[sql]; pb != nil {
+		err := fmt.Errorf("prepared batch %q cannot be queried; use Exec/Flush/ExecBatch", sql)
+		rows.fatal(err)
+		return rows, err
+	}
+
 	var err error
 	st, _ := c.preparedStatements[sql]
 	if st != nil || mode == QueryExecModeCacheStatement {
@@ -738,211 +991,13 @@ optionLoop:
 	return rows, rows.err
 }
 
-// getStatementDescription returns the statement description of the sql query
-// according to the given mode.
-//
-// If the mode is one that doesn't require to know the param and result TypeIDs
-// then nil is returned without error.
-func (c *Conn) getStatementDescription(
-	ctx context.Context,
-	mode QueryExecMode,
-	sql string,
-) (sd *fbconn.StatementDescription, err error) {
-	//switch mode {
-	//case QueryExecModeCacheStatement:
-	//	if c.statementCache == nil {
-	//		return nil, errDisabledStatementCache
-	//	}
-	//	sd = c.statementCache.Get(sql)
-	//	if sd == nil {
-	//		sd, err = c.Prepare(ctx, stmtcache.StatementName(sql), sql)
-	//		if err != nil {
-	//			return nil, err
-	//		}
-	//		c.statementCache.Put(sd)
-	//	}
-	//case QueryExecModeCacheDescribe:
-	//	if c.descriptionCache == nil {
-	//		return nil, errDisabledDescriptionCache
-	//	}
-	//	sd = c.descriptionCache.Get(sql)
-	//	if sd == nil {
-	//		sd, err = c.Prepare(ctx, "", sql)
-	//		if err != nil {
-	//			return nil, err
-	//		}
-	//		c.descriptionCache.Put(sd)
-	//	}
-	//case QueryExecModeDescribeExec:
-	//	return c.Prepare(ctx, "", sql)
-	//}
-	//return sd, err
-	panic("implement me")
-}
-
 // QueryRow is a convenience wrapper over Query. Any error that occurs while
 // querying is deferred until calling Scan on the returned Row. That Row will
 // error with ErrNoRows if no rows are returned.
 func (c *Conn) QueryRow(ctx context.Context, sql string, args ...any) Row {
 	rows, _ := c.Query(ctx, sql, args...)
 	return (*connRow)(rows.(*baseRows))
-	//panic("implement me")
 }
-
-// LoadType inspects the database for typeName and produces a fbtype.Type suitable for registration. typeName must be
-// the name of a type where the underlying type(s) is already understood by fbx. It is for derived types. In particular,
-// typeName must be one of the following:
-//   - An array type name of a type that is already registered. e.g. "_foo" when "foo" is registered.
-//   - A composite type name where all field types are already registered.
-//   - A domain type name where the base type is already registered.
-//   - An enum type name.
-//   - A range type name where the element type is already registered.
-//   - A multirange type name where the element type is already registered.
-func (c *Conn) LoadType(ctx context.Context, typeName string) (*fbtype.Type, error) {
-	//var typeid uint32
-	//
-	//err := c.QueryRow(ctx, "select $1::text::regtype::typeid;", typeName).Scan(&typeid)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//
-	//var typtype string
-	//var typbasetype uint32
-	//
-	//err = c.QueryRow(ctx, "select typtype::text, typbasetype from fb_type where typeid=$1", typeid).Scan(&typtype, &typbasetype)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//
-	//switch typtype {
-	//case "b": // array
-	//	elementTypeID, err := c.getArrayElementTypeID(ctx, typeid)
-	//	if err != nil {
-	//		return nil, err
-	//	}
-	//
-	//	dt, ok := c.TypeMap().TypeForTypeID(elementTypeID)
-	//	if !ok {
-	//		return nil, errors.New("array element TypeID not registered")
-	//	}
-	//
-	//	return &fbtype.Type{Name: typeName, TypeID: typeid, Codec: &fbtype.ArrayCodec{ElementType: dt}}, nil
-	//case "c": // composite
-	//	fields, err := c.getCompositeFields(ctx, typeid)
-	//	if err != nil {
-	//		return nil, err
-	//	}
-	//
-	//	return &fbtype.Type{Name: typeName, TypeID: typeid, Codec: &fbtype.CompositeCodec{Fields: fields}}, nil
-	//case "d": // domain
-	//	dt, ok := c.TypeMap().TypeForTypeID(typbasetype)
-	//	if !ok {
-	//		return nil, errors.New("domain base type TypeID not registered")
-	//	}
-	//
-	//	return &fbtype.Type{Name: typeName, TypeID: typeid, Codec: dt.Codec}, nil
-	//case "e": // enum
-	//	return &fbtype.Type{Name: typeName, TypeID: typeid, Codec: &fbtype.EnumCodec{}}, nil
-	//case "r": // range
-	//	elementTypeID, err := c.getRangeElementTypeID(ctx, typeid)
-	//	if err != nil {
-	//		return nil, err
-	//	}
-	//
-	//	dt, ok := c.TypeMap().TypeForTypeID(elementTypeID)
-	//	if !ok {
-	//		return nil, errors.New("range element TypeID not registered")
-	//	}
-	//
-	//	return &fbtype.Type{Name: typeName, TypeID: typeid, Codec: &fbtype.RangeCodec{ElementType: dt}}, nil
-	//case "m": // multirange
-	//	elementTypeID, err := c.getMultiRangeElementTypeID(ctx, typeid)
-	//	if err != nil {
-	//		return nil, err
-	//	}
-	//
-	//	dt, ok := c.TypeMap().TypeForTypeID(elementTypeID)
-	//	if !ok {
-	//		return nil, errors.New("multirange element TypeID not registered")
-	//	}
-	//
-	//	return &fbtype.Type{Name: typeName, TypeID: typeid, Codec: &fbtype.MultirangeCodec{ElementType: dt}}, nil
-	//default:
-	//	return &fbtype.Type{}, errors.New("unknown typtype")
-	//}
-	panic("implement me")
-}
-
-func (c *Conn) getArrayElementTypeID(ctx context.Context, typeid uint32) (uint32, error) {
-	//var typelem uint32
-	//
-	//err := c.QueryRow(ctx, "select typelem from fb_type where typeid=$1", typeid).Scan(&typelem)
-	//if err != nil {
-	//	return 0, err
-	//}
-	//
-	//return typelem, nil
-	panic("implement me")
-}
-
-func (c *Conn) getRangeElementTypeID(ctx context.Context, typeid uint32) (uint32, error) {
-	//var typelem uint32
-	//
-	//err := c.QueryRow(ctx, "select rngsubtype from fb_range where rngtypid=$1", typeid).Scan(&typelem)
-	//if err != nil {
-	//	return 0, err
-	//}
-	//
-	//return typelem, nil
-	panic("implement me")
-}
-
-func (c *Conn) getMultiRangeElementTypeID(ctx context.Context, typeid uint32) (uint32, error) {
-	//var typelem uint32
-	//
-	//err := c.QueryRow(ctx, "select rngtypid from fb_range where rngmultitypid=$1", typeid).Scan(&typelem)
-	//if err != nil {
-	//	return 0, err
-	//}
-	//
-	//return typelem, nil
-	panic("implement me")
-}
-
-// func (c *Conn) getCompositeFields(ctx context.Context, typeid uint32) ([]fbtype.CompositeCodecField, error) {
-// 	//	var typrelid uint32
-// 	//
-// 	//	err := c.QueryRow(ctx, "select typrelid from fb_type where typeid=$1", typeid).Scan(&typrelid)
-// 	//	if err != nil {
-// 	//		return nil, err
-// 	//	}
-// 	//
-// 	//	var fields []fbtype.CompositeCodecField
-// 	//	var fieldName string
-// 	//	var fieldTypeID uint32
-// 	//	rows, _ := c.Query(ctx, `select attname, atttypid
-// 	//from fb_attribute
-// 	//where attrelid=$1
-// 	//	and not attisdropped
-// 	//	and attnum > 0
-// 	//order by attnum`,
-// 	//		typrelid,
-// 	//	)
-// 	//	_, err = ForEachRow(rows, []any{&fieldName, &fieldTypeID}, func() error {
-// 	//		dt, ok := c.TypeMap().TypeForTypeID(fieldTypeID)
-// 	//		if !ok {
-// 	//			return fmt.Errorf("unknown composite type field TypeID: %v", fieldTypeID)
-// 	//		}
-// 	//		fields = append(fields, fbtype.CompositeCodecField{Name: fieldName, Type: dt})
-// 	//		return nil
-// 	//	})
-// 	//	if err != nil {
-// 	//		return nil, err
-// 	//	}
-// 	//
-// 	//	return fields, nil
-// 	panic("implement me")
-// }
 
 func (c *Conn) deallocateInvalidatedCachedStatements(ctx context.Context) error {
 	//FIXME: fbx need to check state of transaction bound to statement?

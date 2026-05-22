@@ -19,7 +19,7 @@ import (
 	"rdb.red-soft.ru/fbx/fbconn"
 	"rdb.red-soft.ru/fbx/fbconn/ctxwatch"
 	"rdb.red-soft.ru/fbx/fbproto"
-	"rdb.red-soft.ru/fbx/fbproto/utils"
+	"rdb.red-soft.ru/fbx/internal/fbio"
 )
 
 func TestConnect(t *testing.T) {
@@ -876,7 +876,7 @@ func TestConnExecPreparedMaxNumberOfParams(t *testing.T) {
 	sql := buildSQL(paramCount)
 
 	args := make([][]byte, paramCount)
-	zero := utils.Int32_to_bytes(0)
+	zero := fbio.AppendInt32LE(nil, 0)
 	for i := range args {
 		args[i] = zero
 	}
@@ -929,7 +929,7 @@ func TestConnExecParamsTooManyParams(t *testing.T) {
 	sql := buildSQL(paramCount)
 
 	args := make([][]byte, paramCount)
-	zero := utils.Int32_to_bytes(0)
+	zero := fbio.AppendInt32LE(nil, 0)
 	for i := range args {
 		args[i] = zero
 	}
@@ -1583,18 +1583,26 @@ func testConnContextCanceledCancelsRunningQueryOnServer(t *testing.T, connString
 	require.NoError(t, err)
 	defer closeConn(t, otherConn)
 
-	ctx, cancel = context.WithTimeout(ctx, time.Second*5)
-	defer cancel()
-
+	pollDeadline := time.Now().Add(15 * time.Second)
 	for {
-		result := otherConn.ExecParams(ctx,
-			`select 1, cast(mon$sql_text as varchar(255)) from mon$statements where cast(mon$sql_text as varchar(255)) like ?`,
+		if time.Now().After(pollDeadline) {
+			t.Fatalf("canceled query marker %q is still active in MON$STATEMENTS", queryID)
+		}
+
+		pollCtx, pollCancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+		result := otherConn.ExecParams(pollCtx,
+			`select 1, cast(mon$sql_text as varchar(255))
+			   from mon$statements
+			  where mon$state = 1
+			    and cast(mon$sql_text as varchar(255)) like ?`,
 			[][]byte{[]byte("%" + queryID + "%")}).Read()
+		pollCancel()
 		require.NoError(t, result.Err)
 
 		if len(result.Rows) == 0 {
 			break
 		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
@@ -2319,12 +2327,13 @@ func TestDeadlineContextWatcherHandler(t *testing.T) {
 		require.NoError(t, err)
 		defer closeConn(t, fbConn)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-		defer cancel()
-
-		_, err = fbConn.Exec(ctx, "recreate function fbsleep (delay float not null) returns float external name 'fbxci!fbsleep' engine udr;").Close()
+		setupCtx, setupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer setupCancel()
+		_, err = fbConn.Exec(setupCtx, "recreate function fbsleep (delay float not null) returns float external name 'fbxci!fbsleep' engine udr;").Close()
 		require.NoError(t, err)
 
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		defer cancel()
 		res := fbConn.Exec(ctx, "select 1, fbsleep(1) from rdb$database").Read()
 		require.Error(t, res.Err)
 		require.ErrorIs(t, res.Err, context.DeadlineExceeded)
@@ -2444,6 +2453,30 @@ func TestCancelRequestContextWatcherHandler(t *testing.T) {
 		require.True(t, fbConn.IsClosed())
 	})
 
+	t.Run("Late cancel does not affect next query", func(t *testing.T) {
+		config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
+		require.NoError(t, err)
+		config.BuildContextWatcherHandler = func(conn *fbconn.FbConn) ctxwatch.Handler {
+			return &fbconn.CancelRequestContextWatcherHandler{
+				Conn:               conn,
+				CancelRequestDelay: 5 * time.Millisecond,
+				DeadlineDelay:      1000 * time.Millisecond,
+			}
+		}
+		config.ConnectTimeout = 5 * time.Second
+
+		fbConn, err := fbconn.ConnectConfig(context.Background(), config)
+		require.NoError(t, err)
+		defer closeConn(t, fbConn)
+
+		for i := 0; i < 20; i++ {
+			ctx, cancel := context.WithTimeout(context.Background(), 4*time.Millisecond)
+			fbConn.Exec(ctx, "select 1, fbsleep(0.010) from rdb$database").Read()
+			cancel()
+			ensureConnValid(t, fbConn)
+		}
+	})
+
 	for i := 0; i < 10; i++ {
 		t.Run(fmt.Sprintf("Stress %d", i), func(t *testing.T) {
 			t.Parallel()
@@ -2468,7 +2501,6 @@ func TestCancelRequestContextWatcherHandler(t *testing.T) {
 					ctx, cancel := context.WithTimeout(context.Background(), 4*time.Millisecond)
 					defer cancel()
 					fbConn.Exec(ctx, "select 1, fbsleep(0.010) from rdb$database").Read()
-					time.Sleep(100 * time.Millisecond) // ensure a cancel request that was a little late doesn't interrupt ensureConnValid.
 					ensureConnValid(t, fbConn)
 				}()
 			}
@@ -2573,4 +2605,22 @@ func TestConnWithWarning(t *testing.T) {
 	closeConn(t, fbConn)
 
 	assert.Equal(t, "Database dialect being changed from 3 to 1\nSQLSTATE: 01000", warnings)
+}
+
+func TestPassProcessName(t *testing.T) {
+	exec, err := os.Executable()
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	defer closeConn(t, fbConn)
+
+	res := fbConn.Exec(ctx, "select mon$remote_process from mon$attachments where mon$attachment_id = current_connection").Read()
+	assert.NoError(t, res.Err)
+
+	require.Equal(t, 1, len(res.Rows))
+	assert.Equal(t, exec, string(res.Rows[0][0]))
 }

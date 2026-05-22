@@ -8,8 +8,6 @@ import (
 	"io"
 	"math/big"
 	"strings"
-
-	"rdb.red-soft.ru/fbx/fbproto/utils"
 )
 
 func GetClientSeed() (public, private *big.Int) {
@@ -176,7 +174,7 @@ func (p *SrpAuthPlugin) HandleServerData(user string, password string, pluginNam
 		return nil, err
 	}
 
-	serverPublic := utils.BigIntFromHexString(serverHex)
+	serverPublic, _ := new(big.Int).SetString(serverHex, 16)
 	p.lastProof, p.lastSession = GetClientProof(strings.ToUpper(user), password, salt, p.ClientPublic, serverPublic, p.ClientSecret, p.variant)
 	// Send ASCII-hex of the proof as p_data as per Jaybird compatibility
 	replyHex := []byte(hex.EncodeToString(p.lastProof))

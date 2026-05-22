@@ -1,6 +1,6 @@
 package fbproto
 
-import "rdb.red-soft.ru/fbx/fbproto/utils"
+import "rdb.red-soft.ru/fbx/internal/fbio"
 
 const xpbPreallocBufSize = 16
 
@@ -55,25 +55,25 @@ func (pb *XPBReader) GetBytes(n int) ([]byte, bool) {
 
 func (pb *XPBReader) GetString() string {
 	l := int(pb.GetInt16())
-	s := utils.Bytes_to_str(pb.buf[pb.pos : pb.pos+l])
+	s := string(pb.buf[pb.pos : pb.pos+l])
 	pb.pos += l
 	return s
 }
 
 func (pb *XPBReader) GetInt16() int16 {
-	r := utils.Bytes_to_int16(pb.buf[pb.pos : pb.pos+2])
+	r := fbio.ReadInt16LE(pb.buf[pb.pos : pb.pos+2])
 	pb.pos += 2
 	return r
 }
 
 func (pb *XPBReader) GetInt32() int32 {
-	r := utils.Bytes_to_int32(pb.buf[pb.pos : pb.pos+4])
+	r := fbio.ReadInt32LE(pb.buf[pb.pos : pb.pos+4])
 	pb.pos += 4
 	return r
 }
 
 func (pb *XPBReader) GetInt64() int64 {
-	r := utils.Bytes_to_int64(pb.buf[pb.pos : pb.pos+8])
+	r := fbio.ReadInt64LE(pb.buf[pb.pos : pb.pos+8])
 	pb.pos += 8
 	return r
 }
@@ -107,17 +107,17 @@ func (pb *XPBWriter) AppendByte(val byte) *XPBWriter {
 }
 
 func (pb *XPBWriter) AppendInt16(val int16) *XPBWriter {
-	pb.buf = append(pb.buf, utils.Int16_to_bytes(val)...)
+	pb.buf = fbio.AppendInt16LE(pb.buf, val)
 	return pb
 }
 
 func (pb *XPBWriter) AppendInt32(val int32) *XPBWriter {
-	pb.buf = append(pb.buf, utils.Int32_to_bytes(val)...)
+	pb.buf = fbio.AppendInt32LE(pb.buf, val)
 	return pb
 }
 
 func (pb *XPBWriter) PutInt64(val int64) *XPBWriter {
-	pb.buf = append(pb.buf, utils.Int64_to_bytes(val)...)
+	pb.buf = fbio.AppendInt64LE(pb.buf, val)
 	return pb
 }
 
@@ -181,7 +181,7 @@ func (pb *DPBWriterV2) PutBuffer(bytes []byte) {
 }
 
 func (pb *DPBWriterV2) PutString(tag byte, val string) {
-	strBytes := utils.Str_to_bytes(val)
+	strBytes := []byte(val)
 	pb.w.AppendByte(tag)
 	pb.w.AppendInt32(int32(len(strBytes)))
 	pb.w.AppendBytes(strBytes)
@@ -210,5 +210,39 @@ func (pb *TPBWriterV3) PutInt32(tag byte, val int32) {
 }
 
 func (pb *TPBWriterV3) Bytes() []byte {
+	return pb.w.buf
+}
+
+type BatchPBWriter struct {
+	w *XPBWriter
+}
+
+func NewBatchPBWriter() *BatchPBWriter {
+	return &BatchPBWriter{w: NewXPBWriterFromTag(BatchVersion1)}
+}
+
+func (pb *BatchPBWriter) PutTag(tag byte) {
+	pb.w.AppendByte(tag)
+}
+
+func (pb *BatchPBWriter) PutByte(tag byte, val byte) {
+	pb.w.AppendByte(tag)
+	pb.w.AppendInt32(1)
+	pb.w.AppendByte(val)
+}
+
+func (pb *BatchPBWriter) PutInt32(tag byte, val int32) {
+	pb.w.AppendByte(tag)
+	pb.w.AppendInt32(4)
+	pb.w.AppendInt32(val)
+}
+
+func (pb *BatchPBWriter) PutBuffer(tag byte, bytes []byte) {
+	pb.w.AppendByte(tag)
+	pb.w.AppendInt32(int32(len(bytes)))
+	pb.w.AppendBytes(bytes)
+}
+
+func (pb *BatchPBWriter) Bytes() []byte {
 	return pb.w.buf
 }

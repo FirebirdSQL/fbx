@@ -3,15 +3,19 @@ package fbconn
 import (
 	"bufio"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"math"
 	"net"
 	"os"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"rdb.red-soft.ru/fbx/fbconn/ctxwatch"
@@ -66,8 +70,10 @@ type FbConn struct {
 	wireCrypt       *wirecrypt.Manager
 	bgReader        *bgreader.BGReader
 	writer          *bufio.Writer
+	writeMu         sync.Mutex
 	slowWriteTimer  *time.Timer
 	bgReaderStarted chan struct{}
+	writeInProgress atomic.Bool
 	dbHandle        int
 
 	customData map[string]any
@@ -77,6 +83,8 @@ type FbConn struct {
 	statusMu         sync.Mutex
 	status           byte // One of connStatus* constants
 	protocolFeatures ProtocolFeatures
+
+	serverMajorVersion int
 
 	protocolVersion int
 	inlineBlobSize  int
@@ -99,6 +107,7 @@ type FbConn struct {
 
 	// Reusable / preallocated resources
 	contextWatcher    *ctxwatch.ContextWatcher
+	contextHandler    ctxwatch.Handler
 	fieldDescriptions [16]FieldDescription
 
 	cleanupDone         chan struct{}
@@ -127,6 +136,18 @@ func Connect(ctx context.Context, connString string) (*FbConn, error) {
 	return ConnectConfig(ctx, config)
 }
 
+// CreateDatabase creates a Firebird/RedDatabase database and returns an attached connection to it.
+// The connection string accepts the same options as Connect.
+func CreateDatabase(ctx context.Context, connString string) (*FbConn, error) {
+	config, err := ParseConfig(connString)
+	if err != nil {
+		return nil, err
+	}
+	config.CreateDatabase = true
+
+	return ConnectConfig(ctx, config)
+}
+
 // Connect establishes a connection to a Firebird/RedDatabase server using the environment and connString (in URL or keyword/value
 // format) and ParseConfigOptions to provide additional configuration. See documentation for [ParseConfig] for details.
 // ctx can be used to cancel a connect attempt.
@@ -135,6 +156,17 @@ func ConnectWithOptions(ctx context.Context, connString string, parseConfigOptio
 	if err != nil {
 		return nil, err
 	}
+
+	return ConnectConfig(ctx, config)
+}
+
+// CreateDatabaseWithOptions behaves exactly like CreateDatabase with the addition of ParseConfigOptions.
+func CreateDatabaseWithOptions(ctx context.Context, connString string, parseConfigOptions ParseConfigOptions) (*FbConn, error) {
+	config, err := ParseConfigWithOptions(connString, parseConfigOptions)
+	if err != nil {
+		return nil, err
+	}
+	config.CreateDatabase = true
 
 	return ConnectConfig(ctx, config)
 }
@@ -177,6 +209,14 @@ func ConnectConfig(ctx context.Context, config *Config) (*FbConn, error) {
 	}
 
 	return fbConn, nil
+}
+
+// CreateDatabaseConfig creates a Firebird/RedDatabase database using config and returns an attached connection to it.
+// config must have been constructed with [ParseConfig].
+func CreateDatabaseConfig(ctx context.Context, config *Config) (*FbConn, error) {
+	config = config.Copy()
+	config.CreateDatabase = true
+	return ConnectConfig(ctx, config)
 }
 
 func (fbConn *FbConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *auth.AuthManager, respond bool) error {
@@ -449,7 +489,8 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 		return nil, newPerDialConnectError("dial error", err)
 	}
 
-	fbConn.contextWatcher = ctxwatch.NewContextWatcher(config.BuildContextWatcherHandler(fbConn))
+	fbConn.contextHandler = config.BuildContextWatcherHandler(fbConn)
+	fbConn.contextWatcher = ctxwatch.NewContextWatcher(fbConn.contextHandler)
 	fbConn.contextWatcher.Watch(ctx)
 	defer fbConn.contextWatcher.Unwatch()
 
@@ -584,6 +625,9 @@ connectLoop:
 		dpb = fbproto.NewDPBWriterV2FromBytes(config.DPB)
 	}
 	dpb.PutInt32(fbproto.Isc_dpb_sql_dialect, 3)
+	if config.CreateDatabase {
+		dpb.PutInt32(fbproto.Isc_dpb_set_db_sql_dialect, 3)
+	}
 	dpb.PutString(fbproto.Isc_dpb_lc_ctype, config.Encoding)
 	if config.User != "" {
 		dpb.PutString(fbproto.Isc_dpb_user_name, config.User)
@@ -603,9 +647,20 @@ connectLoop:
 	dpb.PutInt32(fbproto.Isc_dpb_process_id, int32(os.Getpid()))
 	app, ok := config.RuntimeParams["application_name"]
 	if !ok {
-		app = "fbx"
+		app, err = os.Executable()
+		if err == nil {
+			if len(app) > 255 {
+				app = app[:255]
+			}
+		} else {
+			app = "fbx"
+		}
 	}
+
 	dpb.PutString(fbproto.Isc_dpb_process_name, app)
+	if search_path, ok := config.RuntimeParams["search_path"]; ok {
+		dpb.PutString(fbproto.Isc_dpb_search_path, search_path)
+	}
 	//FIXME: fbx is timezone need? where get timezone?
 	//dpb.AppendTag(fbproto.Isc_dpb_session_time_zone)
 	dpb.PutString(fbproto.Isc_dpb_auth_plugin_list, authManager.BuildList())
@@ -626,24 +681,32 @@ connectLoop:
 		dpb.PutBuffer(authSpecific)
 	}
 
-	opAttach := fbproto.OpAttach{
-		File: config.Database,
-		DPB:  dpb.Bytes(),
+	var attachOrCreate fbproto.ClientMessage
+	attachAction := "opAttach"
+	if config.CreateDatabase {
+		attachAction = "opCreate"
+		attachOrCreate = &fbproto.OpCreate{
+			File: config.Database,
+			DPB:  dpb.Bytes(),
+		}
+	} else {
+		attachOrCreate = &fbproto.OpAttach{
+			File: config.Database,
+			DPB:  dpb.Bytes(),
+		}
 	}
 
-	if err = fbConn.client.WriteMessage(&opAttach); err != nil {
+	if err = fbConn.withWriteLockAndFlush(func() error {
+		return fbConn.client.WriteMessage(attachOrCreate)
+	}); err != nil {
 		fbConn.conn.Close()
-		return nil, newPerDialConnectError("failed to send opAttach", err)
-	}
-	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
-		fbConn.conn.Close()
-		return nil, newPerDialConnectError("failed to flush opAttach", err)
+		return nil, newPerDialConnectError("failed to flush "+attachAction, err)
 	}
 
 	msg, err := fbConn.receiveMessage()
 	if err != nil {
 		fbConn.conn.Close()
-		return nil, newPerDialConnectError("attachment failed", err)
+		return nil, newPerDialConnectError(attachAction+" failed", err)
 	}
 	switch m := msg.(type) {
 	case *fbproto.OpResponse:
@@ -665,6 +728,48 @@ connectLoop:
 			fbConn.conn.Close()
 			return nil, newPerDialConnectError("ValidateConnect failed", err)
 		}
+	}
+
+	opInfoDatabase := fbproto.OpInfoDatabase{
+		Parameters:   []byte{fbproto.Isc_info_firebird_version, fbproto.Isc_info_end},
+		BufferLength: 256,
+	}
+
+	if err = fbConn.client.WriteMessage(&opInfoDatabase); err != nil {
+		fbConn.conn.Close()
+		return nil, newPerDialConnectError("failed to send opInfoDatabase", err)
+	}
+	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+		fbConn.conn.Close()
+		return nil, newPerDialConnectError("failed to flush opInfoDatabase", err)
+	}
+
+	msg, err = fbConn.receiveMessage()
+	if err != nil {
+		fbConn.conn.Close()
+		return nil, newPerDialConnectError("failed", err)
+	}
+	switch m := msg.(type) {
+	case *fbproto.OpResponse:
+		if len(m.Data) > 0 && m.Data[0] == fbproto.Isc_info_firebird_version {
+			re := regexp.MustCompile(`-V[0-9]+`)
+			versionString := re.FindString(string(m.Data))
+			if len(versionString) < 3 {
+				fbConn.conn.Close()
+				return nil, newPerDialConnectError("error while trying to get server version", fmt.Errorf("version parsing error"))
+			}
+			fbConn.serverMajorVersion, err = strconv.Atoi(versionString[2:])
+			if err != nil {
+				fbConn.conn.Close()
+				return nil, err
+			}
+		} else {
+			fbConn.conn.Close()
+			return nil, newPerDialConnectError("error while trying to get server version", fmt.Errorf("unexpected response"))
+		}
+	case *fbproto.ErrorResponse:
+		fbConn.conn.Close()
+		return nil, ErrorResponseToFbError(m)
 	}
 
 	return fbConn, nil
@@ -697,6 +802,43 @@ func (fbConn *FbConn) ReceiveMessage(ctx context.Context) (fbproto.ServerMessage
 		}
 	}
 	return msg, err
+}
+
+type requestStartHandler interface {
+	HandleBeforeRequest() error
+}
+
+func (fbConn *FbConn) beforeRequest() error {
+	if fbConn == nil || fbConn.contextHandler == nil {
+		return nil
+	}
+
+	handler, ok := fbConn.contextHandler.(requestStartHandler)
+	if !ok {
+		return nil
+	}
+
+	if err := handler.HandleBeforeRequest(); err != nil {
+		fbConn.asyncClose()
+		return err
+	}
+
+	return nil
+}
+
+func (fbConn *FbConn) withWriteLock(writeFn func() error) error {
+	fbConn.writeMu.Lock()
+	defer fbConn.writeMu.Unlock()
+	return writeFn()
+}
+
+func (fbConn *FbConn) withWriteLockAndFlush(writeFn func() error) error {
+	return fbConn.withWriteLock(func() error {
+		if err := writeFn(); err != nil {
+			return err
+		}
+		return fbConn.flushWithPotentialWriteReadDeadlockLocked()
+	})
 }
 
 // peekMessage peeks at the next message without setting up context cancellation.
@@ -812,9 +954,12 @@ func (fbConn *FbConn) Close(ctx context.Context) error {
 	}
 
 	// Ignore any errors sending Terminate message and waiting for server to close connection.
-	fbConn.client.WriteMessage(&fbproto.OpDetach{})
-	fbConn.client.WriteMessage(&fbproto.OpDisconnect{})
-	fbConn.flushWithPotentialWriteReadDeadlock()
+	_ = fbConn.withWriteLockAndFlush(func() error {
+		if err := fbConn.client.WriteMessage(&fbproto.OpDetach{}); err != nil {
+			return err
+		}
+		return fbConn.client.WriteMessage(&fbproto.OpDisconnect{})
+	})
 	//FIXME: should we wait or not response from server?
 	//fbConn.receiveMessage()
 	return fbConn.conn.Close()
@@ -974,7 +1119,9 @@ type FieldDescription struct {
 	OwnerName         string
 	OriginalName      string
 	OriginalTableName string
+	Schema            string
 	Nullable          bool
+	ArrayData         *Array
 }
 
 func (fbConn *FbConn) convertRowDescription(src []fbproto.FieldDescriptor) []FieldDescription {
@@ -993,6 +1140,7 @@ func (fbConn *FbConn) convertRowDescription(src []fbproto.FieldDescriptor) []Fie
 		res[i].OwnerName = src[i].OwnerName
 		res[i].OriginalName = src[i].OriginalName
 		res[i].OriginalTableName = src[i].OriginalTableName
+		res[i].Schema = src[i].Schema
 		res[i].Nullable = src[i].Nullable
 	}
 
@@ -1014,11 +1162,14 @@ func (fbConn *FbConn) Prepare(ctx context.Context, sql string) (*Statement, erro
 
 // PrepareTx creates a prepared statement
 func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql string) (*Statement, error) {
-	var err error
 	if err := fbConn.lock(); err != nil {
 		return nil, err
 	}
 	defer fbConn.unlock()
+
+	if err := fbConn.beforeRequest(); err != nil {
+		return nil, err
+	}
 
 	if ctx != context.Background() {
 		select {
@@ -1030,21 +1181,24 @@ func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 		defer fbConn.contextWatcher.Unwatch()
 	}
 
-	if err = fbConn.client.WriteMessage(&fbproto.OpAllocateStatement{}); err != nil {
-		fbConn.asyncClose()
-		return nil, err
-	}
-	if err = fbConn.client.WriteMessage(&fbproto.OpPrepareStatement{
-		Encoding:          fbConn.Encoding,
-		TransactionHandle: tx.Handle,
-		StatementHandle:   0xFFFF,
-		Dialect:           3,
-		Query:             sql,
+	return fbConn.internalPrepareTx(ctx, tx, sql)
+}
+
+func (fbConn *FbConn) internalPrepareTx(ctx context.Context, tx *FBTransaction, sql string) (*Statement, error) {
+	var err error
+
+	if err = fbConn.withWriteLockAndFlush(func() error {
+		if err := fbConn.client.WriteMessage(&fbproto.OpAllocateStatement{}); err != nil {
+			return err
+		}
+		return fbConn.client.WriteMessage(&fbproto.OpPrepareStatement{
+			Encoding:          fbConn.Encoding,
+			TransactionHandle: tx.Handle,
+			StatementHandle:   0xFFFF,
+			Dialect:           3,
+			Query:             sql,
+		})
 	}); err != nil {
-		fbConn.asyncClose()
-		return nil, err
-	}
-	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
 		fbConn.asyncClose()
 		return nil, err
 	}
@@ -1094,6 +1248,55 @@ func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 		StatementInfo:   &statementInfo,
 	}
 
+	// checking if arrays in fields and parameters and getting array metadata
+
+	var tables, fields []string
+
+	for _, field := range desc.Fields {
+		if field.Type == fbproto.SQL_TYPE_ARRAY {
+			if !slices.Contains(tables, field.OriginalTableName) {
+				tables = append(tables, field.OriginalTableName)
+			}
+			if !slices.Contains(fields, field.OriginalName) {
+				fields = append(fields, field.OriginalName)
+			}
+		}
+	}
+
+	for _, param := range desc.Parameters {
+		if param.Type == fbproto.SQL_TYPE_ARRAY {
+			if !slices.Contains(tables, param.OriginalTableName) {
+				tables = append(tables, param.OriginalTableName)
+			}
+			if !slices.Contains(fields, param.OriginalName) {
+				fields = append(fields, param.OriginalName)
+			}
+		}
+	}
+
+	if tables != nil {
+		arr, err := getArrayInfo(fbConn, ctx, tx, fields, tables)
+		if err != nil {
+			return nil, err
+		}
+		for i := range desc.Fields {
+			metadataKey := metadataMapKey{
+				schema: desc.Fields[i].Schema,
+				table:  desc.Fields[i].OriginalTableName,
+				field:  desc.Fields[i].OriginalName,
+			}
+			desc.Fields[i].ArrayData = arr[metadataKey]
+		}
+		for i := range desc.Parameters {
+			metadataKey := metadataMapKey{
+				schema: desc.Parameters[i].Schema,
+				table:  desc.Parameters[i].OriginalTableName,
+				field:  desc.Parameters[i].OriginalName,
+			}
+			desc.Parameters[i].ArrayData = arr[metadataKey]
+		}
+	}
+
 	st := &Statement{
 		conn:        fbConn,
 		Description: desc,
@@ -1107,20 +1310,19 @@ func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 // CancelRequest sends a cancel request to the server. It returns an error if unable to deliver the cancel
 // request, but lack of an error does not ensure that the query was canceled.
 func (fbConn *FbConn) CancelRequest(ctx context.Context) error {
+	return fbConn.sendCancelOperation(ctx, fbproto.Fb_cancel_raise)
+}
+
+func (fbConn *FbConn) sendCancelOperation(ctx context.Context, kind int) error {
 	if ctx != context.Background() {
 		contextWatcher := ctxwatch.NewContextWatcher(&DeadlineContextWatcherHandler{Conn: fbConn.conn})
 		contextWatcher.Watch(ctx)
 		defer contextWatcher.Unwatch()
 	}
 
-	if err := fbConn.client.WriteMessage(&fbproto.OpCancel{
-		Kind: fbproto.Fb_cancel_raise,
+	if err := fbConn.withWriteLockAndFlush(func() error {
+		return fbConn.client.WriteMessage(&fbproto.OpCancel{Kind: kind})
 	}); err != nil {
-		fbConn.asyncClose()
-		return err
-	}
-
-	if err := fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
 		fbConn.asyncClose()
 		return err
 	}
@@ -1141,8 +1343,14 @@ func (fbConn *FbConn) ExecImmediate(ctx context.Context, sql string) error {
 // ExecImmediateTx executes statement immediate inside specified transaction
 func (fbConn *FbConn) ExecImmediateTx(ctx context.Context, tx *FBTransaction, sql string) error {
 	var err error
+	watched := false
 
 	if err = fbConn.lock(); err != nil {
+		return err
+	}
+
+	if err = fbConn.beforeRequest(); err != nil {
+		fbConn.unlock()
 		return err
 	}
 
@@ -1154,30 +1362,35 @@ func (fbConn *FbConn) ExecImmediateTx(ctx context.Context, tx *FBTransaction, sq
 		default:
 		}
 		fbConn.contextWatcher.Watch(ctx)
-		defer fbConn.contextWatcher.Unwatch()
+		watched = true
 	}
 
 	txHandle := 0
 	if tx != nil {
 		txHandle = tx.Handle
 	}
-	if err = fbConn.client.WriteMessage(&fbproto.OpExecuteImmediate{
-		Encoding:          fbConn.Encoding,
-		TransactionHandle: txHandle,
-		Dialect:           3,
-		Query:             sql,
+	if err = fbConn.withWriteLockAndFlush(func() error {
+		return fbConn.client.WriteMessage(&fbproto.OpExecuteImmediate{
+			Encoding:          fbConn.Encoding,
+			TransactionHandle: txHandle,
+			Dialect:           3,
+			Query:             sql,
+		})
 	}); err != nil {
-		fbConn.asyncClose()
-		return err
-	}
-
-	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+		if watched {
+			fbConn.contextWatcher.Unwatch()
+		}
+		fbConn.unlock()
 		fbConn.asyncClose()
 		return err
 	}
 
 	msg, err := fbConn.receiveMessage()
 	if err != nil {
+		if watched {
+			fbConn.contextWatcher.Unwatch()
+		}
+		fbConn.unlock()
 		fbConn.asyncClose()
 		return normalizeTimeoutError(ctx, err)
 	}
@@ -1185,14 +1398,23 @@ func (fbConn *FbConn) ExecImmediateTx(ctx context.Context, tx *FBTransaction, sq
 	switch m := msg.(type) {
 	case *fbproto.OpResponse:
 	case *fbproto.ErrorResponse:
+		if watched {
+			fbConn.contextWatcher.Unwatch()
+		}
 		fbConn.unlock()
 		return ErrorResponseToFbError(m)
 	default:
+		if watched {
+			fbConn.contextWatcher.Unwatch()
+		}
+		fbConn.unlock()
 		panic(fmt.Sprintf("wrong response message type %T instead expected OpResponse or ErrorResponse", m))
 	}
 
+	if watched {
+		fbConn.contextWatcher.Unwatch()
+	}
 	fbConn.unlock()
-	fbConn.contextWatcher.Unwatch()
 	if tx != nil && tx == fbConn.internalTransaction && fbConn.config.Autocommit && !fbConn.explicitTransaction {
 		tx.Commit(ctx)
 	}
@@ -1325,6 +1547,10 @@ func (fbConn *FbConn) Disconnect(ctx context.Context) error {
 	}
 	defer fbConn.unlock()
 
+	if err = fbConn.beforeRequest(); err != nil {
+		return err
+	}
+
 	if ctx != context.Background() {
 		select {
 		case <-ctx.Done():
@@ -1335,17 +1561,277 @@ func (fbConn *FbConn) Disconnect(ctx context.Context) error {
 		defer fbConn.contextWatcher.Unwatch()
 	}
 
-	if err = fbConn.client.WriteMessage(&fbproto.OpDisconnect{}); err != nil {
-		fbConn.asyncClose()
-		return err
-	}
-
-	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+	if err = fbConn.withWriteLockAndFlush(func() error {
+		return fbConn.client.WriteMessage(&fbproto.OpDisconnect{})
+	}); err != nil {
 		fbConn.conn.Close()
 		return err
 	}
 
 	return nil
+}
+
+func (fbConn *FbConn) getArrayMetadata(ctx context.Context, tx *FBTransaction, serverVersion int, tableNames, fieldNames []string) ([]map[string][]byte, []dimensionsMapKey, error) {
+
+	tables := ""
+	for _, table := range tableNames {
+		tables += "'" + strings.ReplaceAll(table, "'", "''") + "',"
+	}
+	fields := ""
+	for _, field := range fieldNames {
+		fields += "'" + strings.ReplaceAll(field, "'", "''") + "',"
+	}
+
+	var queryString string
+	if serverVersion < 6 {
+		queryString = fmt.Sprintf(
+			`SELECT
+    Y.RDB$FIELD_TYPE,
+    Y.RDB$FIELD_SCALE,
+    Y.RDB$FIELD_LENGTH,
+    CASE
+		WHEN Y.RDB$FIELD_TYPE IN (%d, %d) THEN Y.RDB$CHARACTER_SET_ID
+		ELSE Y.RDB$FIELD_SUB_TYPE
+    END AS RDB$FIELD_SUB_TYPE,
+    X.RDB$FIELD_SOURCE,
+    X.RDB$RELATION_NAME,
+    X.RDB$FIELD_NAME
+		FROM RDB$RELATION_FIELDS X, RDB$FIELDS Y
+		WHERE X.RDB$FIELD_SOURCE = Y.RDB$FIELD_NAME
+		  AND X.RDB$RELATION_NAME IN (%s)
+		  AND X.RDB$FIELD_NAME IN (%s)`,
+			fbproto.Isc_blr_text,
+			fbproto.Isc_blr_varying,
+			tables[:len(tables)-1],
+			fields[:len(fields)-1],
+		)
+	} else {
+		queryString = fmt.Sprintf(
+			`SELECT
+    Y.RDB$FIELD_TYPE,
+    Y.RDB$FIELD_SCALE,
+    Y.RDB$FIELD_LENGTH,
+    CASE
+		WHEN Y.RDB$FIELD_TYPE IN (%d, %d) THEN Y.RDB$CHARACTER_SET_ID
+		ELSE Y.RDB$FIELD_SUB_TYPE
+    END AS RDB$FIELD_SUB_TYPE,
+    X.RDB$FIELD_SOURCE,
+    X.RDB$RELATION_NAME,
+    X.RDB$FIELD_NAME,
+    X.RDB$SCHEMA_NAME
+	FROM RDB$RELATION_FIELDS X, RDB$FIELDS Y
+		WHERE X.RDB$FIELD_SOURCE = Y.RDB$FIELD_NAME
+		  AND X.RDB$SCHEMA_NAME = Y.RDB$SCHEMA_NAME
+		  AND X.RDB$RELATION_NAME IN (%s)
+		  AND X.RDB$FIELD_NAME IN (%s)`,
+			fbproto.Isc_blr_text,
+			fbproto.Isc_blr_varying,
+			tables[:len(tables)-1],
+			fields[:len(fields)-1],
+		)
+	}
+
+	st, err := fbConn.internalPrepareTx(ctx, tx, queryString)
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	rr := &ResultReader{
+		fbConn:           fbConn,
+		ctx:              ctx,
+		boundTransaction: tx,
+	}
+
+	result := st.internalExecTx(ctx, tx, rr, nil).readWithoutCommit()
+
+	if result.Err != nil {
+		return nil, nil, result.Err
+	}
+
+	metadataList := make([]map[string][]byte, 0)
+	sources := []dimensionsMapKey{}
+	for _, row := range result.Rows {
+
+		metadata := make(map[string][]byte)
+
+		metadata["DATATYPE"] = row[0]
+		metadata["SCALE"] = row[1]
+		metadata["LENGTH"] = row[2]
+		if row[3] == nil {
+			metadata["SUBTYPE"] = make([]byte, 4)
+		} else {
+			metadata["SUBTYPE"] = row[3]
+		}
+		metadata["SOURCE"] = row[4]
+		var key dimensionsMapKey
+
+		metadata["TABLE"] = row[5]
+		metadata["FIELD"] = row[6]
+		if serverVersion < 6 {
+			key = dimensionsMapKey{source: strings.TrimSpace(string(row[4]))}
+		} else {
+			metadata["SCHEMA"] = row[7]
+			key = dimensionsMapKey{source: strings.TrimSpace(string(row[4])), schema: strings.TrimSpace(string(row[7]))}
+		}
+		sources = append(sources, key)
+
+		metadataList = append(metadataList, metadata)
+	}
+
+	return metadataList, sources, nil
+}
+
+func (fbConn *FbConn) getArrayDimensions(ctx context.Context, tx *FBTransaction, serverVersion int, sources []dimensionsMapKey) (map[dimensionsMapKey][][]int, error) {
+
+	sourcesString := ""
+	schemasString := ""
+	for _, source := range sources {
+		sourcesString += "'" + strings.ReplaceAll(string(source.source), "'", "''") + "',"
+		schemasString += "'" + strings.ReplaceAll(string(source.schema), "'", "''") + "',"
+	}
+
+	var queryString string
+	if serverVersion < 6 {
+		queryString = fmt.Sprintf(
+			`SELECT
+	X.RDB$LOWER_BOUND,
+	X.RDB$UPPER_BOUND,
+	X.RDB$FIELD_NAME
+	FROM RDB$FIELD_DIMENSIONS X
+		WHERE X.RDB$FIELD_NAME IN (%s)
+		ORDER BY X.RDB$FIELD_NAME, X.RDB$DIMENSION`,
+			sourcesString[:len(sourcesString)-1],
+		)
+	} else {
+		queryString = fmt.Sprintf(
+			`SELECT
+    X.RDB$LOWER_BOUND,
+    X.RDB$UPPER_BOUND,
+    X.RDB$FIELD_NAME,
+    X.RDB$SCHEMA_NAME
+    FROM RDB$FIELD_DIMENSIONS X
+		WHERE X.RDB$FIELD_NAME IN (%s) AND X.RDB$SCHEMA_NAME IN (%s)
+        ORDER BY X.RDB$FIELD_NAME, X.RDB$SCHEMA_NAME, X.RDB$DIMENSION`,
+			sourcesString[:len(sourcesString)-1],
+			schemasString[:len(schemasString)-1],
+		)
+	}
+
+	st, err := fbConn.internalPrepareTx(ctx, tx, queryString)
+
+	if err != nil {
+		return nil, err
+	}
+
+	rr := &ResultReader{
+		fbConn:           fbConn,
+		ctx:              ctx,
+		boundTransaction: tx,
+	}
+
+	result := st.internalExecTx(ctx, tx, rr, nil).readWithoutCommit()
+
+	if result.Err != nil {
+		return nil, result.Err
+	}
+
+	dimensions := map[dimensionsMapKey][][]int{}
+	for _, row := range result.Rows {
+		key := dimensionsMapKey{source: strings.TrimSpace(string(row[2]))} // row[2] - field name
+		if serverVersion >= 6 {
+			key.schema = strings.TrimSpace(string(row[3])) // row[3] - schema name
+		}
+		dimensions[key] = append(
+			dimensions[key],
+			[]int{
+				int(int32(binary.BigEndian.Uint32(row[0]))), // lower bound
+				int(int32(binary.BigEndian.Uint32(row[1]))), // upper bound
+			},
+		)
+	}
+
+	return dimensions, nil
+}
+
+func (fbConn *FbConn) getArray(ctx context.Context, arrayId int64, datatype uint32, length, l int, sdl []byte) ([]byte, error) {
+	tx, err := fbConn.ensureInternalTransaction(ctx, nil, false)
+
+	op_get_slice := fbproto.OpGetSlice{
+		TransactionHandle: tx.Handle,
+		ArrayHandle:       arrayId,
+		SliceLength:       length,
+		SliceDescriptor:   sdl,
+	}
+
+	if err = fbConn.client.WriteMessage(&op_get_slice); err != nil {
+		return nil, err
+	}
+
+	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+		return nil, err
+	}
+
+	msg, err := fbConn.client.ReadSlice(datatype, l)
+
+	if err != nil {
+		fbConn.asyncClose()
+		return nil, normalizeTimeoutError(ctx, err)
+	}
+
+	switch m := msg.(type) {
+	case *fbproto.OpSliceResponse:
+		return m.SliceData, nil
+	case *fbproto.OpResponse:
+		return nil, fmt.Errorf("array getting error: %s", m.Message)
+	case *fbproto.ErrorResponse:
+		fbConn.conn.Close()
+		return nil, ErrorResponseToFbError(m)
+	default:
+		return nil, fmt.Errorf("unexpected response type %T", msg)
+	}
+}
+
+func (fbConn *FbConn) putArray(ctx context.Context, array []byte, length int, sdl []byte) ([]byte, error) {
+	tx, err := fbConn.ensureInternalTransaction(ctx, nil, false)
+
+	op_put_slice := fbproto.OpPutSlice{
+		TransactionHandle: tx.Handle,
+		ArrayHandle:       0,
+		SliceLength:       length,
+		SliceDescriptor:   sdl,
+		Slice:             array,
+	}
+
+	if err = fbConn.client.WriteMessage(&op_put_slice); err != nil {
+		return nil, err
+	}
+
+	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+		return nil, err
+	}
+
+	msg, err := fbConn.client.ReadMessage()
+
+	if err != nil {
+		fbConn.asyncClose()
+		return nil, normalizeTimeoutError(ctx, err)
+	}
+
+	switch m := msg.(type) {
+	case *fbproto.OpResponse:
+		if m.BlobId == 0 {
+			return nil, fmt.Errorf("array putting error: %s", m.Message)
+		}
+		bufId := make([]byte, 8)
+		binary.BigEndian.PutUint64(bufId, uint64(m.BlobId))
+		return bufId, nil
+	case *fbproto.ErrorResponse:
+		fbConn.conn.Close()
+		return nil, ErrorResponseToFbError(m)
+	default:
+		return nil, fmt.Errorf("unexpected response type %T", msg)
+	}
 }
 
 // ResultReader is a reader for the result of a single query.
@@ -1421,6 +1907,31 @@ func (rr *ResultReader) Read() *Result {
 	return br
 }
 
+func (rr *ResultReader) readWithoutCommit() *Result {
+	br := &Result{}
+
+	for rr.NextRow() {
+		if br.FieldDescriptions == nil {
+			br.FieldDescriptions = make([]FieldDescription, len(rr.FieldDescriptions()))
+			copy(br.FieldDescriptions, rr.FieldDescriptions())
+		}
+
+		values := rr.Values()
+		row := make([][]byte, len(values))
+		for i := range row {
+			if values[i] != nil {
+				row[i] = make([]byte, len(values[i]))
+				copy(row[i], values[i])
+			}
+		}
+		br.Rows = append(br.Rows, row)
+	}
+
+	br.QueryStatus, br.Err = rr.closeWithoutCommit()
+
+	return br
+}
+
 // ReadAll reads the entire result set into memory
 // It will always return single result from ResultReader and its error
 func (rr *ResultReader) ReadAll() ([]*Result, error) {
@@ -1466,14 +1977,13 @@ func (rr *ResultReader) NextRow() bool {
 		if rr.fbConn != nil && rr.fbConn.config != nil && rr.fbConn.config.FetchBatchSize > 0 {
 			fetchBatchSize = rr.fbConn.config.FetchBatchSize
 		}
-		if err = rr.fbConn.client.WriteMessage(&fbproto.OpFetch{
-			StatementHandle: rr.statementDescription.StatementHandle,
-			RowBlr:          rowBlr,
-			Messages:        fetchBatchSize,
+		if err = rr.fbConn.withWriteLockAndFlush(func() error {
+			return rr.fbConn.client.WriteMessage(&fbproto.OpFetch{
+				StatementHandle: rr.statementDescription.StatementHandle,
+				RowBlr:          rowBlr,
+				Messages:        fetchBatchSize,
+			})
 		}); err != nil {
-			return false
-		}
-		if err = rr.fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
 			return false
 		}
 		rr.fetchExecuted = true
@@ -1549,11 +2059,14 @@ func (rr *ResultReader) bufferCurrentFetchRows() bool {
 	rr.clearBufferedFetch()
 	colCount := len(rr.fieldDescriptions)
 
+	var rowsBuf [][][]byte
+
 	for rr.fetchResp.MoreRows() {
+		rowBuf := [][]byte{}
 		row, msg, err := rr.fbConn.client.ReceiveSQLData(rr.statementDescription.StatementInfo.FieldDescriptors)
 		if err != nil {
 			rr.fbConn.asyncClose()
-			rr.concludeCommand(QueryStatus{}, err)
+			rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(rr.ctx, err))
 			return false
 		}
 		switch m := msg.(type) {
@@ -1566,18 +2079,16 @@ func (rr *ResultReader) bufferCurrentFetchRows() bool {
 			panic(fmt.Sprintf("wrong response message type %T instead expected OpFetchResponse or ErrorResponse", m))
 		}
 
-		rowStart := len(rr.bufferedCols)
 		for i := 0; i < colCount; i++ {
-			col := row.RowData[i]
-			if col == nil {
-				rr.bufferedCols = append(rr.bufferedCols, bufferedCol{length: bufferedColNullLength})
+			col := make([]byte, 0)
+			if row.RowData[i] == nil {
+				rowBuf = append(rowBuf, nil)
 				continue
 			}
-			start := len(rr.bufferedArena)
-			rr.bufferedArena = append(rr.bufferedArena, col...)
-			rr.bufferedCols = append(rr.bufferedCols, bufferedCol{start: start, length: len(col)})
+			col = append(col, row.RowData[i]...)
+			rowBuf = append(rowBuf, col)
 		}
-		rr.bufferedRows = append(rr.bufferedRows, bufferedRow{colStart: rowStart})
+		rowsBuf = append(rowsBuf, rowBuf)
 
 		if rr.fetchResp.EndOfCursor() {
 			rr.eoc = true
@@ -1585,6 +2096,28 @@ func (rr *ResultReader) bufferCurrentFetchRows() bool {
 	}
 	if rr.fetchResp.EndOfCursor() {
 		rr.eoc = true
+	}
+	for _, row := range rowsBuf {
+		rowStart := len(rr.bufferedCols)
+		for j, elem := range row {
+			if IsArrayType(uint32(rr.fieldDescriptions[j].Type)) {
+				array, err := getArray(rr.fbConn, rr.ctx, rr.fieldDescriptions[j].ArrayData, elem)
+				if err != nil {
+					rr.fbConn.asyncClose()
+					rr.concludeCommand(QueryStatus{}, err)
+					return false
+				}
+				elem = array
+			}
+			if elem == nil {
+				rr.bufferedCols = append(rr.bufferedCols, bufferedCol{length: bufferedColNullLength})
+				continue
+			}
+			start := len(rr.bufferedArena)
+			rr.bufferedArena = append(rr.bufferedArena, elem...)
+			rr.bufferedCols = append(rr.bufferedCols, bufferedCol{start: start, length: len(elem)})
+		}
+		rr.bufferedRows = append(rr.bufferedRows, bufferedRow{colStart: rowStart})
 	}
 	return true
 }
@@ -1604,7 +2137,7 @@ func (rr *ResultReader) drainCurrentFetch() {
 		_, msg, err := rr.fbConn.client.ReceiveSQLData(rr.statementDescription.StatementInfo.FieldDescriptors)
 		if err != nil {
 			rr.fbConn.asyncClose()
-			rr.concludeCommand(QueryStatus{}, err)
+			rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(rr.ctx, err))
 			return
 		}
 		switch m := msg.(type) {
@@ -1649,14 +2182,29 @@ func (rr *ResultReader) Close() (QueryStatus, error) {
 		}
 		rr.clearBufferedFetch()
 		rr.closed = true
-		rr.fbConn.unlock()
 		rr.fbConn.contextWatcher.Unwatch()
+		rr.fbConn.unlock()
 
 		if rr.boundTransaction != nil && rr.boundTransaction == rr.fbConn.internalTransaction && rr.fbConn.config.Autocommit && !rr.fbConn.explicitTransaction {
 			if err := rr.boundTransaction.Commit(context.Background()); err != nil && rr.err == nil {
 				rr.err = err
 			}
 		}
+	}
+	return rr.queryStatus, rr.err
+}
+
+func (rr *ResultReader) closeWithoutCommit() (QueryStatus, error) {
+	if !rr.closed {
+		if rr.err == nil {
+			rr.drainCurrentFetch()
+			if rr.err == nil {
+				if err := rr.populateRowsAffected(); err != nil {
+					rr.err = err
+				}
+			}
+		}
+		rr.closed = true
 	}
 	return rr.queryStatus, rr.err
 }
@@ -1744,6 +2292,10 @@ func (fbConn *FbConn) Ping(ctx context.Context) error {
 	}
 	defer fbConn.unlock()
 
+	if err = fbConn.beforeRequest(); err != nil {
+		return err
+	}
+
 	if ctx != context.Background() {
 		select {
 		case <-ctx.Done():
@@ -1754,12 +2306,9 @@ func (fbConn *FbConn) Ping(ctx context.Context) error {
 		defer fbConn.contextWatcher.Unwatch()
 	}
 
-	if err = fbConn.client.WriteMessage(&fbproto.OpPing{}); err != nil {
-		fbConn.asyncClose()
-		return err
-	}
-
-	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+	if err = fbConn.withWriteLockAndFlush(func() error {
+		return fbConn.client.WriteMessage(&fbproto.OpPing{})
+	}); err != nil {
 		fbConn.conn.Close()
 		return err
 	}
@@ -1797,10 +2346,13 @@ func (fbConn *FbConn) enterPotentialWriteReadDeadlock() {
 	if fbConn.slowWriteTimer.Reset(15 * time.Millisecond) {
 		panic("BUG: slow write timer already active")
 	}
+	fbConn.writeInProgress.Store(true)
 }
 
 // exitPotentialWriteReadDeadlock must be called after a call to enterPotentialWriteReadDeadlock.
 func (fbConn *FbConn) exitPotentialWriteReadDeadlock() {
+	defer fbConn.writeInProgress.Store(false)
+
 	if !fbConn.slowWriteTimer.Stop() {
 		// The timer starts its function in a separate goroutine. It is necessary to ensure the background reader has
 		// started before calling Stop. Otherwise, the background reader may not be stopped. That on its own is not a
@@ -1813,11 +2365,17 @@ func (fbConn *FbConn) exitPotentialWriteReadDeadlock() {
 	}
 }
 
-func (fbConn *FbConn) flushWithPotentialWriteReadDeadlock() error {
+func (fbConn *FbConn) flushWithPotentialWriteReadDeadlockLocked() error {
 	fbConn.enterPotentialWriteReadDeadlock()
 	defer fbConn.exitPotentialWriteReadDeadlock()
 	err := fbConn.writer.Flush()
 	return err
+}
+
+func (fbConn *FbConn) flushWithPotentialWriteReadDeadlock() error {
+	return fbConn.withWriteLock(func() error {
+		return fbConn.flushWithPotentialWriteReadDeadlockLocked()
+	})
 }
 
 // SyncConn prepares the underlying net.Conn for direct use. FbConn may internally buffer reads or use goroutines for
@@ -1969,6 +2527,10 @@ func (fbConn *FbConn) startTransactionTPB(ctx context.Context, tpb []byte, locke
 		}
 		defer fbConn.unlock()
 
+		if err := fbConn.beforeRequest(); err != nil {
+			return nil, err
+		}
+
 		if ctx != context.Background() {
 			select {
 			case <-ctx.Done():
@@ -1996,11 +2558,9 @@ func (fbConn *FbConn) startTransactionTPB(ctx context.Context, tpb []byte, locke
 	opTransaction := fbproto.OpTransaction{
 		TPB: tpb,
 	}
-	if err = fbConn.client.WriteMessage(&opTransaction); err != nil {
-		return nil, err
-	}
-
-	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+	if err = fbConn.withWriteLockAndFlush(func() error {
+		return fbConn.client.WriteMessage(&opTransaction)
+	}); err != nil {
 		return nil, err
 	}
 
@@ -2040,8 +2600,8 @@ func (h *DeadlineContextWatcherHandler) HandleUnwatchAfterCancel() {
 	h.Conn.SetDeadline(time.Time{})
 }
 
-// CancelRequestContextWatcherHandler handles canceled contexts by sending a cancel request to the server. It also sets
-// a deadline on a net.Conn as a fallback.
+// CancelRequestContextWatcherHandler manages cancel state around each watched request and handles canceled contexts by
+// sending a cancel request to the server. It also sets a deadline on a net.Conn as a fallback.
 type CancelRequestContextWatcherHandler struct {
 	Conn *FbConn
 
@@ -2051,8 +2611,45 @@ type CancelRequestContextWatcherHandler struct {
 	// DeadlineDelay is the delay to set on the deadline set on net.Conn when the context is canceled.
 	DeadlineDelay time.Duration
 
+	// CancelResetTimeout is the timeout for cancel state operations (enable/disable).
+	CancelResetTimeout time.Duration
+
 	cancelFinishedChan             chan struct{}
 	handleUnwatchAfterCancelCalled func()
+	requestCancelEnabled           atomic.Bool
+	pendingCancelReset             atomic.Bool
+	sendCancelOperationFunc        func(context.Context, int) error
+}
+
+func (h *CancelRequestContextWatcherHandler) HandleBeforeRequest() error {
+	if !h.pendingCancelReset.Load() || !h.canManageCancelState() {
+		return nil
+	}
+
+	if err := h.sendCancelOperationWithTimeout(fbproto.Fb_cancel_disable); err != nil {
+		return err
+	}
+	if err := h.sendCancelOperationWithTimeout(fbproto.Fb_cancel_enable); err != nil {
+		return err
+	}
+
+	h.pendingCancelReset.Store(false)
+	return nil
+}
+
+func (h *CancelRequestContextWatcherHandler) HandleWatch(context.Context) {
+	if !h.canManageCancelState() {
+		return
+	}
+
+	h.requestCancelEnabled.Store(false)
+
+	if err := h.sendCancelOperationWithTimeout(fbproto.Fb_cancel_enable); err != nil {
+		h.Conn.asyncClose()
+		return
+	}
+
+	h.requestCancelEnabled.Store(true)
 }
 
 func (h *CancelRequestContextWatcherHandler) HandleCancel(context.Context) {
@@ -2060,34 +2657,184 @@ func (h *CancelRequestContextWatcherHandler) HandleCancel(context.Context) {
 	var handleUnwatchedAfterCancelCalledCtx context.Context
 	handleUnwatchedAfterCancelCalledCtx, h.handleUnwatchAfterCancelCalled = context.WithCancel(context.Background())
 
-	deadline := time.Now().Add(h.DeadlineDelay)
+	now := time.Now()
+	deadline := now.Add(h.DeadlineDelay)
+	if !deadline.After(now) {
+		// Keep a small fallback window to deliver op_cancel even when
+		// DeadlineDelay is zero or negative.
+		deadline = now.Add(100 * time.Millisecond)
+	}
 	h.Conn.conn.SetDeadline(deadline)
 
 	go func() {
 		defer close(h.cancelFinishedChan)
 
-		select {
-		case <-handleUnwatchedAfterCancelCalledCtx.Done():
-			return
-		case <-time.After(h.CancelRequestDelay):
+		if h.CancelRequestDelay > 0 {
+			select {
+			case <-handleUnwatchedAfterCancelCalledCtx.Done():
+				return
+			case <-time.After(h.CancelRequestDelay):
+			}
 		}
 
-		cancelRequestCtx, cancel := context.WithDeadline(handleUnwatchedAfterCancelCalledCtx, deadline)
-		defer cancel()
-		h.Conn.CancelRequest(cancelRequestCtx)
+		cancelRequestParentCtx := handleUnwatchedAfterCancelCalledCtx
+		if h.CancelRequestDelay == 0 {
+			// Zero-delay mode should always attempt sending op_cancel. If we tie
+			// send context to Unwatch here, fast Unwatch can cancel before send.
+			cancelRequestParentCtx = context.Background()
 
-		// CancelRequest is inherently racy. Even though the cancel request has been received by the server at this point,
-		// it hasn't necessarily been delivered to the other connection. If we immediately return and the connection is
-		// immediately used then it is possible the CancelRequest will actually cancel our next query. The
-		// TestCancelRequestContextWatcherHandler Stress test can produce this error without the sleep below. The sleep time
-		// is arbitrary, but should be sufficient to prevent this error case.
-		time.Sleep(100 * time.Millisecond)
+			// If a write is currently in progress, wait briefly for it to finish.
+			// This avoids racing a concurrent write+flush path while preserving a
+			// best-effort cancel attempt in zero-delay mode.
+			for h.Conn.writeInProgress.Load() {
+				if time.Now().After(deadline) {
+					return
+				}
+				time.Sleep(time.Millisecond)
+			}
+		}
+
+		cancelRequestCtx, cancel := context.WithDeadline(cancelRequestParentCtx, deadline)
+		defer cancel()
+		if err := h.sendCancelRequest(cancelRequestCtx); err != nil {
+			// Ignore timeout/cancel outcomes for cancel request itself; they only
+			// mean that the deadline fallback should win.
+			var netErr net.Error
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()) {
+				return
+			}
+			// CancelRequest already closes on transport/protocol errors, but keep fail-safe behavior explicit.
+			h.Conn.asyncClose()
+		}
 	}()
+}
+
+func (h *CancelRequestContextWatcherHandler) HandleUnwatch() {
+	if !h.requestCancelEnabled.Load() {
+		return
+	}
+	h.requestCancelEnabled.Store(false)
+
+	if err := h.sendCancelOperationWithTimeout(fbproto.Fb_cancel_disable); err != nil {
+		h.Conn.asyncClose()
+		return
+	}
+}
+
+func (h *CancelRequestContextWatcherHandler) canManageCancelState() bool {
+	if h == nil || h.Conn == nil {
+		return false
+	}
+	if h.sendCancelOperationFunc != nil {
+		return true
+	}
+	// During connect handshake ContextWatcher may be active before fbConn.client is initialized.
+	// Skip per-request enable/disable until attachment is fully established.
+	if h.Conn.client == nil {
+		return false
+	}
+	if h.Conn.status < connStatusIdle {
+		return false
+	}
+	return true
 }
 
 func (h *CancelRequestContextWatcherHandler) HandleUnwatchAfterCancel() {
 	h.handleUnwatchAfterCancelCalled()
 	<-h.cancelFinishedChan
 
+	if h.requestCancelEnabled.Load() && !h.Conn.IsClosed() {
+		h.pendingCancelReset.Store(true)
+	}
+
 	h.Conn.conn.SetDeadline(time.Time{})
+}
+
+func (h *CancelRequestContextWatcherHandler) sendCancelOperationWithTimeout(kind int) error {
+	timeout := h.CancelResetTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	if h.sendCancelOperationFunc != nil {
+		return h.sendCancelOperationFunc(ctx, kind)
+	}
+
+	return h.Conn.sendCancelOperation(ctx, kind)
+}
+
+func (h *CancelRequestContextWatcherHandler) sendCancelRequest(ctx context.Context) error {
+	if h.sendCancelOperationFunc != nil {
+		return h.sendCancelOperationFunc(ctx, fbproto.Fb_cancel_raise)
+	}
+	return h.Conn.CancelRequest(ctx)
+}
+
+func getArrayInfo(fbConn *FbConn, ctx context.Context, tx *FBTransaction, fields, tables []string) (map[metadataMapKey]*Array, error) {
+	metadataList, sources, err := fbConn.getArrayMetadata(ctx, tx, fbConn.serverMajorVersion, tables, fields)
+	if err != nil {
+		return nil, err
+	}
+	dimensions, err := fbConn.getArrayDimensions(ctx, tx, fbConn.serverMajorVersion, sources)
+	if err != nil {
+		return nil, err
+	}
+
+	arrays := map[metadataMapKey]*Array{}
+
+	for _, metadata := range metadataList {
+		arr := Array{}
+		arr.FieldName = strings.TrimSpace(string(metadata["FIELD"]))
+		arr.TableName = strings.TrimSpace(string(metadata["TABLE"]))
+		if fbConn.serverMajorVersion >= 6 {
+			arr.Schema = strings.TrimSpace(string(metadata["SCHEMA"]))
+		}
+		arr.Scale = int32(binary.BigEndian.Uint32(metadata["SCALE"]))
+		arr.BlrTypeId = binary.BigEndian.Uint32(metadata["DATATYPE"])
+		arr.TypeId, err = getSqlTypeFromBlr(binary.BigEndian.Uint32(metadata["DATATYPE"]))
+		if err != nil {
+			return nil, err
+		}
+		arr.SubType = int32(binary.BigEndian.Uint32(metadata["SUBTYPE"]))
+
+		arr.Length = binary.BigEndian.Uint32(metadata["LENGTH"])
+		if arr.TypeId == fbproto.SQL_TYPE_VARYING || arr.TypeId == fbproto.SQL_TYPE_TEXT {
+			name, err := fbproto.CharacterSetIdIntoName(arr.SubType)
+			if err != nil {
+				return nil, err
+			}
+			encoding, err := fbproto.NewEncoding(name)
+			if err != nil {
+				return nil, err
+			}
+			if encoding.MaxBytesPerChar < fbConn.Encoding.MaxBytesPerChar {
+				arr.Length = arr.Length / encoding.MaxBytesPerChar * fbConn.Encoding.MaxBytesPerChar // to read an array of text data when connected in any encoding
+				arr.SubType = fbConn.Encoding.CharacterSetId
+			}
+		}
+
+		metadataKey := metadataMapKey{
+			schema: arr.Schema,
+			table:  arr.TableName,
+			field:  arr.FieldName,
+		}
+
+		dimensionsKey := dimensionsMapKey{
+			source: strings.TrimSpace(string(metadata["SOURCE"])),
+			schema: strings.TrimSpace(string(metadata["SCHEMA"])),
+		}
+		for _, dimension := range dimensions[dimensionsKey] {
+			arr.Dimensions = append(arr.Dimensions,
+				map[string]int{
+					"Lower": dimension[0],
+					"Upper": dimension[1],
+				},
+			)
+			arr.CurrentDimensions = arr.Dimensions
+		}
+		arrays[metadataKey] = &arr
+	}
+	return arrays, nil
 }

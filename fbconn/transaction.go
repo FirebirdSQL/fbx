@@ -19,14 +19,16 @@ func (tx *FBTransaction) Commit(ctx context.Context) error {
 	if tx.Closed {
 		return ErrTransactionClosed
 	}
-	tx.Closed = true
-	defer tx.Connection.clearInlineBlobCache(tx.Handle)
 	var err error
 
 	if err = tx.Connection.lock(); err != nil {
 		return err
 	}
 	defer tx.Connection.unlock()
+
+	if err = tx.Connection.beforeRequest(); err != nil {
+		return err
+	}
 
 	if ctx != context.Background() {
 		select {
@@ -38,17 +40,16 @@ func (tx *FBTransaction) Commit(ctx context.Context) error {
 		defer tx.Connection.contextWatcher.Unwatch()
 	}
 
+	tx.Closed = true
+	defer tx.Connection.clearInlineBlobCache(tx.Handle)
 	delete(tx.Connection.activeTransactions, tx)
 
 	opCommit := fbproto.OpCommit{
 		TransactionHandle: tx.Handle,
 	}
-	if err = tx.Connection.client.WriteMessage(&opCommit); err != nil {
-		tx.Connection.asyncClose()
-		return err
-	}
-
-	if err = tx.Connection.flushWithPotentialWriteReadDeadlock(); err != nil {
+	if err = tx.Connection.withWriteLockAndFlush(func() error {
+		return tx.Connection.client.WriteMessage(&opCommit)
+	}); err != nil {
 		tx.Connection.asyncClose()
 		return err
 	}
@@ -71,14 +72,16 @@ func (tx *FBTransaction) Rollback(ctx context.Context) error {
 	if tx.Closed {
 		return ErrTransactionClosed
 	}
-	tx.Closed = true
-	defer tx.Connection.clearInlineBlobCache(tx.Handle)
 	var err error
 
 	if err = tx.Connection.lock(); err != nil {
 		return err
 	}
 	defer tx.Connection.unlock()
+
+	if err = tx.Connection.beforeRequest(); err != nil {
+		return err
+	}
 
 	if ctx != context.Background() {
 		select {
@@ -90,17 +93,16 @@ func (tx *FBTransaction) Rollback(ctx context.Context) error {
 		defer tx.Connection.contextWatcher.Unwatch()
 	}
 
+	tx.Closed = true
+	defer tx.Connection.clearInlineBlobCache(tx.Handle)
 	delete(tx.Connection.activeTransactions, tx)
 
 	opRollback := fbproto.OpRollback{
 		TransactionHandle: tx.Handle,
 	}
-	if err = tx.Connection.client.WriteMessage(&opRollback); err != nil {
-		tx.Connection.asyncClose()
-		return err
-	}
-
-	if err = tx.Connection.flushWithPotentialWriteReadDeadlock(); err != nil {
+	if err = tx.Connection.withWriteLockAndFlush(func() error {
+		return tx.Connection.client.WriteMessage(&opRollback)
+	}); err != nil {
 		tx.Connection.asyncClose()
 		return err
 	}

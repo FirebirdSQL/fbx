@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"rdb.red-soft.ru/fbx/fbproto"
-	"rdb.red-soft.ru/fbx/internal/pgio"
+	"rdb.red-soft.ru/fbx/internal/fbio"
 )
 
 type TimestamptzScanner interface {
@@ -320,9 +320,9 @@ func encodeTimestamptzBinary(buf []byte, ts Timestamptz) ([]byte, error) {
 
 	ticks := uint32(usec / 100)
 
-	buf = pgio.AppendUint32(buf, uint32(days))
-	buf = pgio.AppendUint32(buf, ticks)
-	buf = pgio.AppendUint32(buf, uint32(ts.tzRaw))
+	buf = fbio.AppendUint32BE(buf, uint32(days))
+	buf = fbio.AppendUint32BE(buf, ticks)
+	buf = fbio.AppendUint32BE(buf, uint32(ts.tzRaw))
 
 	return buf, nil
 }

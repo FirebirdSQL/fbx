@@ -6,8 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"rdb.red-soft.ru/fbx/fbproto/utils"
-	"rdb.red-soft.ru/fbx/internal/pgio"
+	"rdb.red-soft.ru/fbx/internal/fbio"
 )
 
 const (
@@ -124,7 +123,7 @@ func (encodePlanTimeCodecBinary) Encode(value any, buf []byte) ([]byte, error) {
 
 	ticks := uint32(usec / 100)
 
-	buf = append(buf, utils.Bint32_to_bytes(int32(ticks))...)
+	buf = fbio.AppendInt32BE(buf, int32(ticks))
 
 	return buf, nil
 }
@@ -188,7 +187,7 @@ func (encodePlanTimeCodecBinaryString) Encode(value any, buf []byte) ([]byte, er
 	}
 
 	ticks := uint32(usec / 100)
-	buf = append(buf, utils.Bint32_to_bytes(int32(ticks))...)
+	buf = fbio.AppendInt32BE(buf, int32(ticks))
 
 	return buf, nil
 }
@@ -234,7 +233,7 @@ func (encodePlanTimeCodecBinaryTime) Encode(value any, buf []byte) ([]byte, erro
 
 	ticks := uint32(usec / 100)
 
-	buf = pgio.AppendInt32(buf, int32(ticks))
+	buf = fbio.AppendInt32BE(buf, int32(ticks))
 
 	return buf, nil
 }
@@ -263,7 +262,7 @@ func (scanPlanBinaryTimeToTime) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into *time.Time")
 	}
 
-	ticks := utils.Bytes_to_bint32(src)
+	ticks := fbio.ReadInt32BE(src)
 	usec := int64(ticks) * 100
 
 	if usec < 0 || usec >= microsecondsPerDay {
@@ -299,7 +298,7 @@ func (scanPlanBinaryTimeToTimeScanner) Scan(src []byte, dst any) error {
 		return fmt.Errorf("fbtype: invalid length for Firebird TIME: %d", len(src))
 	}
 
-	ticks := uint32(utils.Bytes_to_bint32(src))
+	ticks := uint32(fbio.ReadInt32BE(src))
 	usec := int64(ticks) * 100
 
 	return scanner.ScanTime(Time{
@@ -369,7 +368,7 @@ func decodeTimeBinary(src []byte) (int64, string, error) {
 		return 0, "", fmt.Errorf("fbtype: invalid length for Firebird TIME: %d", len(src))
 	}
 
-	ticks := uint32(utils.Bytes_to_bint32(src))
+	ticks := uint32(fbio.ReadInt32BE(src))
 	usec := int64(ticks) * 100
 
 	hours := usec / microsecondsPerHour

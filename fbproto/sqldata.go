@@ -2,12 +2,10 @@ package fbproto
 
 import (
 	"fmt"
-
-	"rdb.red-soft.ru/fbx/fbproto/utils"
 )
 
 type SQLData struct {
-	Nulls         *utils.BitSet
+	Nulls         *BitSet
 	RowData       [][]byte
 	RowDescriptor []FieldDescriptor
 }
@@ -79,9 +77,9 @@ func ReadRowData(x *XDRReader, rowDescriptor []FieldDescriptor, scratch *rowScra
 		scratch = &rowScratch{}
 	}
 	scratch.reset(count, l+pad)
-	var nullsBitset *utils.BitSet
+	var nullsBitset *BitSet
 	if err = x.ReadBytesInto(scratch.nulls); err == nil {
-		nullsBitset = utils.NewBitSetFromBytes(l, scratch.nulls[:l])
+		nullsBitset = NewBitSetFromBytes(l, scratch.nulls[:l])
 	} else {
 		return nil, err
 	}
@@ -126,7 +124,7 @@ func ReadRowData(x *XDRReader, rowDescriptor []FieldDescriptor, scratch *rowScra
 // https://firebirdsql.org/file/documentation/html/en/firebirddocs/wireprotocol/firebird-wire-protocol.html#wireprotocol-row-data-format
 func WriteRowData(x *XDRWriter, rowDescriptor []FieldDescriptor, values [][]byte) error {
 	var err error
-	nulls := utils.NewBitSet(len(rowDescriptor))
+	nulls := NewBitSet(len(rowDescriptor))
 	for n, value := range values {
 		if value == nil {
 			nulls.Set(n)
@@ -185,3 +183,90 @@ func WriteRowData(x *XDRWriter, rowDescriptor []FieldDescriptor, values [][]byte
 	}
 	return nil
 }
+
+func CalculateBatchMessageLength(rowDescriptor []FieldDescriptor) int {
+	length := 0
+	for _, field := range rowDescriptor {
+		fieldLength := field.Length
+		align := 1
+
+		switch field.Type {
+		case SQL_TYPE_TEXT, SQL_TYPE_NULL, SQL_TYPE_BOOLEAN:
+			align = 1
+		case SQL_TYPE_SHORT:
+			align = 2
+		case SQL_TYPE_VARYING:
+			align = 2
+			fieldLength += 2
+		case SQL_TYPE_FLOAT, SQL_TYPE_LONG, SQL_TYPE_DATE, SQL_TYPE_TIME, SQL_TYPE_TIMESTAMP,
+			SQL_TIME_TZ_EX, SQL_TYPE_BLOB, SQL_TYPE_ARRAY, SQL_TYPE_QUAD, SQL_TIMESTAMP_TZ_EX,
+			SQL_TYPE_TIMESTAMP_TZ, SQL_TYPE_TIME_TZ:
+			align = 4
+		case SQL_TYPE_DOUBLE, SQL_TYPE_D_FLOAT, SQL_TYPE_INT64, SQL_TYPE_DEC64, SQL_TYPE_DEC128, SQL_TYPE_INT128:
+			align = 8
+		default:
+			panic(fmt.Sprintf("can not get batch message length of unknown field descriptor type: %d", field.Type))
+		}
+
+		if align > 1 {
+			length = (length + align - 1) & -align
+		}
+		length += fieldLength
+		length = ((length + 1) & -2) + 2
+	}
+	return length
+}
+
+// func AppendRowData(buf []byte, rowDescriptor []FieldDescriptor, values [][]byte) []byte {
+// 	nulls := NewBitSet(len(rowDescriptor))
+// 	for i, value := range values {
+// 		if value == nil {
+// 			nulls.Set(i)
+// 		}
+// 	}
+// 	buf = append(buf, nulls.AlignedBuf()...)
+
+// 	for i, field := range rowDescriptor {
+// 		if nulls.Get(i) {
+// 			continue
+// 		}
+// 		if field.Type == SQL_TYPE_NULL {
+// 			continue
+// 		}
+
+// 		valueBuf := values[i]
+// 		valueBufLen := len(valueBuf)
+// 		l := field.CalculateIoLength(valueBuf)
+
+// 		switch {
+// 		case l == 0:
+// 			buf = fbio.AppendInt32BE(buf, int32(valueBufLen))
+// 			buf = append(buf, valueBuf...)
+// 			for pad := (4 - valueBufLen) & 3; pad > 0; pad-- {
+// 				buf = append(buf, field.GetPaddingByte())
+// 			}
+// 		case l < 0:
+// 			realFieldLen := -l
+// 			if valueBufLen != realFieldLen {
+// 				panic(fmt.Sprintf("invalid length of value buffer, expected %d, but got %d", realFieldLen, valueBufLen))
+// 			}
+// 			buf = append(buf, valueBuf...)
+// 		default:
+// 			realFieldLen := l - 1
+// 			if valueBufLen >= realFieldLen {
+// 				buf = append(buf, valueBuf[:realFieldLen]...)
+// 				for pad := (4 - realFieldLen) & 3; pad > 0; pad-- {
+// 					buf = append(buf, field.GetPaddingByte())
+// 				}
+// 			} else {
+// 				buf = append(buf, valueBuf...)
+// 				padding := realFieldLen - valueBufLen + ((4 - realFieldLen) & 3)
+// 				for ; padding > 0; padding-- {
+// 					buf = append(buf, field.GetPaddingByte())
+// 				}
+// 			}
+// 		}
+// 	}
+
+// 	return buf
+// }

@@ -54,6 +54,39 @@ func (c *Conn) Begin(ctx context.Context) (Tx, error) {
 // BeginTx starts a transaction with txOptions determining the transaction mode. Unlike database/sql, the context only
 // affects the begin command. i.e. there is no auto-rollback on context cancellation.
 func (c *Conn) BeginTx(ctx context.Context, txOptions TxOptions) (Tx, error) {
+	tpb, err := txOptions.GetTPB()
+	if err != nil {
+		return nil, err
+	}
+
+	return c.beginTxTPB(ctx, tpb)
+}
+
+// BeginTxTPB starts a transaction using a raw Firebird transaction parameter block.
+// The TPB is passed to the server as-is.
+func (c *Conn) BeginTxTPB(ctx context.Context, tpb []byte) (Tx, error) {
+	txTPB := make([]byte, len(tpb))
+	copy(txTPB, tpb)
+
+	return c.beginTxTPB(ctx, txTPB)
+}
+
+func (c *Conn) beginTxTPB(ctx context.Context, tpb []byte) (Tx, error) {
+	fbTx, err := c.fbConn.StartTransactionTPB(ctx, tpb)
+	if err != nil {
+		// begin should never fail unless there is an underlying connection issue or
+		// a context timeout. In either case, the connection is possibly broken.
+		c.die()
+		return nil, err
+	}
+
+	return &dbTx{
+		conn: c,
+		tx:   fbTx,
+	}, nil
+}
+
+func (txOptions TxOptions) GetTPB() ([]byte, error) {
 	lockTimeoutSeconds, err := normalizeTxLockTimeout(txOptions.LockTimeout)
 	if err != nil {
 		return nil, err
@@ -62,12 +95,7 @@ func (c *Conn) BeginTx(ctx context.Context, txOptions TxOptions) (Tx, error) {
 	// If no options are specified, use server / database defaults. This matches Firebird semantics and keeps
 	// database/sql LevelDefault behaving as expected (i.e. do not silently force READ COMMITTED).
 	if txOptions.AccessMode == "" && txOptions.IsoLevel == "" && lockTimeoutSeconds == 0 {
-		fbTx, err := c.fbConn.StartTransactionTPB(ctx, nil)
-		if err != nil {
-			c.die()
-			return nil, err
-		}
-		return &dbTx{conn: c, tx: fbTx}, nil
+		return nil, nil
 	}
 
 	tpb := fbproto.NewTPBWriterV3()
@@ -114,18 +142,7 @@ func (c *Conn) BeginTx(ctx context.Context, txOptions TxOptions) (Tx, error) {
 		tpb.PutTag(fbproto.Isc_tpb_wait)
 	}
 
-	fbTx, err := c.fbConn.StartTransactionTPB(ctx, tpb.Bytes())
-	if err != nil {
-		// begin should never fail unless there is an underlying connection issue or
-		// a context timeout. In either case, the connection is possibly broken.
-		c.die()
-		return nil, err
-	}
-
-	return &dbTx{
-		conn: c,
-		tx:   fbTx,
-	}, nil
+	return tpb.Bytes(), nil
 }
 
 func normalizeTxLockTimeout(lockTimeout time.Duration) (int, error) {
@@ -167,6 +184,18 @@ type Tx interface {
 	Rollback(ctx context.Context) error
 
 	Prepare(ctx context.Context, name, sql string) (*fbconn.StatementDescription, error)
+	// PrepareBatch creates a batch object inside the transaction.
+	PrepareBatch(ctx context.Context, sql string) (*PreparedBatch, error)
+	// PrepareBatchWithOptions creates a batch object inside the transaction with additional batch options.
+	PrepareBatchWithOptions(ctx context.Context, sql string, opts BatchOptions) (*PreparedBatch, error)
+	// Flush sends queued rows for a named batch without executing it.
+	Flush(ctx context.Context, name string) error
+	// ExecBatch flushes queued rows for a named batch, executes it, and returns the result.
+	ExecBatch(ctx context.Context, name string) (BatchResult, error)
+	// CancelBatch discards every row queued for a named batch — both the local
+	// buffer and any rows already flushed to the server. The prepared batch
+	// statement is kept and can be reused.
+	CancelBatch(ctx context.Context, name string) error
 
 	Exec(ctx context.Context, sql string, arguments ...any) (commandTag fbconn.QueryStatus, err error)
 	Query(ctx context.Context, sql string, args ...any) (Rows, error)
@@ -208,13 +237,15 @@ func (tx *dbTx) Commit(ctx context.Context) error {
 		return ErrTxClosed
 	}
 
+	cleanupErr := tx.conn.closePreparedBatchesForTx(ctx, tx)
 	err := tx.tx.Commit(ctx)
-	tx.closed = true
 	if err != nil {
-		return err
+		tx.closed = tx.tx.Closed || tx.conn.IsClosed()
+		return errors.Join(cleanupErr, err)
 	}
 
-	return nil
+	tx.closed = true
+	return cleanupErr
 }
 
 // Rollback rolls back the transaction. Rollback will return ErrTxClosed if the
@@ -226,15 +257,16 @@ func (tx *dbTx) Rollback(ctx context.Context) error {
 		return ErrTxClosed
 	}
 
+	cleanupErr := tx.conn.closePreparedBatchesForTx(ctx, tx)
 	err := tx.tx.Rollback(ctx)
 	tx.closed = true
 	if err != nil {
-		// A rollback failure leaves the connection in an undefined state
+		// A rollback failure leaves the connection in an undefined state.
 		tx.conn.die()
-		return err
+		return errors.Join(cleanupErr, err)
 	}
 
-	return nil
+	return cleanupErr
 }
 
 // Exec delegates to the underlying *Conn
@@ -253,6 +285,20 @@ func (tx *dbTx) Prepare(ctx context.Context, name, sql string) (*fbconn.Statemen
 	}
 
 	return tx.conn.prepareTx(ctx, tx, name, sql)
+}
+
+// PrepareBatch creates a batch object inside the transaction.
+func (tx *dbTx) PrepareBatch(ctx context.Context, sql string) (*PreparedBatch, error) {
+	return tx.PrepareBatchWithOptions(ctx, sql, BatchOptions{})
+}
+
+// PrepareBatchWithOptions creates a batch object inside the transaction with additional batch options.
+func (tx *dbTx) PrepareBatchWithOptions(ctx context.Context, sql string, opts BatchOptions) (*PreparedBatch, error) {
+	if tx.closed {
+		return nil, ErrTxClosed
+	}
+
+	return tx.conn.prepareBatchTx(ctx, tx, sql, opts)
 }
 
 // Query delegates to the underlying *Conn
@@ -274,6 +320,32 @@ func (tx *dbTx) QueryRow(ctx context.Context, sql string, args ...any) Row {
 
 func (tx *dbTx) Conn() *Conn {
 	return tx.conn
+}
+
+// Flush sends queued rows for a named batch without executing it.
+func (tx *dbTx) Flush(ctx context.Context, name string) error {
+	if tx.closed {
+		return ErrTxClosed
+	}
+	return tx.conn.flushTx(ctx, tx, name)
+}
+
+// ExecBatch flushes queued rows for a named batch, executes it, and returns the result.
+func (tx *dbTx) ExecBatch(ctx context.Context, name string) (BatchResult, error) {
+	if tx.closed {
+		return BatchResult{}, ErrTxClosed
+	}
+	return tx.conn.execBatchTx(ctx, tx, name)
+}
+
+// CancelBatch discards every row queued for a named batch — both the local
+// buffer and any rows already flushed to the server. The prepared batch
+// statement is kept and can be reused.
+func (tx *dbTx) CancelBatch(ctx context.Context, name string) error {
+	if tx.closed {
+		return ErrTxClosed
+	}
+	return tx.conn.cancelBatchTx(ctx, tx, name)
 }
 
 // dbSimulatedNestedTx represents a simulated nested transaction implemented by a savepoint.
@@ -332,6 +404,46 @@ func (sp *dbSimulatedNestedTx) Prepare(ctx context.Context, name, sql string) (*
 	}
 
 	return sp.tx.Prepare(ctx, name, sql)
+}
+
+// PrepareBatch creates a batch object inside the transaction.
+func (sp *dbSimulatedNestedTx) PrepareBatch(ctx context.Context, sql string) (*PreparedBatch, error) {
+	return sp.PrepareBatchWithOptions(ctx, sql, BatchOptions{})
+}
+
+// PrepareBatchWithOptions creates a batch object inside the transaction with additional batch options.
+func (sp *dbSimulatedNestedTx) PrepareBatchWithOptions(ctx context.Context, sql string, opts BatchOptions) (*PreparedBatch, error) {
+	if sp.closed {
+		return nil, ErrTxClosed
+	}
+
+	return sp.tx.PrepareBatchWithOptions(ctx, sql, opts)
+}
+
+// Flush sends queued rows for a named batch without executing it.
+func (sp *dbSimulatedNestedTx) Flush(ctx context.Context, name string) error {
+	if sp.closed {
+		return ErrTxClosed
+	}
+	return sp.tx.Flush(ctx, name)
+}
+
+// ExecBatch flushes queued rows for a named batch, executes it, and returns the result.
+func (sp *dbSimulatedNestedTx) ExecBatch(ctx context.Context, name string) (BatchResult, error) {
+	if sp.closed {
+		return BatchResult{}, ErrTxClosed
+	}
+	return sp.tx.ExecBatch(ctx, name)
+}
+
+// CancelBatch discards every row queued for a named batch — both the local
+// buffer and any rows already flushed to the server. The prepared batch
+// statement is kept and can be reused.
+func (sp *dbSimulatedNestedTx) CancelBatch(ctx context.Context, name string) error {
+	if sp.closed {
+		return ErrTxClosed
+	}
+	return sp.tx.CancelBatch(ctx, name)
 }
 
 // Query delegates to the underlying Tx

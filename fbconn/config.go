@@ -31,6 +31,7 @@ type Config struct {
 	Host                       string // host (e.g. localhost) or absolute path to unix domain socket directory (e.g. /private/tmp)
 	Port                       uint16
 	Database                   string
+	CreateDatabase             bool
 	User                       string
 	Role                       string
 	SystemUser                 string
@@ -65,7 +66,7 @@ type Config struct {
 	Fallbacks []*FallbackConfig
 
 	// ValidateConnect is called during a connection attempt after a successful authentication, before the connection is returned.
-	// If this returns an error the connection is closed and the next fallback config is tried. 
+	// If this returns an error the connection is closed and the next fallback config is tried.
 	ValidateConnect ValidateConnectFunc
 
 	// AfterConnect is called after ValidateConnect. It can be used to set up the connection (e.g. Set session variables
@@ -180,8 +181,12 @@ func NetworkAddress(host string, port uint16) (network, address string) {
 //
 //	# Keyword/Value
 //	user=sysdba password=masterkey host=localhost port=3050 database=employee.fdb
+//	user=sysdba password=masterkey host=localhost port=3050 database=new.fdb create_database=true
+//
 // # URL
+//
 //	firebird://sysdba:masterkey@localhost:3050/employee.fdb
+//	firebird://sysdba:masterkey@localhost:3050/new.fdb?create_database=true
 //
 // ParseConfig recognizes the following environment variables (and their equivalents in the connection string):
 //
@@ -237,6 +242,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 	config := &Config{
 		createdByParseConfig: true,
 		Database:             settings["database"],
+		CreateDatabase:       convertToBool(settings["create_database"], false),
 		User:                 settings["user"],
 		Password:             settings["password"],
 		Role:                 settings["role"],
@@ -245,7 +251,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 			return fbproto.NewClient(r, w, encoding)
 		},
 		BuildContextWatcherHandler: func(fbConn *FbConn) ctxwatch.Handler {
-			return &DeadlineContextWatcherHandler{Conn: fbConn.conn}
+			return &CancelRequestContextWatcherHandler{Conn: fbConn}
 		},
 		OnFbError: func(_ *FbConn, fbErr *FbError) bool {
 			// we want to automatically close any fatal errors
@@ -320,6 +326,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		"host":                          {},
 		"port":                          {},
 		"database":                      {},
+		"create_database":               {},
 		"user":                          {},
 		"password":                      {},
 		"connect_timeout":               {},
@@ -441,6 +448,7 @@ func parseEnvSettings() map[string]string {
 		"FBSERVICEFILE":        "servicefile",
 		"FBTZ":                 "timezone",
 		"FBOPTIONS":            "options",
+		"FBSEARCHPATH":         "search_path",
 	}
 
 	for envname, realname := range nameMap {
@@ -541,6 +549,8 @@ func parseURLSettings(connString string) (map[string]string, error) {
 
 	nameMap := map[string]string{
 		"dbname":                       "database",
+		"createdb":                     "create_database",
+		"create_db":                    "create_database",
 		"blob_buffer_size":             "blob_buffer_size",
 		"use_stream_blobs":             "use_stream_blobs",
 		"useStreamBlobs":               "use_stream_blobs",
@@ -572,6 +582,8 @@ func parseKeywordValueSettings(s string) (map[string]string, error) {
 
 	nameMap := map[string]string{
 		"dbname":                       "database",
+		"createdb":                     "create_database",
+		"create_db":                    "create_database",
 		"blob_buffer_size":             "blob_buffer_size",
 		"use_stream_blobs":             "use_stream_blobs",
 		"useStreamBlobs":               "use_stream_blobs",

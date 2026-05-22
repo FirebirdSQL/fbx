@@ -3,6 +3,7 @@ package ctxwatch
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 )
 
 // ContextWatcher watches a context and performs an action when the context is canceled. It can watch one context at a
@@ -13,7 +14,7 @@ type ContextWatcher struct {
 
 	lock              sync.Mutex
 	watchInProgress   bool
-	onCancelWasCalled bool
+	onCancelWasCalled atomic.Bool
 }
 
 // NewContextWatcher returns a ContextWatcher. onCancel will be called when a watched context is canceled.
@@ -37,15 +38,18 @@ func (cw *ContextWatcher) Watch(ctx context.Context) {
 		panic("Watch already in progress")
 	}
 
-	cw.onCancelWasCalled = false
+	cw.onCancelWasCalled.Store(false)
 
 	if ctx.Done() != nil {
+		if lifecycleHandler, ok := cw.handler.(WatchLifecycleHandler); ok {
+			lifecycleHandler.HandleWatch(ctx)
+		}
 		cw.watchInProgress = true
 		go func() {
 			select {
 			case <-ctx.Done():
 				cw.handler.HandleCancel(ctx)
-				cw.onCancelWasCalled = true
+				cw.onCancelWasCalled.Store(true)
 				<-cw.unwatchChan
 			case <-cw.unwatchChan:
 			}
@@ -63,8 +67,10 @@ func (cw *ContextWatcher) Unwatch() {
 
 	if cw.watchInProgress {
 		cw.unwatchChan <- struct{}{}
-		if cw.onCancelWasCalled {
+		if cw.onCancelWasCalled.Load() {
 			cw.handler.HandleUnwatchAfterCancel()
+		} else if lifecycleHandler, ok := cw.handler.(WatchLifecycleHandler); ok {
+			lifecycleHandler.HandleUnwatch()
 		}
 		cw.watchInProgress = false
 	}
@@ -77,4 +83,11 @@ type Handler interface {
 
 	// HandleUnwatchAfterCancel is called when a ContextWatcher that called HandleCancel on this Handler is unwatched.
 	HandleUnwatchAfterCancel()
+}
+
+// WatchLifecycleHandler is an extension for Handler. If implemented, HandleWatch/HandleUnwatch are called for
+// each normal watch/unwatch lifecycle when ctx is cancellable.
+type WatchLifecycleHandler interface {
+	HandleWatch(ctx context.Context)
+	HandleUnwatch()
 }

@@ -1,19 +1,40 @@
 # Change Log
 
-<<<<<<< HEAD
-# [0.4]
+# [Unreleased]
 
 ### Added
 
 - Implement Firebird `POST_EVENT` support in wire protocol (`op_connect_request`, `op_que_events`, `op_cancel_events`, `op_event` processing).
 - Add low-level events API in `fbconn` (event handles, queue/cancel/count, auxiliary async event channel).
-- Add new package `event` with Jaybird-like `EventManager` API (`add/remove listener`, `waitForEvent`, dispatcher).
+- Add new package `fbevent` with high-level `Manager` API for callback listeners, one-shot waits, channel subscriptions, and pgx-like notifications.
 
 ### Improved
 
 - Align event handling semantics with Jaybird: baseline first callback, delta event counts, automatic re-registration after event delivery.
-- Add integration and unit test coverage for event lifecycle and aux-channel failure scenarios.
-- Document Firebird events usage in `README.md` with `event.Manager` example.
+- Deliver user callbacks sequentially through a bounded manager-level delivery queue instead of running one goroutine per listener registration.
+- Add integration and unit test coverage for event lifecycle, subscription delivery, queue overflow, and aux-channel failure scenarios.
+- Document Firebird events in the README feature list and examples documentation.
+
+# [0.4.1] - 20.05.2026
+
+### Fixed
+- RS-304089. Fixed races in database creation tests.
+
+# [0.4.0] - 15.05.2026
+
+### Added
+- RS-282573. Batch operations support.
+- RS-274728. Arrays support.
+- RS-294862. Schemas support.
+- RS-294553. Database creation.
+ 
+### Improved
+- RS-289421. Support user-defined TPB.
+- RS-288962. Allow to configure transaction lock timeout.
+
+### Fixed
+- RS-282552. Asynchronous fb_cancel_raise handling.
+- RS-285658. Truncated statement info handling.
 
 # [0.3] - 06.04.2026
 

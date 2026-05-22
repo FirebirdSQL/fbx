@@ -39,7 +39,31 @@ func (pb *ExtendedQueryBuilder) Build(ctx context.Context, conn *Conn, tx *dbTx,
 	}
 
 	for i := range args {
-		typeMetadata := fbtype.NewTypeMetadata(sd.Parameters[i].Type, sd.Parameters[i].Subtype, sd.Parameters[i].Length, sd.Parameters[i].Scale)
+		arr := sd.Parameters[i].ArrayData
+		typeMetadata := fbtype.NewTypeMetadata(
+			sd.Parameters[i].Type,
+			sd.Parameters[i].Subtype,
+			sd.Parameters[i].Length,
+			sd.Parameters[i].Scale,
+		)
+		if arr != nil {
+			arrayData, err := fbtype.NewArrayData(arr.TypeId, arr.SubType, arr.Length, arr.Scale, arr.Dimensions)
+			if err != nil {
+				return err
+			}
+			typeMetadata.SetArrayMetadata(arrayData)
+			var lowers []int
+			for _, d := range typeMetadata.ArrayData.Dimensions {
+				lowers = append(lowers, d.LowerBound)
+			}
+			dimensions, err := fbtype.Dimensions(args[i], lowers)
+			if err != nil {
+				return err
+			}
+			if dimensions != nil {
+				sd.Parameters[i].ArrayData.CurrentDimensions = dimensions
+			}
+		}
 		err := pb.appendParam(ctx, conn, tx, m, typeMetadata, args[i])
 		if err != nil {
 			err = fmt.Errorf("failed to encode args[%d]: %w", i, err)

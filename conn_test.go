@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -19,30 +21,6 @@ import (
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
 )
-
-func TestCrateDBConnect(t *testing.T) {
-	t.Parallel()
-
-	connString := os.Getenv("FBX_TEST_CRATEDB_CONN_STRING")
-	if connString == "" {
-		t.Skipf("Skipping due to missing environment variable %v", "FBX_TEST_CRATEDB_CONN_STRING")
-	}
-
-	conn, err := fbx.Connect(context.Background(), connString)
-	require.Nil(t, err)
-	defer closeConn(t, conn)
-
-	assert.Equal(t, connString, conn.Config().ConnString())
-
-	var result int
-	err = conn.QueryRow(context.Background(), "select 1 +1").Scan(&result)
-	if err != nil {
-		t.Fatalf("QueryRow Scan unexpectedly failed: %v", err)
-	}
-	if result != 2 {
-		t.Errorf("bad result: %d", result)
-	}
-}
 
 func TestConnect(t *testing.T) {
 	t.Parallel()
@@ -81,6 +59,65 @@ func TestConnect(t *testing.T) {
 	}
 }
 
+func TestCreateDatabase(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	config := newCreateDatabaseTestConfig(t, "created.fdb")
+	conn, err := fbx.CreateDatabaseConfig(ctx, config)
+	require.NoError(t, err)
+	defer closeConn(t, conn)
+
+	var result int32
+	err = conn.QueryRow(ctx, "select 1 from rdb$database").Scan(&result)
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), result)
+}
+
+func TestCreateDatabaseExistingDatabase(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	config := newCreateDatabaseTestConfig(t, "existing.fdb")
+	conn, err := fbx.CreateDatabaseConfig(ctx, config)
+	require.NoError(t, err)
+	closeConn(t, conn)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		conn, err = fbx.CreateDatabaseConfig(ctx, config)
+		if conn != nil {
+			closeConn(t, conn)
+		}
+
+		var retryErr *fbconn.FbError
+		if !errors.As(err, &retryErr) ||
+			!strings.Contains(strings.ToLower(retryErr.Message), "object database is in use") ||
+			time.Now().After(deadline) {
+			break
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}
+	require.Error(t, err)
+
+	var fbErr *fbconn.FbError
+	require.ErrorAs(t, err, &fbErr)
+	assert.Truef(t,
+		fbErr.Code == "HY000" || fbErr.Code == "08001",
+		"unexpected SQLSTATE: %s (%s)", fbErr.Code, fbErr.Message,
+	)
+	assert.Truef(t,
+		strings.Contains(fbErr.Message, "database or file exists") ||
+			strings.Contains(fbErr.Message, "Error while trying to create file"),
+		"unexpected error message: %s", fbErr.Message,	
+	)
+}
+
 func TestConnectWithPreferSimpleProtocol(t *testing.T) {
 	t.Parallel()
 
@@ -101,6 +138,31 @@ func TestConnectWithPreferSimpleProtocol(t *testing.T) {
 	ensureConnValid(t, conn)
 }
 
+func newCreateDatabaseTestConfig(t testing.TB, filename string) *fbx.ConnConfig {
+	t.Helper()
+
+	connString := os.Getenv("FBX_TEST_DATABASE")
+	if connString == "" {
+		t.Skipf("Skipping due to missing environment variable %v", "FBX_TEST_DATABASE")
+	}
+
+	config := mustParseConfig(t, connString)
+
+	dir, err := os.MkdirTemp("", "fbx-create-db-*")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = os.RemoveAll(dir)
+	})
+	require.NoError(t, os.MkdirAll(dir, 0o777))
+	require.NoError(t, os.Chmod(dir, 0o777))
+
+	config.Database = filepath.Join(dir, fmt.Sprintf("fbx-create-%d-%s", time.Now().UnixNano(), filename))
+	t.Cleanup(func() {
+		_ = os.Remove(config.Database)
+	})
+	return config
+}
+
 func TestConnectConfigRequiresConnConfigFromParseConfig(t *testing.T) {
 	config := &fbx.ConnConfig{}
 	require.PanicsWithValue(t, "config must be created by ParseConfig", func() {
@@ -113,6 +175,13 @@ func TestConfigContainsConnStr(t *testing.T) {
 	config, err := fbx.ParseConfig(connStr)
 	require.NoError(t, err)
 	assert.Equal(t, connStr, config.ConnString())
+}
+
+func TestParseConfigCreateDatabase(t *testing.T) {
+	config, err := fbx.ParseConfig("user=jack password=secret host=localhost port=3050 database=new.fdb create_database=true")
+	require.NoError(t, err)
+	assert.True(t, config.CreateDatabase)
+	assert.Empty(t, config.RuntimeParams["create_database"])
 }
 
 func TestConfigCopyReturnsEqualConfig(t *testing.T) {
@@ -414,6 +483,232 @@ func TestPrepare(t *testing.T) {
 	}
 }
 
+type batchDMLRow struct {
+	ID   int32
+	Note string
+}
+
+func batchTestTableName(t testing.TB, prefix string) string {
+	t.Helper()
+
+	var b strings.Builder
+	b.Grow(len(prefix) + len(t.Name()) + 1)
+	b.WriteString(prefix)
+	b.WriteByte('_')
+	for _, r := range t.Name() {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r + ('a' - 'A'))
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+
+	name := b.String()
+	if len(name) > 63 {
+		name = name[:63]
+	}
+	return name
+}
+
+func seedBatchDMLRows(t testing.TB, ctx context.Context, conn *fbx.Conn, table string) {
+	t.Helper()
+
+	for _, row := range []batchDMLRow{
+		{ID: 1, Note: "one"},
+		{ID: 2, Note: "two"},
+		{ID: 3, Note: "three"},
+		{ID: 4, Note: "four"},
+	} {
+		_, err := conn.Exec(ctx, "insert into "+table+" (id, note) values (?, ?)", row.ID, row.Note)
+		require.NoError(t, err)
+	}
+}
+
+func loadBatchDMLRows(t testing.TB, ctx context.Context, conn *fbx.Conn, table string) []batchDMLRow {
+	t.Helper()
+
+	rows, err := conn.Query(ctx, fmt.Sprintf("select id, note from %s order by id", table))
+	require.NoError(t, err)
+	defer rows.Close()
+
+	var result []batchDMLRow
+	for rows.Next() {
+		var row batchDMLRow
+		require.NoError(t, rows.Scan(&row.ID, &row.Note))
+		result = append(result, row)
+	}
+	require.NoError(t, rows.Err())
+	return result
+}
+
+func TestPrepareBatchUpdateAndDelete(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		skipIfBatchUnsupported(ctx, t, conn)
+		table := batchTestTableName(t, "fbx_bud")
+
+		_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(50))")
+		require.NoError(t, err)
+		seedBatchDMLRows(t, ctx, conn, table)
+
+		pbUpdate, err := conn.PrepareBatch(ctx, "update "+table+" set note = ? where id = ?")
+		require.NoError(t, err)
+		defer pbUpdate.Close(ctx)
+
+		require.NoError(t, pbUpdate.Add("one-updated", 1))
+		require.NoError(t, pbUpdate.Add("two-updated", 2))
+
+		updateResult, err := pbUpdate.Exec(ctx)
+		require.NoError(t, err)
+		require.EqualValues(t, 2, updateResult.Affected)
+
+		pbDelete, err := conn.PrepareBatch(ctx, "delete from "+table+" where id = ?")
+		require.NoError(t, err)
+		defer pbDelete.Close(ctx)
+
+		require.NoError(t, pbDelete.Add(3))
+		require.NoError(t, pbDelete.Add(4))
+
+		deleteResult, err := pbDelete.Exec(ctx)
+		require.NoError(t, err)
+		require.EqualValues(t, 2, deleteResult.Affected)
+
+		require.Equal(t, []batchDMLRow{
+			{ID: 1, Note: "one-updated"},
+			{ID: 2, Note: "two-updated"},
+		}, loadBatchDMLRows(t, ctx, conn, table))
+	})
+}
+
+func TestPrepareNamedBatchUpdateAndDelete(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		skipIfBatchUnsupported(ctx, t, conn)
+		table := batchTestTableName(t, "fbx_nbv")
+		updateName := batchTestTableName(t, "upd_batch")
+		deleteName := batchTestTableName(t, "del_batch")
+
+		_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(50))")
+		require.NoError(t, err)
+		seedBatchDMLRows(t, ctx, conn, table)
+
+		_, err = conn.Prepare(ctx, updateName, "batch update "+table+" set note = ? where id = ?")
+		require.NoError(t, err)
+		defer func() { require.NoError(t, conn.Deallocate(ctx, updateName)) }()
+
+		_, err = conn.Exec(ctx, updateName, "one-named", 1)
+		require.NoError(t, err)
+		_, err = conn.Exec(ctx, updateName, "two-named", 2)
+		require.NoError(t, err)
+
+		updateResult, err := conn.ExecBatch(ctx, updateName)
+		require.NoError(t, err)
+		require.EqualValues(t, 2, updateResult.Affected)
+
+		_, err = conn.Prepare(ctx, deleteName, "batch delete from "+table+" where id = ?")
+		require.NoError(t, err)
+		defer func() { require.NoError(t, conn.Deallocate(ctx, deleteName)) }()
+
+		_, err = conn.Exec(ctx, deleteName, 3)
+		require.NoError(t, err)
+		_, err = conn.Exec(ctx, deleteName, 4)
+		require.NoError(t, err)
+
+		deleteResult, err := conn.ExecBatch(ctx, deleteName)
+		require.NoError(t, err)
+		require.EqualValues(t, 2, deleteResult.Affected)
+
+		require.Equal(t, []batchDMLRow{
+			{ID: 1, Note: "one-named"},
+			{ID: 2, Note: "two-named"},
+		}, loadBatchDMLRows(t, ctx, conn, table))
+	})
+}
+
+func TestPrepareBatchRejectsResultSetStatements(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		skipIfBatchUnsupported(ctx, t, conn)
+		table := batchTestTableName(t, "fbx_brr")
+		badBatchName := batchTestTableName(t, "bad_batch")
+
+		_, err := conn.PrepareBatch(ctx, "select cast(? as integer) from rdb$database")
+		require.ErrorContains(t, err, "batch supports only insert, update, and delete statements without result sets")
+
+		_, err = conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(50))")
+		require.NoError(t, err)
+
+		_, err = conn.PrepareBatch(ctx, "insert into "+table+" (id, note) values (?, ?) returning id")
+		require.ErrorContains(t, err, "batch supports only insert, update, and delete statements without result sets")
+
+		_, err = conn.PrepareBatch(ctx, "insert into "+table+" (id, note) values (1, 'no params')")
+		require.ErrorContains(t, err, "statement used in batch must have parameters")
+
+		_, err = conn.Prepare(ctx, badBatchName, "batch select cast(? as integer) from rdb$database")
+		require.ErrorContains(t, err, "batch supports only insert, update, and delete statements without result sets")
+
+		_, err = conn.Prepare(ctx, badBatchName+"_noparams", "batch update "+table+" set note = 'no params' where id = 1")
+		require.ErrorContains(t, err, "statement used in batch must have parameters")
+
+		ensureConnValid(t, conn)
+	})
+}
+
+func TestPrepareBatchRejectsBlobParameters(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		skipIfBatchUnsupported(ctx, t, conn)
+		table := batchTestTableName(t, "fbx_bblob")
+		badBatchName := batchTestTableName(t, "bad_blob_batch")
+
+		_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, payload blob sub_type 0)")
+		require.NoError(t, err)
+
+		_, err = conn.PrepareBatch(ctx, "insert into "+table+" (id, payload) values (?, ?)")
+		require.ErrorContains(t, err, "batch does not support blob parameters")
+
+		_, err = conn.Prepare(ctx, badBatchName, "batch insert into "+table+" (id, payload) values (?, ?)")
+		require.ErrorContains(t, err, "batch does not support blob parameters")
+
+		ensureConnValid(t, conn)
+	})
+}
+
+func TestPrepareBatchRejectsArrayParameters(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		skipIfBatchUnsupported(ctx, t, conn)
+		table := batchTestTableName(t, "fbx_barr")
+		badBatchName := batchTestTableName(t, "bad_array_batch")
+
+		_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, val smallint[1:3])")
+		require.NoError(t, err)
+
+		_, err = conn.PrepareBatch(ctx, "insert into "+table+" (id, val) values (?, ?)")
+		require.ErrorContains(t, err, "batch does not support array parameters")
+
+		_, err = conn.Prepare(ctx, badBatchName, "batch insert into "+table+" (id, val) values (?, ?)")
+		require.ErrorContains(t, err, "batch does not support array parameters")
+
+		ensureConnValid(t, conn)
+	})
+}
+
 func TestPrepareBadSQLFailure(t *testing.T) {
 	t.Parallel()
 
@@ -565,11 +860,13 @@ func TestFatalRxError(t *testing.T) {
 	require.NoError(t, err)
 
 	var wg sync.WaitGroup
+	queryStarted := make(chan struct{})
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		var n int32
 		var s string
+		close(queryStarted)
 		err := conn.QueryRow(context.Background(), "select 1, fbsleep(10) from rdb$database").Scan(&n, &s)
 		if err == nil {
 			t.Errorf("Expected QueryRow Scan to return an error, but got nil")
@@ -584,8 +881,14 @@ func TestFatalRxError(t *testing.T) {
 		t.Errorf("Expected QueryRow Scan to return fatal FbError, but instead received %v", err)
 	}()
 
-	if err := conn.FbConn().Disconnect(context.Background()); err != nil {
-		t.Fatalf("Unable to disconnect: %v", err)
+	<-queryStarted
+	deadline := time.Now().Add(2 * time.Second)
+	for !conn.FbConn().IsBusy() && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	if err := conn.FbConn().Conn().Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("Unable to force-close socket: %v", err)
 	}
 
 	wg.Wait()
@@ -831,4 +1134,55 @@ func TestErrNoRows(t *testing.T) {
 	require.Equal(t, "no rows in result set", fbx.ErrNoRows.Error())
 
 	require.ErrorIs(t, fbx.ErrNoRows, sql.ErrNoRows, "fbx.ErrNowRows must match fbx.ErrNoRows")
+}
+
+func TestConnDeallocateAllAfterSetSearch_path(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		if getServerMajorVersionForConn(ctx, t, conn) < 6 {
+			t.Skip("schemas are supported only in Firebird/RedDatabase 6+")
+		}
+
+		_, err := conn.Exec(ctx, "drop table if exists test1.test")
+		_, err = conn.Exec(ctx, "drop table if exists test2.test")
+		_, err = conn.Exec(ctx, "drop schema if exists test1")
+		_, err = conn.Exec(ctx, "drop schema if exists test2")
+
+		_, err = conn.Exec(ctx, "create schema test1")
+		require.NoError(t, err)
+		_, err = conn.Exec(ctx, "create schema test2")
+		require.NoError(t, err)
+
+		_, err = conn.Exec(ctx, "create table test1.test(val integer)")
+		require.NoError(t, err)
+		_, err = conn.Exec(ctx, "create table test2.test(val integer)")
+		require.NoError(t, err)
+
+		test1Input := 1
+		test2Input := 2
+
+		_, err = conn.Exec(ctx, "insert into test1.test values(?)", test1Input)
+		require.NoError(t, err)
+		_, err = conn.Exec(ctx, "insert into test2.test values(?)", test2Input)
+		require.NoError(t, err)
+
+		_, err = conn.Exec(ctx, "set search_path to test1")
+		require.NoError(t, err)
+
+		var output1, output2 int
+		statement := "select val from test"
+
+		err = conn.QueryRow(ctx, statement).Scan(&output1)
+		require.NoError(t, err)
+		assert.Equal(t, test1Input, output1)
+
+		_, err = conn.Exec(ctx, "set search_path to test2")
+		require.NoError(t, err)
+
+		err = conn.QueryRow(ctx, statement).Scan(&output2)
+		require.NoError(t, err)
+		assert.Equal(t, test2Input, output2)
+	})
 }

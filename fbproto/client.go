@@ -34,6 +34,7 @@ type reusableServerMessages struct {
 	reject        OpReject
 	fetchResponse OpFetchResponse
 	sqlResponse   OpSqlResponse
+	batchResp     OpBatchCompletion
 	contAuth      OpContAuth
 	inlineBlob    OpInlineBlob
 }
@@ -264,6 +265,9 @@ func (c *Client) ReadMessage() (ServerMessage, error) {
 		msg = &c.reusable.fetchResponse
 	case Op_sql_response:
 		msg = &c.reusable.sqlResponse
+	case Op_batch_cs:
+		c.reusable.batchResp.Encoding = c.Encoding
+		msg = &c.reusable.batchResp
 	case Op_cont_auth:
 		c.reusable.contAuth.Encoding = c.Encoding
 		msg = &c.reusable.contAuth
@@ -363,3 +367,21 @@ func (c *Client) Untrace() {
 }
 
 const cryptoChunkSize = 16 * 1024
+
+func (c *Client) ReadSlice(datatype uint32, length int) (ServerMessage, error) {
+	opcode, err := c.xdrReader.ReadInt32()
+	if err != nil {
+		return nil, err
+	}
+	var msg ServerMessage
+	switch opcode {
+	case Op_slice_response:
+		msg = &OpSliceResponse{DataType: datatype, SliceLengthElements: length}
+	case Op_response:
+		msg = &OpResponse{Encoding: c.Encoding}
+	default:
+		return nil, fmt.Errorf("unexpected response opcode: %d", opcode)
+	}
+	err = msg.Read(c.xdrReader)
+	return msg, err
+}

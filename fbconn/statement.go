@@ -1,6 +1,7 @@
 package fbconn
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 
@@ -79,6 +80,23 @@ func (sd *StatementDescription) GetAffectedCount() int64 {
 	return sd.StatementInfo.Counts.SelectCount + sd.StatementInfo.Counts.InsertCount + sd.StatementInfo.Counts.UpdateCount + sd.StatementInfo.Counts.DeleteCount
 }
 
+func (sd *StatementDescription) EncodeBatchRow(values [][]byte) ([]byte, error) {
+	if sd == nil || sd.StatementInfo == nil {
+		return nil, fmt.Errorf("statement description is not initialized")
+	}
+
+	var buf bytes.Buffer
+	x := fbproto.NewXDRWriter(&buf)
+
+	if err := fbproto.WriteRowData(x, sd.StatementInfo.ParametersDescriptors, values); err != nil {
+		return nil, err
+	}
+
+	// row := fbproto.AppendRowData(nil, b.sd.StatementInfo.ParametersDescriptors, b.eqb.ParamValues)
+
+	return buf.Bytes(), nil
+}
+
 type Statement struct {
 	conn         *FbConn
 	Description  *StatementDescription
@@ -87,6 +105,7 @@ type Statement struct {
 	closed       bool
 	timeout      int
 	cursorFlags  int
+	activeBatch  *Batch
 }
 
 // SetTimeout sets statement timeout (milliseconds).
@@ -102,6 +121,20 @@ func (st *Statement) SetCursorFlags(flags int) {
 // SetInlineBlobSize sets inline blob size for this statement.
 func (st *Statement) SetInlineBlobSize(size int) {
 	st.conn.inlineBlobSize = size
+}
+
+func (st *Statement) NewBatch(cfg BatchConfig) *Batch {
+	b := &Batch{st: st, cfg: cfg.normalize()}
+	if st.closed {
+		b.err = fmt.Errorf("statement is closed")
+		return b
+	}
+	if st.activeBatch != nil && !st.activeBatch.isClosed() {
+		b.err = fmt.Errorf("batch is already opened for this statement")
+		return b
+	}
+	st.activeBatch = b
+	return b
 }
 
 // Exec executed a prepared statement inside bound transaction
@@ -120,10 +153,8 @@ func (st *Statement) Exec(ctx context.Context, paramValues [][]byte) *ResultRead
 		return rr
 	}
 
-	if err = st.CloseCursor(ctx); err != nil {
-		st.conn.asyncClose()
+	if err = st.validateParameterCount(paramValues); err != nil {
 		rr.concludeCommand(QueryStatus{}, err)
-		st.conn.contextWatcher.Unwatch()
 		rr.closed = true
 		return rr
 	}
@@ -150,38 +181,35 @@ func (st *Statement) Exec(ctx context.Context, paramValues [][]byte) *ResultRead
 //
 // ResultReader must be closed before FbConn can be used again.
 func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues [][]byte) *ResultReader {
-	var err error
 	rr := &ResultReader{
 		fbConn:           st.conn,
 		ctx:              ctx,
 		boundTransaction: tx,
 	}
 
-	// Validate parameter count before any wire interaction.
-	if len(paramValues) != len(st.Description.StatementInfo.ParametersDescriptors) {
-		err := &FbError{
-			Message: fmt.Sprintf("Invalid number of parameters, expected %d, got %d", len(st.Description.StatementInfo.ParametersDescriptors), len(paramValues)),
-			Code:    "07008",
-		}
+	if err := st.validateParameterCount(paramValues); err != nil {
 		rr.concludeCommand(QueryStatus{}, err)
 		rr.closed = true
 		return rr
 	}
 
-	if err = st.CloseCursor(ctx); err != nil {
+	if err := st.CloseCursor(ctx); err != nil {
 		st.conn.asyncClose()
 		rr.concludeCommand(QueryStatus{}, err)
-		st.conn.contextWatcher.Unwatch()
 		rr.closed = true
 		return rr
 	}
 
-	rr.statementDescription = st.Description
-	rr.fieldDescriptions = st.Description.Fields
-
-	if err = st.conn.lock(); err != nil {
+	if err := st.conn.lock(); err != nil {
 		rr.concludeCommand(QueryStatus{}, err)
 		rr.closed = true
+		return rr
+	}
+
+	if err := st.conn.beforeRequest(); err != nil {
+		rr.concludeCommand(QueryStatus{}, err)
+		rr.closed = true
+		st.conn.unlock()
 		return rr
 	}
 
@@ -196,6 +224,49 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 		}
 		st.conn.contextWatcher.Watch(ctx)
 	}
+	rr = st.internalExecTx(ctx, tx, rr, paramValues)
+	if rr.err != nil {
+		st.conn.contextWatcher.Unwatch()
+		st.conn.unlock()
+	}
+	return rr
+}
+
+func (st *Statement) validateParameterCount(paramValues [][]byte) error {
+	if len(paramValues) != len(st.Description.StatementInfo.ParametersDescriptors) {
+		return &FbError{
+			Message: fmt.Sprintf("Invalid number of parameters, expected %d, got %d", len(st.Description.StatementInfo.ParametersDescriptors), len(paramValues)),
+			Code:    "07008",
+		}
+	}
+	return nil
+}
+
+func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *ResultReader, paramValues [][]byte) *ResultReader {
+	var err error
+
+	// Validate parameter count before any wire interaction.
+	if err = st.validateParameterCount(paramValues); err != nil {
+		rr.concludeCommand(QueryStatus{}, err)
+		rr.closed = true
+		return rr
+	}
+
+	for i, param := range st.Description.Parameters {
+		if param.IsArray() && paramValues[i] != nil {
+			arrayId, err := putArray(st.conn, ctx, param.ArrayData, paramValues[i])
+			if err != nil {
+				st.conn.asyncClose()
+				rr.concludeCommand(QueryStatus{}, err)
+				rr.closed = true
+				return rr
+			}
+			paramValues[i] = arrayId
+		}
+	}
+
+	rr.statementDescription = st.Description
+	rr.fieldDescriptions = st.Description.Fields
 
 	execKind := fbproto.Op_execute
 	var rowBlr []byte
@@ -209,32 +280,23 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 		sqlDataBlr = st.Description.StatementInfo.GetParametersBlr(paramValues)
 	}
 
-	if err = st.conn.client.WriteMessage(&fbproto.OpExecute{
-		Kind:                  execKind,
-		TransactionHandle:     tx.Handle,
-		StatementHandle:       st.Description.StatementHandle,
-		ParametersDescriptors: st.Description.StatementInfo.ParametersDescriptors,
-		SQLDataBlr:            sqlDataBlr,
-		SQLDataOutBlr:         rowBlr,
-		Parameters:            paramValues,
-		Timeout:               st.timeout,
-		CursorFlags:           st.cursorFlags,
-		InlineBlobSize:        st.conn.inlineBlobSize,
-		ProtocolFeatures:      st.conn.protocolFeatures,
+	if err = st.conn.withWriteLockAndFlush(func() error {
+		return st.conn.client.WriteMessage(&fbproto.OpExecute{
+			Kind:                  execKind,
+			TransactionHandle:     tx.Handle,
+			StatementHandle:       st.Description.StatementHandle,
+			ParametersDescriptors: st.Description.StatementInfo.ParametersDescriptors,
+			SQLDataBlr:            sqlDataBlr,
+			SQLDataOutBlr:         rowBlr,
+			Parameters:            paramValues,
+			Timeout:               st.timeout,
+			CursorFlags:           st.cursorFlags,
+			InlineBlobSize:        st.conn.inlineBlobSize,
+			ProtocolFeatures:      st.conn.protocolFeatures,
+		})
 	}); err != nil {
 		st.conn.asyncClose()
-		rr.concludeCommand(QueryStatus{}, err)
-		st.conn.contextWatcher.Unwatch()
-		st.conn.unlock()
-		rr.closed = true
-		return rr
-	}
-
-	if err = st.conn.flushWithPotentialWriteReadDeadlock(); err != nil {
-		st.conn.asyncClose()
-		rr.concludeCommand(QueryStatus{}, err)
-		st.conn.contextWatcher.Unwatch()
-		st.conn.unlock()
+		rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(ctx, err))
 		rr.closed = true
 		return rr
 	}
@@ -243,8 +305,6 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 	if err != nil {
 		st.conn.asyncClose()
 		rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(ctx, err))
-		st.conn.contextWatcher.Unwatch()
-		st.conn.unlock()
 		rr.closed = true
 		return rr
 	}
@@ -255,9 +315,7 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 			row, dataResp, err := st.conn.client.ReceiveSQLData(st.Description.StatementInfo.FieldDescriptors)
 			if err != nil {
 				st.conn.asyncClose()
-				rr.concludeCommand(QueryStatus{}, err)
-				st.conn.contextWatcher.Unwatch()
-				st.conn.unlock()
+				rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(ctx, err))
 				rr.closed = true
 				return rr
 			}
@@ -266,15 +324,11 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 				rr.singleton = row
 			case *fbproto.ErrorResponse:
 				rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(d))
-				st.conn.contextWatcher.Unwatch()
-				st.conn.unlock()
 				rr.closed = true
 				return rr
 			}
 		case *fbproto.ErrorResponse:
 			rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(r))
-			st.conn.contextWatcher.Unwatch()
-			st.conn.unlock()
 			rr.closed = true
 			return rr
 		default:
@@ -285,8 +339,6 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 		case *fbproto.OpResponse:
 		case *fbproto.ErrorResponse:
 			rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(r))
-			st.conn.contextWatcher.Unwatch()
-			st.conn.unlock()
 			rr.closed = true
 			return rr
 		default:
@@ -306,6 +358,9 @@ func (st *Statement) internalClose(ctx context.Context, closeOption int) error {
 	if st.closed {
 		return nil
 	}
+	if closeOption == fbproto.DSQL_drop && st.activeBatch != nil && !st.activeBatch.isClosed() {
+		return fmt.Errorf("statement has active batch")
+	}
 
 	var tx *FBTransaction
 	if st.transaction == nil && st.conn.internalTransaction != nil {
@@ -314,18 +369,20 @@ func (st *Statement) internalClose(ctx context.Context, closeOption int) error {
 		tx = st.transaction
 	}
 
-	if closeOption == fbproto.DSQL_close && (!st.cursorOpened || tx.Closed) {
+	if closeOption == fbproto.DSQL_close && (!st.cursorOpened || (tx != nil && tx.Closed)) {
 		st.cursorOpened = false
 		return nil
 	}
-
-	st.closed = true
 
 	var err error
 	if err = st.conn.lock(); err != nil {
 		return err
 	}
 	defer st.conn.unlock()
+
+	if err = st.conn.beforeRequest(); err != nil {
+		return err
+	}
 
 	if ctx != context.Background() {
 		select {
@@ -337,9 +394,6 @@ func (st *Statement) internalClose(ctx context.Context, closeOption int) error {
 		defer st.conn.contextWatcher.Unwatch()
 	}
 
-	st.cursorOpened = false
-	st.closed = closeOption == fbproto.DSQL_drop
-
 	if err = st.conn.client.WriteMessage(&fbproto.OpFreeStatement{StatementHandle: st.Description.StatementHandle, Option: closeOption}); err != nil {
 		st.conn.asyncClose()
 		return err
@@ -348,10 +402,14 @@ func (st *Statement) internalClose(ctx context.Context, closeOption int) error {
 	if closeOption == fbproto.DSQL_drop {
 		if err = st.conn.flushWithPotentialWriteReadDeadlock(); err != nil {
 			st.conn.asyncClose()
+			st.cursorOpened = false
+			st.closed = true
 			return err
 		}
 	}
 
+	st.cursorOpened = false
+	st.closed = closeOption == fbproto.DSQL_drop
 	return nil
 }
 

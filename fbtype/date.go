@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"rdb.red-soft.ru/fbx/internal/pgio"
+	"rdb.red-soft.ru/fbx/internal/fbio"
 )
 
 var firebirdDateEpoch = time.Date(1858, time.November, 17, 0, 0, 0, 0, time.UTC)
@@ -156,7 +156,7 @@ func (encodePlanDateCodecBinary) Encode(value any, buf []byte) (newBuf []byte, e
 	}
 
 	days := int32((t.Unix() - firebirdDateEpoch.Unix()) / secondsPerDay)
-	return pgio.AppendInt32(buf, days), nil
+	return fbio.AppendInt32BE(buf, days), nil
 }
 
 type encodePlanDateCodecBinaryTime struct{}
@@ -169,7 +169,7 @@ func (encodePlanDateCodecBinaryTime) Encode(value any, buf []byte) (newBuf []byt
 
 	days := int32((t.Unix() - firebirdDateEpoch.Unix()) / secondsPerDay)
 
-	return pgio.AppendInt32(buf, days), nil
+	return fbio.AppendInt32BE(buf, days), nil
 }
 
 type encodePlanDateCodecBinaryString struct{}
@@ -182,7 +182,7 @@ func (encodePlanDateCodecBinaryString) Encode(value any, buf []byte) (newBuf []b
 
 	days := int32((t.Unix() - firebirdDateEpoch.Unix()) / secondsPerDay)
 
-	return pgio.AppendInt32(buf, days), nil
+	return fbio.AppendInt32BE(buf, days), nil
 }
 
 func (DateCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
