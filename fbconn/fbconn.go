@@ -630,8 +630,16 @@ connectLoop:
 	dpb.PutInt32(fbproto.Isc_dpb_process_id, int32(os.Getpid()))
 	app, ok := config.RuntimeParams["application_name"]
 	if !ok {
-		app = "fbx"
+		app, err = os.Executable()
+		if err == nil {
+			if len(app) > 255 {
+				app = app[:255]
+			}
+		} else {
+			app = "fbx"
+		}
 	}
+
 	dpb.PutString(fbproto.Isc_dpb_process_name, app)
 	if search_path, ok := config.RuntimeParams["search_path"]; ok {
 		dpb.PutString(fbproto.Isc_dpb_search_path, search_path)

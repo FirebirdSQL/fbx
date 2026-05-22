@@ -2606,3 +2606,21 @@ func TestConnWithWarning(t *testing.T) {
 
 	assert.Equal(t, "Database dialect being changed from 3 to 1\nSQLSTATE: 01000", warnings)
 }
+
+func TestPassProcessName(t *testing.T) {
+	exec, err := os.Executable()
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	defer closeConn(t, fbConn)
+
+	res := fbConn.Exec(ctx, "select mon$remote_process from mon$attachments where mon$attachment_id = current_connection").Read()
+	assert.NoError(t, res.Err)
+
+	require.Equal(t, 1, len(res.Rows))
+	assert.Equal(t, exec, string(res.Rows[0][0]))
+}
