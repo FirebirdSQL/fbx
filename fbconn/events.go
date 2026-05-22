@@ -44,6 +44,12 @@ func (fbConn *FbConn) CreateEventHandle(eventName string, handler EventHandler) 
 }
 
 // QueueEvent queues an event handle on the server.
+//
+// QueueEvent can wait until the connection is free for event operations and
+// then waits for the server response. The provided context controls that wait.
+// Passing context.Background() means there is no driver-side timeout for this
+// low-level operation; use a context with cancellation or deadline when the
+// caller must be able to stop waiting.
 func (fbConn *FbConn) QueueEvent(ctx context.Context, handle *EventHandle) error {
 	if handle == nil {
 		return errors.New("event handle is nil")
@@ -114,6 +120,12 @@ func (fbConn *FbConn) QueueEvent(ctx context.Context, handle *EventHandle) error
 }
 
 // CancelEvent cancels an event handle on the server.
+//
+// CancelEvent can wait until the connection is free for event operations and
+// then waits for the server response. The provided context controls that wait.
+// Passing context.Background() means there is no driver-side timeout for this
+// low-level operation; use a context with cancellation or deadline when the
+// caller must be able to stop waiting.
 func (fbConn *FbConn) CancelEvent(ctx context.Context, handle *EventHandle) error {
 	if handle == nil {
 		return errors.New("event handle is nil")

@@ -28,5 +28,10 @@ interrupting the query in such a way as to close the connection.
 
 The CancelRequest method may be used to request the server cancel an in-progress query without forcing the
 client to abort.
+
+Low-level event operations such as QueueEvent and CancelEvent use the context provided by the caller while waiting for
+the connection to become available and while waiting for the server response. Passing context.Background() means there
+is no driver-side timeout for those operations. Applications that need bounded waiting should pass a context with
+cancellation or deadline.
 */
 package fbconn
