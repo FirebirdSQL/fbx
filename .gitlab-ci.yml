@@ -37,19 +37,19 @@ format:
   tags: [docker, linux, x86_64]
   extends: .go-cache
   script:
-    - go run gotest.tools/gotestsum@latest --format testname  -- -p 1 ${GOTEST_EXTRA_ARGS} -coverprofile cover.out ./...
-  after_script:
-    - go tool cover -html cover.out -o cover.html
-    - go tool cover -func cover.out
+    - COVERDIR=$(pwd)/reports/${REPORT}
+    - PACKAGES=$(go list ./... 2> /dev/null | grep -v /vendor/|xargs|tr ' ' ",")
+    - mkdir -p ${COVERDIR}
+    - go run gotest.tools/gotestsum@latest --format testname -- -p 1 ${GOTEST_EXTRA_ARGS} -cover ./... -coverpkg=${PACKAGES} -test.gocoverdir=${COVERDIR}
   artifacts:
     when: always
     paths:
-      - cover.html
-      - /tmp/fbtrace.log
-  coverage: '/total:\s+\(statements\)\s+\d+.\d+%/'
+      - reports
 
 test:rdb:
   extends: .test_template
+  variables:
+    REPORT: reddatabase_${RDB_VERSION}
   before_script:
     - wget -q ${RDB_DOWNLOAD_URL} -O installer
     - chmod +x ./installer
@@ -80,6 +80,7 @@ test:fb:
   extends: .test_template
   variables:
       FB_DOWNLOAD_URL: "http://minio.red-soft.biz/3rdparty/firebird/Firebird-${FB_VERSION}-linux-x64.tar.gz"
+      REPORT: firebird_${FB_VERSION}
   before_script:
     - apt update && apt install -y libtommath1 libicu76
     - ln -s /usr/lib/x86_64-linux-gnu/libtommath.so.1 /usr/lib/x86_64-linux-gnu/libtommath.so.0
@@ -100,3 +101,42 @@ test:fb:
       - FB_VERSION: ${FB30_VERSION}
       - FB_VERSION: ${FB40_VERSION}
       - FB_VERSION: ${FB50_VERSION}
+
+coverage:merge:
+  stage: test
+  tags: [docker, linux, x86_64]
+  extends: .go-cache
+  script:
+    - mkdir merged
+    - REPORTS=$(find reports/* -maxdepth 0|xargs|sed 's/ /,/g')
+    - go tool covdata merge -i=${REPORTS} -o merged
+    - go tool covdata textfmt -i=merged -o profile.txt
+    - go tool cover -html profile.txt -o cover.html
+    - go tool cover -func profile.txt
+  dependencies: ["test:fb", "test:rdb"]
+  needs: ["test:fb", "test:rdb"]
+  artifacts:
+    when: always
+    paths:
+      - cover.html
+  coverage: '/total:\s+\(statements\)\s+\d+.\d+%/'
+
+.minio_template:
+  tags: [docker, linux, x86_64]
+  image:
+    name: alpine:latest
+  before_script:
+    - apk add -U tar gzip minio-client
+    - mcli alias set minio ${MINIO_SERVER} ${MINIO_USER} ${MINIO_PASSWORD}
+
+report:coverage:
+  extends: .minio_template
+  stage: test
+  script:
+    - mcli rm -r --force minio/reports/coverage/fbx/${CI_COMMIT_REF_NAME}
+    - mcli cp cover.html minio/reports/coverage/fbx/${CI_COMMIT_REF_NAME}/index.html
+    - echo Coverage ${MINIO_SERVER}reports/coverage/fbx/${CI_COMMIT_REF_NAME}/index.html
+  dependencies: ["coverage:merge"]
+  needs: ["coverage:merge"]
+  only:
+    - main
