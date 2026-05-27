@@ -14,7 +14,7 @@ Firebird values, tracing hooks, and modern Red Database / Firebird features.
 - `database/sql` compatibility layer registered as the `fbx` driver. See [Database SQL Compatibility](devdoc/examples.md#database-sql-compatibility).
 - Concurrency-safe `fbxpool` connection pool for application workloads, with lifecycle hooks, health checks, configurable ping behavior, acquire tracing, release tracing, and pool statistics. See [Connection Pool](devdoc/examples.md#connection-pool).
 - URL and keyword/value connection strings, environment variable support, multi-host fallback configuration, and `target_session_attrs` validation for primary, replica, prefer-replica, read-only, and read-write sessions. See [Connection Configuration](devdoc/examples.md#connection-configuration).
-- Database creation through `CreateDatabase`, `CreateDatabaseConfig`, and the `create_database=true` connection setting. See [Database Creation](devdoc/examples.md#database-creation).
+- Database creation and deletion through `CreateDatabase`, `DropDatabase`, and related config helpers. See [Database Creation](devdoc/examples.md#database-creation).
 - Red Database / Firebird 6 schema support, including `search_path` connection settings and schema-qualified identifiers. See [Schemas](devdoc/examples.md#schemas).
 - Authentication with SRP, SRP256, SRP224, SRP384, SRP512, GSS/Kerberos, and Legacy_Auth plugins. See [Connection Configuration](devdoc/examples.md#connection-configuration).
 - Wire encryption support. See [Connection Configuration](devdoc/examples.md#connection-configuration).

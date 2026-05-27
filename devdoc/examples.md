@@ -71,7 +71,15 @@ if err != nil {
 	return err
 }
 defer conn.Close(ctx)
+
+if err := conn.DropDatabase(ctx); err != nil {
+	return err
+}
 ```
+
+`DropDatabase` always closes the connection after sending the drop request. If
+the server rejects the request, for example because another attachment is using
+the database, the database remains in place and the error is returned.
 
 ## Schemas
 
