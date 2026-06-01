@@ -64,7 +64,6 @@ type FbWarningHandler func(*FbConn, *FbWarning)
 // FbConn is a low-level FirebirdSQL connection handle. It is not safe for concurrent usage.
 type FbConn struct {
 	conn            net.Conn
-	secretKey       uint32 // key to use to send a cancel query message to the server
 	txStatus        byte
 	client          *fbproto.Client
 	wireCrypt       *wirecrypt.Manager
@@ -2465,21 +2464,27 @@ func (fbConn *FbConn) flushWithPotentialWriteReadDeadlock() error {
 // require sending a ping to the server. ctx can be used to cancel this operation. This should be called before any
 // operation that will use the underlying net.Conn directly. e.g. Before Conn() or Hijack().
 func (fbConn *FbConn) SyncConn(ctx context.Context) error {
-	//for i := 0; i < 10; i++ {
-	//	if fbConn.bgReader.Status() == bgreader.StatusStopped && fbConn.frontend.ReadBufferLen() == 0 {
-	//		return nil
-	//	}
-	//
-	//	err := fbConn.Ping(ctx)
-	//	if err != nil {
-	//		return fmt.Errorf("SyncConn: Ping failed while syncing conn: %w", err)
-	//	}
-	//}
-	//
-	//// This should never happen. Only way I can imagine this occurring is if the server is constantly sending data such as
-	//// LISTEN/NOTIFY or log notifications such that we never can get an empty buffer.
-	//return errors.New("SyncConn: conn never synchronized")
-	panic("implement me")
+	if fbConn.status == connStatusClosed {
+		return errors.New("SyncConn: conn closed")
+	}
+
+	for i := 0; i < 10; i++ {
+		if fbConn.bgReader.Status() == bgreader.StatusStopped &&
+			fbConn.bgReader.Buffered() == 0 &&
+			fbConn.client.LazyCounter() == 0 &&
+			fbConn.peekedMsg == nil &&
+			fbConn.bufferingReceiveMsg == nil {
+			return nil
+		}
+
+		if err := fbConn.Ping(ctx); err != nil {
+			return fmt.Errorf("SyncConn: Ping failed while syncing conn: %w", err)
+		}
+	}
+
+	// This should only happen if the server is continuously pushing async data such as event
+	// notifications, so the read buffer never becomes empty.
+	return errors.New("SyncConn: conn never synchronized")
 }
 
 // CustomData returns a map that can be used to associate custom data with the connection.
@@ -2492,76 +2497,103 @@ func (fbConn *FbConn) CustomData() map[string]any {
 // Due to the necessary exposure of internal implementation details, it is not covered by the semantic versioning
 // compatibility.
 type HijackedConn struct {
-	//Conn              net.Conn
-	//PID               uint32            // backend pid
-	//SecretKey         uint32            // key to use to send a cancel query message to the server
-	//ParameterStatuses map[string]string // parameters that have been reported by the server
-	//TxStatus          byte
-	//Client          *fbproto3.Client
-	//Config            *Config
-	//CustomData        map[string]any
+	Conn               net.Conn
+	DBHandle           int // server-side attachment handle
+	TxStatus           byte
+	Client             *fbproto.Client    // reused as-is by Construct: holds active wire-crypt codec, lazyCounter and Encoding state
+	WireCrypt          *wirecrypt.Manager // wire-crypt plugin factory; not the active cipher (cipher lives inside Client)
+	ProtocolVersion    int
+	ProtocolFeatures   ProtocolFeatures
+	ServerMajorVersion int
+	InlineBlobSize     int
+	Config             *Config
+	CustomData         map[string]any
 }
 
-// Hijack extracts the internal connection data. fbConn must be in an idle state. SyncConn should be called immediately
-// before Hijack. fbConn is unusable after hijacking. Hijacking is typically only useful when using fbconn to establish
-// a connection, but taking complete control of the raw connection after that (e.g. a load balancer or proxy).
+// Hijack extracts the internal connection data. fbConn must be in an idle state with no active transactions,
+// prepared statements, or other server-side resources; otherwise an error is returned. SyncConn should be called
+// immediately before Hijack. fbConn is unusable after hijacking. Hijacking is typically only useful when using
+// fbconn to establish a connection, but taking complete control of the raw connection after that (e.g. a load
+// balancer or proxy).
 //
 // Due to the necessary exposure of internal implementation details, it is not covered by the semantic versioning
 // compatibility.
 func (fbConn *FbConn) Hijack() (*HijackedConn, error) {
-	//if err := fbConn.lock(); err != nil {
-	//	return nil, err
-	//}
-	//fbConn.status = connStatusClosed
-	//
-	//return &HijackedConn{
-	//	Conn:              fbConn.conn,
-	//	PID:               fbConn.pid,
-	//	SecretKey:         fbConn.secretKey,
-	//	ParameterStatuses: fbConn.parameterStatuses,
-	//	TxStatus:          fbConn.txStatus,
-	//	Client:          fbConn.frontend,
-	//	Config:            fbConn.config,
-	//	CustomData:        fbConn.customData,
-	//}, nil
-	panic("implement me")
+	if err := fbConn.lock(); err != nil {
+		return nil, err
+	}
+
+	// server-side handles (transactions, prepared statements) are addressed by int32 handles
+	// allocated by the server. If we let the hijacker take the socket while we still hold references to live
+	// handles, the resources leak on the server until the attachment is detached.
+	hasLiveInternalTx := fbConn.internalTransaction != nil && !fbConn.internalTransaction.Closed
+	if hasLiveInternalTx || len(fbConn.activeTransactions) > 0 || len(fbConn.preparedMap) > 0 {
+		fbConn.unlock()
+		return nil, errors.New("Hijack: connection has active transactions or prepared statements")
+	}
+
+	fbConn.client.ClearAllInlineBlobCache()
+
+	fbConn.status = connStatusClosed
+
+	return &HijackedConn{
+		Conn:               fbConn.conn,
+		DBHandle:           fbConn.dbHandle,
+		TxStatus:           fbConn.txStatus,
+		Client:             fbConn.client,
+		WireCrypt:          fbConn.wireCrypt,
+		ProtocolVersion:    fbConn.protocolVersion,
+		ProtocolFeatures:   fbConn.protocolFeatures,
+		ServerMajorVersion: fbConn.serverMajorVersion,
+		InlineBlobSize:     fbConn.inlineBlobSize,
+		Config:             fbConn.config,
+		CustomData:         fbConn.customData,
+	}, nil
 }
 
-// Construct created a FbConn from an already established network connection. This is the inverse of
-// FbConn.Hijack. The connection must be in an idle state.
+// Construct creates a FbConn from a previously hijacked connection. This is the inverse of FbConn.Hijack.
+// The connection must be in an idle state.
 //
 // Due to the necessary exposure of internal implementation details, it is not covered by the semantic versioning
 // compatibility.
 func Construct(hc *HijackedConn) (*FbConn, error) {
-	//fbConn := &FbConn{
-	//	conn:              hc.Conn,
-	//	pid:               hc.PID,
-	//	secretKey:         hc.SecretKey,
-	//	parameterStatuses: hc.ParameterStatuses,
-	//	txStatus:          hc.TxStatus,
-	//	frontend:          hc.Client,
-	//	config:            hc.Config,
-	//	customData:        hc.CustomData,
-	//
-	//	status: connStatusIdle,
-	//
-	//	cleanupDone: make(chan struct{}),
-	//}
-	//
-	//fbConn.contextWatcher = ctxwatch.NewContextWatcher(hc.Config.BuildContextWatcherHandler(fbConn))
-	//fbConn.bgReader = bgreader.New(fbConn.conn)
-	//fbConn.slowWriteTimer = time.AfterFunc(time.Duration(math.MaxInt64),
-	//	func() {
-	//		fbConn.bgReader.Start()
-	//		fbConn.bgReaderStarted <- struct{}{}
-	//	},
-	//)
-	//fbConn.slowWriteTimer.Stop()
-	//fbConn.bgReaderStarted = make(chan struct{})
-	//fbConn.frontend = hc.Config.BuildFrontend(fbConn.bgReader, fbConn.conn)
-	//
-	//return fbConn, nil
-	panic("implement me")
+	fbConn := &FbConn{
+		conn:               hc.Conn,
+		dbHandle:           hc.DBHandle,
+		txStatus:           hc.TxStatus,
+		client:             hc.Client,
+		wireCrypt:          hc.WireCrypt,
+		protocolVersion:    hc.ProtocolVersion,
+		protocolFeatures:   hc.ProtocolFeatures,
+		serverMajorVersion: hc.ServerMajorVersion,
+		inlineBlobSize:     hc.InlineBlobSize,
+		config:             hc.Config,
+		customData:         hc.CustomData,
+		Encoding:           hc.Client.Encoding,
+
+		status:             connStatusIdle,
+		cleanupDone:        make(chan struct{}),
+		activeTransactions: make(map[*FBTransaction]struct{}),
+	}
+
+	fbConn.contextHandler = hc.Config.BuildContextWatcherHandler(fbConn)
+	fbConn.contextWatcher = ctxwatch.NewContextWatcher(fbConn.contextHandler)
+
+	fbConn.bgReader = bgreader.New(fbConn.conn)
+	fbConn.bgReaderStarted = make(chan struct{})
+	fbConn.slowWriteTimer = time.AfterFunc(time.Duration(math.MaxInt64),
+		func() {
+			fbConn.bgReader.Start()
+			fbConn.bgReaderStarted <- struct{}{}
+		},
+	)
+	fbConn.slowWriteTimer.Stop()
+
+	fbConn.writer = bufio.NewWriter(fbConn.conn)
+
+	fbConn.client.Rebind(fbConn.bgReader, fbConn.writer)
+
+	return fbConn, nil
 }
 
 // ensureInternalTransaction starts internal transaction if not started yet and bind it to connection.
