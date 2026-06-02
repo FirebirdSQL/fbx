@@ -39,6 +39,9 @@ type ConnConfig struct {
 	// may cache statement/description metadata to reduce round trips and parsing overhead.
 	DefaultQueryExecMode QueryExecMode
 
+	// BatchInsertPendingSize is maximum size of pending data in batch before Conn.BatchInsert will flush it to server
+	BatchInsertPendingSize int
+
 	createdByParseConfig bool // Used to enforce created by ParseConfig rule.
 }
 
@@ -279,12 +282,23 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		}
 	}
 
+	batchInsertPendingSize := defaultPreparedBatchFlushSize
+	if s, ok := config.RuntimeParams["batch_insert_pending_size"]; ok {
+		delete(config.RuntimeParams, "batch_insert_pending_size")
+		n, err := strconv.ParseInt(s, 10, 32)
+		if err != nil {
+			return nil, fbconn.NewParseConfigError(connString, "cannot parse batch_insert_pending_size", err)
+		}
+		batchInsertPendingSize = int(n)
+	}
+
 	connConfig := &ConnConfig{
 		Config:                   *config,
 		createdByParseConfig:     true,
 		StatementCacheCapacity:   statementCacheCapacity,
 		DescriptionCacheCapacity: descriptionCacheCapacity,
 		DefaultQueryExecMode:     defaultQueryExecMode,
+		BatchInsertPendingSize:   batchInsertPendingSize,
 		connString:               connString,
 	}
 
