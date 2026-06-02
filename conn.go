@@ -1123,3 +1123,8 @@ func (c *Conn) deallocateInvalidatedCachedStatements(ctx context.Context) error 
 func (c *Conn) Commit(ctx context.Context) error {
 	return c.fbConn.Commit(ctx)
 }
+
+// Rollback rollbacks internal transaction
+func (c *Conn) Rollback(ctx context.Context) error {
+	return c.fbConn.Rollback(ctx)
+}
