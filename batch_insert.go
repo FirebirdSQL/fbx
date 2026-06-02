@@ -3,7 +3,6 @@ package fbx
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 )
 
@@ -149,7 +148,7 @@ func (b *batchInsert) run(ctx context.Context) (int64, error) {
 	}
 
 	if b.rowSrc.Err() != nil {
-		return 0, errors.Join(b.rowSrc.Err(), err)
+		return 0, b.rowSrc.Err()
 	}
 
 	br, err := batch.Exec(ctx)
@@ -157,7 +156,7 @@ func (b *batchInsert) run(ctx context.Context) (int64, error) {
 		return 0, err
 	}
 
-	return br.Affected, err
+	return br.Affected, nil
 }
 
 // BatchInsert uses the Firebird's batch operations to perform bulk data insertion. It returns the number of rows inserted and
