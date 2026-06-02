@@ -1021,7 +1021,7 @@ optionLoop:
 			rows.resultReader = st.Exec(ctx, c.eqb.ParamValues)
 		}
 	} else if mode == QueryExecModeExec {
-		st, err = c.internalPrepare(ctx, tx, sql, sql)
+		st, err = c.internalPrepare(ctx, tx, "", sql)
 		if err != nil {
 			rows.fatal(err)
 			return rows, err
@@ -1035,6 +1035,7 @@ optionLoop:
 		}
 
 		rows.boundStatement = st
+		rows.ownsStatement = true
 		if tx != nil {
 			rows.resultReader = st.ExecTx(ctx, tx.tx, c.eqb.ParamValues)
 		} else {
