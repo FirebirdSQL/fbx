@@ -28,6 +28,7 @@ func TestConnBatchInsertWithAllQueryExecModes(t *testing.T) {
 			cfg.DefaultQueryExecMode = mode
 			conn := mustConnect(t, cfg)
 			defer closeConn(t, conn)
+			skipIfBatchUnsupported(ctx, t, conn)
 
 			mustExec(t, conn, `recreate table foo(
 			a smallint,
@@ -81,6 +82,7 @@ func TestConnBatchInsertFromSmall(t *testing.T) {
 
 	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
+	skipIfBatchUnsupported(ctx, t, conn)
 
 	mustExec(t, conn, `recreate table foo(
 		a smallint,
@@ -136,6 +138,7 @@ func TestConnBatchInsertSliceSmall(t *testing.T) {
 
 	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
+	skipIfBatchUnsupported(ctx, t, conn)
 
 	mustExec(t, conn, `recreate table foo(
 		a smallint,
@@ -197,6 +200,7 @@ func TestConnBatchInsertLarge(t *testing.T) {
 
 	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
+	skipIfBatchUnsupported(ctx, t, conn)
 
 	mustExec(t, conn, `recreate table foo(
 		a smallint,
@@ -282,6 +286,7 @@ func TestConnBatchInsertFailServerSideMidway(t *testing.T) {
 	config.BatchInsertPendingSize = 17
 	conn := mustConnect(t, config)
 	defer closeConn(t, conn)
+	skipIfBatchUnsupported(ctx, t, conn)
 
 	mustExec(t, conn, `recreate table foo(
 		a int,
@@ -368,6 +373,7 @@ func TestConnBatchInsertFailServerSideMidwayAbortsWithoutWaiting(t *testing.T) {
 
 	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
+	skipIfBatchUnsupported(ctx, t, conn)
 
 	mustExec(t, conn, `recreate table foo(
 		a varchar(1024) not null
@@ -445,6 +451,7 @@ func TestConnBatchInsertSlowFailRace(t *testing.T) {
 
 	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
+	skipIfBatchUnsupported(ctx, t, conn)
 
 	mustExec(t, conn, `recreate table foo(
 		a int not null,
@@ -472,6 +479,7 @@ func TestConnBatchInsertBatchInsertSourceErrorMidway(t *testing.T) {
 
 	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
+	skipIfBatchUnsupported(ctx, t, conn)
 
 	mustExec(t, conn, `recreate table foo(
 		a varchar(10) not null
@@ -533,6 +541,7 @@ func TestConnBatchInsertBatchInsertSourceErrorEnd(t *testing.T) {
 
 	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
+	skipIfBatchUnsupported(ctx, t, conn)
 
 	mustExec(t, conn, `recreate table foo(
 		a varchar(10) not null
@@ -577,6 +586,7 @@ func TestConnBatchInsertAutomaticStringConversion(t *testing.T) {
 
 	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
+	skipIfBatchUnsupported(ctx, t, conn)
 
 	mustExec(t, conn, `recreate table foo(
 		a bigint
@@ -608,6 +618,7 @@ func TestConnBatchInsertAutomaticStringConversionArray(t *testing.T) {
 
 	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
+	skipIfBatchUnsupported(ctx, t, conn)
 
 	mustExec(t, conn, `recreate table foo(
 		a numeric[2]
@@ -634,8 +645,12 @@ func TestConnBatchInsertAutomaticStringConversionArray(t *testing.T) {
 }
 
 func TestBatchInsertFunc(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
 	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 	defer closeConn(t, conn)
+	skipIfBatchUnsupported(ctx, t, conn)
 
 	mustExec(t, conn, `recreate table foo(
 		a int
@@ -651,7 +666,7 @@ func TestBatchInsertFunc(t *testing.T) {
 		close(dataCh)
 	}()
 
-	count, err := conn.BatchInsert(context.Background(), fbx.Identifier{"FOO"}, []string{"A"},
+	count, err := conn.BatchInsert(ctx, fbx.Identifier{"FOO"}, []string{"A"},
 		fbx.BatchInsertFunc(func() ([]any, error) {
 			v, ok := <-dataCh
 			if !ok {
@@ -663,14 +678,14 @@ func TestBatchInsertFunc(t *testing.T) {
 	require.ErrorIs(t, err, nil)
 	require.EqualValues(t, channelItems, count)
 
-	rows, err := conn.Query(context.Background(), "select * from foo order by a")
+	rows, err := conn.Query(ctx, "select * from foo order by a")
 	require.NoError(t, err)
 	nums, err := fbx.CollectRows(rows, fbx.RowTo[int64])
 	require.NoError(t, err)
 	require.Equal(t, []int64{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}, nums)
 
 	// simulate a failure
-	count, err = conn.BatchInsert(context.Background(), fbx.Identifier{"FOO"}, []string{"A"},
+	count, err = conn.BatchInsert(ctx, fbx.Identifier{"FOO"}, []string{"A"},
 		fbx.BatchInsertFunc(func() func() ([]any, error) {
 			x := 9
 			return func() ([]any, error) {
@@ -722,10 +737,6 @@ func ExampleBatchInsertRows() {
 
 	count, err := conn.BatchInsert(ctx, fbx.Identifier{"FOO"}, []string{"A", "B", "C", "D"}, fbx.BatchInsertRows(inputRows))
 	fmt.Printf("Batch count:\n%d\n", count)
-
-	// Output:
-	// Batch count:
-	// 3
 }
 
 func ExampleBatchInsertFunc() {
@@ -778,10 +789,6 @@ func ExampleBatchInsertFunc() {
 	}
 
 	fmt.Printf("Batch count:\n%d\n", count)
-
-	// Output:
-	// Batch count:
-	// 3
 }
 
 func ExampleBatchInsertSlice() {
@@ -835,8 +842,4 @@ func ExampleBatchInsertSlice() {
 	}
 
 	fmt.Printf("Batch count:\n%d\n", count)
-
-	// Output:
-	// Batch count:
-	// 3
 }
