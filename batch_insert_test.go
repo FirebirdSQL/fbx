@@ -206,7 +206,7 @@ func TestConnBatchInsertLarge(t *testing.T) {
 		a smallint,
 		b int,
 		c bigint,
-		d varchar,
+		d char(3),
 		e varchar(3),
 		f date,
 		g timestamp with time zone
