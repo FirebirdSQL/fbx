@@ -89,7 +89,7 @@ func TestConnBatchInsertFromSmall(t *testing.T) {
 		b int,
 		c bigint,
 		d char(3),
-		e varchar,
+		e varchar(3),
 		f date
 	)`)
 
@@ -144,7 +144,7 @@ func TestConnBatchInsertSliceSmall(t *testing.T) {
 		a smallint,
 		b int,
 		c bigint,
-		d varchar,
+		d varchar(3),
 		e char(3),
 		f timestamp with time zone
 	)`)
