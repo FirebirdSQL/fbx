@@ -1702,6 +1702,46 @@ func TestHijackFailsWithPreparedStatementAfterTransactionCommit(t *testing.T) {
 	closeConn(t, reconstructed)
 }
 
+func TestArrayHelperStatementsDoNotLeak(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	defer closeConn(t, fbConn)
+
+	const iterations = 10
+
+	_ = countIdleStatements(t, fbConn, ctx)
+	baseline := countIdleStatements(t, fbConn, ctx)
+
+	for i := 0; i < iterations; i++ {
+		st, err := fbConn.Prepare(ctx, "select language_req from job")
+		require.NoError(t, err)
+		require.NoError(t, st.Deallocate(ctx))
+	}
+
+	after := countIdleStatements(t, fbConn, ctx)
+	assert.Equal(t, baseline, after,
+		"array helper statements must be deallocated; pre-fix leak was 2 handles per Prepare")
+}
+
+func countIdleStatements(t *testing.T, fbConn *fbconn.FbConn, ctx context.Context) int64 {
+	t.Helper()
+	res := fbConn.Exec(ctx, `SELECT COUNT(*) FROM MON$STATEMENTS
+WHERE MON$ATTACHMENT_ID = CURRENT_CONNECTION AND MON$STATE = 0`).Read()
+	require.NoError(t, res.Err)
+	require.Len(t, res.Rows, 1)
+	require.Len(t, res.Rows[0], 1)
+	var v int64
+	for _, b := range res.Rows[0][0] {
+		v = (v << 8) | int64(b)
+	}
+	return v
+}
+
 func TestSyncConnOnIdleConn(t *testing.T) {
 	t.Parallel()
 

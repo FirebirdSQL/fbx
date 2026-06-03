@@ -1720,6 +1720,12 @@ func (fbConn *FbConn) getArrayMetadata(ctx context.Context, tx *FBTransaction, s
 		return nil, nil, err
 	}
 
+	defer func() {
+		cleanupCtx, cancel := cleanupContext(ctx)
+		_ = st.deallocateLocked(cleanupCtx)
+		cancel()
+	}()
+
 	rr := &ResultReader{
 		fbConn:           fbConn,
 		ctx:              ctx,
@@ -1806,6 +1812,12 @@ func (fbConn *FbConn) getArrayDimensions(ctx context.Context, tx *FBTransaction,
 	if err != nil {
 		return nil, err
 	}
+
+	defer func() {
+		cleanupCtx, cancel := cleanupContext(ctx)
+		_ = st.deallocateLocked(cleanupCtx)
+		cancel()
+	}()
 
 	rr := &ResultReader{
 		fbConn:           fbConn,

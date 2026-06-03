@@ -421,6 +421,31 @@ func (st *Statement) Deallocate(ctx context.Context) error {
 	return st.internalClose(ctx, fbproto.DSQL_drop)
 }
 
+// deallocateLocked frees the statement assuming the caller already holds the conn lock.
+// Used by internal paths that prepare/exec/free a statement inside a single locked operation.
+func (st *Statement) deallocateLocked(ctx context.Context) error {
+	if st.closed {
+		return nil
+	}
+	if err := st.conn.client.WriteMessage(&fbproto.OpFreeStatement{
+		StatementHandle: st.Description.StatementHandle,
+		Option:          fbproto.DSQL_drop,
+	}); err != nil {
+		st.conn.asyncClose()
+		return err
+	}
+	if err := st.conn.flushWithPotentialWriteReadDeadlock(); err != nil {
+		st.conn.asyncClose()
+		st.cursorOpened = false
+		st.closed = true
+		return err
+	}
+	st.cursorOpened = false
+	st.closed = true
+	delete(st.conn.activeStatements, st)
+	return nil
+}
+
 // CloseCursor close opened cursor without deallocating statement on server
 func (st *Statement) CloseCursor(ctx context.Context) error {
 	return st.internalClose(ctx, fbproto.DSQL_close)
