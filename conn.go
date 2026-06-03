@@ -31,10 +31,6 @@ type ConnConfig struct {
 	// query exec mode.
 	StatementCacheCapacity int
 
-	// DescriptionCacheCapacity is the maximum size of the description cache used when executing a query with
-	// "cache_describe" query exec mode.
-	DescriptionCacheCapacity int
-
 	// DefaultQueryExecMode controls the default mode for executing queries. By default fbx prepares statements and
 	// may cache statement/description metadata to reduce round trips and parsing overhead.
 	DefaultQueryExecMode QueryExecMode
@@ -259,16 +255,6 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		statementCacheCapacity = int(n)
 	}
 
-	descriptionCacheCapacity := 512
-	if s, ok := config.RuntimeParams["description_cache_capacity"]; ok {
-		delete(config.RuntimeParams, "description_cache_capacity")
-		n, err := strconv.ParseInt(s, 10, 32)
-		if err != nil {
-			return nil, fbconn.NewParseConfigError(connString, "cannot parse description_cache_capacity", err)
-		}
-		descriptionCacheCapacity = int(n)
-	}
-
 	defaultQueryExecMode := QueryExecModeCacheStatement
 	if s, ok := config.RuntimeParams["default_query_exec_mode"]; ok {
 		delete(config.RuntimeParams, "default_query_exec_mode")
@@ -293,13 +279,12 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 	}
 
 	connConfig := &ConnConfig{
-		Config:                   *config,
-		createdByParseConfig:     true,
-		StatementCacheCapacity:   statementCacheCapacity,
-		DescriptionCacheCapacity: descriptionCacheCapacity,
-		DefaultQueryExecMode:     defaultQueryExecMode,
-		BatchInsertPendingSize:   batchInsertPendingSize,
-		connString:               connString,
+		Config:                 *config,
+		createdByParseConfig:   true,
+		StatementCacheCapacity: statementCacheCapacity,
+		DefaultQueryExecMode:   defaultQueryExecMode,
+		BatchInsertPendingSize: batchInsertPendingSize,
+		connString:             connString,
 	}
 
 	return connConfig, nil

@@ -269,17 +269,6 @@ func TestParseConfigExtractsStatementCacheOptions(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, 42, config.StatementCacheCapacity)
 
-	config, err = fbx.ParseConfig("description_cache_capacity=0")
-	require.NoError(t, err)
-	require.EqualValues(t, 0, config.DescriptionCacheCapacity)
-
-	config, err = fbx.ParseConfig("description_cache_capacity=42")
-	require.NoError(t, err)
-	require.EqualValues(t, 42, config.DescriptionCacheCapacity)
-
-	//	default_query_exec_mode
-	//		Possible values: "cache_statement", "cache_describe", "describe_exec", "exec", and "simple_protocol". See
-
 	config, err = fbx.ParseConfig("default_query_exec_mode=cache_statement")
 	require.NoError(t, err)
 	require.Equal(t, fbx.QueryExecModeCacheStatement, config.DefaultQueryExecMode)
