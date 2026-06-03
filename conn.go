@@ -728,7 +728,11 @@ optionLoop:
 		if err != nil {
 			return fbconn.QueryStatus{}, err
 		}
-		defer st.Deallocate(ctx)
+		defer func() {
+			cleanupCtx, cancel := cleanupContext(ctx)
+			defer cancel()
+			st.Deallocate(cleanupCtx)
+		}()
 		return c.execPrepared(ctx, tx, st, arguments)
 	default:
 		return fbconn.QueryStatus{}, fmt.Errorf("unknown QueryExecMode: %v", mode)
@@ -1029,7 +1033,9 @@ optionLoop:
 
 		err = c.eqb.Build(ctx, c, tx, c.typeMap, st.Description, args)
 		if err != nil {
-			st.Deallocate(ctx)
+			cleanupCtx, cancel := cleanupContext(ctx)
+			st.Deallocate(cleanupCtx)
+			cancel()
 			rows.fatal(err)
 			return rows, rows.err
 		}
