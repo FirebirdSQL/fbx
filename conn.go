@@ -294,12 +294,16 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 // does. In addition, it accepts the following options:
 //
 //   - default_query_exec_mode.
-//     Possible values: "cache_statement", "cache_describe", "describe_exec", "exec", and "simple_protocol". See
+//     Possible values: "cache_statement" and "exec". See
 //     QueryExecMode constant documentation for the meaning of these values. Default: "cache_statement".
 //
 //   - statement_cache_capacity.
 //     The maximum size of the statement cache used when executing a query with "cache_statement" query exec mode.
 //     Default: 512.
+//
+//   - batch_insert_pending_size
+//     The maximum size of pending data in batch before Conn.BatchInsert will flush it to server
+//     Default: 128*1024.
 func ParseConfig(connString string) (*ConnConfig, error) {
 	return ParseConfigWithOptions(connString, ParseConfigOptions{})
 }
