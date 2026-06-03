@@ -28,7 +28,7 @@ const DefaultFetchBatchSize = 400
 // Config contains settings used to establish a connection to a Firebird/RedDatabase server. It must be created by [ParseConfig] (or ParseConfigWithOptions). A
 // manually initialized Config will cause ConnectConfig to panic.
 type Config struct {
-	Host                       string // host (e.g. localhost) or absolute path to unix domain socket directory (e.g. /private/tmp)
+	Host                       string
 	Port                       uint16
 	Database                   string
 	CreateDatabase             bool
