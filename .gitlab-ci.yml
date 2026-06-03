@@ -12,7 +12,6 @@ variables:
   FB40_VERSION: 4.0.6.3221-0
   FB50_VERSION: 5.0.3.1683-0
   FBX_TEST_DATABASE: database=employee host=localhost port=3050 user=sysdba password=masterkey
-  FBX_TEST_TCP_CONN_STRING: database=employee host=localhost port=3050 user=sysdba password=masterkey
 
 .go-cache:
   variables:

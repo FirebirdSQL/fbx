@@ -27,7 +27,7 @@ func TestConnect(t *testing.T) {
 		name string
 		env  string
 	}{
-		{"TCP", "FBX_TEST_TCP_CONN_STRING"},
+		{"TCP", "FBX_TEST_DATABASE"},
 	}
 
 	for _, tt := range tests {
@@ -54,7 +54,7 @@ func TestConnectWithOptions(t *testing.T) {
 		name string
 		env  string
 	}{
-		{"TCP", "FBX_TEST_TCP_CONN_STRING"},
+		{"TCP", "FBX_TEST_DATABASE"},
 	}
 
 	for _, tt := range tests {
@@ -170,12 +170,7 @@ func TestConnectInvalidUser(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	connString := os.Getenv("FBX_TEST_TCP_CONN_STRING")
-	if connString == "" {
-		t.Skipf("Skipping due to missing environment variable %v", "FBX_TEST_TCP_CONN_STRING")
-	}
-
-	config, err := fbconn.ParseConfig(connString)
+	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	config.User = "fbxinvalidusertest"
@@ -231,12 +226,7 @@ func TestConnectCustomLookup(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	connString := os.Getenv("FBX_TEST_TCP_CONN_STRING")
-	if connString == "" {
-		t.Skipf("Skipping due to missing environment variable %v", "FBX_TEST_TCP_CONN_STRING")
-	}
-
-	config, err := fbconn.ParseConfig(connString)
+	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	looked := false
@@ -257,12 +247,7 @@ func TestConnectCustomLookupWithPort(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	connString := os.Getenv("FBX_TEST_TCP_CONN_STRING")
-	if connString == "" {
-		t.Skipf("Skipping due to missing environment variable %v", "FBX_TEST_TCP_CONN_STRING")
-	}
-
-	config, err := fbconn.ParseConfig(connString)
+	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 
 	origPort := config.Port
@@ -1734,12 +1719,7 @@ func TestConnCheckConn(t *testing.T) {
 
 	// Intentionally using TCP connection for more predictable close behavior. (Not sure if Unix domain sockets would behave subtly different.)
 
-	connString := os.Getenv("FBX_TEST_TCP_CONN_STRING")
-	if connString == "" {
-		t.Skipf("Skipping due to missing environment variable %v", "FBX_TEST_TCP_CONN_STRING")
-	}
-
-	c1, err := fbconn.Connect(ctx, connString)
+	c1, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer c1.Close(ctx)
 
@@ -1762,12 +1742,7 @@ func TestConnPing(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	connString := os.Getenv("FBX_TEST_TCP_CONN_STRING")
-	if connString == "" {
-		t.Skipf("Skipping due to missing environment variable %v", "FBX_TEST_TCP_CONN_STRING")
-	}
-
-	c1, err := fbconn.Connect(ctx, connString)
+	c1, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer c1.Close(ctx)
 
