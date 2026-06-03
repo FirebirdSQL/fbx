@@ -410,6 +410,9 @@ func (st *Statement) internalClose(ctx context.Context, closeOption int) error {
 
 	st.cursorOpened = false
 	st.closed = closeOption == fbproto.DSQL_drop
+	if st.closed {
+		delete(st.conn.activeStatements, st)
+	}
 	return nil
 }
 

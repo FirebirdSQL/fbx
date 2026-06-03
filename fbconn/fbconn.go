@@ -105,7 +105,7 @@ type FbConn struct {
 	explicitTransaction bool
 	activeTransactions  map[*FBTransaction]struct{}
 
-	preparedMap map[string]*StatementDescription
+	activeStatements map[*Statement]struct{}
 
 	// Tracks whether we've already sent the first op_cont_auth (where p_list
 	// must include the client's plugin list). Subsequent op_cont_auth must use
@@ -514,6 +514,7 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 	fbConn.cleanupDone = make(chan struct{})
 	fbConn.customData = make(map[string]any)
 	fbConn.activeTransactions = make(map[*FBTransaction]struct{})
+	fbConn.activeStatements = make(map[*Statement]struct{})
 
 	var err error
 
@@ -1384,6 +1385,7 @@ func (fbConn *FbConn) internalPrepareTx(ctx context.Context, tx *FBTransaction, 
 	if tx != fbConn.internalTransaction {
 		st.transaction = tx
 	}
+	fbConn.activeStatements[st] = struct{}{}
 	return st, nil
 }
 
@@ -1572,6 +1574,7 @@ func (fbConn *FbConn) ExecParamsTx(ctx context.Context, tx *FBTransaction, sql s
 	}
 
 	rr := st.Exec(ctx, paramValues)
+	rr.ownsStatement = st
 	if rr.err != nil {
 		closeConn := true
 		var fbErr *FbError
@@ -1940,6 +1943,8 @@ type ResultReader struct {
 	rowsInfoPopulated    bool
 
 	boundTransaction *FBTransaction
+
+	ownsStatement *Statement
 }
 
 const bufferedColNullLength = -1
@@ -2248,6 +2253,16 @@ func (rr *ResultReader) Values() [][]byte {
 	return rr.rowValues
 }
 
+// cleanupGracePeriod bounds cleanup network calls (e.g. op_free_statement) that
+// must run even after the caller's ctx has been cancelled.
+const cleanupGracePeriod = 5 * time.Second
+
+// cleanupContext detaches from parent cancellation but preserves Values, with a
+// bounded timeout for the network call.
+func cleanupContext(parent context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(parent), cleanupGracePeriod)
+}
+
 // Close consumes any remaining result data and returns the command tag or
 // error.
 func (rr *ResultReader) Close() (QueryStatus, error) {
@@ -2264,6 +2279,14 @@ func (rr *ResultReader) Close() (QueryStatus, error) {
 		rr.closed = true
 		rr.fbConn.contextWatcher.Unwatch()
 		rr.fbConn.unlock()
+
+		if rr.ownsStatement != nil && !rr.ownsStatement.closed {
+			ctx, cancel := cleanupContext(rr.ctx)
+			if dErr := rr.ownsStatement.Deallocate(ctx); dErr != nil && rr.err == nil {
+				rr.err = dErr
+			}
+			cancel()
+		}
 
 		if rr.boundTransaction != nil && rr.boundTransaction == rr.fbConn.internalTransaction && rr.fbConn.config.Autocommit && !rr.fbConn.explicitTransaction {
 			if err := rr.boundTransaction.Commit(context.Background()); err != nil && rr.err == nil {
@@ -2482,8 +2505,7 @@ func (fbConn *FbConn) SyncConn(ctx context.Context) error {
 		}
 	}
 
-	// This should only happen if the server is continuously pushing async data such as event
-	// notifications, so the read buffer never becomes empty.
+	// Reached only if the server keeps pushing async data (e.g. events) and the read buffer never drains.
 	return errors.New("SyncConn: conn never synchronized")
 }
 
@@ -2523,11 +2545,9 @@ func (fbConn *FbConn) Hijack() (*HijackedConn, error) {
 		return nil, err
 	}
 
-	// server-side handles (transactions, prepared statements) are addressed by int32 handles
-	// allocated by the server. If we let the hijacker take the socket while we still hold references to live
-	// handles, the resources leak on the server until the attachment is detached.
+	// Live server-side handles must be released before handing the socket over; otherwise they leak until detach.
 	hasLiveInternalTx := fbConn.internalTransaction != nil && !fbConn.internalTransaction.Closed
-	if hasLiveInternalTx || len(fbConn.activeTransactions) > 0 || len(fbConn.preparedMap) > 0 {
+	if hasLiveInternalTx || len(fbConn.activeTransactions) > 0 || len(fbConn.activeStatements) > 0 {
 		fbConn.unlock()
 		return nil, errors.New("Hijack: connection has active transactions or prepared statements")
 	}
@@ -2574,6 +2594,7 @@ func Construct(hc *HijackedConn) (*FbConn, error) {
 		status:             connStatusIdle,
 		cleanupDone:        make(chan struct{}),
 		activeTransactions: make(map[*FBTransaction]struct{}),
+		activeStatements:   make(map[*Statement]struct{}),
 	}
 
 	fbConn.contextHandler = hc.Config.BuildContextWatcherHandler(fbConn)

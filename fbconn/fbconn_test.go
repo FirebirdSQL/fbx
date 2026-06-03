@@ -1658,6 +1658,50 @@ func TestHijackFailsWithActiveTransaction(t *testing.T) {
 	ensureConnValid(t, fbConn)
 }
 
+func TestHijackFailsWithPreparedStatementAfterTransactionCommit(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	defer func() {
+		if fbConn != nil {
+			closeConn(t, fbConn)
+		}
+	}()
+
+	tx, err := fbConn.StartTransaction(ctx)
+	require.NoError(t, err)
+
+	st, err := fbConn.PrepareTx(ctx, tx, "select 1 from rdb$database")
+	require.NoError(t, err)
+
+	require.NoError(t, tx.Commit(ctx))
+	require.NoError(t, fbConn.SyncConn(ctx))
+
+	hc, err := fbConn.Hijack()
+	if hc != nil {
+		fbConn = nil
+		reconstructed, constructErr := fbconn.Construct(hc)
+		require.NoError(t, constructErr)
+		closeConn(t, reconstructed)
+	}
+	require.Error(t, err, "Hijack must fail while a prepared statement is active")
+
+	require.NoError(t, st.Deallocate(ctx))
+	require.NoError(t, fbConn.SyncConn(ctx))
+
+	hc, err = fbConn.Hijack()
+	require.NoError(t, err)
+	fbConn = nil
+
+	reconstructed, err := fbconn.Construct(hc)
+	require.NoError(t, err)
+	closeConn(t, reconstructed)
+}
+
 func TestSyncConnOnIdleConn(t *testing.T) {
 	t.Parallel()
 
