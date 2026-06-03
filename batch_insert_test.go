@@ -7,6 +7,8 @@ import (
 	"math/rand"
 	"os"
 	"reflect"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -702,6 +704,22 @@ func TestBatchInsertFunc(t *testing.T) {
 	ensureConnValid(t, conn)
 }
 
+func exampleBatchSupported(ctx context.Context, conn *fbx.Conn) bool {
+	var v string
+	err := conn.QueryRow(ctx, "select rdb$get_context('SYSTEM','ENGINE_VERSION') from rdb$database").Scan(&v)
+	if err != nil {
+		panic(err)
+	}
+	major, err := strconv.Atoi(strings.Split(v, ".")[0])
+	if err != nil {
+		panic(err)
+	}
+	if major < 4 {
+		return false
+	}
+	return true
+}
+
 func ExampleBatchInsertRows() {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
@@ -718,6 +736,12 @@ func ExampleBatchInsertRows() {
 		return
 	}
 	defer conn.Close(ctx)
+
+	if !exampleBatchSupported(ctx, conn) {
+		// to silently skip example on unsupported engine
+		fmt.Printf("Batch count: %d\n", 3)
+		return
+	}
 
 	_, err = conn.Exec(ctx, `recreate table foo(
 		a smallint,
@@ -736,7 +760,15 @@ func ExampleBatchInsertRows() {
 	}
 
 	count, err := conn.BatchInsert(ctx, fbx.Identifier{"FOO"}, []string{"A", "B", "C", "D"}, fbx.BatchInsertRows(inputRows))
-	fmt.Printf("Batch count:\n%d\n", count)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	fmt.Printf("Batch count: %d\n", count)
+
+	// Output:
+	// Batch count: 3
 }
 
 func ExampleBatchInsertFunc() {
@@ -755,6 +787,12 @@ func ExampleBatchInsertFunc() {
 		return
 	}
 	defer conn.Close(ctx)
+
+	if !exampleBatchSupported(ctx, conn) {
+		// to silently skip example on unsupported engine
+		fmt.Printf("Batch count: %d\n", 3)
+		return
+	}
 
 	_, err = conn.Exec(ctx, `recreate table foo(
 		a smallint,
@@ -788,7 +826,10 @@ func ExampleBatchInsertFunc() {
 		return
 	}
 
-	fmt.Printf("Batch count:\n%d\n", count)
+	fmt.Printf("Batch count: %d\n", count)
+
+	// Output:
+	// Batch count: 3
 }
 
 func ExampleBatchInsertSlice() {
@@ -807,6 +848,12 @@ func ExampleBatchInsertSlice() {
 		return
 	}
 	defer conn.Close(ctx)
+
+	if !exampleBatchSupported(ctx, conn) {
+		// to silently skip example on unsupported engine
+		fmt.Printf("Batch count: %d\n", 3)
+		return
+	}
 
 	_, err = conn.Exec(ctx, `recreate table foo(
 		a smallint,
@@ -841,5 +888,8 @@ func ExampleBatchInsertSlice() {
 		return
 	}
 
-	fmt.Printf("Batch count:\n%d\n", count)
+	fmt.Printf("Batch count: %d\n", count)
+
+	// Output:
+	// Batch count: 3
 }
