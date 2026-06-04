@@ -10,7 +10,7 @@ import (
 	"rdb.red-soft.ru/fbx/fbconn"
 )
 
-type gdsEventHandler struct {
+type fbEventHandler struct {
 	manager   *Manager
 	eventName string
 	handle    *fbconn.EventHandle
@@ -41,7 +41,7 @@ const (
 	eventHandlerStateCancelled
 )
 
-func (h *gdsEventHandler) register(ctx context.Context) error {
+func (h *fbEventHandler) register(ctx context.Context) error {
 	h.opMu.Lock()
 	defer h.opMu.Unlock()
 
@@ -84,11 +84,11 @@ func (h *gdsEventHandler) register(ctx context.Context) error {
 	return err
 }
 
-func (h *gdsEventHandler) unregister(ctx context.Context) error {
+func (h *fbEventHandler) unregister(ctx context.Context) error {
 	return h.unregisterOnConn(ctx, h.manager.currentConn())
 }
 
-func (h *gdsEventHandler) unregisterOnConn(ctx context.Context, conn *fbconn.FbConn) error {
+func (h *fbEventHandler) unregisterOnConn(ctx context.Context, conn *fbconn.FbConn) error {
 	h.opMu.Lock()
 	defer h.opMu.Unlock()
 
@@ -132,7 +132,7 @@ func (h *gdsEventHandler) unregisterOnConn(ctx context.Context, conn *fbconn.FbC
 	return err
 }
 
-func (h *gdsEventHandler) EventOccurred(handle *fbconn.EventHandle) {
+func (h *fbEventHandler) EventOccurred(handle *fbconn.EventHandle) {
 	if h.isStopping() {
 		return
 	}
@@ -179,7 +179,7 @@ func (h *gdsEventHandler) EventOccurred(handle *fbconn.EventHandle) {
 	})
 }
 
-func (h *gdsEventHandler) reRegister(handle *fbconn.EventHandle) error {
+func (h *fbEventHandler) reRegister(handle *fbconn.EventHandle) error {
 	const maxAttempts = 3
 	var lastErr error
 
@@ -238,7 +238,7 @@ func (h *gdsEventHandler) reRegister(handle *fbconn.EventHandle) error {
 	return lastErr
 }
 
-func (h *gdsEventHandler) isStopping() bool {
+func (h *fbEventHandler) isStopping() bool {
 	h.mu.Lock()
 	state := h.state
 	h.mu.Unlock()

@@ -15,7 +15,7 @@ func TestSubscribeDeliversEventsOnChannel(t *testing.T) {
 		connected:         true,
 		listeners:         make(map[string][]listenerRegistration),
 		listenerEventName: make(map[ListenerHandle]string),
-		handlers:          make(map[string]*gdsEventHandler),
+		handlers:          make(map[string]*fbEventHandler),
 	}
 	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(DatabaseEvent) {}))
 
@@ -43,7 +43,7 @@ func TestSubscriptionCloseRemovesListenerAndClosesChannel(t *testing.T) {
 		connected:         true,
 		listeners:         make(map[string][]listenerRegistration),
 		listenerEventName: make(map[ListenerHandle]string),
-		handlers:          make(map[string]*gdsEventHandler),
+		handlers:          make(map[string]*fbEventHandler),
 	}
 	existingHandle := addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(DatabaseEvent) {}))
 
@@ -72,7 +72,7 @@ func TestSubscriptionCloseIsIdempotent(t *testing.T) {
 		connected:         true,
 		listeners:         make(map[string][]listenerRegistration),
 		listenerEventName: make(map[ListenerHandle]string),
-		handlers:          make(map[string]*gdsEventHandler),
+		handlers:          make(map[string]*fbEventHandler),
 	}
 	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(DatabaseEvent) {}))
 
@@ -90,7 +90,7 @@ func TestRemoveEventListenerClosesSubscriptionChannel(t *testing.T) {
 		connected:         true,
 		listeners:         make(map[string][]listenerRegistration),
 		listenerEventName: make(map[ListenerHandle]string),
-		handlers:          make(map[string]*gdsEventHandler),
+		handlers:          make(map[string]*fbEventHandler),
 	}
 	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(DatabaseEvent) {}))
 
@@ -114,7 +114,7 @@ func TestDisconnectClosesSubscriptionChannel(t *testing.T) {
 		connected:         true,
 		listeners:         make(map[string][]listenerRegistration),
 		listenerEventName: make(map[ListenerHandle]string),
-		handlers:          make(map[string]*gdsEventHandler),
+		handlers:          make(map[string]*fbEventHandler),
 	}
 	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(DatabaseEvent) {}))
 
@@ -139,7 +139,7 @@ func TestSubscriptionCloseUnblocksPendingDelivery(t *testing.T) {
 		connected:         true,
 		listeners:         make(map[string][]listenerRegistration),
 		listenerEventName: make(map[ListenerHandle]string),
-		handlers:          make(map[string]*gdsEventHandler),
+		handlers:          make(map[string]*fbEventHandler),
 	}
 	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(DatabaseEvent) {
 		close(dummyCalled)

@@ -164,7 +164,7 @@ func newConnectedManagerForNotificationTest() *Manager {
 		connected:         true,
 		listeners:         make(map[string][]listenerRegistration),
 		listenerEventName: make(map[ListenerHandle]string),
-		handlers:          make(map[string]*gdsEventHandler),
+		handlers:          make(map[string]*fbEventHandler),
 		asyncErrSignal:    make(chan struct{}),
 	}
 }

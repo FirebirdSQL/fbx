@@ -52,7 +52,7 @@ type Manager struct {
 	listeners         map[string][]listenerRegistration
 	listenerEventName map[ListenerHandle]string
 	nextListenerID    ListenerHandle
-	handlers          map[string]*gdsEventHandler
+	handlers          map[string]*fbEventHandler
 	notificationOpMu  sync.Mutex
 	notifications     *notificationQueue
 	notificationNames map[string]ListenerHandle
@@ -100,7 +100,7 @@ func NewManagerConfig(cfg *fbx.ConnConfig) *Manager {
 		waitTimeout:       defaultManagerWaitTimeout,
 		listeners:         make(map[string][]listenerRegistration),
 		listenerEventName: make(map[ListenerHandle]string),
-		handlers:          make(map[string]*gdsEventHandler),
+		handlers:          make(map[string]*fbEventHandler),
 	}
 }
 
@@ -113,7 +113,7 @@ func CreateFor(conn *fbx.Conn) *Manager {
 		waitTimeout:       defaultManagerWaitTimeout,
 		listeners:         make(map[string][]listenerRegistration),
 		listenerEventName: make(map[ListenerHandle]string),
-		handlers:          make(map[string]*gdsEventHandler),
+		handlers:          make(map[string]*fbEventHandler),
 	}
 }
 
@@ -195,7 +195,7 @@ func (m *Manager) disconnect(ctx context.Context, strict bool, waitDispatcher bo
 		return nil
 	}
 
-	handlers := make([]*gdsEventHandler, 0, len(m.handlers))
+	handlers := make([]*fbEventHandler, 0, len(m.handlers))
 	for _, handler := range m.handlers {
 		handlers = append(handlers, handler)
 	}
@@ -203,7 +203,7 @@ func (m *Manager) disconnect(ctx context.Context, strict bool, waitDispatcher bo
 	for _, regs := range m.listeners {
 		allRegs = append(allRegs, regs...)
 	}
-	m.handlers = make(map[string]*gdsEventHandler)
+	m.handlers = make(map[string]*fbEventHandler)
 	m.listeners = make(map[string][]listenerRegistration)
 	m.listenerEventName = make(map[ListenerHandle]string)
 	m.notificationNames = make(map[string]ListenerHandle)
@@ -389,7 +389,7 @@ func (m *Manager) RemoveEventListener(handle ListenerHandle) error {
 	m.listenerOpMu.Lock()
 	defer m.listenerOpMu.Unlock()
 
-	var handler *gdsEventHandler
+	var handler *fbEventHandler
 	m.mu.Lock()
 	eventName, exists := m.listenerEventName[handle]
 	if !exists {
@@ -458,7 +458,7 @@ func (m *Manager) ensureEventHandler(eventName string) error {
 		return errors.New("not connected to server")
 	}
 
-	handler := &gdsEventHandler{
+	handler := &fbEventHandler{
 		manager:   m,
 		eventName: eventName,
 	}

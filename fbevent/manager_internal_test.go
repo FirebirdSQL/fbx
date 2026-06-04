@@ -30,7 +30,7 @@ func TestAddEventListenerReturnsUniqueHandles(t *testing.T) {
 		connected:         true,
 		listeners:         make(map[string][]listenerRegistration),
 		listenerEventName: make(map[ListenerHandle]string),
-		handlers:          make(map[string]*gdsEventHandler),
+		handlers:          make(map[string]*fbEventHandler),
 	}
 
 	existing := EventListenerFunc(func(DatabaseEvent) {})
@@ -68,7 +68,7 @@ func TestRemoveEventListenerByHandle(t *testing.T) {
 		connected:         true,
 		listeners:         make(map[string][]listenerRegistration),
 		listenerEventName: make(map[ListenerHandle]string),
-		handlers:          make(map[string]*gdsEventHandler),
+		handlers:          make(map[string]*fbEventHandler),
 	}
 
 	firstHandle := addRegisteredListenerForTest(m, "EVT", functions[0])
@@ -89,7 +89,7 @@ func TestIsConnectedManagedDisconnectedDoesNotBlock(t *testing.T) {
 		mode:           managerModeManaged,
 		connected:      true,
 		listeners:      make(map[string][]listenerRegistration),
-		handlers:       make(map[string]*gdsEventHandler),
+		handlers:       make(map[string]*fbEventHandler),
 		eventQueue:     make(chan DatabaseEvent, 1),
 		dispatcherStop: stop,
 		dispatcherDone: done,
@@ -130,7 +130,7 @@ func TestDisconnectRespectsContextWhenDispatcherDoesNotStop(t *testing.T) {
 	m := &Manager{
 		connected:      true,
 		listeners:      make(map[string][]listenerRegistration),
-		handlers:       make(map[string]*gdsEventHandler),
+		handlers:       make(map[string]*fbEventHandler),
 		eventQueue:     make(chan DatabaseEvent, 1),
 		dispatcherStop: stop,
 		dispatcherDone: done,
@@ -173,7 +173,7 @@ func TestAddEventListenerCreatesSeparateRegistrationsForSameListener(t *testing.
 		connected:         true,
 		listeners:         make(map[string][]listenerRegistration),
 		listenerEventName: make(map[ListenerHandle]string),
-		handlers:          make(map[string]*gdsEventHandler),
+		handlers:          make(map[string]*fbEventHandler),
 	}
 
 	firstHandle := addRegisteredListenerForTest(m, "EVT", listener)
@@ -201,7 +201,7 @@ func TestAddRemoveEventListenerWithDifferentClosuresFromSameLiteral(t *testing.T
 		connected:         true,
 		listeners:         make(map[string][]listenerRegistration),
 		listenerEventName: make(map[ListenerHandle]string),
-		handlers:          make(map[string]*gdsEventHandler),
+		handlers:          make(map[string]*fbEventHandler),
 	}
 
 	firstHandle := addRegisteredListenerForTest(m, "EVT", first)
@@ -221,7 +221,7 @@ func TestWaitForEventReturnsAsyncErrorWithoutTimeout(t *testing.T) {
 		connected:         true,
 		listeners:         make(map[string][]listenerRegistration),
 		listenerEventName: make(map[ListenerHandle]string),
-		handlers:          make(map[string]*gdsEventHandler),
+		handlers:          make(map[string]*fbEventHandler),
 		asyncErrSignal:    make(chan struct{}),
 	}
 	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(DatabaseEvent) {}))
@@ -261,7 +261,7 @@ func TestOnConnEventErrorUnblocksWaitForEventWithoutTimeout(t *testing.T) {
 		connected:         true,
 		listeners:         make(map[string][]listenerRegistration),
 		listenerEventName: make(map[ListenerHandle]string),
-		handlers:          make(map[string]*gdsEventHandler),
+		handlers:          make(map[string]*fbEventHandler),
 		asyncErrSignal:    make(chan struct{}),
 	}
 	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(DatabaseEvent) {}))
@@ -301,7 +301,7 @@ func TestDisconnectUnblocksWaitForEventWithoutTimeout(t *testing.T) {
 		connected:         true,
 		listeners:         make(map[string][]listenerRegistration),
 		listenerEventName: make(map[ListenerHandle]string),
-		handlers:          make(map[string]*gdsEventHandler),
+		handlers:          make(map[string]*fbEventHandler),
 		asyncErrSignal:    make(chan struct{}),
 	}
 	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(DatabaseEvent) {}))
@@ -343,7 +343,7 @@ func TestAddEventListenerSerializesConcurrentFirstRegistration(t *testing.T) {
 		connected:         true,
 		listeners:         make(map[string][]listenerRegistration),
 		listenerEventName: make(map[ListenerHandle]string),
-		handlers:          make(map[string]*gdsEventHandler),
+		handlers:          make(map[string]*fbEventHandler),
 		beforeEnsureEventHandler: func() {
 			once.Do(func() {
 				close(enteredEnsure)
@@ -394,7 +394,7 @@ func TestAddEventListenerSerializesConcurrentFirstRegistration(t *testing.T) {
 func TestUnregisterRollbackOnCancelFailure(t *testing.T) {
 	t.Parallel()
 
-	h := &gdsEventHandler{
+	h := &fbEventHandler{
 		manager:   &Manager{},
 		eventName: "EVT",
 		state:     eventHandlerStateRegistered,
@@ -425,7 +425,7 @@ func TestWaitForEventIgnoresStaleAsyncErrorAfterSuccessfulAwait(t *testing.T) {
 		connected:         true,
 		listeners:         make(map[string][]listenerRegistration),
 		listenerEventName: make(map[ListenerHandle]string),
-		handlers:          make(map[string]*gdsEventHandler),
+		handlers:          make(map[string]*fbEventHandler),
 		asyncErr:          errors.New("stale async error"),
 		asyncErrSignal:    make(chan struct{}),
 	}
@@ -474,7 +474,7 @@ func TestHandleConnLifecycleTerminationDisconnectsAndSignalsAsyncError(t *testin
 		mode:              managerModeManaged,
 		listeners:         make(map[string][]listenerRegistration),
 		listenerEventName: make(map[ListenerHandle]string),
-		handlers:          make(map[string]*gdsEventHandler),
+		handlers:          make(map[string]*fbEventHandler),
 		asyncErrSignal:    make(chan struct{}),
 		lifecycleWatchGen: 1,
 	}
@@ -504,7 +504,7 @@ func TestDeliveryWorkerSendNeverBlocksWithinQueueCapacity(t *testing.T) {
 		connected:         true,
 		listeners:         make(map[string][]listenerRegistration),
 		listenerEventName: make(map[ListenerHandle]string),
-		handlers:          make(map[string]*gdsEventHandler),
+		handlers:          make(map[string]*fbEventHandler),
 	}
 	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(event DatabaseEvent) {
 		<-gate
@@ -565,7 +565,7 @@ func TestDeliveryWorkerDeliversEventsInOrder(t *testing.T) {
 		connected:         true,
 		listeners:         make(map[string][]listenerRegistration),
 		listenerEventName: make(map[ListenerHandle]string),
-		handlers:          make(map[string]*gdsEventHandler),
+		handlers:          make(map[string]*fbEventHandler),
 	}
 	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(event DatabaseEvent) {
 		mu.Lock()
@@ -609,7 +609,7 @@ func TestDeliveryWorkerNoEventsLostUnderLoad(t *testing.T) {
 		connected:         true,
 		listeners:         make(map[string][]listenerRegistration),
 		listenerEventName: make(map[ListenerHandle]string),
-		handlers:          make(map[string]*gdsEventHandler),
+		handlers:          make(map[string]*fbEventHandler),
 	}
 	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(event DatabaseEvent) {
 		<-gate
@@ -657,7 +657,7 @@ func TestDeliveryWorkerQueueOverflowSetsAsyncErrorAndBackpressures(t *testing.T)
 		connected:         true,
 		listeners:         make(map[string][]listenerRegistration),
 		listenerEventName: make(map[ListenerHandle]string),
-		handlers:          make(map[string]*gdsEventHandler),
+		handlers:          make(map[string]*fbEventHandler),
 		asyncErrSignal:    make(chan struct{}),
 	}
 	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(event DatabaseEvent) {
@@ -716,7 +716,7 @@ func TestDeliveryWorkerDeliversCallbacksSequentiallyForManager(t *testing.T) {
 		connected:         true,
 		listeners:         make(map[string][]listenerRegistration),
 		listenerEventName: make(map[ListenerHandle]string),
-		handlers:          make(map[string]*gdsEventHandler),
+		handlers:          make(map[string]*fbEventHandler),
 	}
 	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(DatabaseEvent) {
 		close(firstEntered)
@@ -761,7 +761,7 @@ func TestHandleConnLifecycleTerminationIgnoresStaleGeneration(t *testing.T) {
 		mode:              managerModeManaged,
 		listeners:         make(map[string][]listenerRegistration),
 		listenerEventName: make(map[ListenerHandle]string),
-		handlers:          make(map[string]*gdsEventHandler),
+		handlers:          make(map[string]*fbEventHandler),
 		asyncErrSignal:    make(chan struct{}),
 		lifecycleWatchGen: 2,
 	}
