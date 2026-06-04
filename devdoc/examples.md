@@ -81,6 +81,60 @@ if err := conn.DropDatabase(ctx); err != nil {
 the server rejects the request, for example because another attachment is using
 the database, the database remains in place and the error is returned.
 
+## Firebird Events
+
+```go
+manager, err := fbevent.NewManager(dsn)
+if err != nil {
+	return err
+}
+if err := manager.Connect(ctx); err != nil {
+	return err
+}
+defer manager.Close(context.Background())
+
+count, err := manager.WaitForEvent(ctx, "REPORT_READY", 5*time.Second)
+if err != nil {
+	return err
+}
+if count == -1 {
+	return nil
+}
+```
+
+```go
+sub, err := manager.Subscribe("REPORT_READY", 16)
+if err != nil {
+	return err
+}
+defer sub.Close()
+
+for event := range sub.C {
+	fmt.Printf("%s count delta: %d\n", event.EventName, event.EventCount)
+}
+```
+
+```go
+if err := manager.Listen(ctx, "REPORT_READY"); err != nil {
+	return err
+}
+defer manager.Unlisten("REPORT_READY")
+
+notification, err := manager.WaitForNotification(ctx)
+if err != nil {
+	return err
+}
+
+fmt.Printf("%s count delta: %d\n", notification.Channel, notification.Count)
+```
+
+Low-level event APIs in `fbconn`, such as `QueueEvent` and `CancelEvent`, use
+the caller's `context.Context` as the waiting policy. If `context.Background()`
+is passed, these operations do not add their own timeout and can wait
+indefinitely while the connection is busy or while waiting for the server
+response. Use `context.WithTimeout` or `context.WithCancel` when the wait must
+be bounded.
+
 ## Schemas
 
 ```go

@@ -15,6 +15,7 @@ Firebird values, tracing hooks, and modern Red Database / Firebird features.
 - Concurrency-safe `fbxpool` connection pool for application workloads, with lifecycle hooks, health checks, configurable ping behavior, acquire tracing, release tracing, and pool statistics. See [Connection Pool](devdoc/examples.md#connection-pool).
 - URL and keyword/value connection strings, environment variable support, multi-host fallback configuration, and `target_session_attrs` validation for primary, replica, prefer-replica, read-only, and read-write sessions. See [Connection Configuration](devdoc/examples.md#connection-configuration).
 - Database creation and deletion through `CreateDatabase`, `DropDatabase`, and related config helpers. See [Database Creation](devdoc/examples.md#database-creation).
+- Firebird `POST_EVENT` subscriptions through `fbevent.Manager`, including one-shot waits, callback listeners, channel subscriptions, and pgx-like notifications. See [Firebird Events](devdoc/examples.md#firebird-events).
 - Red Database / Firebird 6 schema support, including `search_path` connection settings and schema-qualified identifiers. See [Schemas](devdoc/examples.md#schemas).
 - Authentication with SRP, SRP256, SRP224, SRP384, SRP512, GSS/Kerberos, and Legacy_Auth plugins. See [Connection Configuration](devdoc/examples.md#connection-configuration).
 - Wire encryption support. See [Connection Configuration](devdoc/examples.md#connection-configuration).
@@ -35,7 +36,6 @@ Firebird values, tracing hooks, and modern Red Database / Firebird features.
 - Geometric and spatial type support.
 - SQL/JSON value mapping and helper APIs.
 - ROW and structured value support.
-- Firebird event subscription API.
 - Services manager API for backup, restore, trace, statistics, online validation, and user-management workflows.
 - Bidirectional result-set navigation for server-side scrollable cursors.
 - Two-phase commit and distributed transaction support.
