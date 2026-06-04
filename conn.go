@@ -124,6 +124,16 @@ var (
 	errDisabledStatementCache = fmt.Errorf("cannot use QueryExecModeCacheStatement with disabled statement cache")
 )
 
+// cleanupGracePeriod bounds cleanup network calls (op_free_statement, etc.) that must
+// run even after the user's ctx has been cancelled.
+const cleanupGracePeriod = 5 * time.Second
+
+// cleanupContext returns a context for releasing server-side resources after the
+// user's request has finished.
+func cleanupContext(parent context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(parent), cleanupGracePeriod)
+}
+
 // Connect establishes a connection with a Firebird server with a connection string. See
 // fbconn.Connect for details.
 func Connect(ctx context.Context, connString string) (*Conn, error) {

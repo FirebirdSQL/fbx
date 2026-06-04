@@ -165,16 +165,6 @@ func (rows *baseRows) FieldDescriptions() []fbconn.FieldDescription {
 	return rows.fieldDescs
 }
 
-// cleanupGracePeriod bounds cleanup network calls (op_free_statement, etc.) that must
-// run even after the user's ctx has been cancelled.
-const cleanupGracePeriod = 5 * time.Second
-
-// cleanupContext returns a context for releasing server-side resources after the
-// user's request has finished.
-func cleanupContext(parent context.Context) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.WithoutCancel(parent), cleanupGracePeriod)
-}
-
 func (rows *baseRows) Close() {
 	if rows.closed {
 		return
