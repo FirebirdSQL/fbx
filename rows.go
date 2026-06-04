@@ -90,7 +90,7 @@ type Row interface {
 
 // RowScanner scans an entire row at a time into the RowScanner.
 type RowScanner interface {
-	// ScanRows scans the row.
+	// ScanRow scans the row.
 	ScanRow(rows Rows) error
 }
 
@@ -654,7 +654,7 @@ func RowTo[T any](row CollectableRow) (T, error) {
 	return value, err
 }
 
-// RowTo returns a the address of a T scanned from row.
+// RowToAddrOf returns a the address of a T scanned from row.
 func RowToAddrOf[T any](row CollectableRow) (*T, error) {
 	var value T
 	err := row.Scan(&value)

@@ -891,13 +891,13 @@ type QueryExecMode int32
 const (
 	_ QueryExecMode = iota
 
-	// Automatically prepare and cache statements. This uses the extended protocol. Queries are executed in a single round
+	// QueryExecModeCacheStatement Automatically prepare and cache statements. This uses the extended protocol. Queries are executed in a single round
 	// trip after the statement is cached. This is the default. If the database schema is modified or the search_path is
 	// changed after a statement is cached then the first execution of a previously cached query may fail. e.g. If the
 	// number of columns returned by a "SELECT *" changes or the type of a column is changed.
 	QueryExecModeCacheStatement
 
-	// Assume the Firebird query parameter types based on the Go type of the arguments.
+	// QueryExecModeExec Assume the Firebird query parameter types based on the Go type of the arguments.
 	// Queries are executed in a single round trip. Type mappings can be
 	// registered with fbtype.Map.RegisterDefaultFbType. Queries will be rejected that have arguments that are
 	// unregistered or ambiguous. e.g. A map[string]string may have the Firebird type json or hstore. Modes that know

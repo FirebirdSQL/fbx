@@ -151,6 +151,7 @@ func CreateDatabase(ctx context.Context, connString string) (*FbConn, error) {
 }
 
 // DropDatabase connects to a Firebird/RedDatabase database, drops it, and closes the connection.
+// The connection string accepts the same options as Connect.
 func DropDatabase(ctx context.Context, connString string) error {
 	config, err := ParseConfig(connString)
 	if err != nil {
@@ -169,9 +170,10 @@ func DropDatabase(ctx context.Context, connString string) error {
 	return err
 }
 
-// Connect establishes a connection to a Firebird/RedDatabase server using the environment and connString (in URL or keyword/value
+// ConnectWithOptions establishes a connection to a Firebird/RedDatabase server using the environment and connString (in URL or keyword/value
 // format) and ParseConfigOptions to provide additional configuration. See documentation for [ParseConfig] for details.
 // ctx can be used to cancel a connect attempt.
+// The connection string accepts the same options as Connect.
 func ConnectWithOptions(ctx context.Context, connString string, parseConfigOptions ParseConfigOptions) (*FbConn, error) {
 	config, err := ParseConfigWithOptions(connString, parseConfigOptions)
 	if err != nil {
@@ -182,6 +184,7 @@ func ConnectWithOptions(ctx context.Context, connString string, parseConfigOptio
 }
 
 // CreateDatabaseWithOptions behaves exactly like CreateDatabase with the addition of ParseConfigOptions.
+// The connection string accepts the same options as Connect.
 func CreateDatabaseWithOptions(ctx context.Context, connString string, parseConfigOptions ParseConfigOptions) (*FbConn, error) {
 	config, err := ParseConfigWithOptions(connString, parseConfigOptions)
 	if err != nil {
@@ -193,6 +196,7 @@ func CreateDatabaseWithOptions(ctx context.Context, connString string, parseConf
 }
 
 // DropDatabaseWithOptions behaves exactly like DropDatabase with the addition of ParseConfigOptions.
+// The connection string accepts the same options as Connect.
 func DropDatabaseWithOptions(ctx context.Context, connString string, parseConfigOptions ParseConfigOptions) error {
 	config, err := ParseConfigWithOptions(connString, parseConfigOptions)
 	if err != nil {
@@ -211,7 +215,7 @@ func DropDatabaseWithOptions(ctx context.Context, connString string, parseConfig
 	return err
 }
 
-// Connect establishes a connection to a Firebird/RedDatabase server using config. config must have been constructed with
+// ConnectConfig establishes a connection to a Firebird/RedDatabase server using config. config must have been constructed with
 // [ParseConfig]. ctx can be used to cancel a connect attempt.
 //
 // If config.Fallbacks are present they will sequentially be tried in case of error establishing network connection. An
@@ -2631,7 +2635,7 @@ func (fbConn *FbConn) StartTransaction(ctx context.Context) (*FBTransaction, err
 	return fbConn.StartTransactionTPB(ctx, nil)
 }
 
-// StartTransaction starts new transaction not bound to connection with TPB block
+// StartTransactionTPB starts new transaction not bound to connection with TPB block
 func (fbConn *FbConn) StartTransactionTPB(ctx context.Context, tpb []byte) (*FBTransaction, error) {
 	return fbConn.startTransactionTPB(ctx, tpb, false)
 }

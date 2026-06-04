@@ -343,7 +343,7 @@ func NewWithConfig(ctx context.Context, config *Config) (*Pool, error) {
 //
 // It uses fbx.ParseConfig to parse Firebird/RedDatabase connection settings and additionally recognizes the following
 // pool-specific parameters (passed via URL query or keyword/value format):
-
+//
 //   - pool_max_conns: integer greater than 0 (default 4)
 //   - pool_min_conns: integer 0 or greater (default 0)
 //   - pool_max_conn_lifetime: duration string (default 1 hour)
