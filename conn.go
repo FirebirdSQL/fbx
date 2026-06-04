@@ -123,6 +123,16 @@ var (
 	errDisabledStatementCache = fmt.Errorf("cannot use QueryExecModeCacheStatement with disabled statement cache")
 )
 
+// cleanupGracePeriod bounds cleanup network calls (op_free_statement, etc.) that must
+// run even after the user's ctx has been cancelled.
+const cleanupGracePeriod = 5 * time.Second
+
+// cleanupContext returns a context for releasing server-side resources after the
+// user's request has finished.
+func cleanupContext(parent context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(parent), cleanupGracePeriod)
+}
+
 // Connect establishes a connection with a Firebird server with a connection string. See
 // fbconn.Connect for details.
 func Connect(ctx context.Context, connString string) (*Conn, error) {
@@ -731,7 +741,11 @@ optionLoop:
 		if err != nil {
 			return fbconn.QueryStatus{}, err
 		}
-		defer st.Deallocate(ctx)
+		defer func() {
+			cleanupCtx, cancel := cleanupContext(ctx)
+			defer cancel()
+			st.Deallocate(cleanupCtx)
+		}()
 		return c.execPrepared(ctx, tx, st, arguments)
 	default:
 		return fbconn.QueryStatus{}, fmt.Errorf("unknown QueryExecMode: %v", mode)
@@ -1024,7 +1038,7 @@ optionLoop:
 			rows.resultReader = st.Exec(ctx, c.eqb.ParamValues)
 		}
 	} else if mode == QueryExecModeExec {
-		st, err = c.internalPrepare(ctx, tx, sql, sql)
+		st, err = c.internalPrepare(ctx, tx, "", sql)
 		if err != nil {
 			rows.fatal(err)
 			return rows, err
@@ -1032,12 +1046,15 @@ optionLoop:
 
 		err = c.eqb.Build(ctx, c, tx, c.typeMap, st.Description, args)
 		if err != nil {
-			st.Deallocate(ctx)
+			cleanupCtx, cancel := cleanupContext(ctx)
+			st.Deallocate(cleanupCtx)
+			cancel()
 			rows.fatal(err)
 			return rows, rows.err
 		}
 
 		rows.boundStatement = st
+		rows.ownsStatement = true
 		if tx != nil {
 			rows.resultReader = st.ExecTx(ctx, tx.tx, c.eqb.ParamValues)
 		} else {

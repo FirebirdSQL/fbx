@@ -154,6 +154,8 @@ type baseRows struct {
 	rowCount  int
 
 	boundStatement *fbconn.Statement
+
+	ownsStatement bool
 }
 
 func (rows *baseRows) FieldDescriptions() []fbconn.FieldDescription {
@@ -169,7 +171,13 @@ func (rows *baseRows) Close() {
 	}
 
 	if rows.boundStatement != nil {
-		defer rows.boundStatement.CloseCursor(rows.ctx)
+		if rows.ownsStatement {
+			ctx, cancel := cleanupContext(rows.ctx)
+			defer cancel()
+			defer rows.boundStatement.Deallocate(ctx)
+		} else {
+			defer rows.boundStatement.CloseCursor(rows.ctx)
+		}
 	}
 
 	rows.closed = true
