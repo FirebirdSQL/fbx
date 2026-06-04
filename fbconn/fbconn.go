@@ -1906,7 +1906,7 @@ func (fbConn *FbConn) putArray(ctx context.Context, array []byte, length int, sd
 		return nil, err
 	}
 
-	msg, err := fbConn.client.ReadMessage()
+	msg, err := fbConn.client.ReceiveMessage()
 
 	if err != nil {
 		fbConn.asyncClose()
