@@ -74,6 +74,8 @@ func (t *tracer) traceRequest(sender byte, msg ClientMessage) {
 		t.writeTrace(sender, "Disconnect", nil)
 	case *OpDetach:
 		t.writeTrace(sender, "Detach", nil)
+	case *OpDropDatabase:
+		t.writeTrace(sender, "DropDatabase", nil)
 	case *OpContAuth:
 		t.traceContAuthMessage(sender, msg)
 	case *OpCrypt:

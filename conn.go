@@ -31,13 +31,12 @@ type ConnConfig struct {
 	// query exec mode.
 	StatementCacheCapacity int
 
-	// DescriptionCacheCapacity is the maximum size of the description cache used when executing a query with
-	// "cache_describe" query exec mode.
-	DescriptionCacheCapacity int
-
 	// DefaultQueryExecMode controls the default mode for executing queries. By default fbx prepares statements and
 	// may cache statement/description metadata to reduce round trips and parsing overhead.
 	DefaultQueryExecMode QueryExecMode
+
+	// BatchInsertPendingSize is maximum size of pending data in batch before Conn.BatchInsert will flush it to server
+	BatchInsertPendingSize int
 
 	createdByParseConfig bool // Used to enforce created by ParseConfig rule.
 }
@@ -145,6 +144,25 @@ func CreateDatabase(ctx context.Context, connString string) (*Conn, error) {
 	return connect(ctx, connConfig)
 }
 
+// DropDatabase connects to a Firebird/RedDatabase database, drops it, and closes the connection.
+func DropDatabase(ctx context.Context, connString string) error {
+	connConfig, err := ParseConfig(connString)
+	if err != nil {
+		return err
+	}
+	connConfig.CreateDatabase = false
+
+	conn, err := connect(ctx, connConfig)
+	if err != nil {
+		return err
+	}
+	err = conn.DropDatabase(ctx)
+	if !conn.IsClosed() {
+		err = errors.Join(err, conn.Close(context.Background()))
+	}
+	return err
+}
+
 // ConnectWithOptions behaves exactly like Connect with the addition of options. At the present options is only used to
 // provide a GetSSLPassword function.
 func ConnectWithOptions(ctx context.Context, connString string, options ParseConfigOptions) (*Conn, error) {
@@ -165,6 +183,25 @@ func CreateDatabaseWithOptions(ctx context.Context, connString string, options P
 	return connect(ctx, connConfig)
 }
 
+// DropDatabaseWithOptions behaves exactly like DropDatabase with the addition of ParseConfigOptions.
+func DropDatabaseWithOptions(ctx context.Context, connString string, options ParseConfigOptions) error {
+	connConfig, err := ParseConfigWithOptions(connString, options)
+	if err != nil {
+		return err
+	}
+	connConfig.CreateDatabase = false
+
+	conn, err := connect(ctx, connConfig)
+	if err != nil {
+		return err
+	}
+	err = conn.DropDatabase(ctx)
+	if !conn.IsClosed() {
+		err = errors.Join(err, conn.Close(context.Background()))
+	}
+	return err
+}
+
 // ConnectConfig establishes a connection with a Firebird server with a configuration struct.
 // connConfig must have been created by ParseConfig.
 func ConnectConfig(ctx context.Context, connConfig *ConnConfig) (*Conn, error) {
@@ -181,6 +218,23 @@ func CreateDatabaseConfig(ctx context.Context, connConfig *ConnConfig) (*Conn, e
 	connConfig = connConfig.Copy()
 	connConfig.CreateDatabase = true
 	return connect(ctx, connConfig)
+}
+
+// DropDatabaseConfig connects using connConfig, drops the attached database, and closes the connection.
+// connConfig must have been created by ParseConfig.
+func DropDatabaseConfig(ctx context.Context, connConfig *ConnConfig) error {
+	connConfig = connConfig.Copy()
+	connConfig.CreateDatabase = false
+
+	conn, err := connect(ctx, connConfig)
+	if err != nil {
+		return err
+	}
+	err = conn.DropDatabase(ctx)
+	if !conn.IsClosed() {
+		err = errors.Join(err, conn.Close(context.Background()))
+	}
+	return err
 }
 
 // ParseConfigWithOptions behaves exactly as ParseConfig does with the addition of options. At the present options is
@@ -201,16 +255,6 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		statementCacheCapacity = int(n)
 	}
 
-	descriptionCacheCapacity := 512
-	if s, ok := config.RuntimeParams["description_cache_capacity"]; ok {
-		delete(config.RuntimeParams, "description_cache_capacity")
-		n, err := strconv.ParseInt(s, 10, 32)
-		if err != nil {
-			return nil, fbconn.NewParseConfigError(connString, "cannot parse description_cache_capacity", err)
-		}
-		descriptionCacheCapacity = int(n)
-	}
-
 	defaultQueryExecMode := QueryExecModeCacheStatement
 	if s, ok := config.RuntimeParams["default_query_exec_mode"]; ok {
 		delete(config.RuntimeParams, "default_query_exec_mode")
@@ -224,13 +268,23 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		}
 	}
 
+	batchInsertPendingSize := defaultPreparedBatchFlushSize
+	if s, ok := config.RuntimeParams["batch_insert_pending_size"]; ok {
+		delete(config.RuntimeParams, "batch_insert_pending_size")
+		n, err := strconv.ParseInt(s, 10, 32)
+		if err != nil {
+			return nil, fbconn.NewParseConfigError(connString, "cannot parse batch_insert_pending_size", err)
+		}
+		batchInsertPendingSize = int(n)
+	}
+
 	connConfig := &ConnConfig{
-		Config:                   *config,
-		createdByParseConfig:     true,
-		StatementCacheCapacity:   statementCacheCapacity,
-		DescriptionCacheCapacity: descriptionCacheCapacity,
-		DefaultQueryExecMode:     defaultQueryExecMode,
-		connString:               connString,
+		Config:                 *config,
+		createdByParseConfig:   true,
+		StatementCacheCapacity: statementCacheCapacity,
+		DefaultQueryExecMode:   defaultQueryExecMode,
+		BatchInsertPendingSize: batchInsertPendingSize,
+		connString:             connString,
 	}
 
 	return connConfig, nil
@@ -240,12 +294,16 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 // does. In addition, it accepts the following options:
 //
 //   - default_query_exec_mode.
-//     Possible values: "cache_statement", "cache_describe", "describe_exec", "exec", and "simple_protocol". See
+//     Possible values: "cache_statement" and "exec". See
 //     QueryExecMode constant documentation for the meaning of these values. Default: "cache_statement".
 //
 //   - statement_cache_capacity.
 //     The maximum size of the statement cache used when executing a query with "cache_statement" query exec mode.
 //     Default: 512.
+//
+//   - batch_insert_pending_size
+//     The maximum size of pending data in batch before Conn.BatchInsert will flush it to server
+//     Default: 128*1024.
 func ParseConfig(connString string) (*ConnConfig, error) {
 	return ParseConfigWithOptions(connString, ParseConfigOptions{})
 }
@@ -302,6 +360,15 @@ func (c *Conn) Close(ctx context.Context) error {
 
 	err := c.fbConn.Close(ctx)
 	return err
+}
+
+// DropDatabase drops the currently attached database and closes the connection.
+func (c *Conn) DropDatabase(ctx context.Context) error {
+	if c.IsClosed() {
+		return nil
+	}
+
+	return c.fbConn.DropDatabase(ctx)
 }
 
 // Prepare creates a prepared statement with name and sql. sql can contain placeholders for bound parameters. These
@@ -1044,4 +1111,9 @@ func (c *Conn) deallocateInvalidatedCachedStatements(ctx context.Context) error 
 // Commit commits internal transaction
 func (c *Conn) Commit(ctx context.Context) error {
 	return c.fbConn.Commit(ctx)
+}
+
+// Rollback rollbacks internal transaction
+func (c *Conn) Rollback(ctx context.Context) error {
+	return c.fbConn.Rollback(ctx)
 }

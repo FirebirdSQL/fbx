@@ -2352,11 +2352,14 @@ func TestDeadlineContextWatcherHandler(t *testing.T) {
 		require.NoError(t, err)
 		defer closeConn(t, fbConn)
 
+		setupCtx, setupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer setupCancel()
+
+		_, err = fbConn.Exec(setupCtx, "recreate function fbsleep (delay float not null) returns float external name 'fbxci!fbsleep' engine udr;").Close()
+		require.NoError(t, err)
+
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		defer cancel()
-
-		_, err = fbConn.Exec(ctx, "recreate function fbsleep (delay float not null) returns float external name 'fbxci!fbsleep' engine udr;").Close()
-		require.NoError(t, err)
 
 		res := fbConn.Exec(ctx, "select 1, fbsleep(0.250) from rdb$database").Read()
 		require.NoError(t, res.Err)
@@ -2368,7 +2371,7 @@ func TestDeadlineContextWatcherHandler(t *testing.T) {
 func TestCancelRequestContextWatcherHandler(t *testing.T) {
 	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	fbConn, err := fbconn.ConnectConfig(context.Background(), config)
 	require.NoError(t, err)

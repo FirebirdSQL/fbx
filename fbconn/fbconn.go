@@ -122,6 +122,8 @@ type FbConn struct {
 	// must include the client's plugin list). Subsequent op_cont_auth must use
 	// an empty p_list.
 	authContFirstSent bool
+
+	cleanupDoneOnce sync.Once
 }
 
 // Connect establishes a connection to a server using the environment and connString (in URL or keyword/value
@@ -148,6 +150,25 @@ func CreateDatabase(ctx context.Context, connString string) (*FbConn, error) {
 	return ConnectConfig(ctx, config)
 }
 
+// DropDatabase connects to a Firebird/RedDatabase database, drops it, and closes the connection.
+func DropDatabase(ctx context.Context, connString string) error {
+	config, err := ParseConfig(connString)
+	if err != nil {
+		return err
+	}
+	config.CreateDatabase = false
+
+	fbConn, err := ConnectConfig(ctx, config)
+	if err != nil {
+		return err
+	}
+	err = fbConn.DropDatabase(ctx)
+	if !fbConn.IsClosed() {
+		err = errors.Join(err, fbConn.Close(context.Background()))
+	}
+	return err
+}
+
 // Connect establishes a connection to a Firebird/RedDatabase server using the environment and connString (in URL or keyword/value
 // format) and ParseConfigOptions to provide additional configuration. See documentation for [ParseConfig] for details.
 // ctx can be used to cancel a connect attempt.
@@ -169,6 +190,25 @@ func CreateDatabaseWithOptions(ctx context.Context, connString string, parseConf
 	config.CreateDatabase = true
 
 	return ConnectConfig(ctx, config)
+}
+
+// DropDatabaseWithOptions behaves exactly like DropDatabase with the addition of ParseConfigOptions.
+func DropDatabaseWithOptions(ctx context.Context, connString string, parseConfigOptions ParseConfigOptions) error {
+	config, err := ParseConfigWithOptions(connString, parseConfigOptions)
+	if err != nil {
+		return err
+	}
+	config.CreateDatabase = false
+
+	fbConn, err := ConnectConfig(ctx, config)
+	if err != nil {
+		return err
+	}
+	err = fbConn.DropDatabase(ctx)
+	if !fbConn.IsClosed() {
+		err = errors.Join(err, fbConn.Close(context.Background()))
+	}
+	return err
 }
 
 // Connect establishes a connection to a Firebird/RedDatabase server using config. config must have been constructed with
@@ -217,6 +257,23 @@ func CreateDatabaseConfig(ctx context.Context, config *Config) (*FbConn, error) 
 	config = config.Copy()
 	config.CreateDatabase = true
 	return ConnectConfig(ctx, config)
+}
+
+// DropDatabaseConfig connects using config, drops the attached database, and closes the connection.
+// config must have been constructed with [ParseConfig].
+func DropDatabaseConfig(ctx context.Context, config *Config) error {
+	config = config.Copy()
+	config.CreateDatabase = false
+
+	fbConn, err := ConnectConfig(ctx, config)
+	if err != nil {
+		return err
+	}
+	err = fbConn.DropDatabase(ctx)
+	if !fbConn.IsClosed() {
+		err = errors.Join(err, fbConn.Close(context.Background()))
+	}
+	return err
 }
 
 func (fbConn *FbConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *auth.AuthManager, respond bool) error {
@@ -898,7 +955,7 @@ func (fbConn *FbConn) receiveMessage() (fbproto.ServerMessage, error) {
 			fbConn.status = connStatusClosed
 			fbConn.statusMu.Unlock()
 			fbConn.conn.Close() // Ignore error as the connection is already broken and there is already an error to return.
-			close(fbConn.cleanupDone)
+			fbConn.closeCleanupDone()
 			return nil, err
 		}
 	case *fbproto.OpResponse:
@@ -940,7 +997,7 @@ func (fbConn *FbConn) Close(ctx context.Context) error {
 	fbConn.clearAllInlineBlobCache()
 	fbConn.closeEventChannel()
 
-	defer close(fbConn.cleanupDone)
+	defer fbConn.closeCleanupDone()
 	defer fbConn.conn.Close()
 
 	if ctx != context.Background() {
@@ -965,6 +1022,61 @@ func (fbConn *FbConn) Close(ctx context.Context) error {
 	return fbConn.conn.Close()
 }
 
+// DropDatabase drops the currently attached database and closes the connection.
+func (fbConn *FbConn) DropDatabase(ctx context.Context) (err error) {
+	if err = fbConn.lock(); err != nil {
+		return err
+	}
+	defer fbConn.unlock()
+
+	if err = fbConn.beforeRequest(); err != nil {
+		return err
+	}
+
+	if ctx != context.Background() {
+		select {
+		case <-ctx.Done():
+			return newContextAlreadyDoneError(ctx)
+		default:
+		}
+		fbConn.contextWatcher.Watch(ctx)
+		defer fbConn.contextWatcher.Unwatch()
+	}
+
+	dropStarted := false
+	defer func() {
+		if !dropStarted {
+			return
+		}
+		fbConn.status = connStatusClosed
+		fbConn.clearAllInlineBlobCache()
+		closeErr := fbConn.conn.Close()
+		fbConn.closeCleanupDone()
+		err = errors.Join(err, closeErr)
+	}()
+
+	dropStarted = true
+	if err = fbConn.withWriteLockAndFlush(func() error {
+		return fbConn.client.WriteMessage(&fbproto.OpDropDatabase{})
+	}); err != nil {
+		return err
+	}
+
+	msg, err := fbConn.receiveMessage()
+	if err != nil {
+		return normalizeTimeoutError(ctx, err)
+	}
+
+	switch m := msg.(type) {
+	case *fbproto.OpResponse:
+		return nil
+	case *fbproto.ErrorResponse:
+		return ErrorResponseToFbError(m)
+	default:
+		return fmt.Errorf("received unexpected message: %v", m)
+	}
+}
+
 // asyncClose marks the connection as closed and asynchronously sends a cancel query message and closes the underlying
 // connection.
 func (fbConn *FbConn) asyncClose() {
@@ -979,9 +1091,15 @@ func (fbConn *FbConn) asyncClose() {
 	fbConn.closeEventChannel()
 
 	go func() {
-		defer close(fbConn.cleanupDone)
+		defer fbConn.closeCleanupDone()
 		defer fbConn.conn.Close()
 	}()
+}
+
+func (fbConn *FbConn) closeCleanupDone() {
+	fbConn.cleanupDoneOnce.Do(func() {
+		close(fbConn.cleanupDone)
+	})
 }
 
 // CleanupDone returns a channel that will be closed after all underlying resources have been cleaned up. A closed

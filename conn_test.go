@@ -76,6 +76,59 @@ func TestCreateDatabase(t *testing.T) {
 	assert.Equal(t, int32(1), result)
 }
 
+func TestDropDatabase(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	config := newCreateDatabaseTestConfig(t, "dropped.fdb")
+	conn, err := fbx.CreateDatabaseConfig(ctx, config)
+	require.NoError(t, err)
+
+	err = conn.DropDatabase(ctx)
+	require.NoError(t, err)
+	assert.True(t, conn.IsClosed())
+
+	_, err = os.Stat(config.Database)
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestDropDatabaseConfig(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	config := newCreateDatabaseTestConfig(t, "drop-config.fdb")
+	conn, err := fbx.CreateDatabaseConfig(ctx, config)
+	require.NoError(t, err)
+	closeConn(t, conn)
+
+	err = fbx.DropDatabaseConfig(ctx, config)
+	require.NoError(t, err)
+
+	_, err = os.Stat(config.Database)
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestDropDatabaseMissingDatabase(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	config := newCreateDatabaseTestConfig(t, "missing.fdb")
+	_, err := os.Stat(config.Database)
+	require.ErrorIs(t, err, os.ErrNotExist)
+
+	err = fbx.DropDatabaseConfig(ctx, config)
+	require.Error(t, err)
+
+	_, err = os.Stat(config.Database)
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
 func TestCreateDatabaseExistingDatabase(t *testing.T) {
 	t.Parallel()
 
@@ -114,7 +167,7 @@ func TestCreateDatabaseExistingDatabase(t *testing.T) {
 	assert.Truef(t,
 		strings.Contains(fbErr.Message, "database or file exists") ||
 			strings.Contains(fbErr.Message, "Error while trying to create file"),
-		"unexpected error message: %s", fbErr.Message,	
+		"unexpected error message: %s", fbErr.Message,
 	)
 }
 
@@ -215,17 +268,6 @@ func TestParseConfigExtractsStatementCacheOptions(t *testing.T) {
 	config, err = fbx.ParseConfig("statement_cache_capacity=42")
 	require.NoError(t, err)
 	require.EqualValues(t, 42, config.StatementCacheCapacity)
-
-	config, err = fbx.ParseConfig("description_cache_capacity=0")
-	require.NoError(t, err)
-	require.EqualValues(t, 0, config.DescriptionCacheCapacity)
-
-	config, err = fbx.ParseConfig("description_cache_capacity=42")
-	require.NoError(t, err)
-	require.EqualValues(t, 42, config.DescriptionCacheCapacity)
-
-	//	default_query_exec_mode
-	//		Possible values: "cache_statement", "cache_describe", "describe_exec", "exec", and "simple_protocol". See
 
 	config, err = fbx.ParseConfig("default_query_exec_mode=cache_statement")
 	require.NoError(t, err)
