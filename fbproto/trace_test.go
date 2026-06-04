@@ -45,7 +45,11 @@ S\tFetchResponse status=100 msgs=0
 C\tInfoSQL stmt=2 maxBuf=64 lenItems=1
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=2 blobId=0 lenData=33 gdsCodes=0
 C\tCancel kind=1(disable)
+C\tCancel kind=2(enable)
+C\tFreeStatement
+C\tCancel kind=1(disable)
 C\tCommit
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=-1 blobId=0 lenData=0 gdsCodes=0
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=0 blobId=0 lenData=0 gdsCodes=0
 `,
 	`\t`, "\t")
@@ -76,7 +80,11 @@ S\tFetchResponse status=100 msgs=0
 C\tInfoSQL stmt=2 maxBuf=64 lenItems=1
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=2 blobId=0 lenData=33 gdsCodes=0
 C\tCancel kind=1(disable)
+C\tCancel kind=2(enable)
+C\tFreeStatement
+C\tCancel kind=1(disable)
 C\tCommit
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=-1 blobId=0 lenData=0 gdsCodes=0
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=0 blobId=0 lenData=0 gdsCodes=0
 `, `\t`, "\t")
 
@@ -106,7 +114,11 @@ S\tFetchResponse status=100 msgs=0
 C\tInfoSQL stmt=2 maxBuf=64 lenItems=1 items='\x17'
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=2 blobId=0 lenData=33 data='\x17\x1d\x00\x0f\x04\x00\x00\x00\x00\x00\x10\x04\x00\x00\x00\x00\x00\x0d\x04\x00\x03\x00\x00\x00\x0e\x04\x00\x00\x00\x00\x00\x01\x01' gdsCodes=0
 C\tCancel kind=1(disable)
+C\tCancel kind=2(enable)
+C\tFreeStatement
+C\tCancel kind=1(disable)
 C\tCommit
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=-1 blobId=0 lenData=0 data='' gdsCodes=0
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=0 blobId=0 lenData=0 data='' gdsCodes=0
 `, `\t`, "\t")
 
@@ -136,7 +148,11 @@ S\tFetchResponse status=100 msgs=0
 C\tInfoSQL stmt=2 maxBuf=64 lenItems=1 items='\x17'
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=2 blobId=0 lenData=33 data='\x17\x1d\x00\x0f\x04\x00\x00\x00\x00\x00\x10\x04\x00\x00\x00\x00\x00\x0d\x04\x00\x03\x00\x00\x00\x0e\x04\x00\x00\x00\x00\x00\x01\x01' gdsCodes=0
 C\tCancel kind=1(disable)
+C\tCancel kind=2(enable)
+C\tFreeStatement
+C\tCancel kind=1(disable)
 C\tCommit
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=-1 blobId=0 lenData=0 data='' gdsCodes=0
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=0 blobId=0 lenData=0 data='' gdsCodes=0
 `, `\t`, "\t")
 
@@ -166,7 +182,11 @@ S\tFetchResponse status=100 msgs=0
 C\tInfoSQL stmt=2 maxBuf=64 lenItems=1
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=2 blobId=0 lenData=33 gdsCodes=0
 C\tCancel kind=1(disable)
+C\tCancel kind=2(enable)
+C\tFreeStatement
+C\tCancel kind=1(disable)
 C\tCommit
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=-1 blobId=0 lenData=0 gdsCodes=0
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=0 blobId=0 lenData=0 gdsCodes=0
 `, `\t`, "\t")
 
@@ -196,7 +216,11 @@ S\tFetchResponse status=100 msgs=0
 C\tInfoSQL stmt=2 maxBuf=64 lenItems=1 items='\x17'
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=2 blobId=0 lenData=33 data='\x17\x1d\x00\x0f\x04\x00\x00\x00\x00\x00\x10\x04\x00\x00\x00\x00\x00\x0d\x04\x00\x03\x00\x00\x00\x0e\x04\x00\x00\x00\x00\x00\x01\x01' gdsCodes=0
 C\tCancel kind=1(disable)
+C\tCancel kind=2(enable)
+C\tFreeStatement
+C\tCancel kind=1(disable)
 C\tCommit
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=-1 blobId=0 lenData=0 data='' gdsCodes=0
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=0 blobId=0 lenData=0 data='' gdsCodes=0
 `, `\t`, "\t")
 
@@ -226,7 +250,11 @@ S\tFetchResponse status=100 msgs=0
 C\tInfoSQL stmt=2 maxBuf=64 lenItems=1
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=2 blobId=0 lenData=33 gdsCodes=0
 C\tCancel kind=1(disable)
+C\tCancel kind=2(enable)
+C\tFreeStatement
+C\tCancel kind=1(disable)
 C\tCommit
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=-1 blobId=0 lenData=0 gdsCodes=0
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=0 blobId=0 lenData=0 gdsCodes=0
 `,
 	`\t`, "\t")
@@ -257,7 +285,11 @@ S\tFetchResponse status=100 msgs=0
 C\tInfoSQL stmt=2 maxBuf=64 lenItems=1 items='\x17'
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=2 blobId=0 lenData=33 data='\x17\x1d\x00\x0f\x04\x00\x00\x00\x00\x00\x10\x04\x00\x00\x00\x00\x00\x0d\x04\x00\x03\x00\x00\x00\x0e\x04\x00\x00\x00\x00\x00\x01\x01' gdsCodes=0
 C\tCancel kind=1(disable)
+C\tCancel kind=2(enable)
+C\tFreeStatement
+C\tCancel kind=1(disable)
 C\tCommit
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=-1 blobId=0 lenData=0 data='' gdsCodes=0
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=0 blobId=0 lenData=0 data='' gdsCodes=0
 `, `\t`, "\t")
 
@@ -287,7 +319,11 @@ S\tFetchResponse status=100 msgs=0
 C\tInfoSQL stmt=2 maxBuf=64 lenItems=1
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=2 blobId=0 lenData=33 gdsCodes=0
 C\tCancel kind=1(disable)
+C\tCancel kind=2(enable)
+C\tFreeStatement
+C\tCancel kind=1(disable)
 C\tCommit
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=-1 blobId=0 lenData=0 gdsCodes=0
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=0 blobId=0 lenData=0 gdsCodes=0
 `,
 	`\t`, "\t")
@@ -318,7 +354,11 @@ S\tFetchResponse status=100 msgs=0
 C\tInfoSQL stmt=2 maxBuf=64 lenItems=1 items='\x17'
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=2 blobId=0 lenData=33 data='\x17\x1d\x00\x0f\x04\x00\x00\x00\x00\x00\x10\x04\x00\x00\x00\x00\x00\x0d\x04\x00\x03\x00\x00\x00\x0e\x04\x00\x00\x00\x00\x00\x01\x01' gdsCodes=0
 C\tCancel kind=1(disable)
+C\tCancel kind=2(enable)
+C\tFreeStatement
+C\tCancel kind=1(disable)
 C\tCommit
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=-1 blobId=0 lenData=0 data='' gdsCodes=0
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=0 blobId=0 lenData=0 data='' gdsCodes=0
 `, `\t`, "\t")
 
