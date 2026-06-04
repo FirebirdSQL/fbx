@@ -1314,6 +1314,9 @@ func (fbConn *FbConn) internalPrepareTx(ctx context.Context, tx *FBTransaction, 
 		var fbError *FbError
 		switch {
 		case errors.As(err, &fbError):
+			if cleanupErr := fbConn.freeStatementHandleLocked(statementHandle); cleanupErr != nil {
+				return nil, errors.Join(err, cleanupErr)
+			}
 			return nil, err
 		default:
 			fbConn.asyncClose()
@@ -1358,6 +1361,9 @@ func (fbConn *FbConn) internalPrepareTx(ctx context.Context, tx *FBTransaction, 
 	if tables != nil {
 		arr, err := getArrayInfo(fbConn, ctx, tx, fields, tables)
 		if err != nil {
+			if cleanupErr := fbConn.freeStatementHandleLocked(statementHandle); cleanupErr != nil {
+				return nil, errors.Join(err, cleanupErr)
+			}
 			return nil, err
 		}
 		for i := range desc.Fields {
@@ -1574,14 +1580,17 @@ func (fbConn *FbConn) ExecParamsTx(ctx context.Context, tx *FBTransaction, sql s
 	}
 
 	rr := st.Exec(ctx, paramValues)
-	rr.ownsStatement = st
 	if rr.err != nil {
+		cleanupCtx, cancel := cleanupContext(ctx)
+		_ = st.Deallocate(cleanupCtx)
+		cancel()
+
 		closeConn := true
 		var fbErr *FbError
 		if SafeToRetry(rr.err) || errors.As(rr.err, &fbErr) {
 			closeConn = false
 		}
-		if closeConn {
+		if closeConn || (tx == fbConn.internalTransaction && !tx.Closed) {
 			_ = tx.Rollback(ctx)
 		}
 		res := ResultReader{
@@ -1595,6 +1604,7 @@ func (fbConn *FbConn) ExecParamsTx(ctx context.Context, tx *FBTransaction, sql s
 		res.concludeCommand(QueryStatus{}, rr.err)
 		return rr
 	}
+	rr.ownsStatement = st
 	return rr
 }
 

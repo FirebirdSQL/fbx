@@ -1756,6 +1756,45 @@ func TestSyncConnOnIdleConn(t *testing.T) {
 	ensureConnValid(t, fbConn)
 }
 
+func TestHijackAfterExecParamsErrorDoesNotKeepAutoPreparedStatement(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	defer func() {
+		if fbConn != nil {
+			closeConn(t, fbConn)
+		}
+	}()
+
+	sql := "select cast(? as varchar(255)), cast(? as varchar(255)) from rdb$database"
+	args := [][]byte{
+		[]byte("0"),
+		[]byte("1"),
+		[]byte("2"),
+	}
+
+	res := fbConn.ExecParams(ctx, sql, args).Read()
+	require.Error(t, res.Err)
+
+	var fbErr *fbconn.FbError
+	require.True(t, errors.As(res.Err, &fbErr))
+	require.Equal(t, "07008", fbErr.Code)
+
+	require.NoError(t, fbConn.SyncConn(ctx))
+
+	hc, err := fbConn.Hijack()
+	require.NoError(t, err, "ExecParams error must not leave an unreachable prepared statement")
+	fbConn = nil
+
+	reconstructed, err := fbconn.Construct(hc)
+	require.NoError(t, err)
+	closeConn(t, reconstructed)
+}
+
 func TestConnCloseWhileCancellableQueryInProgress(t *testing.T) {
 	t.Parallel()
 
