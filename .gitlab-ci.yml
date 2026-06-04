@@ -74,7 +74,6 @@ test:rdb:
       - RDB_VERSION: "6.0"
         RDB_DOWNLOAD_URL: "http://builds.red-soft.biz/release_hub/rdb60/${RDB60_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB60_VERSION}:bin"
 
-
 test:fb:
   extends: .test_template
   variables:
@@ -120,20 +119,16 @@ coverage:merge:
       - cover.html
   coverage: '/total:\s+\(statements\)\s+\d+.\d+%/'
 
-.minio_template:
-  tags: [docker, linux, x86_64]
-  image:
-    name: alpine:latest
-  before_script:
-    - apk add -U tar gzip minio-client
-    - mcli alias set minio ${MINIO_SERVER} ${MINIO_USER} ${MINIO_PASSWORD}
-
 report:coverage:
-  extends: .minio_template
+  tags: [docker, linux, x86_64]
   stage: test
+  image:
+    name: registry.red-soft.biz:5000/docker-images/3rdparty/minio/mc:RELEASE.2023-10-14T01-57-03Z
+    entrypoint: ['']
   script:
-    - mcli rm -r --force minio/reports/coverage/fbx/${CI_COMMIT_REF_NAME}
-    - mcli cp cover.html minio/reports/coverage/fbx/${CI_COMMIT_REF_NAME}/index.html
+    - mc alias set minio ${MINIO_SERVER} ${MINIO_USER} ${MINIO_PASSWORD}
+    - mc rm -r --force minio/reports/coverage/fbx/${CI_COMMIT_REF_NAME}
+    - mc cp cover.html minio/reports/coverage/fbx/${CI_COMMIT_REF_NAME}/index.html
     - echo Coverage ${MINIO_SERVER}reports/coverage/fbx/${CI_COMMIT_REF_NAME}/index.html
   dependencies: ["coverage:merge"]
   needs: ["coverage:merge"]
