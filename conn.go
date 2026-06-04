@@ -416,7 +416,7 @@ func (c *Conn) prepareBatchTx(ctx context.Context, tx *dbTx, sql string, opts Ba
 		return nil, errors.Join(err, c.rollbackBatchInternalTx(ctx, releaseInternalTx))
 	}
 	if err := validateBatchStatement(st.Description); err != nil {
-		var joinedErr error = err
+		var joinedErr = err
 		if deallocErr := st.Deallocate(ctx); deallocErr != nil {
 			joinedErr = errors.Join(joinedErr, deallocErr)
 		}

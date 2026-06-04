@@ -719,8 +719,8 @@ connectLoop:
 	}
 
 	dpb.PutString(fbproto.Isc_dpb_process_name, app)
-	if search_path, ok := config.RuntimeParams["search_path"]; ok {
-		dpb.PutString(fbproto.Isc_dpb_search_path, search_path)
+	if searchPath, ok := config.RuntimeParams["search_path"]; ok {
+		dpb.PutString(fbproto.Isc_dpb_search_path, searchPath)
 	}
 	//FIXME: fbx is timezone need? where get timezone?
 	//dpb.AppendTag(fbproto.Isc_dpb_session_time_zone)
@@ -1879,14 +1879,14 @@ func (fbConn *FbConn) getArrayDimensions(ctx context.Context, tx *FBTransaction,
 func (fbConn *FbConn) getArray(ctx context.Context, arrayId int64, datatype uint32, length, l int, sdl []byte) ([]byte, error) {
 	tx, err := fbConn.ensureInternalTransaction(ctx, nil, false)
 
-	op_get_slice := fbproto.OpGetSlice{
+	opGetSlice := fbproto.OpGetSlice{
 		TransactionHandle: tx.Handle,
 		ArrayHandle:       arrayId,
 		SliceLength:       length,
 		SliceDescriptor:   sdl,
 	}
 
-	if err = fbConn.client.WriteMessage(&op_get_slice); err != nil {
+	if err = fbConn.client.WriteMessage(&opGetSlice); err != nil {
 		return nil, err
 	}
 
@@ -1917,7 +1917,7 @@ func (fbConn *FbConn) getArray(ctx context.Context, arrayId int64, datatype uint
 func (fbConn *FbConn) putArray(ctx context.Context, array []byte, length int, sdl []byte) ([]byte, error) {
 	tx, err := fbConn.ensureInternalTransaction(ctx, nil, false)
 
-	op_put_slice := fbproto.OpPutSlice{
+	opPutSlice := fbproto.OpPutSlice{
 		TransactionHandle: tx.Handle,
 		ArrayHandle:       0,
 		SliceLength:       length,
@@ -1925,7 +1925,7 @@ func (fbConn *FbConn) putArray(ctx context.Context, array []byte, length int, sd
 		Slice:             array,
 	}
 
-	if err = fbConn.client.WriteMessage(&op_put_slice); err != nil {
+	if err = fbConn.client.WriteMessage(&opPutSlice); err != nil {
 		return nil, err
 	}
 
