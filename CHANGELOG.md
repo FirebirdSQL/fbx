@@ -1,15 +1,19 @@
 # Change Log
 
-# [Unreleased]
+# [0.5.0] - TBD
 
 ### Added
+- RS-258538. Firebird events support.
+- RS-304087. Database dropping. 
 
-- RS-258538. Implement events support.
+### Fixed
+- RS-299490. Non-regular array metadata object identifiers handling
+- RS-297906. Handling schema changing for prepared statements. 
 
 # [0.4.1] - 20.05.2026
 
 ### Fixed
-- RS-304089. Fixed races in database creation tests.
+- RS-304089. Races in database creation tests.
 
 # [0.4.0] - 15.05.2026
 
