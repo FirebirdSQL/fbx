@@ -4,11 +4,13 @@
 
 ### Added
 - RS-258538. Firebird events support.
-- RS-304087. Database dropping. 
+- RS-304087. Database dropping.
+- RS-304075. Low-level raw connection hijacking and construction.
 
 ### Fixed
-- RS-299490. Non-regular array metadata object identifiers handling
-- RS-297906. Handling schema changing for prepared statements. 
+- RS-299490. Non-regular array metadata object identifiers handling.
+- RS-297906. Handling schema changing for prepared statements.
+- RS-307947. Statement handle leak in Conn.Query using mode QueryExecModeExec.
 
 # [0.4.1] - 20.05.2026
 
