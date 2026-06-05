@@ -36,7 +36,8 @@ func main() {
 	}
 	defer outFile.Close()
 
-	writeOut(`package fbproto
+	writeOut(`// Code generated from _tools/msgs DO NOT EDIT.
+package fbproto
 
 type fberror struct {
 	message  string

@@ -1,3 +1,4 @@
+// Code generated from _tools/msgs DO NOT EDIT.
 package fbproto
 
 type fberror struct {
