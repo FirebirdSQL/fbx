@@ -2783,3 +2783,39 @@ func TestPassProcessName(t *testing.T) {
 	require.Equal(t, 1, len(res.Rows))
 	assert.Equal(t, exec, string(res.Rows[0][0]))
 }
+
+func TestRollbackInternalTxOnExecImmediateErrorAutocommit(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	require.True(t, config.Autocommit, "default Autocommit must be true for this test")
+
+	conn, err := fbconn.ConnectConfig(ctx, config)
+	require.NoError(t, err)
+	defer closeConn(t, conn)
+
+	err = conn.ExecImmediate(ctx, "select * from fbx_table_does_not_exist_for_rollback_test")
+	require.Error(t, err)
+
+	assert.False(t, conn.ActiveTx(), "internal tx must be rolled back on error in autocommit mode")
+}
+
+func TestPreserveInternalTxOnExecImmediateErrorNoAutocommit(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	config.Autocommit = false
+
+	conn, err := fbconn.ConnectConfig(ctx, config)
+	require.NoError(t, err)
+	defer closeConn(t, conn)
+
+	err = conn.ExecImmediate(ctx, "select * from fbx_table_does_not_exist_for_rollback_test")
+	require.Error(t, err)
+
+	assert.True(t, conn.ActiveTx(), "internal tx must persist on error when Autocommit is disabled")
+}

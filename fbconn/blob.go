@@ -61,6 +61,7 @@ func (fbConn *FbConn) OpenBlob(ctx context.Context, tx *FBTransaction, blobId in
 		Bpb:               bpb,
 	}, locked)
 	if err != nil {
+		fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx)
 		return nil, err
 	}
 	return &remoteBlob{conn: fbConn, handle: handle, locked: locked}, nil
@@ -83,6 +84,7 @@ func (fbConn *FbConn) CreateBlob(ctx context.Context, tx *FBTransaction, bpb []b
 		Bpb:               bpb,
 	}, false)
 	if err != nil {
+		fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx)
 		return nil, 0, err
 	}
 	return &remoteBlob{conn: fbConn, handle: handle}, id, nil

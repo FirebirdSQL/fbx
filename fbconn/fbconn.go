@@ -1277,6 +1277,7 @@ func (fbConn *FbConn) Prepare(ctx context.Context, sql string) (*Statement, erro
 	}
 	st, err := fbConn.PrepareTx(ctx, tx, sql)
 	if err != nil {
+		fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx)
 		return nil, err
 	}
 	return st, nil
@@ -1466,7 +1467,11 @@ func (fbConn *FbConn) ExecImmediate(ctx context.Context, sql string) error {
 		fbConn.asyncClose()
 		return err
 	}
-	return fbConn.ExecImmediateTx(ctx, tx, sql)
+	if err := fbConn.ExecImmediateTx(ctx, tx, sql); err != nil {
+		fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx)
+		return err
+	}
+	return nil
 }
 
 // ExecImmediateTx executes statement immediate inside specified transaction
@@ -1605,9 +1610,7 @@ func (fbConn *FbConn) ExecParamsTx(ctx context.Context, tx *FBTransaction, sql s
 		if SafeToRetry(err) || errors.As(err, &fbErr) {
 			closeConn = false
 		}
-		if closeConn {
-			_ = tx.Rollback(ctx)
-		}
+		fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx)
 		res := ResultReader{
 			fbConn: fbConn,
 			ctx:    ctx,
@@ -1631,9 +1634,7 @@ func (fbConn *FbConn) ExecParamsTx(ctx context.Context, tx *FBTransaction, sql s
 		if SafeToRetry(rr.err) || errors.As(rr.err, &fbErr) {
 			closeConn = false
 		}
-		if closeConn || (tx == fbConn.internalTransaction && !tx.Closed) {
-			_ = tx.Rollback(ctx)
-		}
+		fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx)
 		res := ResultReader{
 			fbConn: fbConn,
 			ctx:    ctx,
@@ -1900,8 +1901,16 @@ func (fbConn *FbConn) getArrayDimensions(ctx context.Context, tx *FBTransaction,
 	return dimensions, nil
 }
 
-func (fbConn *FbConn) getArray(ctx context.Context, arrayId int64, datatype uint32, length, l int, sdl []byte) ([]byte, error) {
+func (fbConn *FbConn) getArray(ctx context.Context, arrayId int64, datatype uint32, length, l int, sdl []byte) (_ []byte, err error) {
 	tx, err := fbConn.ensureInternalTransaction(ctx, nil, false)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx)
+		}
+	}()
 
 	opGetSlice := fbproto.OpGetSlice{
 		TransactionHandle: tx.Handle,
@@ -1929,17 +1938,28 @@ func (fbConn *FbConn) getArray(ctx context.Context, arrayId int64, datatype uint
 	case *fbproto.OpSliceResponse:
 		return m.SliceData, nil
 	case *fbproto.OpResponse:
-		return nil, fmt.Errorf("array getting error: %s", m.Message)
+		err = fmt.Errorf("array getting error: %s", m.Message)
+		return nil, err
 	case *fbproto.ErrorResponse:
 		fbConn.conn.Close()
-		return nil, ErrorResponseToFbError(m)
+		err = ErrorResponseToFbError(m)
+		return nil, err
 	default:
-		return nil, fmt.Errorf("unexpected response type %T", msg)
+		err = fmt.Errorf("unexpected response type %T", msg)
+		return nil, err
 	}
 }
 
-func (fbConn *FbConn) putArray(ctx context.Context, array []byte, length int, sdl []byte) ([]byte, error) {
+func (fbConn *FbConn) putArray(ctx context.Context, array []byte, length int, sdl []byte) (_ []byte, err error) {
 	tx, err := fbConn.ensureInternalTransaction(ctx, nil, false)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx)
+		}
+	}()
 
 	opPutSlice := fbproto.OpPutSlice{
 		TransactionHandle: tx.Handle,
@@ -1967,16 +1987,19 @@ func (fbConn *FbConn) putArray(ctx context.Context, array []byte, length int, sd
 	switch m := msg.(type) {
 	case *fbproto.OpResponse:
 		if m.BlobId == 0 {
-			return nil, fmt.Errorf("array putting error: %s", m.Message)
+			err = fmt.Errorf("array putting error: %s", m.Message)
+			return nil, err
 		}
 		bufId := make([]byte, 8)
 		binary.BigEndian.PutUint64(bufId, uint64(m.BlobId))
 		return bufId, nil
 	case *fbproto.ErrorResponse:
 		fbConn.conn.Close()
-		return nil, ErrorResponseToFbError(m)
+		err = ErrorResponseToFbError(m)
+		return nil, err
 	default:
-		return nil, fmt.Errorf("unexpected response type %T", msg)
+		err = fmt.Errorf("unexpected response type %T", msg)
+		return nil, err
 	}
 }
 
@@ -2324,6 +2347,21 @@ const cleanupGracePeriod = 5 * time.Second
 // bounded timeout for the network call.
 func cleanupContext(parent context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(parent), cleanupGracePeriod)
+}
+
+// rollbackInternalTxIfAutocommitOnError rolls back the connection's implicit internal
+// transaction on an error path. No-op when tx is user-supplied, already
+// closed, or Autocommit is disabled.
+func (fbConn *FbConn) rollbackInternalTxIfAutocommitOnError(ctx context.Context, tx *FBTransaction) {
+	if tx == nil || tx != fbConn.internalTransaction || tx.Closed {
+		return
+	}
+	if !fbConn.config.Autocommit || fbConn.explicitTransaction {
+		return
+	}
+	cleanupCtx, cancel := cleanupContext(ctx)
+	defer cancel()
+	_ = tx.Rollback(cleanupCtx)
 }
 
 // Close consumes any remaining result data and returns the command tag or

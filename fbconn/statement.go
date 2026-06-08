@@ -172,7 +172,11 @@ func (st *Statement) Exec(ctx context.Context, paramValues [][]byte) *ResultRead
 		}
 		tx = st.conn.internalTransaction
 	}
-	return st.ExecTx(ctx, tx, paramValues)
+	rr = st.ExecTx(ctx, tx, paramValues)
+	if rr.err != nil {
+		st.conn.rollbackInternalTxIfAutocommitOnError(ctx, tx)
+	}
+	return rr
 }
 
 // ExecTx executed a prepared statement inside specified transaction
