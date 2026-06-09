@@ -1,6 +1,6 @@
 package fbproto
 
-import "rdb.red-soft.ru/fbx/fbproto/utils"
+import "rdb.red-soft.ru/fbx/internal/fbio"
 
 // BlobBPBConfig defines BPB settings for blob create/open operations.
 type BlobBPBConfig struct {
@@ -29,7 +29,7 @@ func (bpb *BPBWriter) AddArgument(tag byte, val int32) {
 		bpb.buf = append(bpb.buf, byte(Isc_bpb_version1))
 	}
 	bpb.buf = append(bpb.buf, tag, 4)
-	bpb.buf = append(bpb.buf, utils.Int32_to_bytes(val)...)
+	bpb.buf = fbio.AppendInt32LE(bpb.buf, val)
 }
 
 // Bytes returns the encoded BPB.

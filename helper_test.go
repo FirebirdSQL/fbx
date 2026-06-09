@@ -147,7 +147,7 @@ func assertConfigsEqual(t *testing.T, expected, actual *fbx.ConnConfig, testName
 	assert.Equalf(t, expected.Tracer, actual.Tracer, "%s - Tracer", testName)
 	assert.Equalf(t, expected.ConnString(), actual.ConnString(), "%s - ConnString", testName)
 	assert.Equalf(t, expected.StatementCacheCapacity, actual.StatementCacheCapacity, "%s - StatementCacheCapacity", testName)
-	assert.Equalf(t, expected.DescriptionCacheCapacity, actual.DescriptionCacheCapacity, "%s - DescriptionCacheCapacity", testName)
+	assert.Equalf(t, expected.BatchInsertPendingSize, actual.BatchInsertPendingSize, "%s - BatchInsertPendingSize", testName)
 	assert.Equalf(t, expected.DefaultQueryExecMode, actual.DefaultQueryExecMode, "%s - DefaultQueryExecMode", testName)
 	assert.Equalf(t, expected.Host, actual.Host, "%s - Host", testName)
 	assert.Equalf(t, expected.Database, actual.Database, "%s - Database", testName)

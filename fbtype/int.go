@@ -8,7 +8,7 @@ import (
 	"math"
 	"strconv"
 
-	"rdb.red-soft.ru/fbx/internal/pgio"
+	"rdb.red-soft.ru/fbx/internal/fbio"
 )
 
 type Int64Scanner interface {
@@ -134,7 +134,7 @@ type encodePlanInt2CodecBinaryInt16 struct{}
 
 func (encodePlanInt2CodecBinaryInt16) Encode(value any, buf []byte) (newBuf []byte, err error) {
 	n := value.(int16)
-	return pgio.AppendInt16(buf, int16(n)), nil
+	return fbio.AppendInt16BE(buf, int16(n)), nil
 }
 
 type encodePlanInt2CodecBinaryInt64Valuer struct{}
@@ -156,7 +156,7 @@ func (encodePlanInt2CodecBinaryInt64Valuer) Encode(value any, buf []byte) (newBu
 		return nil, fmt.Errorf("%d is less than minimum value for int2", n.Int64)
 	}
 
-	return pgio.AppendInt16(buf, int16(n.Int64)), nil
+	return fbio.AppendInt16BE(buf, int16(n.Int64)), nil
 }
 
 type encodePlanInt2CodecBinaryFromString struct{}
@@ -169,7 +169,7 @@ func (encodePlanInt2CodecBinaryFromString) Encode(value any, buf []byte) ([]byte
 		return nil, fmt.Errorf("cannot parse %q as smallint: %w", s, err)
 	}
 
-	return pgio.AppendInt16(buf, int16(n)), nil
+	return fbio.AppendInt16BE(buf, int16(n)), nil
 }
 
 func (Int2Codec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
@@ -652,7 +652,7 @@ type encodePlanInt4CodecBinaryInt32 struct{}
 
 func (encodePlanInt4CodecBinaryInt32) Encode(value any, buf []byte) (newBuf []byte, err error) {
 	n := value.(int32)
-	return pgio.AppendInt32(buf, int32(n)), nil
+	return fbio.AppendInt32BE(buf, int32(n)), nil
 }
 
 type encodePlanInt4CodecBinaryInt64Valuer struct{}
@@ -674,7 +674,7 @@ func (encodePlanInt4CodecBinaryInt64Valuer) Encode(value any, buf []byte) (newBu
 		return nil, fmt.Errorf("%d is less than minimum value for int4", n.Int64)
 	}
 
-	return pgio.AppendInt32(buf, int32(n.Int64)), nil
+	return fbio.AppendInt32BE(buf, int32(n.Int64)), nil
 }
 
 type encodePlanInt4CodecBinaryFromString struct{}
@@ -685,7 +685,7 @@ func (encodePlanInt4CodecBinaryFromString) Encode(value any, buf []byte) ([]byte
 	if err != nil {
 		return nil, fmt.Errorf("cannot parse %q as int: %w", s, err)
 	}
-	return pgio.AppendInt32(buf, int32(n)), nil
+	return fbio.AppendInt32BE(buf, int32(n)), nil
 }
 
 func (Int4Codec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
@@ -1180,7 +1180,7 @@ type encodePlanInt8CodecBinaryInt64 struct{}
 
 func (encodePlanInt8CodecBinaryInt64) Encode(value any, buf []byte) (newBuf []byte, err error) {
 	n := value.(int64)
-	return pgio.AppendInt64(buf, int64(n)), nil
+	return fbio.AppendInt64BE(buf, int64(n)), nil
 }
 
 type encodePlanInt8CodecBinaryInt64Valuer struct{}
@@ -1202,7 +1202,7 @@ func (encodePlanInt8CodecBinaryInt64Valuer) Encode(value any, buf []byte) (newBu
 		return nil, fmt.Errorf("%d is less than minimum value for int8", n.Int64)
 	}
 
-	return pgio.AppendInt64(buf, int64(n.Int64)), nil
+	return fbio.AppendInt64BE(buf, int64(n.Int64)), nil
 }
 
 type encodePlanInt8CodecBinaryFromString struct{}
@@ -1213,7 +1213,7 @@ func (encodePlanInt8CodecBinaryFromString) Encode(value any, buf []byte) ([]byte
 	if err != nil {
 		return nil, fmt.Errorf("cannot parse %q as bigint: %w", s, err)
 	}
-	return pgio.AppendInt64(buf, n), nil
+	return fbio.AppendInt64BE(buf, n), nil
 }
 
 func (Int8Codec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {

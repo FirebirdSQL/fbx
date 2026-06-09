@@ -90,7 +90,7 @@ type Row interface {
 
 // RowScanner scans an entire row at a time into the RowScanner.
 type RowScanner interface {
-	// ScanRows scans the row.
+	// ScanRow scans the row.
 	ScanRow(rows Rows) error
 }
 
@@ -154,6 +154,8 @@ type baseRows struct {
 	rowCount  int
 
 	boundStatement *fbconn.Statement
+
+	ownsStatement bool
 }
 
 func (rows *baseRows) FieldDescriptions() []fbconn.FieldDescription {
@@ -169,7 +171,13 @@ func (rows *baseRows) Close() {
 	}
 
 	if rows.boundStatement != nil {
-		defer rows.boundStatement.CloseCursor(rows.ctx)
+		if rows.ownsStatement {
+			ctx, cancel := cleanupContext(rows.ctx)
+			defer cancel()
+			defer rows.boundStatement.Deallocate(ctx)
+		} else {
+			defer rows.boundStatement.CloseCursor(rows.ctx)
+		}
 	}
 
 	rows.closed = true
@@ -654,7 +662,7 @@ func RowTo[T any](row CollectableRow) (T, error) {
 	return value, err
 }
 
-// RowTo returns a the address of a T scanned from row.
+// RowToAddrOf returns a the address of a T scanned from row.
 func RowToAddrOf[T any](row CollectableRow) (*T, error) {
 	var value T
 	err := row.Scan(&value)

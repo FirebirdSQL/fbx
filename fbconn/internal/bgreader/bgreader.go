@@ -68,6 +68,20 @@ func (r *BGReader) Status() int32 {
 	return r.status
 }
 
+// Buffered returns the number of bytes that have been read from the underlying reader
+// but not yet consumed via Read.
+func (r *BGReader) Buffered() int {
+	r.cond.L.Lock()
+	defer r.cond.L.Unlock()
+	n := 0
+	for _, rr := range r.readResults {
+		if rr.buf != nil {
+			n += len(*rr.buf)
+		}
+	}
+	return n
+}
+
 func (r *BGReader) bgRead() {
 	keepReading := true
 	for keepReading {

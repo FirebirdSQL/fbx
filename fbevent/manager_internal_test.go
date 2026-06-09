@@ -1,0 +1,775 @@
+package fbevent
+
+import (
+	"context"
+	"errors"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+	"rdb.red-soft.ru/fbx/fbconn"
+)
+
+func addRegisteredListenerForTest(m *Manager, eventName string, listener EventListener) ListenerHandle {
+	m.nextListenerID++
+	handle := m.nextListenerID
+	reg := listenerRegistration{
+		handle:   handle,
+		listener: listener,
+	}
+	m.listeners[eventName] = append(m.listeners[eventName], reg)
+	m.listenerEventName[handle] = eventName
+	return handle
+}
+
+func TestAddEventListenerReturnsUniqueHandles(t *testing.T) {
+	t.Parallel()
+
+	m := &Manager{
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*fbEventHandler),
+	}
+
+	existing := EventListenerFunc(func(DatabaseEvent) {})
+	existingHandle := addRegisteredListenerForTest(m, "EVT", existing)
+
+	first := EventListenerFunc(func(DatabaseEvent) {})
+	second := EventListenerFunc(func(DatabaseEvent) {})
+
+	firstHandle, err := m.AddEventListener("EVT", first)
+	require.NoError(t, err)
+
+	secondHandle, err := m.AddEventListener("EVT", second)
+	require.NoError(t, err)
+
+	require.NotEqual(t, InvalidListenerHandle, firstHandle)
+	require.NotEqual(t, InvalidListenerHandle, secondHandle)
+	require.NotEqual(t, firstHandle, secondHandle)
+	require.NotEqual(t, existingHandle, firstHandle)
+	require.NotEqual(t, existingHandle, secondHandle)
+	require.Len(t, m.listeners["EVT"], 3)
+}
+
+func TestRemoveEventListenerByHandle(t *testing.T) {
+	t.Parallel()
+
+	functions := make([]EventListener, 0, 2)
+	for _, id := range []int{1, 2} {
+		listenerID := id
+		functions = append(functions, EventListenerFunc(func(DatabaseEvent) {
+			_ = listenerID
+		}))
+	}
+
+	m := &Manager{
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*fbEventHandler),
+	}
+
+	firstHandle := addRegisteredListenerForTest(m, "EVT", functions[0])
+	secondHandle := addRegisteredListenerForTest(m, "EVT", functions[1])
+
+	require.NoError(t, m.RemoveEventListener(firstHandle))
+	require.Len(t, m.listeners["EVT"], 1)
+	require.Equal(t, secondHandle, m.listeners["EVT"][0].handle)
+}
+
+func TestIsConnectedManagedDisconnectedDoesNotBlock(t *testing.T) {
+	t.Parallel()
+
+	stop := make(chan struct{})
+	done := make(chan struct{})
+
+	m := &Manager{
+		mode:           managerModeManaged,
+		connected:      true,
+		listeners:      make(map[string][]listenerRegistration),
+		handlers:       make(map[string]*fbEventHandler),
+		eventQueue:     make(chan DatabaseEvent, 1),
+		dispatcherStop: stop,
+		dispatcherDone: done,
+	}
+
+	resultCh := make(chan bool, 1)
+	go func() {
+		resultCh <- m.IsConnected()
+	}()
+
+	select {
+	case connected := <-resultCh:
+		require.False(t, connected)
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("IsConnected blocked while dispatcherDone was not closed")
+	}
+
+	select {
+	case <-stop:
+	default:
+		t.Fatal("dispatcher stop channel was not closed")
+	}
+
+	m.mu.Lock()
+	require.False(t, m.connected)
+	require.Nil(t, m.dispatcherStop)
+	require.Nil(t, m.dispatcherDone)
+	require.Nil(t, m.eventQueue)
+	m.mu.Unlock()
+}
+
+func TestDisconnectRespectsContextWhenDispatcherDoesNotStop(t *testing.T) {
+	t.Parallel()
+
+	stop := make(chan struct{})
+	done := make(chan struct{})
+
+	m := &Manager{
+		connected:      true,
+		listeners:      make(map[string][]listenerRegistration),
+		handlers:       make(map[string]*fbEventHandler),
+		eventQueue:     make(chan DatabaseEvent, 1),
+		dispatcherStop: stop,
+		dispatcherDone: done,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	err := m.Disconnect(ctx)
+	elapsed := time.Since(start)
+
+	require.Error(t, err)
+	require.ErrorContains(t, err, context.DeadlineExceeded.Error())
+	require.Less(t, elapsed, time.Second)
+
+	select {
+	case <-stop:
+	default:
+		t.Fatal("dispatcher stop channel was not closed")
+	}
+}
+
+func TestOperationContextAddsTimeoutForBackground(t *testing.T) {
+	t.Parallel()
+
+	m := &Manager{}
+	ctx, cancel := m.operationContext(context.Background())
+	defer cancel()
+
+	_, hasDeadline := ctx.Deadline()
+	require.True(t, hasDeadline)
+}
+
+func TestAddEventListenerCreatesSeparateRegistrationsForSameListener(t *testing.T) {
+	t.Parallel()
+
+	listener := EventListenerFunc(func(DatabaseEvent) {})
+	m := &Manager{
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*fbEventHandler),
+	}
+
+	firstHandle := addRegisteredListenerForTest(m, "EVT", listener)
+
+	secondHandle, err := m.AddEventListener("EVT", listener)
+	require.NoError(t, err)
+	require.Len(t, m.listeners["EVT"], 2)
+	require.NotEqual(t, firstHandle, secondHandle)
+}
+
+func TestAddRemoveEventListenerWithDifferentClosuresFromSameLiteral(t *testing.T) {
+	t.Parallel()
+
+	functions := make([]EventListenerFunc, 0, 2)
+	for _, id := range []int{1, 2} {
+		listenerID := id
+		functions = append(functions, EventListenerFunc(func(DatabaseEvent) {
+			_ = listenerID
+		}))
+	}
+	first := functions[0]
+	second := functions[1]
+
+	m := &Manager{
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*fbEventHandler),
+	}
+
+	firstHandle := addRegisteredListenerForTest(m, "EVT", first)
+	secondHandle := addRegisteredListenerForTest(m, "EVT", second)
+
+	require.Len(t, m.listeners["EVT"], 2)
+
+	require.NoError(t, m.RemoveEventListener(firstHandle))
+	require.Len(t, m.listeners["EVT"], 1)
+	require.Equal(t, secondHandle, m.listeners["EVT"][0].handle)
+}
+
+func TestWaitForEventReturnsAsyncErrorWithoutTimeout(t *testing.T) {
+	t.Parallel()
+
+	m := &Manager{
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*fbEventHandler),
+		asyncErrSignal:    make(chan struct{}),
+	}
+	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(DatabaseEvent) {}))
+
+	expectedErr := errors.New("async event channel failed")
+	resultCh := make(chan error, 1)
+
+	go func() {
+		_, err := m.WaitForEvent(context.Background(), "EVT", 0)
+		resultCh <- err
+	}()
+
+	require.Eventually(t, func() bool {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		return len(m.listeners["EVT"]) == 2
+	}, time.Second, 10*time.Millisecond)
+
+	m.setAsyncError(expectedErr)
+
+	select {
+	case err := <-resultCh:
+		require.ErrorIs(t, err, expectedErr)
+	case <-time.After(time.Second):
+		t.Fatal("WaitForEvent blocked after async error")
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	require.Len(t, m.listeners["EVT"], 1)
+}
+
+func TestOnConnEventErrorUnblocksWaitForEventWithoutTimeout(t *testing.T) {
+	t.Parallel()
+
+	m := &Manager{
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*fbEventHandler),
+		asyncErrSignal:    make(chan struct{}),
+	}
+	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(DatabaseEvent) {}))
+
+	expectedErr := errors.New("event channel read failed")
+	resultCh := make(chan error, 1)
+
+	go func() {
+		_, err := m.WaitForEvent(context.Background(), "EVT", 0)
+		resultCh <- err
+	}()
+
+	require.Eventually(t, func() bool {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		return len(m.listeners["EVT"]) == 2
+	}, time.Second, 10*time.Millisecond)
+
+	m.onConnEventError(expectedErr)
+
+	select {
+	case err := <-resultCh:
+		require.ErrorIs(t, err, expectedErr)
+	case <-time.After(time.Second):
+		t.Fatal("WaitForEvent blocked after event channel error")
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	require.Len(t, m.listeners["EVT"], 1)
+}
+
+func TestDisconnectUnblocksWaitForEventWithoutTimeout(t *testing.T) {
+	t.Parallel()
+
+	m := &Manager{
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*fbEventHandler),
+		asyncErrSignal:    make(chan struct{}),
+	}
+	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(DatabaseEvent) {}))
+
+	resultCh := make(chan error, 1)
+	go func() {
+		_, err := m.WaitForEvent(context.Background(), "EVT", 0)
+		resultCh <- err
+	}()
+
+	require.Eventually(t, func() bool {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		return len(m.listeners["EVT"]) == 2
+	}, time.Second, 10*time.Millisecond)
+
+	require.NoError(t, m.Disconnect(context.Background()))
+
+	select {
+	case err := <-resultCh:
+		require.Error(t, err)
+		require.ErrorContains(t, err, "event manager disconnected")
+	case <-time.After(time.Second):
+		t.Fatal("WaitForEvent blocked after manager disconnect")
+	}
+}
+
+func TestAddEventListenerSerializesConcurrentFirstRegistration(t *testing.T) {
+	t.Parallel()
+
+	first := EventListenerFunc(func(DatabaseEvent) {})
+	second := EventListenerFunc(func(DatabaseEvent) {})
+
+	enteredEnsure := make(chan struct{})
+	releaseEnsure := make(chan struct{})
+	var once sync.Once
+
+	m := &Manager{
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*fbEventHandler),
+		beforeEnsureEventHandler: func() {
+			once.Do(func() {
+				close(enteredEnsure)
+				<-releaseEnsure
+			})
+		},
+	}
+
+	errFirstCh := make(chan error, 1)
+	errSecondCh := make(chan error, 1)
+
+	go func() {
+		_, err := m.AddEventListener("EVT", first)
+		errFirstCh <- err
+	}()
+
+	select {
+	case <-enteredEnsure:
+	case <-time.After(time.Second):
+		t.Fatal("first AddEventListener did not reach ensureEventHandler")
+	}
+
+	go func() {
+		_, err := m.AddEventListener("EVT", second)
+		errSecondCh <- err
+	}()
+
+	select {
+	case <-errSecondCh:
+		t.Fatal("second AddEventListener returned before first registration finished")
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	close(releaseEnsure)
+
+	errFirst := <-errFirstCh
+	errSecond := <-errSecondCh
+	require.Error(t, errFirst)
+	require.Error(t, errSecond)
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	require.Empty(t, m.listeners["EVT"])
+	_, exists := m.handlers["EVT"]
+	require.False(t, exists)
+}
+
+func TestUnregisterRollbackOnCancelFailure(t *testing.T) {
+	t.Parallel()
+
+	h := &fbEventHandler{
+		manager:   &Manager{},
+		eventName: "EVT",
+		state:     eventHandlerStateRegistered,
+	}
+
+	// Force CancelEvent failure (nil handle).
+	err := h.unregisterOnConn(context.Background(), &fbconn.FbConn{})
+	require.Error(t, err)
+
+	h.mu.Lock()
+	require.Equal(t, eventHandlerStateRegistered, h.state)
+	h.mu.Unlock()
+
+	// Best-effort local cancellation when connection is unavailable.
+	err = h.unregisterOnConn(context.Background(), nil)
+	require.NoError(t, err)
+
+	h.mu.Lock()
+	require.Equal(t, eventHandlerStateCancelled, h.state)
+	h.mu.Unlock()
+}
+
+func TestWaitForEventIgnoresStaleAsyncErrorAfterSuccessfulAwait(t *testing.T) {
+	t.Parallel()
+
+	dummy := EventListenerFunc(func(DatabaseEvent) {})
+	m := &Manager{
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*fbEventHandler),
+		asyncErr:          errors.New("stale async error"),
+		asyncErrSignal:    make(chan struct{}),
+	}
+	addRegisteredListenerForTest(m, "EVT", dummy)
+
+	notifyDone := make(chan struct{})
+	go func() {
+		defer close(notifyDone)
+
+		deadline := time.Now().Add(time.Second)
+		for {
+			m.mu.Lock()
+			count := len(m.listeners["EVT"])
+			m.mu.Unlock()
+			if count == 2 {
+				break
+			}
+			if time.Now().After(deadline) {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		m.notify(DatabaseEvent{EventName: "EVT", EventCount: 7})
+	}()
+
+	count, err := m.WaitForEvent(context.Background(), "EVT", time.Second)
+	require.NoError(t, err)
+	require.Equal(t, 7, count)
+
+	select {
+	case <-notifyDone:
+	case <-time.After(time.Second):
+		t.Fatal("notify goroutine did not finish")
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	require.Len(t, m.listeners["EVT"], 1)
+}
+
+func TestHandleConnLifecycleTerminationDisconnectsAndSignalsAsyncError(t *testing.T) {
+	t.Parallel()
+
+	m := &Manager{
+		connected:         true,
+		mode:              managerModeManaged,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*fbEventHandler),
+		asyncErrSignal:    make(chan struct{}),
+		lifecycleWatchGen: 1,
+	}
+
+	m.handleConnLifecycleTermination(nil, 1)
+
+	m.mu.Lock()
+	require.False(t, m.connected)
+	m.mu.Unlock()
+	err := m.LastError()
+	require.Error(t, err)
+	require.ErrorContains(t, err, "underlying connection detached")
+}
+
+// TestDeliveryWorkerSendNeverBlocksWithinQueueCapacity verifies that queueing
+// for delivery returns immediately while the bounded queue still has room.
+func TestDeliveryWorkerSendNeverBlocksWithinQueueCapacity(t *testing.T) {
+	t.Parallel()
+
+	const eventCount = 500
+
+	gate := make(chan struct{})
+	var mu sync.Mutex
+	var received []int
+
+	m := &Manager{
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*fbEventHandler),
+	}
+	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(event DatabaseEvent) {
+		<-gate
+		mu.Lock()
+		received = append(received, event.EventCount)
+		mu.Unlock()
+	}))
+
+	delivery := newEventDeliveryWorker(m)
+	go delivery.run()
+	defer close(delivery.stop)
+
+	sendDone := make(chan struct{})
+	go func() {
+		defer close(sendDone)
+		for i := range eventCount {
+			delivery.send(DatabaseEvent{EventName: "EVT", EventCount: i + 1})
+		}
+	}()
+
+	select {
+	case <-sendDone:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("delivery send blocked on slow listener")
+	}
+
+	// Release the listener and verify all events eventually arrive in order.
+	go func() {
+		for range eventCount {
+			gate <- struct{}{}
+		}
+	}()
+
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(received) == eventCount
+	}, 5*time.Second, 10*time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+	for i, count := range received {
+		require.Equal(t, i+1, count, "event %d delivered out of order", i)
+	}
+}
+
+// TestDeliveryWorkerDeliversEventsInOrder verifies that the bounded queue
+// preserves event ordering regardless of how fast events are enqueued.
+func TestDeliveryWorkerDeliversEventsInOrder(t *testing.T) {
+	t.Parallel()
+
+	const eventCount = 1000
+
+	var mu sync.Mutex
+	var received []int
+
+	m := &Manager{
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*fbEventHandler),
+	}
+	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(event DatabaseEvent) {
+		mu.Lock()
+		received = append(received, event.EventCount)
+		mu.Unlock()
+	}))
+
+	delivery := newEventDeliveryWorker(m)
+	go delivery.run()
+	defer close(delivery.stop)
+
+	for i := range eventCount {
+		delivery.send(DatabaseEvent{EventName: "EVT", EventCount: i + 1})
+	}
+
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(received) == eventCount
+	}, time.Second, 10*time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+	for i, count := range received {
+		require.Equal(t, i+1, count, "event %d delivered out of order", i)
+	}
+}
+
+// TestDeliveryWorkerNoEventsLostUnderLoad sends events concurrently with a
+// slow listener and confirms every event is eventually delivered.
+func TestDeliveryWorkerNoEventsLostUnderLoad(t *testing.T) {
+	t.Parallel()
+
+	const eventCount = 200
+
+	gate := make(chan struct{})
+	var mu sync.Mutex
+	var received []int
+
+	m := &Manager{
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*fbEventHandler),
+	}
+	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(event DatabaseEvent) {
+		<-gate
+		mu.Lock()
+		received = append(received, event.EventCount)
+		mu.Unlock()
+	}))
+
+	delivery := newEventDeliveryWorker(m)
+	go delivery.run()
+	defer close(delivery.stop)
+
+	for i := range eventCount {
+		delivery.send(DatabaseEvent{EventName: "EVT", EventCount: i + 1})
+	}
+
+	// Drain the gate to let listener process all events.
+	go func() {
+		for range eventCount {
+			gate <- struct{}{}
+		}
+	}()
+
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(received) == eventCount
+	}, 5*time.Second, 10*time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, received, eventCount)
+	for i, count := range received {
+		require.Equal(t, i+1, count, "event %d delivered out of order", i)
+	}
+}
+
+func TestDeliveryWorkerQueueOverflowSetsAsyncErrorAndBackpressures(t *testing.T) {
+	t.Parallel()
+
+	gate := make(chan struct{})
+	received := make(chan int, 3)
+
+	m := &Manager{
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*fbEventHandler),
+		asyncErrSignal:    make(chan struct{}),
+	}
+	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(event DatabaseEvent) {
+		received <- event.EventCount
+		<-gate
+	}))
+
+	delivery := newEventDeliveryWorkerWithQueueSize(m, 1)
+	go delivery.run()
+	defer close(delivery.stop)
+
+	delivery.send(DatabaseEvent{EventName: "EVT", EventCount: 1})
+	require.Equal(t, 1, <-received)
+
+	delivery.send(DatabaseEvent{EventName: "EVT", EventCount: 2})
+
+	sendDone := make(chan struct{})
+	go func() {
+		delivery.send(DatabaseEvent{EventName: "EVT", EventCount: 3})
+		close(sendDone)
+	}()
+
+	require.Eventually(t, func() bool {
+		err := m.LastError()
+		return err != nil && err.Error() == "event delivery queue overflow: max size 1"
+	}, time.Second, 10*time.Millisecond)
+
+	select {
+	case <-sendDone:
+		t.Fatal("delivery send completed while bounded queue was full")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	gate <- struct{}{}
+
+	select {
+	case <-sendDone:
+	case <-time.After(time.Second):
+		t.Fatal("delivery send did not resume after queue space was freed")
+	}
+
+	require.Equal(t, 2, <-received)
+	gate <- struct{}{}
+	require.Equal(t, 3, <-received)
+	gate <- struct{}{}
+}
+
+func TestDeliveryWorkerDeliversCallbacksSequentiallyForManager(t *testing.T) {
+	t.Parallel()
+
+	firstEntered := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	secondCalled := make(chan struct{})
+
+	m := &Manager{
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*fbEventHandler),
+	}
+	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(DatabaseEvent) {
+		close(firstEntered)
+		<-releaseFirst
+	}))
+	addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(DatabaseEvent) {
+		close(secondCalled)
+	}))
+
+	delivery := newEventDeliveryWorker(m)
+	go delivery.run()
+	defer close(delivery.stop)
+
+	delivery.send(DatabaseEvent{EventName: "EVT", EventCount: 1})
+
+	select {
+	case <-firstEntered:
+	case <-time.After(time.Second):
+		t.Fatal("first callback was not invoked")
+	}
+
+	select {
+	case <-secondCalled:
+		t.Fatal("second callback ran while first callback was still active")
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	close(releaseFirst)
+
+	select {
+	case <-secondCalled:
+	case <-time.After(time.Second):
+		t.Fatal("second callback was not invoked after first callback returned")
+	}
+}
+
+func TestHandleConnLifecycleTerminationIgnoresStaleGeneration(t *testing.T) {
+	t.Parallel()
+
+	m := &Manager{
+		connected:         true,
+		mode:              managerModeManaged,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*fbEventHandler),
+		asyncErrSignal:    make(chan struct{}),
+		lifecycleWatchGen: 2,
+	}
+
+	m.handleConnLifecycleTermination(nil, 1)
+
+	m.mu.Lock()
+	require.True(t, m.connected)
+	m.mu.Unlock()
+	require.NoError(t, m.LastError())
+}

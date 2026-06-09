@@ -5,8 +5,8 @@ stages:
 
 variables:
   RDB30_VERSION: 3.0.22
-  RDB50_VERSION: 5.0.8
   RDB51_VERSION: 5.1.4
+  RDB52_VERSION: 5.2.1
   RDB60_VERSION: 6.0.0-SNAPSHOT.1408
   FB30_VERSION: 3.0.13.33818-0
   FB40_VERSION: 4.0.6.3221-0
@@ -37,19 +37,19 @@ format:
   tags: [docker, linux, x86_64]
   extends: .go-cache
   script:
-    - go run gotest.tools/gotestsum@latest --format testname  -- -p 1 ${GOTEST_EXTRA_ARGS} -coverprofile cover.out ./...
-  after_script:
-    - go tool cover -html cover.out -o cover.html
-    - go tool cover -func cover.out
+    - COVERDIR=$(pwd)/reports/${REPORT}
+    - PACKAGES=$(go list ./... 2> /dev/null | grep -v /vendor/|xargs|tr ' ' ",")
+    - mkdir -p ${COVERDIR}
+    - go run gotest.tools/gotestsum@latest --format testname -- -p 1 ${GOTEST_EXTRA_ARGS} -cover ./... -coverpkg=${PACKAGES} -test.gocoverdir=${COVERDIR}
   artifacts:
     when: always
     paths:
-      - cover.html
-      - /tmp/fbtrace.log
-  coverage: '/total:\s+\(statements\)\s+\d+.\d+%/'
+      - reports
 
 test:rdb:
   extends: .test_template
+  variables:
+    REPORT: reddatabase_${RDB_VERSION}
   before_script:
     - wget -q ${RDB_DOWNLOAD_URL} -O installer
     - chmod +x ./installer
@@ -67,19 +67,18 @@ test:rdb:
     matrix:
       - RDB_VERSION: "${RDB30_VERSION}"
         RDB_DOWNLOAD_URL: "http://builds.red-soft.biz/release_hub/rdb30/${RDB30_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB30_VERSION}:bin"
-      - RDB_VERSION: "${RDB50_VERSION}"
-        RDB_DOWNLOAD_URL: "http://builds.red-soft.biz/release_hub/rdb50/${RDB50_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB50_VERSION}:bin"
-        GOTEST_EXTRA_ARGS: "-parallel 1"
       - RDB_VERSION: "${RDB51_VERSION}"
         RDB_DOWNLOAD_URL: "http://builds.red-soft.biz/release_hub/rdb50/${RDB51_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB51_VERSION}:bin"
+      - RDB_VERSION: "${RDB52_VERSION}"
+        RDB_DOWNLOAD_URL: "http://builds.red-soft.biz/release_hub/rdb50/${RDB52_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB52_VERSION}:bin"
       - RDB_VERSION: "6.0"
         RDB_DOWNLOAD_URL: "http://builds.red-soft.biz/release_hub/rdb60/${RDB60_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB60_VERSION}:bin"
-
 
 test:fb:
   extends: .test_template
   variables:
       FB_DOWNLOAD_URL: "http://minio.red-soft.biz/3rdparty/firebird/Firebird-${FB_VERSION}-linux-x64.tar.gz"
+      REPORT: firebird_${FB_VERSION}
   before_script:
     - sed -i 's|http://deb.debian.org|https://mirror.yandex.ru|g; s|http://security.debian.org|https://mirror.yandex.ru|g; s|deb.debian.org|mirror.yandex.ru|g; s|security.debian.org|mirror.yandex.ru|g' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
     - apt update && apt install -y libtommath1 libicu76
@@ -101,3 +100,38 @@ test:fb:
       - FB_VERSION: ${FB30_VERSION}
       - FB_VERSION: ${FB40_VERSION}
       - FB_VERSION: ${FB50_VERSION}
+
+coverage:merge:
+  stage: test
+  tags: [docker, linux, x86_64]
+  extends: .go-cache
+  script:
+    - mkdir merged
+    - REPORTS=$(find reports/* -maxdepth 0|xargs|sed 's/ /,/g')
+    - go tool covdata merge -i=${REPORTS} -o merged
+    - go tool covdata textfmt -i=merged -o profile.txt
+    - go tool cover -html profile.txt -o cover.html
+    - go tool cover -func profile.txt
+  dependencies: ["test:fb", "test:rdb"]
+  needs: ["test:fb", "test:rdb"]
+  artifacts:
+    when: always
+    paths:
+      - cover.html
+  coverage: '/total:\s+\(statements\)\s+\d+.\d+%/'
+
+report:coverage:
+  tags: [docker, linux, x86_64]
+  stage: test
+  image:
+    name: registry.red-soft.biz:5000/docker-images/3rdparty/minio/mc:RELEASE.2023-10-14T01-57-03Z
+    entrypoint: ['']
+  script:
+    - mc alias set minio ${MINIO_SERVER} ${MINIO_USER} ${MINIO_PASSWORD}
+    - mc rm -r --force minio/reports/coverage/fbx/${CI_COMMIT_REF_NAME}
+    - mc cp cover.html minio/reports/coverage/fbx/${CI_COMMIT_REF_NAME}/index.html
+    - echo Coverage ${MINIO_SERVER}reports/coverage/fbx/${CI_COMMIT_REF_NAME}/index.html
+  dependencies: ["coverage:merge"]
+  needs: ["coverage:merge"]
+  only:
+    - main

@@ -1,4 +1,4 @@
-package utils
+package fbproto
 
 type BitSet struct {
 	bits  []byte

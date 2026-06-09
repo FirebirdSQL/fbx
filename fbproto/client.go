@@ -60,6 +60,19 @@ func NewClient(r io.Reader, w io.Writer, encoding *Encoding) *Client {
 	return &c
 }
 
+// LazyCounter returns the number of pending lazy messages
+// that the server is expected to send.
+func (c *Client) LazyCounter() int {
+	return c.lazyCounter
+}
+
+// Rebind replaces the underlying reader and writer while preserving codec, lazyCounter,
+// Encoding and all other Client state.
+func (c *Client) Rebind(r io.Reader, w io.Writer) {
+	c.reader = r
+	c.writer = w
+}
+
 // SetCodec sets the active wire encryption codec.
 func (c *Client) SetCodec(plugin string, codec StreamCodec) {
 	c.plugin = plugin

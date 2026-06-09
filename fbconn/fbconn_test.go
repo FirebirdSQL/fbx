@@ -19,7 +19,7 @@ import (
 	"rdb.red-soft.ru/fbx/fbconn"
 	"rdb.red-soft.ru/fbx/fbconn/ctxwatch"
 	"rdb.red-soft.ru/fbx/fbproto"
-	"rdb.red-soft.ru/fbx/fbproto/utils"
+	"rdb.red-soft.ru/fbx/internal/fbio"
 )
 
 func TestConnect(t *testing.T) {
@@ -660,7 +660,7 @@ func TestConnExecContextPrecanceled(t *testing.T) {
 	defer closeConn(t, fbConn)
 
 	cancel()
-	res := fbConn.Exec(ctx, "select 'Hello, world' from rdb$database").Read()
+	res := fbConn.Exec(ctx, "select cast('Hello, world' as varchar(12)) from rdb$database").Read()
 	assert.Error(t, res.Err)
 	assert.True(t, errors.Is(res.Err, context.Canceled))
 	assert.True(t, fbconn.SafeToRetry(res.Err))
@@ -876,7 +876,7 @@ func TestConnExecPreparedMaxNumberOfParams(t *testing.T) {
 	sql := buildSQL(paramCount)
 
 	args := make([][]byte, paramCount)
-	zero := utils.Int32_to_bytes(0)
+	zero := fbio.AppendInt32LE(nil, 0)
 	for i := range args {
 		args[i] = zero
 	}
@@ -929,7 +929,7 @@ func TestConnExecParamsTooManyParams(t *testing.T) {
 	sql := buildSQL(paramCount)
 
 	args := make([][]byte, paramCount)
-	zero := utils.Int32_to_bytes(0)
+	zero := fbio.AppendInt32LE(nil, 0)
 	for i := range args {
 		args[i] = zero
 	}
@@ -1607,7 +1607,6 @@ func testConnContextCanceledCancelsRunningQueryOnServer(t *testing.T, connString
 }
 
 func TestHijackAndConstruct(t *testing.T) {
-	t.Skip("need implementation?")
 	t.Parallel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -1622,7 +1621,7 @@ func TestHijackAndConstruct(t *testing.T) {
 	hc, err := origConn.Hijack()
 	require.NoError(t, err)
 
-	res := origConn.Exec(ctx, "select 'Hello, world'").Read()
+	res := origConn.Exec(ctx, "select cast('Hello, world' as varchar(12)) from rdb$database").Read()
 	require.Error(t, res.Err)
 
 	newConn, err := fbconn.Construct(hc)
@@ -1630,13 +1629,170 @@ func TestHijackAndConstruct(t *testing.T) {
 
 	defer closeConn(t, newConn)
 
-	result := newConn.Exec(ctx, "select 'Hello, world'").Read()
+	result := newConn.Exec(ctx, "select cast('Hello, world' as varchar(12)) from rdb$database").Read()
 
 	assert.Nil(t, result.Err)
 	assert.Len(t, result.Rows, 1)
 	assert.Equal(t, "Hello, world", string(result.Rows[0][0]))
 
 	ensureConnValid(t, newConn)
+}
+
+func TestHijackFailsWithActiveTransaction(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	defer closeConn(t, fbConn)
+
+	tx, err := fbConn.StartTransaction(ctx)
+	require.NoError(t, err)
+
+	_, err = fbConn.Hijack()
+	require.Error(t, err, "Hijack must fail while a transaction is active")
+
+	require.NoError(t, tx.Rollback(ctx))
+	ensureConnValid(t, fbConn)
+}
+
+func TestHijackFailsWithPreparedStatementAfterTransactionCommit(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	defer func() {
+		if fbConn != nil {
+			closeConn(t, fbConn)
+		}
+	}()
+
+	tx, err := fbConn.StartTransaction(ctx)
+	require.NoError(t, err)
+
+	st, err := fbConn.PrepareTx(ctx, tx, "select 1 from rdb$database")
+	require.NoError(t, err)
+
+	require.NoError(t, tx.Commit(ctx))
+	require.NoError(t, fbConn.SyncConn(ctx))
+
+	hc, err := fbConn.Hijack()
+	if hc != nil {
+		fbConn = nil
+		reconstructed, constructErr := fbconn.Construct(hc)
+		require.NoError(t, constructErr)
+		closeConn(t, reconstructed)
+	}
+	require.Error(t, err, "Hijack must fail while a prepared statement is active")
+
+	require.NoError(t, st.Deallocate(ctx))
+	require.NoError(t, fbConn.SyncConn(ctx))
+
+	hc, err = fbConn.Hijack()
+	require.NoError(t, err)
+	fbConn = nil
+
+	reconstructed, err := fbconn.Construct(hc)
+	require.NoError(t, err)
+	closeConn(t, reconstructed)
+}
+
+func TestArrayHelperStatementsDoNotLeak(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	defer closeConn(t, fbConn)
+
+	const iterations = 10
+
+	_ = countIdleStatements(t, fbConn, ctx)
+	baseline := countIdleStatements(t, fbConn, ctx)
+
+	for i := 0; i < iterations; i++ {
+		st, err := fbConn.Prepare(ctx, "select language_req from job")
+		require.NoError(t, err)
+		require.NoError(t, st.Deallocate(ctx))
+	}
+
+	after := countIdleStatements(t, fbConn, ctx)
+	assert.Equal(t, baseline, after,
+		"array helper statements must be deallocated; pre-fix leak was 2 handles per Prepare")
+}
+
+func countIdleStatements(t *testing.T, fbConn *fbconn.FbConn, ctx context.Context) int64 {
+	t.Helper()
+	res := fbConn.Exec(ctx, `SELECT COUNT(*) FROM MON$STATEMENTS
+WHERE MON$ATTACHMENT_ID = CURRENT_CONNECTION AND MON$STATE = 0`).Read()
+	require.NoError(t, res.Err)
+	require.Len(t, res.Rows, 1)
+	require.Len(t, res.Rows[0], 1)
+	var v int64
+	for _, b := range res.Rows[0][0] {
+		v = (v << 8) | int64(b)
+	}
+	return v
+}
+
+func TestSyncConnOnIdleConn(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	defer closeConn(t, fbConn)
+
+	require.NoError(t, fbConn.SyncConn(ctx))
+	ensureConnValid(t, fbConn)
+}
+
+func TestHijackAfterExecParamsErrorDoesNotKeepAutoPreparedStatement(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	defer func() {
+		if fbConn != nil {
+			closeConn(t, fbConn)
+		}
+	}()
+
+	sql := "select cast(? as varchar(255)), cast(? as varchar(255)) from rdb$database"
+	args := [][]byte{
+		[]byte("0"),
+		[]byte("1"),
+		[]byte("2"),
+	}
+
+	res := fbConn.ExecParams(ctx, sql, args).Read()
+	require.Error(t, res.Err)
+
+	var fbErr *fbconn.FbError
+	require.True(t, errors.As(res.Err, &fbErr))
+	require.Equal(t, "07008", fbErr.Code)
+
+	require.NoError(t, fbConn.SyncConn(ctx))
+
+	hc, err := fbConn.Hijack()
+	require.NoError(t, err, "ExecParams error must not leave an unreachable prepared statement")
+	fbConn = nil
+
+	reconstructed, err := fbconn.Construct(hc)
+	require.NoError(t, err)
+	closeConn(t, reconstructed)
 }
 
 func TestConnCloseWhileCancellableQueryInProgress(t *testing.T) {
@@ -1820,7 +1976,7 @@ func TestConnOnFbError(t *testing.T) {
 	require.NoError(t, err)
 	defer closeConn(t, fbConn)
 
-	res := fbConn.Exec(ctx, "select 'Hello, world' from rdb$database").Read()
+	res := fbConn.Exec(ctx, "select cast('Hello, world' as varchar(12)) from rdb$database").Read()
 	assert.NoError(t, res.Err)
 	assert.False(t, fbConn.IsClosed())
 
@@ -2352,11 +2508,14 @@ func TestDeadlineContextWatcherHandler(t *testing.T) {
 		require.NoError(t, err)
 		defer closeConn(t, fbConn)
 
+		setupCtx, setupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer setupCancel()
+
+		_, err = fbConn.Exec(setupCtx, "recreate function fbsleep (delay float not null) returns float external name 'fbxci!fbsleep' engine udr;").Close()
+		require.NoError(t, err)
+
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		defer cancel()
-
-		_, err = fbConn.Exec(ctx, "recreate function fbsleep (delay float not null) returns float external name 'fbxci!fbsleep' engine udr;").Close()
-		require.NoError(t, err)
 
 		res := fbConn.Exec(ctx, "select 1, fbsleep(0.250) from rdb$database").Read()
 		require.NoError(t, res.Err)
@@ -2368,7 +2527,7 @@ func TestDeadlineContextWatcherHandler(t *testing.T) {
 func TestCancelRequestContextWatcherHandler(t *testing.T) {
 	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	fbConn, err := fbconn.ConnectConfig(context.Background(), config)
 	require.NoError(t, err)
@@ -2605,4 +2764,22 @@ func TestConnWithWarning(t *testing.T) {
 	closeConn(t, fbConn)
 
 	assert.Equal(t, "Database dialect being changed from 3 to 1\nSQLSTATE: 01000", warnings)
+}
+
+func TestPassProcessName(t *testing.T) {
+	exec, err := os.Executable()
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	defer closeConn(t, fbConn)
+
+	res := fbConn.Exec(ctx, "select mon$remote_process from mon$attachments where mon$attachment_id = current_connection").Read()
+	assert.NoError(t, res.Err)
+
+	require.Equal(t, 1, len(res.Rows))
+	assert.Equal(t, exec, string(res.Rows[0][0]))
 }

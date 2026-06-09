@@ -1,5 +1,7 @@
 package fbproto
 
+// https://firebirdsql.org/file/documentation/html/en/firebirddocs/wireprotocol/firebird-wire-protocol.html#wireprotocol-batches-execute
+
 type BatchDetailedError struct {
 	Row   int
 	Error ErrorResponse
@@ -17,21 +19,29 @@ type OpBatchCompletion struct {
 func (op *OpBatchCompletion) Read(x *XDRReader) error {
 	var err error
 
+	// p_batch_statement
 	if op.StatementHandle, err = x.ReadInt32(); err != nil {
 		return err
 	}
+
+	// p_batch_reccount
 	if op.TotalRecords, err = x.ReadInt32(); err != nil {
 		return err
 	}
 
+	// p_batch_updates
 	updateCountCount, err := x.ReadInt32()
 	if err != nil {
 		return err
 	}
+
+	// p_batch_vectors
 	detailedErrorCount, err := x.ReadInt32()
 	if err != nil {
 		return err
 	}
+
+	// p_batch_errors
 	simplifiedErrorCount, err := x.ReadInt32()
 	if err != nil {
 		return err
@@ -42,6 +52,8 @@ func (op *OpBatchCompletion) Read(x *XDRReader) error {
 	} else {
 		op.UpdateCounts = op.UpdateCounts[:updateCountCount]
 	}
+
+	// Update counters
 	for i := 0; i < updateCountCount; i++ {
 		if op.UpdateCounts[i], err = x.ReadInt32(); err != nil {
 			return err
@@ -53,6 +65,8 @@ func (op *OpBatchCompletion) Read(x *XDRReader) error {
 	} else {
 		op.DetailedErrors = op.DetailedErrors[:detailedErrorCount]
 	}
+
+	// Detailed info
 	for i := 0; i < detailedErrorCount; i++ {
 		row, err := x.ReadInt32()
 		if err != nil {
@@ -70,6 +84,8 @@ func (op *OpBatchCompletion) Read(x *XDRReader) error {
 	} else {
 		op.SimplifiedErrors = op.SimplifiedErrors[:simplifiedErrorCount]
 	}
+
+	// Simplified error blocks
 	for i := 0; i < simplifiedErrorCount; i++ {
 		if op.SimplifiedErrors[i], err = x.ReadInt32(); err != nil {
 			return err

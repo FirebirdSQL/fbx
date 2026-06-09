@@ -1004,10 +1004,6 @@ func TestStmtQueryContextSuccess(t *testing.T) {
 
 func TestRowsColumnTypes(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		if getServerMajorVersion(t, db) <= 3 {
-			t.Skip("time with time zone is not supported by server engine version <= 3")
-		}
-
 		columnTypesTests := []struct {
 			Name     string
 			TypeName string
@@ -1105,12 +1101,20 @@ func TestRowsColumnTypes(t *testing.T) {
 			},
 		}
 
-		rows, err := db.Query("SELECT cast(1 as bigint) AS a, cast('bar' as varchar(10)) AS bar, cast(1.28 as numeric(9, 2)) AS de, cast('12:00:00' as time with time zone) as d from rdb$database")
+		query := "SELECT cast(1 as bigint) AS a, cast('bar' as varchar(10)) AS bar, cast(1.28 as numeric(9, 2)) AS de"
+		if getServerMajorVersion(t, db) > 3 {
+			query += ", cast('12:00:00' as time with time zone) as d"
+		} else {
+			columnTypesTests = columnTypesTests[:3]
+		}
+		query += " from rdb$database"
+
+		rows, err := db.Query(query)
 		require.NoError(t, err)
 
 		columns, err := rows.ColumnTypes()
 		require.NoError(t, err)
-		assert.Len(t, columns, 4)
+		assert.Len(t, columns, len(columnTypesTests))
 
 		for i, tt := range columnTypesTests {
 			t.Logf("test column %d", i)
