@@ -99,3 +99,21 @@ func TestTransactionEndCanceledContextKeepsTransactionOpen(t *testing.T) {
 		})
 	}
 }
+
+func TestActiveExplicitTxIgnoresInternalTransaction(t *testing.T) {
+	internalTx := &FBTransaction{}
+	conn := &FbConn{
+		internalTransaction: internalTx,
+		explicitTransaction: false,
+		activeTransactions:  map[*FBTransaction]struct{}{internalTx: {}},
+	}
+
+	require.True(t, conn.ActiveTx())
+	require.False(t, conn.ActiveExplicitTx())
+
+	conn.explicitTransaction = true
+	require.True(t, conn.ActiveExplicitTx())
+
+	internalTx.Closed = true
+	require.False(t, conn.ActiveExplicitTx())
+}

@@ -982,6 +982,11 @@ func (fbConn *FbConn) ActiveTx() bool {
 	return len(fbConn.activeTransactions) > 0
 }
 
+// ActiveExplicitTx returns true if the connection has an active user-managed transaction.
+func (fbConn *FbConn) ActiveExplicitTx() bool {
+	return fbConn.explicitTransaction && fbConn.internalTransaction != nil && !fbConn.internalTransaction.Closed
+}
+
 // Client returns the underlying *fbproto.Client
 func (fbConn *FbConn) Client() *fbproto.Client {
 	return fbConn.client

@@ -3,18 +3,18 @@ package ctxwatch
 import (
 	"context"
 	"sync"
-	"sync/atomic"
 )
 
 // ContextWatcher watches a context and performs an action when the context is canceled. It can watch one context at a
 // time.
 type ContextWatcher struct {
-	handler     Handler
-	unwatchChan chan struct{}
+	handler Handler
 
-	lock              sync.Mutex
-	watchInProgress   bool
-	onCancelWasCalled atomic.Bool
+	// Lock protects the members below.
+	lock sync.Mutex
+	// Stop is the handle for an "after func". See [context.AfterFunc].
+	stop func() bool
+	done chan struct{}
 }
 
 // NewContextWatcher returns a ContextWatcher. onCancel will be called when a watched context is canceled.
@@ -22,8 +22,7 @@ type ContextWatcher struct {
 // onCancel called.
 func NewContextWatcher(handler Handler) *ContextWatcher {
 	cw := &ContextWatcher{
-		handler:     handler,
-		unwatchChan: make(chan struct{}),
+		handler: handler,
 	}
 
 	return cw
@@ -34,28 +33,19 @@ func (cw *ContextWatcher) Watch(ctx context.Context) {
 	cw.lock.Lock()
 	defer cw.lock.Unlock()
 
-	if cw.watchInProgress {
-		panic("Watch already in progress")
+	if cw.stop != nil {
+		panic("watch already in progress")
 	}
-
-	cw.onCancelWasCalled.Store(false)
 
 	if ctx.Done() != nil {
 		if lifecycleHandler, ok := cw.handler.(WatchLifecycleHandler); ok {
 			lifecycleHandler.HandleWatch(ctx)
 		}
-		cw.watchInProgress = true
-		go func() {
-			select {
-			case <-ctx.Done():
-				cw.handler.HandleCancel(ctx)
-				cw.onCancelWasCalled.Store(true)
-				<-cw.unwatchChan
-			case <-cw.unwatchChan:
-			}
-		}()
-	} else {
-		cw.watchInProgress = false
+		cw.done = make(chan struct{})
+		cw.stop = context.AfterFunc(ctx, func() {
+			cw.handler.HandleCancel(ctx)
+			close(cw.done)
+		})
 	}
 }
 
@@ -65,14 +55,15 @@ func (cw *ContextWatcher) Unwatch() {
 	cw.lock.Lock()
 	defer cw.lock.Unlock()
 
-	if cw.watchInProgress {
-		cw.unwatchChan <- struct{}{}
-		if cw.onCancelWasCalled.Load() {
+	if cw.stop != nil {
+		if !cw.stop() {
+			<-cw.done
 			cw.handler.HandleUnwatchAfterCancel()
 		} else if lifecycleHandler, ok := cw.handler.(WatchLifecycleHandler); ok {
 			lifecycleHandler.HandleUnwatch()
 		}
-		cw.watchInProgress = false
+		cw.stop = nil
+		cw.done = nil
 	}
 }
 

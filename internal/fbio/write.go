@@ -1,26 +1,18 @@
 package fbio
 
-import "encoding/binary"
-
 func AppendUint16BE(buf []byte, n uint16) []byte {
-	wp := len(buf)
-	buf = append(buf, 0, 0)
-	binary.BigEndian.PutUint16(buf[wp:], n)
-	return buf
+	return append(buf, byte(n>>8), byte(n))
 }
 
 func AppendUint32BE(buf []byte, n uint32) []byte {
-	wp := len(buf)
-	buf = append(buf, 0, 0, 0, 0)
-	binary.BigEndian.PutUint32(buf[wp:], n)
-	return buf
+	return append(buf, byte(n>>24), byte(n>>16), byte(n>>8), byte(n))
 }
 
 func AppendUint64BE(buf []byte, n uint64) []byte {
-	wp := len(buf)
-	buf = append(buf, 0, 0, 0, 0, 0, 0, 0, 0)
-	binary.BigEndian.PutUint64(buf[wp:], n)
-	return buf
+	return append(buf,
+		byte(n>>56), byte(n>>48), byte(n>>40), byte(n>>32),
+		byte(n>>24), byte(n>>16), byte(n>>8), byte(n),
+	)
 }
 
 func AppendInt16BE(buf []byte, n int16) []byte {
@@ -36,22 +28,16 @@ func AppendInt64BE(buf []byte, n int64) []byte {
 }
 
 func AppendInt16LE(buf []byte, n int16) []byte {
-	wp := len(buf)
-	buf = append(buf, 0, 0)
-	binary.LittleEndian.PutUint16(buf[wp:], uint16(n))
-	return buf
+	return append(buf, byte(n), byte(n>>8))
 }
 
 func AppendInt32LE(buf []byte, n int32) []byte {
-	wp := len(buf)
-	buf = append(buf, 0, 0, 0, 0)
-	binary.LittleEndian.PutUint32(buf[wp:], uint32(n))
-	return buf
+	return append(buf, byte(n), byte(n>>8), byte(n>>16), byte(n>>24))
 }
 
 func AppendInt64LE(buf []byte, n int64) []byte {
-	wp := len(buf)
-	buf = append(buf, 0, 0, 0, 0, 0, 0, 0, 0)
-	binary.LittleEndian.PutUint64(buf[wp:], uint64(n))
-	return buf
+	return append(buf,
+		byte(n), byte(n>>8), byte(n>>16), byte(n>>24),
+		byte(n>>32), byte(n>>40), byte(n>>48), byte(n>>56),
+	)
 }
