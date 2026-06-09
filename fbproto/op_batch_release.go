@@ -1,5 +1,7 @@
 package fbproto
 
+// https://firebirdsql.org/file/documentation/html/en/firebirddocs/wireprotocol/firebird-wire-protocol.html#wireprotocol-batches-release
+
 import "fmt"
 
 type OpBatchRelease struct {
