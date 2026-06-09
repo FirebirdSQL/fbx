@@ -12,16 +12,22 @@ func (op *OpBatchMsg) Write(x *XDRWriter) error {
 		rowCount = len(op.Rows)
 	}
 
+	// p_operation
 	if err := x.WriteInt32(Op_batch_msg); err != nil {
 		return err
 	}
+
+	// p_batch_statement
 	if err := x.WriteInt32(op.StatementHandle); err != nil {
 		return err
 	}
+
+	// p_batch_messages
 	if err := x.WriteInt32(rowCount); err != nil {
 		return err
 	}
 
+	// p_batch_data
 	for _, row := range op.Rows {
 		if err := x.WriteBytes(row); err != nil {
 			return err
