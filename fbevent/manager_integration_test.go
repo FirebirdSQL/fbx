@@ -14,6 +14,7 @@ import (
 	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbconn"
 	"rdb.red-soft.ru/fbx/fbevent"
+	"rdb.red-soft.ru/fbx/fbproto"
 )
 
 var eventNameCounter atomic.Uint64
@@ -807,7 +808,7 @@ func skipIfAuxEventPortUnavailable(t testing.TB, err error) bool {
 
 	for _, gdsCode := range fbErr.GdsCodes {
 		switch gdsCode {
-		case 335544724, 335544725, 335544975:
+		case fbproto.Isc_net_event_connect_err, fbproto.Isc_net_event_listen_err, fbproto.Isc_net_event_connect_timeout:
 			t.Skipf("skipping due to unavailable auxiliary event port (gds code %d): %v", gdsCode, err)
 			return true
 		}
