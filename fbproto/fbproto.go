@@ -18,12 +18,12 @@ type ProtocolVersionDescriptor struct {
 
 var (
 	SupportedProtocols = []ProtocolVersionDescriptor{
-		{PROTOCOL_VERSION13 | ProtocolFlag, GenericAchitectureClient, Ptype_lazy_send, Ptype_lazy_send, 8},
-		{PROTOCOL_VERSION14 | ProtocolFlag, GenericAchitectureClient, Ptype_lazy_send, Ptype_lazy_send, 10},
-		{PROTOCOL_VERSION15 | ProtocolFlag, GenericAchitectureClient, Ptype_lazy_send, Ptype_lazy_send, 12},
-		{PROTOCOL_VERSION16 | ProtocolFlag, GenericAchitectureClient, Ptype_lazy_send, Ptype_lazy_send, 14},
-		{PROTOCOL_VERSION17 | ProtocolFlag, GenericAchitectureClient, Ptype_lazy_send, Ptype_lazy_send, 16},
-		{PROTOCOL_VERSION18 | ProtocolFlag, GenericAchitectureClient, Ptype_lazy_send, Ptype_lazy_send, 18},
-		{PROTOCOL_VERSION19 | ProtocolFlag, GenericAchitectureClient, Ptype_lazy_send, Ptype_lazy_send, 20},
+		{PROTOCOL_VERSION13 | ProtocolFlag, GenericArchitectureClient, Ptype_lazy_send, Ptype_lazy_send, 8},
+		{PROTOCOL_VERSION14 | ProtocolFlag, GenericArchitectureClient, Ptype_lazy_send, Ptype_lazy_send, 10},
+		{PROTOCOL_VERSION15 | ProtocolFlag, GenericArchitectureClient, Ptype_lazy_send, Ptype_lazy_send, 12},
+		{PROTOCOL_VERSION16 | ProtocolFlag, GenericArchitectureClient, Ptype_lazy_send, Ptype_lazy_send, 14},
+		{PROTOCOL_VERSION17 | ProtocolFlag, GenericArchitectureClient, Ptype_lazy_send, Ptype_lazy_send, 16},
+		{PROTOCOL_VERSION18 | ProtocolFlag, GenericArchitectureClient, Ptype_lazy_send, Ptype_lazy_send, 18},
+		{PROTOCOL_VERSION19 | ProtocolFlag, GenericArchitectureClient, Ptype_lazy_send, Ptype_lazy_send, 20},
 	}
 )

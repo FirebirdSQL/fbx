@@ -49,7 +49,7 @@ func (op *OpConnect) Write(x *XDRWriter) error {
 	}
 
 	//p_cnct_client
-	if err = x.WriteInt32(GenericAchitectureClient); err != nil {
+	if err = x.WriteInt32(GenericArchitectureClient); err != nil {
 		return err
 	}
 

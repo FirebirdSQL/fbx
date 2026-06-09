@@ -13,7 +13,7 @@ const (
 
 	P_cnct_min_type = 0
 
-	GenericAchitectureClient = 1
+	GenericArchitectureClient = 1
 
 	ConnectVersion3 = 3
 
@@ -462,7 +462,7 @@ const (
 	Isc_action_svc_nfix             = 31
 	Isc_action_svc_last             = 32
 
-	// Transaction informatino items
+	// Transaction information items
 	Isc_info_tra_id                 = 4
 	Isc_info_tra_oldest_interesting = 5
 	Isc_info_tra_oldest_snapshot    = 6
@@ -545,7 +545,7 @@ const (
 	Op_exit               = 2
 	Op_accept             = 3
 	Op_reject             = 4
-	Op_protocrol          = 5
+	Op_protocol           = 5
 	Op_disconnect         = 6
 	Op_response           = 9
 	Op_attach             = 19
