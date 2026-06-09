@@ -25,14 +25,6 @@ import (
 	"rdb.red-soft.ru/fbx/fbproto/wirecrypt"
 )
 
-// Debug printing for authentication handshake. Enable by setting
-// FBX_AUTH_DEBUG to a truthy value (e.g. 1, true).
-func authPrintf(format string, args ...any) {
-	if authDebugEnabled, _ := strconv.ParseBool(strings.TrimSpace(os.Getenv("FBX_AUTH_DEBUG"))); authDebugEnabled {
-		fmt.Printf(format, args...)
-	}
-}
-
 const (
 	connStatusUninitialized = iota
 	connStatusConnecting
@@ -280,19 +272,8 @@ func DropDatabaseConfig(ctx context.Context, config *Config) error {
 }
 
 func (fbConn *FbConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *auth.AuthManager, respond bool) error {
-	if msg.Version != 0 {
-		fbConn.protocolFeatures = ProtocolFeaturesForVersion(msg.Version)
-	}
-	authPrintf("[AUTHDBG] cond_accept: plugin=%s data_len=%d\n", msg.PluginName, len(msg.Data))
-	authPrintf("%#v\n", msg)
-	if msg.Version != 0 {
-		fbConn.protocolVersion = msg.Version & fbproto.ProtocolMask
-	}
-
-	if fbConn.wireCrypt != nil {
-		if err := fbConn.wireCrypt.AddServerKeys(msg.ServerKeys); err != nil {
-			return err
-		}
+	if err := fbConn.handleAcceptMetadata(msg, authManager); err != nil {
+		return err
 	}
 
 	step, err := authManager.HandleServerChallenge(msg.PluginName, msg.Data)
@@ -306,6 +287,23 @@ func (fbConn *FbConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *a
 			fbConn.authContFirstSent = true
 		}
 		return fbConn.sendContAuth(step.Reply, msg.PluginName, pluginList, nil)
+	}
+	return nil
+}
+
+func (fbConn *FbConn) handleAcceptMetadata(msg *fbproto.OpCondAccept, authManager *auth.AuthManager) error {
+	if msg.Version != 0 {
+		fbConn.protocolFeatures = ProtocolFeaturesForVersion(msg.Version)
+		fbConn.protocolVersion = msg.Version & fbproto.ProtocolMask
+	}
+
+	if fbConn.wireCrypt != nil {
+		if err := fbConn.wireCrypt.AddServerKeys(msg.ServerKeys); err != nil {
+			return err
+		}
+	}
+	if err := authManager.RestrictToServerPlugins(msg.ServerKeys); err != nil {
+		return err
 	}
 	return nil
 }
@@ -326,8 +324,6 @@ func (fbConn *FbConn) handleAuthResponse(msg *fbproto.OpResponse, config *Config
 	}
 
 	sessionKey := authManager.SessionKey()
-	authPrintf("[AUTHDBG] auth response: wire_crypt=%v sessionKey=%v\n",
-		config.WireCrypt, len(sessionKey) > 0)
 	if !config.WireCrypt || len(sessionKey) == 0 {
 		return false, nil
 	}
@@ -335,18 +331,97 @@ func (fbConn *FbConn) handleAuthResponse(msg *fbproto.OpResponse, config *Config
 	initInfo, err := fbConn.enableWireCrypt(sessionKey)
 	if err != nil {
 		if errors.Is(err, wirecrypt.ErrNoCommonPlugin) {
-			authPrintf("[AUTHDBG] wire encryption negotiation failed: %v\n", err)
 			return false, nil
 		}
 		return false, err
 	}
-	if initInfo != nil {
-		authPrintf("[AUTHDBG] wire encryption enabled with %s (nonce_len=%d)\n",
-			initInfo.Identifier.Plugin, len(initInfo.Nonce))
-		return true, nil
+	return initInfo != nil, nil
+}
+
+func (fbConn *FbConn) handlePostAttachAuthChallenge(authManager *auth.AuthManager, pluginName string, data []byte, keys []byte) error {
+	if fbConn.wireCrypt != nil {
+		if err := fbConn.wireCrypt.AddServerKeys(keys); err != nil {
+			return err
+		}
 	}
 
-	return false, nil
+	step, err := authManager.HandleServerChallenge(pluginName, data)
+	if err != nil {
+		return err
+	}
+	if step == nil {
+		return nil
+	}
+	return fbConn.sendContAuth(step.Reply, pluginName, "", nil)
+}
+
+func (fbConn *FbConn) finishAttachAuth(config *Config, authManager *auth.AuthManager, attachAction string) error {
+	pendingCryptAck := false
+
+	for {
+		msg, err := fbConn.receiveMessage()
+		if err != nil {
+			return fmt.Errorf("%s failed: %w", attachAction, err)
+		}
+
+		switch m := msg.(type) {
+		case *fbproto.OpContAuth:
+			if err := fbConn.handlePostAttachAuthChallenge(authManager, m.PluginName, m.AuthData, m.Keys); err != nil {
+				return fmt.Errorf("authentication failed: %w", err)
+			}
+			if err := fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+				return fmt.Errorf("failed to flush opContAuth: %w", err)
+			}
+			continue
+		case *fbproto.OpCondAccept:
+			if err := fbConn.handleAcceptMetadata(m, authManager); err != nil {
+				return fmt.Errorf("authentication failed: %w", err)
+			}
+			if err := fbConn.handlePostAttachAuthChallenge(authManager, m.PluginName, m.Data, nil); err != nil {
+				return fmt.Errorf("authentication failed: %w", err)
+			}
+			if err := fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+				return fmt.Errorf("failed to flush opContAuth: %w", err)
+			}
+			continue
+		case *fbproto.OpDataAccept:
+			if err := fbConn.handleAcceptMetadata(&m.OpCondAccept, authManager); err != nil {
+				return fmt.Errorf("authentication failed: %w", err)
+			}
+			if m.AuthComplete {
+				authManager.SetAuthComplete(true)
+				continue
+			}
+			if err := fbConn.handlePostAttachAuthChallenge(authManager, m.PluginName, m.Data, nil); err != nil {
+				return fmt.Errorf("authentication failed: %w", err)
+			}
+			if err := fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+				return fmt.Errorf("failed to flush opContAuth: %w", err)
+			}
+			continue
+		case *fbproto.OpResponse:
+			if pendingCryptAck {
+				return nil
+			}
+			continueLoop, err := fbConn.handleAuthResponse(m, config, authManager)
+			if err != nil {
+				return fmt.Errorf("authentication failed: %w", err)
+			}
+			fbConn.dbHandle = m.Object
+			if continueLoop {
+				pendingCryptAck = true
+				if err := fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+					return fmt.Errorf("failed to flush opCrypt: %w", err)
+				}
+				continue
+			}
+			return nil
+		case *fbproto.ErrorResponse:
+			return ErrorResponseToFbError(m)
+		default:
+			return fmt.Errorf("%s failed: unexpected message type %T", attachAction, msg)
+		}
+	}
 }
 
 func (fbConn *FbConn) enableWireCrypt(sessionKey []byte) (*wirecrypt.InitResult, error) {
@@ -373,17 +448,39 @@ func (fbConn *FbConn) enableWireCrypt(sessionKey []byte) (*wirecrypt.InitResult,
 	return initInfo, nil
 }
 
+func shouldRespondToCondAccept(msg *fbproto.OpCondAccept) bool {
+	if msg == nil {
+		return true
+	}
+	return len(msg.Data) > 0 || hasWireCryptKeys(msg.ServerKeys)
+}
+
+func shouldRespondToDataAccept(msg *fbproto.OpDataAccept) bool {
+	if msg == nil {
+		return true
+	}
+	if msg.AuthComplete {
+		return false
+	}
+	return hasWireCryptKeys(msg.ServerKeys)
+}
+
+func hasWireCryptKeys(serverKeys []byte) bool {
+	keys, err := wirecrypt.ParseKnownServerKeys(serverKeys)
+	if err != nil {
+		return false
+	}
+	for _, key := range keys {
+		if key.Type != "" && len(key.Plugins) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func (fbConn *FbConn) sendContAuth(authData []byte, pluginName string, pluginList string, keys []byte) error {
 	dataCopy := make([]byte, len(authData))
 	copy(dataCopy, authData)
-	// Debug: show what we are about to send in op_cont_auth
-	// Print only prefix of proof to avoid clutter
-	prefixLen := 16
-	if len(dataCopy) < prefixLen {
-		prefixLen = len(dataCopy)
-	}
-	authPrintf("[AUTHDBG] send op_cont_auth: plugin=%s list=%s proof_len=%d proof_prefix=%x\n",
-		pluginName, pluginList, len(dataCopy), dataCopy[:prefixLen])
 	msg := &fbproto.OpContAuth{
 		Encoding:   fbConn.Encoding,
 		AuthData:   dataCopy,
@@ -571,7 +668,11 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 	fbConn.slowWriteTimer.Stop()
 	fbConn.bgReaderStarted = make(chan struct{})
 	fbConn.writer = bufio.NewWriter(fbConn.conn)
-	fbConn.client = fbproto.NewClient(fbConn.bgReader, fbConn.writer, fbConn.Encoding)
+	if config.BuildFrontend != nil {
+		fbConn.client = config.BuildFrontend(fbConn.bgReader, fbConn.writer)
+	} else {
+		fbConn.client = fbproto.NewClient(fbConn.bgReader, fbConn.writer, fbConn.Encoding)
+	}
 	fbConn.inlineBlobSize = config.MaxInlineBlobSize
 	fbConn.client.ConfigureInlineBlobCache(config.MaxInlineBlobSize, config.MaxBlobCacheSize)
 	fbConn.wireCrypt = wirecrypt.NewDefaultManager()
@@ -588,6 +689,7 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 	}
 
 	opConnect := fbproto.OpConnect{
+		Operation:        fbproto.Op_attach,
 		Database:         config.Database,
 		User:             config.User,
 		SystemUser:       config.SystemUser,
@@ -599,6 +701,9 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 		Options:          nil,
 		WireCrypt:        config.WireCrypt,
 		Encoding:         fbConn.Encoding,
+	}
+	if config.CreateDatabase {
+		opConnect.Operation = fbproto.Op_create
 	}
 
 	if err = fbConn.client.WriteMessage(&opConnect); err != nil {
@@ -623,21 +728,25 @@ connectLoop:
 			return nil, newPerDialConnectError("authentication failed", err)
 		}
 
-		authPrintf("[AUTHDBG] received %T\n", msg)
 		switch msg := msg.(type) {
 		case *fbproto.OpContAuth:
 			fake := &fbproto.OpCondAccept{Encoding: fbConn.Encoding}
 			fake.PluginName = msg.PluginName
 			fake.Data = msg.AuthData
+			fake.ServerKeys = msg.Keys
 			if err := fbConn.handleCondAccept(fake, authManager, true); err != nil {
 				fbConn.conn.Close()
 				return nil, newPerDialConnectError("authentication failed", err)
 			}
 			continue connectLoop
 		case *fbproto.OpCondAccept:
-			if err := fbConn.handleCondAccept(msg, authManager, true); err != nil {
+			respond := shouldRespondToCondAccept(msg)
+			if err := fbConn.handleCondAccept(msg, authManager, respond); err != nil {
 				fbConn.conn.Close()
 				return nil, newPerDialConnectError("authentication failed", err)
+			}
+			if !respond {
+				break connectLoop
 			}
 			continue connectLoop
 		case *fbproto.OpResponse:
@@ -658,11 +767,20 @@ connectLoop:
 			}
 			break connectLoop
 		case *fbproto.OpDataAccept:
-			if err := fbConn.handleCondAccept(&msg.OpCondAccept, authManager, !msg.AuthComplete); err != nil {
+			if msg.AuthComplete {
+				if err := fbConn.handleAcceptMetadata(&msg.OpCondAccept, authManager); err != nil {
+					fbConn.conn.Close()
+					return nil, newPerDialConnectError("authentication failed", err)
+				}
+				authManager.SetAuthComplete(true)
+				break connectLoop
+			}
+			respond := shouldRespondToDataAccept(msg)
+			if err := fbConn.handleCondAccept(&msg.OpCondAccept, authManager, respond); err != nil {
 				fbConn.conn.Close()
 				return nil, newPerDialConnectError("authentication failed", err)
 			}
-			if msg.AuthComplete {
+			if !respond {
 				break connectLoop
 			}
 			continue connectLoop
@@ -734,10 +852,6 @@ connectLoop:
 		dpb.PutInt32(fbproto.Isc_dpb_max_blob_cache_size, int32(config.MaxBlobCacheSize))
 	}
 	if authSpecific := authManager.AuthSpecificData(); len(authSpecific) > 0 {
-		// For SRP, clientData historically was ASCII-hex, and servers accept
-		// that in specific_auth_data. For GSS, sends raw token bytes.
-		// The server handles both when provided as a Buffer, so send raw bytes
-		// to avoid double-hexing.
 		dpb.PutTag(fbproto.Isc_dpb_specific_auth_data)
 		dpb.PutBuffer(authSpecific)
 	}
@@ -764,17 +878,9 @@ connectLoop:
 		return nil, newPerDialConnectError("failed to flush "+attachAction, err)
 	}
 
-	msg, err := fbConn.receiveMessage()
-	if err != nil {
+	if err := fbConn.finishAttachAuth(config, authManager, attachAction); err != nil {
 		fbConn.conn.Close()
 		return nil, newPerDialConnectError(attachAction+" failed", err)
-	}
-	switch m := msg.(type) {
-	case *fbproto.OpResponse:
-		fbConn.dbHandle = m.Object
-	case *fbproto.ErrorResponse:
-		fbConn.conn.Close()
-		return nil, ErrorResponseToFbError(m)
 	}
 
 	fbConn.status = connStatusIdle
@@ -805,7 +911,7 @@ connectLoop:
 		return nil, newPerDialConnectError("failed to flush opInfoDatabase", err)
 	}
 
-	msg, err = fbConn.receiveMessage()
+	msg, err := fbConn.receiveMessage()
 	if err != nil {
 		fbConn.conn.Close()
 		return nil, newPerDialConnectError("failed", err)

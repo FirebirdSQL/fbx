@@ -52,6 +52,8 @@ func (t *tracer) traceRequest(sender byte, msg ClientMessage) {
 		t.traceFetchMessage(sender, msg)
 	case *OpInfoSQL:
 		t.traceInfoSQLMessage(sender, msg)
+	case *OpInfoDatabase:
+		t.traceInfoDatabaseMessage(sender, msg)
 	case *OpOpenBlob:
 		t.traceOpenBlobMessage(sender, msg)
 	case *OpCreateBlob:
@@ -141,6 +143,15 @@ func (t *tracer) traceInfoSQLMessage(sender byte, msg *OpInfoSQL) {
 		fmt.Fprintf(t.buf, " lenItems=%d", len(msg.StatementInformationItems))
 		if t.FullLogMode && len(msg.StatementInformationItems) > 0 {
 			fmt.Fprintf(t.buf, " items=%s", traceSingleQuotedString(msg.StatementInformationItems))
+		}
+	})
+}
+
+func (t *tracer) traceInfoDatabaseMessage(sender byte, msg *OpInfoDatabase) {
+	t.writeTrace(sender, "InfoDatabase", func() {
+		fmt.Fprintf(t.buf, " lenItems=%d bufSize=%d", len(msg.Parameters), msg.BufferLength)
+		if t.FullLogMode && len(msg.Parameters) > 0 {
+			fmt.Fprintf(t.buf, " items=%s", traceSingleQuotedString(msg.Parameters))
 		}
 	})
 }
@@ -348,7 +359,15 @@ func (t *tracer) traceFetchResponseMessage(sender byte, op *OpFetchResponse) {
 }
 
 func (t *tracer) traceCondAcceptMessage(sender byte, op *OpCondAccept) {
-	t.writeTrace(sender, "CondAccept", func() {
+	t.traceAcceptMessage(sender, "CondAccept", op)
+}
+
+func (t *tracer) traceDataAcceptMessage(sender byte, op *OpDataAccept) {
+	t.traceAcceptMessage(sender, "DataAccept", &op.OpCondAccept)
+}
+
+func (t *tracer) traceAcceptMessage(sender byte, msgType string, op *OpCondAccept) {
+	t.writeTrace(sender, msgType, func() {
 		fmt.Fprintf(t.buf, " ver=%d arch=%d type=0x%x", op.Version, op.Architecture, op.Type)
 		fmt.Fprintf(t.buf, " authComplete=%t", op.AuthComplete)
 		fmt.Fprintf(t.buf, " lenPluginName=%d", len(op.PluginName))
@@ -361,10 +380,6 @@ func (t *tracer) traceCondAcceptMessage(sender byte, op *OpCondAccept) {
 		}
 		fmt.Fprintf(t.buf, " compress=%t", op.Compress)
 	})
-}
-
-func (t *tracer) traceDataAcceptMessage(sender byte, op *OpDataAccept) {
-	t.traceCondAcceptMessage(sender, &op.OpCondAccept)
 }
 
 func (t *tracer) traceInlineBlobMessage(sender byte, op *OpInlineBlob) {

@@ -27,11 +27,11 @@ type AuthPlugin interface {
 
 var defaultPluginSequence = []string{
 	"Srp256",
+	"Srp",
+	"Gss",
 	"Srp224",
 	"Srp384",
 	"Srp512",
-	"Srp",
-	"Gss",
 	"Legacy_Auth",
 }
 
@@ -64,6 +64,7 @@ type AuthManager struct {
 	current          int
 	lastAuthSpecific []byte
 	lastSessionKey   []byte
+	authComplete     bool
 }
 
 type SpecificDataChunk struct {
@@ -91,12 +92,12 @@ func NewAuthManager(user string, password string, pluginNames []string) (*AuthMa
 			continue
 		}
 
-		constructor, ok := pluginConstructors[key]
+		plugin, ok := createAuthPlugin(trimmed, password)
 		if !ok {
 			return nil, fmt.Errorf("auth: unknown authentication plugin %q", name)
 		}
 
-		plugins = append(plugins, constructor(password))
+		plugins = append(plugins, plugin)
 		seen[key] = struct{}{}
 	}
 
@@ -127,15 +128,70 @@ func (m *AuthManager) BuildList() string {
 }
 
 func (m *AuthManager) SetCurrentPlugin(name string) (AuthPlugin, bool) {
+	if plugin := m.GetCurrentPlugin(); plugin != nil {
+		for _, advertised := range plugin.Advertise() {
+			if strings.EqualFold(advertised, name) {
+				return plugin, true
+			}
+		}
+	}
+
 	for idx, plugin := range m.plugins {
 		for _, advertised := range plugin.Advertise() {
 			if strings.EqualFold(advertised, name) {
+				if fresh, ok := createAuthPlugin(plugin.Name(), m.password); ok {
+					plugin = fresh
+					m.plugins[idx] = fresh
+				}
 				m.current = idx
 				return plugin, true
 			}
 		}
 	}
 	return nil, false
+}
+
+func (m *AuthManager) RestrictToServerPlugins(serverKeys []byte) error {
+	serverPlugins := knownAuthPlugins(serverKeys)
+	if len(serverPlugins) == 0 {
+		return nil
+	}
+
+	allowed := make(map[string]struct{}, len(serverPlugins))
+	for _, name := range serverPlugins {
+		allowed[strings.ToLower(strings.TrimSpace(name))] = struct{}{}
+	}
+
+	currentPlugin := m.GetCurrentPlugin()
+	filtered := m.plugins[:0]
+	for _, plugin := range m.plugins {
+		matches := false
+		for _, advertised := range plugin.Advertise() {
+			if _, ok := allowed[strings.ToLower(strings.TrimSpace(advertised))]; ok {
+				matches = true
+				break
+			}
+		}
+		if matches {
+			filtered = append(filtered, plugin)
+		}
+	}
+
+	if len(filtered) == 0 {
+		return fmt.Errorf("auth: no matching plugins on server")
+	}
+
+	m.plugins = filtered
+	m.current = 0
+	if currentPlugin != nil {
+		for idx, plugin := range m.plugins {
+			if strings.EqualFold(plugin.Name(), currentPlugin.Name()) {
+				m.current = idx
+				break
+			}
+		}
+	}
+	return nil
 }
 
 func (m *AuthManager) BeginHandshake() *HandshakeRequest {
@@ -151,6 +207,7 @@ func (m *AuthManager) BeginHandshake() *HandshakeRequest {
 }
 
 func (m *AuthManager) HandleServerChallenge(pluginName string, data []byte) (*AuthPluginStep, error) {
+	m.authComplete = false
 	plugin, ok := m.SetCurrentPlugin(pluginName)
 	if !ok {
 		return nil, &UnsupportedPluginError{Name: pluginName}
@@ -159,8 +216,8 @@ func (m *AuthManager) HandleServerChallenge(pluginName string, data []byte) (*Au
 	if err != nil {
 		return nil, err
 	}
-	if step != nil && len(step.AuthSpecific) > 0 {
-		m.lastAuthSpecific = step.AuthSpecific
+	if step != nil && len(step.Reply) > 0 {
+		m.lastAuthSpecific = step.Reply
 	} else {
 		m.lastAuthSpecific = nil
 	}
@@ -177,10 +234,24 @@ func (m *AuthManager) HandleAuthResponse(data []byte) error {
 	if plugin == nil {
 		return &UnsupportedPluginError{Name: ""}
 	}
-	return plugin.HandleAuthResponse(data)
+	if err := plugin.HandleAuthResponse(data); err != nil {
+		return err
+	}
+	m.authComplete = true
+	return nil
+}
+
+func (m *AuthManager) SetAuthComplete(complete bool) {
+	m.authComplete = complete
+	if complete {
+		m.lastAuthSpecific = nil
+	}
 }
 
 func (m *AuthManager) AuthSpecificData() []byte {
+	if m.authComplete {
+		return nil
+	}
 	return cloneBytes(m.lastAuthSpecific)
 }
 
@@ -194,6 +265,14 @@ func (m *AuthManager) pluginNames() []string {
 		names[i] = plugin.Name()
 	}
 	return names
+}
+
+func createAuthPlugin(name string, password string) (AuthPlugin, bool) {
+	constructor, ok := pluginConstructors[strings.ToLower(strings.TrimSpace(name))]
+	if !ok {
+		return nil, false
+	}
+	return constructor(password), true
 }
 
 type UnsupportedPluginError struct {
@@ -225,23 +304,40 @@ func cloneStrings(src []string) []string {
 	return dst
 }
 
-func prioritizePlugin(names []string, target string) []string {
-	idx := -1
-	targetLower := strings.ToLower(strings.TrimSpace(target))
-	for i, name := range names {
-		if strings.ToLower(strings.TrimSpace(name)) == targetLower {
-			idx = i
-			break
+func knownAuthPlugins(serverKeys []byte) []string {
+	const tagKnownPlugins = 2
+
+	var result []string
+	for offset := 0; offset+2 <= len(serverKeys); {
+		tag := serverKeys[offset]
+		length := int(serverKeys[offset+1])
+		offset += 2
+		if offset+length > len(serverKeys) {
+			return result
+		}
+		if tag == tagKnownPlugins {
+			result = append(result, splitPluginList(string(serverKeys[offset:offset+length]))...)
+		}
+		offset += length
+	}
+	return result
+}
+
+func splitPluginList(s string) []string {
+	fields := strings.FieldsFunc(s, func(r rune) bool {
+		switch r {
+		case ' ', '\t', ',', ';':
+			return true
+		default:
+			return false
+		}
+	})
+	result := fields[:0]
+	for _, field := range fields {
+		if trimmed := strings.TrimSpace(field); trimmed != "" {
+			result = append(result, trimmed)
 		}
 	}
-	if idx <= 0 {
-		return names
-	}
-
-	result := make([]string, 0, len(names))
-	result = append(result, names[idx])
-	result = append(result, names[:idx]...)
-	result = append(result, names[idx+1:]...)
 	return result
 }
 
