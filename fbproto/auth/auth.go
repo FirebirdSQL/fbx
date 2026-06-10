@@ -113,6 +113,9 @@ func NewAuthManager(user string, password string, pluginNames []string) (*AuthMa
 	}, nil
 }
 
+// GetCurrentPlugin returns the plugin currently selected by the client/server
+// negotiation. If the saved index is out of range, it falls back to the first
+// available plugin to keep the manager in a usable state.
 func (m *AuthManager) GetCurrentPlugin() AuthPlugin {
 	if len(m.plugins) == 0 {
 		return nil
@@ -123,10 +126,17 @@ func (m *AuthManager) GetCurrentPlugin() AuthPlugin {
 	return m.plugins[m.current]
 }
 
+// BuildList returns the comma-separated plugin preference list currently
+// advertised to the server. The list may be narrowed after the server sends
+// TAG_KNOWN_PLUGINS in p_acpt_keys.
 func (m *AuthManager) BuildList() string {
 	return strings.Join(m.pluginNames(), ",")
 }
 
+// SetCurrentPlugin switches the active plugin to the server-selected name.
+// When switching away from another plugin, it recreates the plugin instance so
+// per-plugin handshake state from the previous attempt cannot leak into the new
+// authentication flow.
 func (m *AuthManager) SetCurrentPlugin(name string) (AuthPlugin, bool) {
 	if plugin := m.GetCurrentPlugin(); plugin != nil {
 		for _, advertised := range plugin.Advertise() {
@@ -151,6 +161,10 @@ func (m *AuthManager) SetCurrentPlugin(name string) (AuthPlugin, bool) {
 	return nil, false
 }
 
+// RestrictToServerPlugins narrows the client plugin list to the intersection
+// advertised by the server in TAG_KNOWN_PLUGINS. The client order is preserved,
+// because the list still represents client preference after removing plugins
+// the server says it cannot use.
 func (m *AuthManager) RestrictToServerPlugins(serverKeys []byte) error {
 	serverPlugins := knownAuthPlugins(serverKeys)
 	if len(serverPlugins) == 0 {
@@ -194,6 +208,9 @@ func (m *AuthManager) RestrictToServerPlugins(serverKeys []byte) error {
 	return nil
 }
 
+// BeginHandshake builds the initial auth payload for op_connect using the
+// current first-choice plugin. Only that plugin's initial data is sent; the rest
+// of the list is advertised by name for server-side selection.
 func (m *AuthManager) BeginHandshake() *HandshakeRequest {
 	plugin := m.GetCurrentPlugin()
 	if plugin == nil {
@@ -206,6 +223,9 @@ func (m *AuthManager) BeginHandshake() *HandshakeRequest {
 	}
 }
 
+// HandleServerChallenge applies server-provided data to the selected plugin and
+// returns the next client response. It also stores the wire-format reply so an
+// attach-through-DPB flow can put the exact bytes into isc_dpb_specific_auth_data.
 func (m *AuthManager) HandleServerChallenge(pluginName string, data []byte) (*AuthPluginStep, error) {
 	m.authComplete = false
 	plugin, ok := m.SetCurrentPlugin(pluginName)
@@ -229,6 +249,8 @@ func (m *AuthManager) HandleServerChallenge(pluginName string, data []byte) (*Au
 	return step, nil
 }
 
+// HandleAuthResponse verifies final server auth data, such as an SRP server
+// proof, and marks authentication complete when the active plugin accepts it.
 func (m *AuthManager) HandleAuthResponse(data []byte) error {
 	plugin := m.GetCurrentPlugin()
 	if plugin == nil {
@@ -241,6 +263,8 @@ func (m *AuthManager) HandleAuthResponse(data []byte) error {
 	return nil
 }
 
+// SetAuthComplete records completion reported by protocol messages that do not
+// go through HandleAuthResponse. Once complete, stale DPB auth data is cleared.
 func (m *AuthManager) SetAuthComplete(complete bool) {
 	m.authComplete = complete
 	if complete {
@@ -248,6 +272,8 @@ func (m *AuthManager) SetAuthComplete(complete bool) {
 	}
 }
 
+// AuthSpecificData returns the last wire-format client auth response that still
+// needs to be carried in a DPB. It returns nil after authentication completes.
 func (m *AuthManager) AuthSpecificData() []byte {
 	if m.authComplete {
 		return nil
@@ -255,6 +281,8 @@ func (m *AuthManager) AuthSpecificData() []byte {
 	return cloneBytes(m.lastAuthSpecific)
 }
 
+// SessionKey returns the negotiated auth session key, when the active plugin
+// produced one. Wire encryption negotiation uses this key later.
 func (m *AuthManager) SessionKey() []byte {
 	return cloneBytes(m.lastSessionKey)
 }
