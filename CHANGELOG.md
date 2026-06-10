@@ -7,10 +7,20 @@
 - RS-304087. Database dropping.
 - RS-304075. Low-level raw connection hijacking and construction.
 
+### Improved
+- RS-303965. Port pgx v5.9.2. Optimized statement cache LRU implementation.
+- RS-303965. Port pgx v5.9.2. Optimized internal pgio append/set helpers.
+
 ### Fixed
 - RS-299490. Non-regular array metadata object identifiers handling.
 - RS-297906. Handling schema changing for prepared statements.
 - RS-307947. Statement handle leak in Conn.Query using mode QueryExecModeExec.
+- RS-303965. Port pgx v5.9.2. database/sql session reset now ignores internal driver transactions.
+- RS-303965. Port pgx v5.9.2. Stringer values are encoded as text and array cardinality overflow is guarded.
+- RS-303965. Port pgx v5.9.2. Numeric and integer scan edge cases.
+- RS-303965. Port pgx v5.9.2. database/sql sessions with open transactions are discarded.
+- RS-303965. Port pgx v5.9.2. fbxpool acquire loop, min connection check, and acquire error handling.
+- RS-303965. Port pgx v5.9.2. Context watcher goroutine and nil done channel leaks.
 
 # [0.4.1] - 20.05.2026
 
