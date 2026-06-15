@@ -10,6 +10,7 @@ import (
 )
 
 type OpConnect struct {
+	Operation        int
 	Database         string
 	User             string
 	SystemUser       string
@@ -32,8 +33,13 @@ func (op *OpConnect) Write(x *XDRWriter) error {
 	if err = x.WriteInt32(Op_connect); err != nil {
 		return err
 	}
-	// p_cnct_operation (unused)
-	if err = x.WriteInt32(0); err != nil {
+	operation := op.Operation
+	if operation == 0 {
+		operation = Op_attach
+	}
+	// p_cnct_operation is ignored by modern servers, but older protocol paths
+	// can use it to identify the database operation that follows connect.
+	if err = x.WriteInt32(operation); err != nil {
 		return err
 	}
 

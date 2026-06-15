@@ -2,6 +2,8 @@ package auth
 
 import (
 	"bytes"
+	"encoding/binary"
+	"math/big"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -12,7 +14,7 @@ func TestAuthManagerBuildListAndCurrent(t *testing.T) {
 	m, err := NewAuthManager("user", "secret", nil)
 	require.NoError(t, err)
 	require.NotNil(t, m)
-	require.Equal(t, "Srp256,Srp224,Srp384,Srp512,Srp,Gss,Legacy_Auth", m.BuildList())
+	require.Equal(t, "Srp256,Srp,Gss,Srp224,Srp384,Srp512,Legacy_Auth", m.BuildList())
 
 	cur := m.GetCurrentPlugin()
 	require.NotNil(t, cur)
@@ -21,7 +23,7 @@ func TestAuthManagerBuildListAndCurrent(t *testing.T) {
 	initial := m.BeginHandshake()
 	require.NotNil(t, initial)
 	require.Equal(t, cur.Name(), initial.PluginName)
-	require.Equal(t, []string{"Srp256", "Srp224", "Srp384", "Srp512", "Srp", "Gss", "Legacy_Auth"}, initial.PluginList)
+	require.Equal(t, []string{"Srp256", "Srp", "Gss", "Srp224", "Srp384", "Srp512", "Legacy_Auth"}, initial.PluginList)
 	require.NotEmpty(t, initial.SpecificData)
 	assembled := make([]byte, 0)
 	for idx, chunk := range initial.SpecificData {
@@ -76,14 +78,54 @@ func TestAuthManagerHandleServerChallenge(t *testing.T) {
 	require.NotNil(t, step)
 	require.NotEmpty(t, step.Reply)
 	require.Empty(t, step.AuthSpecific)
-	require.Empty(t, m.AuthSpecificData())
+	require.Equal(t, step.Reply, m.AuthSpecificData())
 	require.Empty(t, m.SessionKey())
+}
+
+func TestAuthManagerStoresWireReplyForAuthSpecificData(t *testing.T) {
+	m, err := NewAuthManager("sysdba", "masterkey", []string{"Srp"})
+	require.NoError(t, err)
+
+	plugin := m.GetCurrentPlugin().(*SrpAuthPlugin)
+	salt := []byte(testSaltHex)
+	serverPrivate := mustBigIntFromHex(testServerPrivateHex)
+	verifier := plugin.engine.Verifier("SYSDBA", "masterkey", salt)
+	serverPublic := plugin.engine.PublicServerKey(verifier, serverPrivate)
+
+	step, err := m.HandleServerChallenge("Srp", mustAuthManagerSrpServerData(t, salt, serverPublic))
+	require.NoError(t, err)
+	require.NotEmpty(t, step.AuthSpecific)
+	require.NotEqual(t, step.AuthSpecific, step.Reply)
+	require.Equal(t, step.Reply, m.AuthSpecificData())
+	require.NotEmpty(t, m.SessionKey())
 }
 
 func TestHandleServerChallengeUnsupportedPlugin(t *testing.T) {
 	m, err := NewAuthManager("user", "secret", nil)
 	require.NoError(t, err)
 	_, err = m.HandleServerChallenge("unknown", nil)
+	require.Error(t, err)
+}
+
+func TestAuthManagerRestrictsToServerKnownPlugins(t *testing.T) {
+	m, err := NewAuthManager("user", "secret", nil)
+	require.NoError(t, err)
+
+	require.NoError(t, m.RestrictToServerPlugins([]byte{2, 3, 'S', 'r', 'p'}))
+	require.Equal(t, "Srp", m.BuildList())
+	require.Equal(t, "Srp", m.GetCurrentPlugin().Name())
+
+	initial := m.BeginHandshake()
+	require.NotNil(t, initial)
+	require.Equal(t, "Srp", initial.PluginName)
+	require.Equal(t, []string{"Srp"}, initial.PluginList)
+}
+
+func TestAuthManagerRestrictToServerKnownPluginsNoMatch(t *testing.T) {
+	m, err := NewAuthManager("user", "secret", []string{"Srp"})
+	require.NoError(t, err)
+
+	err = m.RestrictToServerPlugins([]byte{2, 11, 'L', 'e', 'g', 'a', 'c', 'y', '_', 'A', 'u', 't', 'h'})
 	require.Error(t, err)
 }
 
@@ -110,4 +152,16 @@ func TestNewAuthManagerCustomList(t *testing.T) {
 func TestNewAuthManagerUnknownPlugin(t *testing.T) {
 	_, err := NewAuthManager("user", "secret", []string{"unknown"})
 	require.Error(t, err)
+}
+
+func mustAuthManagerSrpServerData(t *testing.T, salt []byte, serverPublic *big.Int) []byte {
+	t.Helper()
+
+	serverHex := []byte(serverPublic.Text(16))
+	data := make([]byte, 0, 4+len(salt)+len(serverHex))
+	data = binary.LittleEndian.AppendUint16(data, uint16(len(salt)))
+	data = append(data, salt...)
+	data = binary.LittleEndian.AppendUint16(data, uint16(len(serverHex)))
+	data = append(data, serverHex...)
+	return data
 }
