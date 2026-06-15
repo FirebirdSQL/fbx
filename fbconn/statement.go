@@ -3,6 +3,7 @@ package fbconn
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 
 	"rdb.red-soft.ru/fbx/fbproto"
@@ -174,7 +175,9 @@ func (st *Statement) Exec(ctx context.Context, paramValues [][]byte) *ResultRead
 	}
 	rr = st.ExecTx(ctx, tx, paramValues)
 	if rr.err != nil {
-		st.conn.rollbackInternalTxIfAutocommitOnError(ctx, tx)
+		if rbErr := st.conn.rollbackInternalTxIfAutocommitOnError(ctx, tx, rr.err); rbErr != nil {
+			rr.err = errors.Join(rr.err, fmt.Errorf("rollback internal tx: %w", rbErr))
+		}
 	}
 	return rr
 }

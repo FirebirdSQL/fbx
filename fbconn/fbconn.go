@@ -1277,7 +1277,9 @@ func (fbConn *FbConn) Prepare(ctx context.Context, sql string) (*Statement, erro
 	}
 	st, err := fbConn.PrepareTx(ctx, tx, sql)
 	if err != nil {
-		fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx)
+		if rbErr := fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx, err); rbErr != nil {
+			err = errors.Join(err, fmt.Errorf("rollback internal tx: %w", rbErr))
+		}
 		return nil, err
 	}
 	return st, nil
@@ -1468,7 +1470,9 @@ func (fbConn *FbConn) ExecImmediate(ctx context.Context, sql string) error {
 		return err
 	}
 	if err := fbConn.ExecImmediateTx(ctx, tx, sql); err != nil {
-		fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx)
+		if rbErr := fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx, err); rbErr != nil {
+			err = errors.Join(err, fmt.Errorf("rollback internal tx: %w", rbErr))
+		}
 		return err
 	}
 	return nil
@@ -1610,7 +1614,9 @@ func (fbConn *FbConn) ExecParamsTx(ctx context.Context, tx *FBTransaction, sql s
 		if SafeToRetry(err) || errors.As(err, &fbErr) {
 			closeConn = false
 		}
-		fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx)
+		if rbErr := fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx, err); rbErr != nil {
+			err = errors.Join(err, fmt.Errorf("rollback internal tx: %w", rbErr))
+		}
 		res := ResultReader{
 			fbConn: fbConn,
 			ctx:    ctx,
@@ -1634,7 +1640,9 @@ func (fbConn *FbConn) ExecParamsTx(ctx context.Context, tx *FBTransaction, sql s
 		if SafeToRetry(rr.err) || errors.As(rr.err, &fbErr) {
 			closeConn = false
 		}
-		fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx)
+		if rbErr := fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx, rr.err); rbErr != nil {
+			rr.err = errors.Join(rr.err, fmt.Errorf("rollback internal tx: %w", rbErr))
+		}
 		res := ResultReader{
 			fbConn: fbConn,
 			ctx:    ctx,
@@ -1901,16 +1909,11 @@ func (fbConn *FbConn) getArrayDimensions(ctx context.Context, tx *FBTransaction,
 	return dimensions, nil
 }
 
-func (fbConn *FbConn) getArray(ctx context.Context, arrayId int64, datatype uint32, length, l int, sdl []byte) (_ []byte, err error) {
+func (fbConn *FbConn) getArray(ctx context.Context, arrayId int64, datatype uint32, length, l int, sdl []byte) ([]byte, error) {
 	tx, err := fbConn.ensureInternalTransaction(ctx, nil, false)
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		if err != nil {
-			fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx)
-		}
-	}()
 
 	opGetSlice := fbproto.OpGetSlice{
 		TransactionHandle: tx.Handle,
@@ -1938,28 +1941,20 @@ func (fbConn *FbConn) getArray(ctx context.Context, arrayId int64, datatype uint
 	case *fbproto.OpSliceResponse:
 		return m.SliceData, nil
 	case *fbproto.OpResponse:
-		err = fmt.Errorf("array getting error: %s", m.Message)
-		return nil, err
+		return nil, fmt.Errorf("array getting error: %s", m.Message)
 	case *fbproto.ErrorResponse:
 		fbConn.conn.Close()
-		err = ErrorResponseToFbError(m)
-		return nil, err
+		return nil, ErrorResponseToFbError(m)
 	default:
-		err = fmt.Errorf("unexpected response type %T", msg)
-		return nil, err
+		return nil, fmt.Errorf("unexpected response type %T", msg)
 	}
 }
 
-func (fbConn *FbConn) putArray(ctx context.Context, array []byte, length int, sdl []byte) (_ []byte, err error) {
+func (fbConn *FbConn) putArray(ctx context.Context, array []byte, length int, sdl []byte) ([]byte, error) {
 	tx, err := fbConn.ensureInternalTransaction(ctx, nil, false)
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		if err != nil {
-			fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx)
-		}
-	}()
 
 	opPutSlice := fbproto.OpPutSlice{
 		TransactionHandle: tx.Handle,
@@ -1987,19 +1982,16 @@ func (fbConn *FbConn) putArray(ctx context.Context, array []byte, length int, sd
 	switch m := msg.(type) {
 	case *fbproto.OpResponse:
 		if m.BlobId == 0 {
-			err = fmt.Errorf("array putting error: %s", m.Message)
-			return nil, err
+			return nil, fmt.Errorf("array putting error: %s", m.Message)
 		}
 		bufId := make([]byte, 8)
 		binary.BigEndian.PutUint64(bufId, uint64(m.BlobId))
 		return bufId, nil
 	case *fbproto.ErrorResponse:
 		fbConn.conn.Close()
-		err = ErrorResponseToFbError(m)
-		return nil, err
+		return nil, ErrorResponseToFbError(m)
 	default:
-		err = fmt.Errorf("unexpected response type %T", msg)
-		return nil, err
+		return nil, fmt.Errorf("unexpected response type %T", msg)
 	}
 }
 
@@ -2350,18 +2342,22 @@ func cleanupContext(parent context.Context) (context.Context, context.CancelFunc
 }
 
 // rollbackInternalTxIfAutocommitOnError rolls back the connection's implicit internal
-// transaction on an error path. No-op when tx is user-supplied, already
-// closed, or Autocommit is disabled.
-func (fbConn *FbConn) rollbackInternalTxIfAutocommitOnError(ctx context.Context, tx *FBTransaction) {
+// transaction on an error path. No-op when tx is user-supplied, already closed,
+// Autocommit is disabled, or opErr is SafeToRetry (the operation failed before
+// reaching the server, so server-side tx state cannot have changed).
+func (fbConn *FbConn) rollbackInternalTxIfAutocommitOnError(ctx context.Context, tx *FBTransaction, opErr error) error {
 	if tx == nil || tx != fbConn.internalTransaction || tx.Closed {
-		return
+		return nil
 	}
 	if !fbConn.config.Autocommit || fbConn.explicitTransaction {
-		return
+		return nil
+	}
+	if SafeToRetry(opErr) {
+		return nil
 	}
 	cleanupCtx, cancel := cleanupContext(ctx)
 	defer cancel()
-	_ = tx.Rollback(cleanupCtx)
+	return tx.Rollback(cleanupCtx)
 }
 
 // Close consumes any remaining result data and returns the command tag or
@@ -2390,8 +2386,14 @@ func (rr *ResultReader) Close() (QueryStatus, error) {
 		}
 
 		if rr.boundTransaction != nil && rr.boundTransaction == rr.fbConn.internalTransaction && rr.fbConn.config.Autocommit && !rr.fbConn.explicitTransaction {
-			if err := rr.boundTransaction.Commit(context.Background()); err != nil && rr.err == nil {
-				rr.err = err
+			if rr.err != nil {
+				if rbErr := rr.fbConn.rollbackInternalTxIfAutocommitOnError(rr.ctx, rr.boundTransaction, rr.err); rbErr != nil {
+					rr.err = errors.Join(rr.err, fmt.Errorf("rollback internal tx: %w", rbErr))
+				}
+			} else {
+				if err := rr.boundTransaction.Commit(context.Background()); err != nil {
+					rr.err = err
+				}
 			}
 		}
 	}

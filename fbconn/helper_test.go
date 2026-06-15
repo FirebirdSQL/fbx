@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -13,6 +14,19 @@ import (
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx/fbconn"
 )
+
+func activeTxCountOnServer(t testing.TB, conn *fbconn.FbConn) int {
+	t.Helper()
+	res := conn.Exec(context.Background(),
+		"select cast(count(*) as varchar(20)) from mon$transactions where mon$attachment_id = current_connection",
+	).Read()
+	require.NoError(t, res.Err)
+	require.NotEmpty(t, res.Rows)
+	require.NotEmpty(t, res.Rows[0])
+	n, err := strconv.Atoi(strings.TrimSpace(string(res.Rows[0][0])))
+	require.NoError(t, err)
+	return n
+}
 
 var generateSeriesTemplate = `WITH RECURSIVE generate_series(%[3]s)
 AS (SELECT %[1]d FROM RDB$DATABASE UNION ALL SELECT (%[3]s + 1)
