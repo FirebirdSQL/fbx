@@ -271,6 +271,9 @@ func DropDatabaseConfig(ctx context.Context, config *Config) error {
 	return err
 }
 
+// handleCondAccept applies protocol metadata and processes the server challenge.
+// When respond is false, the generated reply remains in authManager for the
+// following attach DPB instead of being sent in op_cont_auth.
 func (fbConn *FbConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *auth.AuthManager, respond bool) error {
 	if err := fbConn.handleAcceptMetadata(msg, authManager); err != nil {
 		return err
@@ -291,6 +294,8 @@ func (fbConn *FbConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *a
 	return nil
 }
 
+// handleAcceptMetadata records the negotiated protocol version, wire-encryption
+// keys, and the server-supported authentication plugin list.
 func (fbConn *FbConn) handleAcceptMetadata(msg *fbproto.OpCondAccept, authManager *auth.AuthManager) error {
 	if msg.Version != 0 {
 		fbConn.protocolFeatures = ProtocolFeaturesForVersion(msg.Version)
@@ -308,6 +313,9 @@ func (fbConn *FbConn) handleAcceptMetadata(msg *fbproto.OpCondAccept, authManage
 	return nil
 }
 
+// handleAuthResponse validates the final plugin response and starts wire
+// encryption when both peers supplied compatible key material. The boolean
+// result reports whether an op_crypt acknowledgment is still expected.
 func (fbConn *FbConn) handleAuthResponse(msg *fbproto.OpResponse, config *Config, authManager *auth.AuthManager) (bool, error) {
 	if msg.Failure {
 		return false, fmt.Errorf("authentication failed: %s", msg.Message)
@@ -338,6 +346,9 @@ func (fbConn *FbConn) handleAuthResponse(msg *fbproto.OpResponse, config *Config
 	return initInfo != nil, nil
 }
 
+// handlePostAttachAuthChallenge processes authentication continuation received
+// after op_attach. The plugin list is omitted because it was already advertised
+// during the initial negotiation.
 func (fbConn *FbConn) handlePostAttachAuthChallenge(authManager *auth.AuthManager, pluginName string, data []byte, keys []byte) error {
 	if fbConn.wireCrypt != nil {
 		if err := fbConn.wireCrypt.AddServerKeys(keys); err != nil {
@@ -355,6 +366,8 @@ func (fbConn *FbConn) handlePostAttachAuthChallenge(authManager *auth.AuthManage
 	return fbConn.sendContAuth(step.Reply, pluginName, "", nil)
 }
 
+// finishAttachAuth completes authentication that continues after op_attach and
+// does not return until the server supplies the database handle or an error.
 func (fbConn *FbConn) finishAttachAuth(config *Config, authManager *auth.AuthManager, attachAction string) error {
 	pendingCryptAck := false
 
@@ -424,6 +437,8 @@ func (fbConn *FbConn) finishAttachAuth(config *Config, authManager *auth.AuthMan
 	}
 }
 
+// enableWireCrypt selects a mutually supported wire-encryption plugin, sends
+// op_crypt, and installs the resulting stream codec on the protocol client.
 func (fbConn *FbConn) enableWireCrypt(sessionKey []byte) (*wirecrypt.InitResult, error) {
 	if fbConn.wireCrypt == nil || len(sessionKey) == 0 {
 		return nil, nil
@@ -448,6 +463,9 @@ func (fbConn *FbConn) enableWireCrypt(sessionKey []byte) (*wirecrypt.InitResult,
 	return initInfo, nil
 }
 
+// shouldRespondToCondAccept reports whether authentication must continue with
+// op_cont_auth before attach. A challenge or wire-encryption key requires a
+// response; an empty known-plugins response can proceed to attach-through-DPB.
 func shouldRespondToCondAccept(msg *fbproto.OpCondAccept) bool {
 	if msg == nil {
 		return true
@@ -455,6 +473,9 @@ func shouldRespondToCondAccept(msg *fbproto.OpCondAccept) bool {
 	return len(msg.Data) > 0 || hasWireCryptKeys(msg.ServerKeys)
 }
 
+// shouldRespondToDataAccept reports whether op_accept_data requires another
+// op_cont_auth exchange. Without wire-encryption keys, its generated plugin
+// reply is carried by the following attach DPB.
 func shouldRespondToDataAccept(msg *fbproto.OpDataAccept) bool {
 	if msg == nil {
 		return true
@@ -465,6 +486,8 @@ func shouldRespondToDataAccept(msg *fbproto.OpDataAccept) bool {
 	return hasWireCryptKeys(msg.ServerKeys)
 }
 
+// hasWireCryptKeys reports whether p_acpt_keys contains at least one complete
+// wire-encryption key type and plugin advertisement.
 func hasWireCryptKeys(serverKeys []byte) bool {
 	keys, err := wirecrypt.ParseKnownServerKeys(serverKeys)
 	if err != nil {
@@ -478,6 +501,8 @@ func hasWireCryptKeys(serverKeys []byte) bool {
 	return false
 }
 
+// sendContAuth writes one authentication continuation packet. pluginList is
+// normally populated only for the first continuation sent before attach.
 func (fbConn *FbConn) sendContAuth(authData []byte, pluginName string, pluginList string, keys []byte) error {
 	dataCopy := make([]byte, len(authData))
 	copy(dataCopy, authData)

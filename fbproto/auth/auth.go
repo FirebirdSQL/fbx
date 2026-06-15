@@ -5,23 +5,37 @@ import (
 	"strings"
 )
 
+// AuthPluginStep describes the client output produced by one authentication
+// plugin step. Reply contains bytes for the next wire message, AuthSpecific
+// contains the plugin-native authentication value, and SessionKey contains key
+// material that may be used by wire encryption.
 type AuthPluginStep struct {
 	Reply        []byte
 	AuthSpecific []byte
 	SessionKey   []byte
 }
 
+// HandshakeRequest describes the authentication fields included in op_connect.
+// SpecificData is split into protocol-sized chunks for CNCT_specific_data.
 type HandshakeRequest struct {
 	PluginName   string
 	PluginList   []string
 	SpecificData []SpecificDataChunk
 }
 
+// AuthPlugin implements one client-side authentication mechanism.
+// An AuthPlugin instance holds state for a single negotiation attempt and is not
+// safe for concurrent use.
 type AuthPlugin interface {
+	// Name returns the canonical plugin name.
 	Name() string
+	// Advertise returns the plugin names accepted by this implementation.
 	Advertise() []string
+	// InitialClientData returns data sent with op_connect before a server challenge.
 	InitialClientData() []byte
+	// HandleServerData processes a server challenge and returns the next client step.
 	HandleServerData(user string, password string, pluginName string, data []byte) (*AuthPluginStep, error)
+	// HandleAuthResponse validates final authentication data returned by the server.
 	HandleAuthResponse(data []byte) error
 }
 
@@ -52,11 +66,13 @@ func DefaultPluginSequence() []string {
 	return cloneStrings(defaultPluginSequence)
 }
 
-// DefaultPluginListString returns the default authentication plugin order as a comma separated list.
+// DefaultPluginListString returns the default authentication plugin order as a comma-separated list.
 func DefaultPluginListString() string {
 	return strings.Join(defaultPluginSequence, ",")
 }
 
+// AuthManager coordinates plugin selection and state across the wire protocol
+// authentication exchange. An AuthManager is not safe for concurrent use.
 type AuthManager struct {
 	user             string
 	password         string
@@ -67,11 +83,16 @@ type AuthManager struct {
 	authComplete     bool
 }
 
+// SpecificDataChunk is one CNCT_specific_data fragment.
+// Part is the zero-based fragment number and Data is its payload.
 type SpecificDataChunk struct {
 	Part byte
 	Data []byte
 }
 
+// NewAuthManager creates an authentication manager for user and password.
+// pluginNames defines client preference order; an empty list uses
+// [DefaultPluginSequence]. Duplicate names are ignored.
 func NewAuthManager(user string, password string, pluginNames []string) (*AuthManager, error) {
 	order := pluginNames
 	if len(order) == 0 {
@@ -303,6 +324,8 @@ func createAuthPlugin(name string, password string) (AuthPlugin, bool) {
 	return constructor(password), true
 }
 
+// UnsupportedPluginError reports a server-selected authentication plugin that
+// is not available in the current client plugin list.
 type UnsupportedPluginError struct {
 	Name string
 }
