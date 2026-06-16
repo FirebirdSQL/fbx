@@ -60,11 +60,13 @@
 // The fbtype package provides support for Firebird specific types. *fbtype.Map.SQLScanner is an adapter that makes
 // these types usable as a sql.Scanner.
 //
-// FIXME: make proper example
+//	_, err := db.Exec("recreate table array_example(bigint_array bigint[3])")
+//	input := []int64{1,2,3}
+//	_, err = db.Exec("insert into array_example(bigint_array) values(?)", input)
 //
 //	m := fbtype.NewMap()
-//	var a []int64
-//	err := db.QueryRow("select '{1,2,3}'::bigint[]").Scan(m.SQLScanner(&a))
+//	var output []int64
+//	err = db.QueryRow("select bigint_array from array_example").Scan(m.SQLScanner(&output))
 package stdlib
 
 import (
