@@ -2331,6 +2331,14 @@ func (rr *ResultReader) Values() [][]byte {
 	return rr.rowValues
 }
 
+// SetCallerErr propagates an error from upstream callers (e.g., higher-level row
+// scan processing in fbx that detects a failure not visible to fbconn) into the ResultReader.
+func (rr *ResultReader) SetCallerErr(err error) {
+	if err != nil && rr.err == nil {
+		rr.err = err
+	}
+}
+
 // cleanupGracePeriod bounds cleanup network calls (e.g. op_free_statement) that
 // must run even after the caller's ctx has been cancelled.
 const cleanupGracePeriod = 5 * time.Second
@@ -2357,7 +2365,14 @@ func (fbConn *FbConn) rollbackInternalTxIfAutocommitOnError(ctx context.Context,
 	}
 	cleanupCtx, cancel := cleanupContext(ctx)
 	defer cancel()
-	return tx.Rollback(cleanupCtx)
+	if err := tx.Rollback(cleanupCtx); err != nil {
+		var fbErr *FbError
+		if errors.As(err, &fbErr) {
+			fbConn.asyncClose()
+		}
+		return err
+	}
+	return nil
 }
 
 // Close consumes any remaining result data and returns the command tag or

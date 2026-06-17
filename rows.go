@@ -183,6 +183,9 @@ func (rows *baseRows) Close() {
 	rows.closed = true
 
 	if rows.resultReader != nil {
+		if rows.err != nil {
+			rows.resultReader.SetCallerErr(rows.err)
+		}
 		var closeErr error
 		rows.commandTag, closeErr = rows.resultReader.Close()
 		if rows.err == nil {
