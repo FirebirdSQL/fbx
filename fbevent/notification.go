@@ -9,18 +9,24 @@ import (
 
 const defaultMaxNotificationQueue = 4096
 
-// Notification is a pgx-like event notification returned by WaitForNotification.
+// Notification is an event notification returned by
+// [Manager.WaitForNotification].
 //
-// Firebird events do not carry a payload. Channel contains the Firebird event
-// name and Count contains the event count delta reported by the server.
+// Firebird events do not carry a payload.
 type Notification struct {
+	// Channel is the Firebird event name.
 	Channel string
-	Count   int
+
+	// Count is the event count delta reported by the server.
+	Count int
 }
 
 // Listen starts listening for eventName and makes future events available via
-// WaitForNotification. Calling Listen repeatedly for the same eventName is
-// idempotent.
+// [Manager.WaitForNotification].
+//
+// The manager must be connected and eventName must be non-empty. Calling Listen
+// repeatedly for the same eventName is idempotent. A nil ctx is treated as
+// [context.Background].
 func (m *Manager) Listen(ctx context.Context, eventName string) error {
 	if eventName == "" {
 		return errors.New("eventName must not be empty")
@@ -71,8 +77,10 @@ func (m *Manager) Listen(ctx context.Context, eventName string) error {
 	return nil
 }
 
-// Unlisten stops a Listen registration for eventName. It is safe to call even
-// if eventName is not currently listened for.
+// Unlisten stops a [Manager.Listen] registration for eventName.
+//
+// It is safe to call Unlisten even if eventName is not currently listened for.
+// An empty eventName returns an error.
 func (m *Manager) Unlisten(eventName string) error {
 	if eventName == "" {
 		return errors.New("eventName must not be empty")
@@ -99,9 +107,13 @@ func (m *Manager) Unlisten(eventName string) error {
 	return nil
 }
 
-// WaitForNotification waits for the next notification registered by Listen.
-// It returns an already buffered notification immediately, even if ctx is
-// already canceled.
+// WaitForNotification waits for the next notification registered by
+// [Manager.Listen].
+//
+// WaitForNotification returns an already buffered notification immediately, even
+// if ctx is already canceled. If no notification is buffered, it waits until a
+// notification arrives, ctx is done, the manager disconnects, or an asynchronous
+// manager error occurs. A nil ctx is treated as [context.Background].
 func (m *Manager) WaitForNotification(ctx context.Context) (*Notification, error) {
 	if ctx == nil {
 		ctx = context.Background()

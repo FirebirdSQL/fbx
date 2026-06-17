@@ -6,7 +6,14 @@ import (
 	"time"
 )
 
-// WaitForEvent waits for one event occurrence for eventName.
+// WaitForEvent waits for one occurrence of eventName.
+//
+// WaitForEvent temporarily registers a listener, waits for the first matching
+// event, and removes the listener before returning. It returns the event count
+// reported by the server. If timeout is zero, WaitForEvent waits until an event
+// arrives, ctx is done, or an asynchronous manager error occurs. If timeout is
+// positive and no event arrives before it expires, WaitForEvent returns -1 and a
+// nil error.
 func (m *Manager) WaitForEvent(ctx context.Context, eventName string, timeout time.Duration) (int, error) {
 	listener := newOneTimeEventListener()
 	handle, err := m.AddEventListener(eventName, listener)

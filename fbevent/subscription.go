@@ -7,6 +7,10 @@ import (
 
 // EventSubscription is a channel-based event subscription.
 type EventSubscription struct {
+	// C receives events for this subscription.
+	//
+	// C is closed by [EventSubscription.Close], by removing the subscription's
+	// handle with [Manager.RemoveEventListener], or by disconnecting the manager.
 	C <-chan DatabaseEvent
 
 	manager *Manager
@@ -17,12 +21,14 @@ type EventSubscription struct {
 	closeErr  error
 }
 
-// Subscribe subscribes to eventName and returns a channel-based subscription.
+// Subscribe registers a listener for eventName and returns a channel-based
+// subscription.
 //
-// Events are delivered sequentially by the Manager delivery loop. If the
-// subscription channel is full, delivery of later callbacks and subscriptions
-// for the same Manager waits until the user receives from the channel or closes
-// the subscription.
+// The manager must be connected, eventName must be non-empty, and buffer must be
+// non-negative. Events are delivered sequentially by the manager delivery loop.
+// If the subscription channel is full, delivery of later callbacks and
+// subscriptions for the same manager waits until the user receives from the
+// channel or closes the subscription.
 func (m *Manager) Subscribe(eventName string, buffer int) (*EventSubscription, error) {
 	if buffer < 0 {
 		return nil, errors.New("buffer must not be negative")
@@ -44,6 +50,8 @@ func (m *Manager) Subscribe(eventName string, buffer int) (*EventSubscription, e
 }
 
 // Events returns the subscription event channel.
+//
+// Events returns nil when called on a nil subscription.
 func (s *EventSubscription) Events() <-chan DatabaseEvent {
 	if s == nil || s.events == nil {
 		return nil
@@ -52,6 +60,8 @@ func (s *EventSubscription) Events() <-chan DatabaseEvent {
 }
 
 // Handle returns the underlying listener registration handle.
+//
+// Handle returns [InvalidListenerHandle] when called on a nil subscription.
 func (s *EventSubscription) Handle() ListenerHandle {
 	if s == nil {
 		return InvalidListenerHandle
@@ -59,7 +69,11 @@ func (s *EventSubscription) Handle() ListenerHandle {
 	return s.handle
 }
 
-// Close unsubscribes from the event and closes the event channel.
+// Close removes the subscription's listener registration and closes the event
+// channel.
+//
+// Close is safe to call multiple times. It returns nil when called on a nil
+// subscription.
 func (s *EventSubscription) Close() error {
 	if s == nil {
 		return nil
