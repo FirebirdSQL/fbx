@@ -90,6 +90,19 @@ type SpecificDataChunk struct {
 	Data []byte
 }
 
+// RegisterAuthPlugin allows to register custom authentication plugins.
+// To register it, you need to pass the name of the plugin and its constructor.
+// Constructor must be like in pluginConstructors map.
+func RegisterAuthPlugin(name string, constructor func(string) AuthPlugin) error {
+	lowerName := strings.ToLower(name)
+	if _, ok := pluginConstructors[lowerName]; !ok {
+		defaultPluginSequence = append(defaultPluginSequence, strings.TrimSpace(name))
+		pluginConstructors[lowerName] = constructor
+		return nil
+	}
+	return fmt.Errorf("plugin already exists")
+}
+
 // NewAuthManager creates an authentication manager for user and password.
 // pluginNames defines client preference order; an empty list uses
 // [DefaultPluginSequence]. Duplicate names are ignored.
