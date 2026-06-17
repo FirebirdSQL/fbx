@@ -30,7 +30,13 @@ type listenerRegistration struct {
 	listener EventListener
 }
 
-// Manager is a high-level Firebird event manager.
+// Manager owns Firebird event registrations and delivers matching events to
+// listeners.
+//
+// Managers should be constructed with [NewManager], [NewManagerConfig], or
+// [CreateFor]. Call [Manager.Connect] before registering listeners, and call
+// [Manager.Close] or [Manager.Disconnect] when event processing is no longer
+// needed.
 type Manager struct {
 	mu sync.Mutex
 	// listenerOpMu serializes listener add/remove operations that can cause
@@ -75,7 +81,11 @@ type Manager struct {
 	beforeEnsureEventHandler func()
 }
 
-// NewManager creates a manager for a connection string.
+// NewManager parses connString and returns a manager that owns its database
+// connection.
+//
+// The connection is opened by [Manager.Connect], not by NewManager. Closing or
+// disconnecting the manager also closes the owned connection.
 func NewManager(connString string) (*Manager, error) {
 	cfg, err := fbx.ParseConfig(connString)
 	if err != nil {
@@ -84,7 +94,11 @@ func NewManager(connString string) (*Manager, error) {
 	return NewManagerConfig(cfg), nil
 }
 
-// NewManagerConfig creates a manager for a connection config.
+// NewManagerConfig returns a manager that owns a connection created from cfg.
+//
+// The config is copied before it is stored, so later changes to cfg do not
+// affect the manager. The connection is opened by [Manager.Connect], not by
+// NewManagerConfig.
 func NewManagerConfig(cfg *fbx.ConnConfig) *Manager {
 	var cfgCopy *fbx.ConnConfig
 	var connString string
@@ -104,7 +118,10 @@ func NewManagerConfig(cfg *fbx.ConnConfig) *Manager {
 	}
 }
 
-// CreateFor creates a manager over an existing connection.
+// CreateFor returns a manager that uses an existing connection.
+//
+// The returned manager does not own conn. [Manager.Close] and
+// [Manager.Disconnect] unregister event listeners but leave conn open.
 func CreateFor(conn *fbx.Conn) *Manager {
 	return &Manager{
 		mode:              managerModeManaged,
@@ -117,7 +134,12 @@ func CreateFor(conn *fbx.Conn) *Manager {
 	}
 }
 
-// Connect initializes manager event processing.
+// Connect starts event processing for the manager.
+//
+// For a manager created with [NewManager] or [NewManagerConfig], Connect opens
+// the database connection. For a manager created with [CreateFor], Connect uses
+// the existing connection and returns an error if it is nil or closed. Connect
+// returns an error when called on an already connected manager.
 func (m *Manager) Connect(ctx context.Context) error {
 	m.mu.Lock()
 	if m.connected {
@@ -175,12 +197,20 @@ func (m *Manager) Connect(ctx context.Context) error {
 	return nil
 }
 
-// Disconnect stops manager event processing.
+// Disconnect stops event processing and unregisters all listeners.
+//
+// For a manager that owns its connection, Disconnect also closes that
+// connection. For a manager created with [CreateFor], the underlying connection
+// is left open. Disconnect returns an error when called on an already
+// disconnected manager.
 func (m *Manager) Disconnect(ctx context.Context) error {
 	return m.disconnect(ctx, true, true, errors.New("event manager disconnected"))
 }
 
-// Close disconnects manager if connected.
+// Close stops event processing if the manager is connected.
+//
+// Close has the same cleanup behavior as [Manager.Disconnect], but it is safe to
+// call when the manager is already disconnected.
 func (m *Manager) Close(ctx context.Context) error {
 	return m.disconnect(ctx, false, true, errors.New("event manager disconnected"))
 }
@@ -284,7 +314,11 @@ func (m *Manager) disconnect(ctx context.Context, strict bool, waitDispatcher bo
 	return allErr
 }
 
-// IsConnected reports manager connection state.
+// IsConnected reports whether the manager is currently connected.
+//
+// For a manager created with [CreateFor], IsConnected also observes whether the
+// underlying connection has already been closed and updates the manager state if
+// needed.
 func (m *Manager) IsConnected() bool {
 	m.mu.Lock()
 	connected := m.connected
@@ -301,21 +335,29 @@ func (m *Manager) IsConnected() bool {
 	return connected
 }
 
-// LastError returns the first asynchronous manager error, if any.
+// LastError returns the first manager error recorded since the last successful
+// [Manager.Connect].
+//
+// Recorded errors can come from the underlying event channel, event
+// re-registration, notification queue overflow, delivery queue overflow, or
+// manager shutdown that wakes waiting operations.
 func (m *Manager) LastError() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.asyncErr
 }
 
-// GetWaitTimeout returns dispatcher wait timeout.
+// GetWaitTimeout returns the dispatcher polling interval.
 func (m *Manager) GetWaitTimeout() time.Duration {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.waitTimeout
 }
 
-// SetWaitTimeout sets dispatcher wait timeout.
+// SetWaitTimeout sets the dispatcher polling interval.
+//
+// If timeout is less than or equal to zero, SetWaitTimeout uses a one-second
+// interval.
 func (m *Manager) SetWaitTimeout(timeout time.Duration) {
 	if timeout <= 0 {
 		timeout = time.Second
@@ -325,7 +367,12 @@ func (m *Manager) SetWaitTimeout(timeout time.Duration) {
 	m.mu.Unlock()
 }
 
-// AddEventListener adds listener for event name and returns registration handle.
+// AddEventListener registers listener for eventName and returns its handle.
+//
+// The manager must be connected, eventName must be non-empty, and listener must
+// be non-nil. Each successful call creates a separate registration, even when
+// the same listener value is registered more than once. Pass the returned handle
+// to [Manager.RemoveEventListener] to remove that registration.
 func (m *Manager) AddEventListener(eventName string, listener EventListener) (ListenerHandle, error) {
 	if eventName == "" {
 		return InvalidListenerHandle, errors.New("eventName must not be empty")
@@ -381,7 +428,11 @@ func (m *Manager) AddEventListener(eventName string, listener EventListener) (Li
 	return handle, nil
 }
 
-// RemoveEventListener removes listener by registration handle.
+// RemoveEventListener removes the listener registration identified by handle.
+//
+// Removing an unknown handle is a no-op. Removing [InvalidListenerHandle]
+// returns an error. When the last listener for an event name is removed, the
+// manager unregisters that event from the server.
 func (m *Manager) RemoveEventListener(handle ListenerHandle) error {
 	if handle == InvalidListenerHandle {
 		return errors.New("listener handle must not be invalid")
