@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -428,5 +429,122 @@ func TestArraySingleQuoteInName(t *testing.T) {
 		).Scan(&output)
 		assert.NoError(t, err)
 		assert.Equal(t, input, output)
+	})
+}
+
+func TestArrayDecoding(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	defaultConnTestRunner.RunTest(ctx, t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		_, err := conn.Exec(ctx, `recreate table TestArrayDecoding(id int,
+		boolArr boolean[3],
+		smallintArr smallint[4],
+		intArr integer[4],
+		bigintArr bigint[4],
+		floatArr float[4],
+		doubleArr double precision[4],
+		varcharArr varchar(5)[3],
+		timestampArr timestamp[2])`)
+		assert.NoError(t, err)
+
+		tests := []struct {
+			sqlInsert string
+			sqlSelect string
+			query     any
+			scan      any
+			assert    func(testing.TB, any, any)
+		}{
+			{
+				"insert into TestArrayDecoding(id, boolArr) values(?, ?)",
+				"select boolArr from TestArrayDecoding where id = ?",
+				[]bool{true, false, true}, &[]bool{},
+				func(t testing.TB, query, scan any) {
+					if !reflect.DeepEqual(query, *(scan.(*[]bool))) {
+						t.Errorf("failed to encode bool[]")
+					}
+				},
+			},
+			{
+				"insert into TestArrayDecoding(id, smallintArr) values(?, ?)",
+				"select smallintArr from TestArrayDecoding where id = ?",
+				[]int16{2, 4, 484, 32767}, &[]int16{},
+				func(t testing.TB, query, scan any) {
+					if !reflect.DeepEqual(query, *(scan.(*[]int16))) {
+						t.Errorf("failed to encode smallint[]")
+					}
+				},
+			},
+			{
+				"insert into TestArrayDecoding(id, intArr) values(?, ?)",
+				"select intArr from TestArrayDecoding where id = ?",
+				[]uint32{2, 4, 484, 2147483647}, &[]uint32{},
+				func(t testing.TB, query, scan any) {
+					if !reflect.DeepEqual(query, *(scan.(*[]uint32))) {
+						t.Errorf("failed to encode int[]")
+					}
+				},
+			},
+			{
+				"insert into TestArrayDecoding(id, bigintArr) values(?, ?)",
+				"select bigintArr from TestArrayDecoding where id = ?",
+				[]uint64{2, 4, 484, 9223372036854775807}, &[]uint64{},
+				func(t testing.TB, query, scan any) {
+					if !reflect.DeepEqual(query, *(scan.(*[]uint64))) {
+						t.Errorf("failed to encode bigint[]")
+					}
+				},
+			},
+			{
+				"insert into TestArrayDecoding(id, floatArr) values(?, ?)",
+				"select floatArr from TestArrayDecoding where id = ?",
+				[]float32{0, 1.1, -1111.1111, 0.123456}, &[]float32{},
+				func(t testing.TB, query, scan any) {
+					if !reflect.DeepEqual(query, *(scan.(*[]float32))) {
+						t.Errorf("failed to encode float[]")
+					}
+				},
+			},
+			{
+				"insert into TestArrayDecoding(id, doubleArr) values(?, ?)",
+				"select doubleArr from TestArrayDecoding where id = ?",
+				[]float64{0, -0.123456789, 1234554.346, 321243.23445}, &[]float64{},
+				func(t testing.TB, query, scan any) {
+					if !reflect.DeepEqual(query, *(scan.(*[]float64))) {
+						t.Errorf("failed to encode double[]")
+					}
+				},
+			},
+			{
+				"insert into TestArrayDecoding(id, varcharArr) values(?, ?)",
+				"select varcharArr from TestArrayDecoding where id = ?",
+				[]string{"it's", "over", "9000!"}, &[]string{},
+				func(t testing.TB, query, scan any) {
+					if !reflect.DeepEqual(query, *(scan.(*[]string))) {
+						t.Errorf("failed to encode text[]")
+					}
+				},
+			},
+			{
+				"insert into TestArrayDecoding(id, timestampArr) values(?, ?)",
+				"select timestampArr from TestArrayDecoding where id = ?",
+				[]time.Time{time.Unix(323232, 0).UTC(), time.Unix(3239949334, 00).UTC()}, &[]time.Time{},
+				func(t testing.TB, query, scan any) {
+					queryTimeSlice := query.([]time.Time)
+					scanTimeSlice := *(scan.(*[]time.Time))
+					require.Equal(t, len(queryTimeSlice), len(scanTimeSlice))
+					for i := range queryTimeSlice {
+						assert.Truef(t, queryTimeSlice[i].Equal(scanTimeSlice[i]), "%d", i)
+					}
+				},
+			},
+		}
+
+		for i, tt := range tests {
+			_, err := conn.Exec(ctx, tt.sqlInsert, i, tt.query)
+			assert.NoError(t, err)
+			err = conn.QueryRow(ctx, tt.sqlSelect, i).Scan(tt.scan)
+			assert.NoError(t, err)
+			tt.assert(t, tt.query, tt.scan)
+		}
 	})
 }
