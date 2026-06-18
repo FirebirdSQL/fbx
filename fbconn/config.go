@@ -593,6 +593,7 @@ func parseKeywordValueSettings(s string) (map[string]string, error) {
 		"isc_dpb_max_blob_cache_size":  "max_blob_cache_size",
 	}
 
+	s = strings.TrimLeft(s, " \t\n\r\v\f")
 	for len(s) > 0 {
 		var key, val string
 		eqIdx := strings.IndexRune(s, '=')
@@ -602,8 +603,9 @@ func parseKeywordValueSettings(s string) (map[string]string, error) {
 
 		key = strings.Trim(s[:eqIdx], " \t\n\r\v\f")
 		s = strings.TrimLeft(s[eqIdx+1:], " \t\n\r\v\f")
-		if len(s) == 0 {
-		} else if s[0] != '\'' {
+		switch {
+		case len(s) == 0:
+		case s[0] != '\'':
 			end := 0
 			for ; end < len(s); end++ {
 				if asciiSpace[s[end]] == 1 {
@@ -616,13 +618,9 @@ func parseKeywordValueSettings(s string) (map[string]string, error) {
 					}
 				}
 			}
-			val = strings.Replace(strings.Replace(s[:end], "\\\\", "\\", -1), "\\'", "'", -1)
-			if end == len(s) {
-				s = ""
-			} else {
-				s = s[end+1:]
-			}
-		} else { // quoted string
+			val = strings.ReplaceAll(strings.ReplaceAll(s[:end], "\\\\", "\\"), "\\'", "'")
+			s = strings.TrimLeft(s[end:], " \t\n\r\v\f")
+		default: // quoted string
 			s = s[1:]
 			end := 0
 			for ; end < len(s); end++ {
@@ -636,12 +634,8 @@ func parseKeywordValueSettings(s string) (map[string]string, error) {
 			if end == len(s) {
 				return nil, errors.New("unterminated quoted string in connection info string")
 			}
-			val = strings.Replace(strings.Replace(s[:end], "\\\\", "\\", -1), "\\'", "'", -1)
-			if end == len(s) {
-				s = ""
-			} else {
-				s = s[end+1:]
-			}
+			val = strings.ReplaceAll(strings.ReplaceAll(s[:end], "\\\\", "\\"), "\\'", "'")
+			s = strings.TrimLeft(s[end+1:], " \t\n\r\v\f")
 		}
 
 		if k, ok := nameMap[key]; ok {

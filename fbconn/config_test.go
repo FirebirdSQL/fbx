@@ -452,6 +452,14 @@ func TestParseConfigKVWithTrailingEmptyEqualDoesNotPanic(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestParseConfigKVTrailingWhitespace(t *testing.T) {
+	config, err := fbconn.ParseConfig("host=localhost port=3050 database=testdb   \t\n")
+	require.NoError(t, err)
+	require.Equal(t, "localhost", config.Host)
+	require.Equal(t, uint16(3050), config.Port)
+	require.Equal(t, "testdb", config.Database)
+}
+
 func TestParseConfigKVLeadingEqual(t *testing.T) {
 	_, err := fbconn.ParseConfig("= user=jack")
 	require.Error(t, err)
