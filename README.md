@@ -10,26 +10,24 @@ Firebird values, tracing hooks, and modern Red Database / Firebird features.
 ## Supported Features
 
 - Pure Go implementation of the Red Database / Firebird wire protocol.
-- Native `fbx.Conn` API with `context.Context` support for connect, query, transaction, BLOB, and low-level operations. See [Native Connection and Query](devdoc/examples.md#native-connection-and-query).
-- `database/sql` compatibility layer registered as the `fbx` driver. See [Database SQL Compatibility](devdoc/examples.md#database-sql-compatibility).
-- Concurrency-safe `fbxpool` connection pool for application workloads, with lifecycle hooks, health checks, configurable ping behavior, acquire tracing, release tracing, and pool statistics. See [Connection Pool](devdoc/examples.md#connection-pool).
-- URL and keyword/value connection strings, environment variable support, multi-host fallback configuration, and `target_session_attrs` validation for primary, replica, prefer-replica, read-only, and read-write sessions. See [Connection Configuration](devdoc/examples.md#connection-configuration).
-- Database creation and deletion through `CreateDatabase`, `DropDatabase`, and related config helpers. See [Database Creation](devdoc/examples.md#database-creation).
-- Firebird `POST_EVENT` subscriptions through `fbevent.Manager`, including one-shot waits, callback listeners, channel subscriptions, and pgx-like notifications. See [Firebird Events](devdoc/examples.md#firebird-events).
-- Red Database / Firebird 6 schema support, including `search_path` connection settings and schema-qualified identifiers. See [Schemas](devdoc/examples.md#schemas).
-- Authentication with SRP, SRP256, SRP224, SRP384, SRP512, GSS/Kerberos, and Legacy_Auth plugins. See [Connection Configuration](devdoc/examples.md#connection-configuration).
-- Wire encryption support. See [Connection Configuration](devdoc/examples.md#connection-configuration).
-- Prepared statements, statement cache, configurable statement cache size, and configurable query execution mode. See [Prepared Statements and Query Modes](devdoc/examples.md#prepared-statements-and-query-modes).
-- Batch DML operations through object batches and named batches. See [Batch Operations](devdoc/examples.md#batch-operations).
-- Positional `?` parameters plus `NamedArgs` and `StrictNamedArgs` query rewriting. See [Named Arguments](devdoc/examples.md#named-arguments).
-- Transactions with Firebird TPB support, isolation/access mode options, lock timeout, raw TPB mode, helper functions, and pseudo-nested transactions via savepoints. See [Transactions](devdoc/examples.md#transactions).
-- Streaming and lazy BLOB support, text and binary BLOB handling, configurable segment buffer size, stream BLOB mode, inline BLOB size, and inline BLOB cache settings. See [BLOB Values](devdoc/examples.md#blob-values).
-- Configurable fetch batch size for result sets. See [Connection Configuration](devdoc/examples.md#connection-configuration).
-- Firebird type mapping through `fbtype`, including `DATE`, `TIME`, `TIMESTAMP`, `TIMESTAMP WITH TIME ZONE`, text/varchar, OCTETS, BOOLEAN, integer types, `INT128`, NUMERIC/DECIMAL, `DECFLOAT(16)`, `DECFLOAT(34)`, arrays, NULL wrappers, and zero-null helpers. See [Type Mapping](devdoc/examples.md#type-mapping).
-- Advanced type support in the `database/sql` layer, including BLOBs, arrays, `TIME`, `INT128`, NUMERIC/DECIMAL, DECFLOAT, OCTETS, and timestamp with time zone values. See [Database SQL Compatibility](devdoc/examples.md#database-sql-compatibility).
-- Firebird array support, including reading, writing, and scanning array values through the native API and the `database/sql` compatibility layer. See [Arrays](devdoc/examples.md#arrays).
-- Row collection helpers for scanning rows into values, maps, and structs. See [Row Collection](devdoc/examples.md#row-collection).
-- Query, prepare, connect, acquire, and release tracing hooks, plus the `tracelog` package. See [Tracing](devdoc/examples.md#tracing).
+- Native `fbx.Conn` API with `context.Context` support for connect, query, transaction, BLOB, and low-level operations. See [Go examples](examples_test.go#L14).
+- `database/sql` compatibility layer registered as the `fbx` driver. See [database/sql example](stdlib/example_test.go#L11).
+- Concurrency-safe `fbxpool` connection pool for application workloads, with lifecycle hooks, health checks, configurable ping behavior, acquire tracing, release tracing, and pool statistics. See [pool example](fbxpool/example_test.go#L10).
+- URL and keyword/value connection strings, environment variable support, and multi-host fallback configuration.
+- Database creation and deletion through `CreateDatabase`, `DropDatabase`, and related config helpers. See [Go examples](examples_test.go#L65).
+- Firebird `POST_EVENT` subscriptions through `fbevent.Manager`, including one-shot waits, callback listeners, channel subscriptions, and pgx-like notifications. See [event examples](fbevent/example_test.go#L19).
+- Red Database / Firebird 6 schema-qualified identifiers. See [Go examples](examples_test.go#L79).
+- Prepared statements, statement cache, configurable statement cache size, and configurable query execution mode. See [Go examples](examples_test.go#L87).
+- Batch DML operations through object batches and named batches. See [batch examples](batch_insert_test.go#L723).
+- Positional `?` parameters plus `NamedArgs` query rewriting. See [Go examples](examples_test.go#L240).
+- Transactions with Firebird TPB support, isolation/access mode options, lock timeout, raw TPB mode, helper functions, and pseudo-nested transactions via savepoints. See [Go examples](examples_test.go#L268).
+- Streaming and lazy BLOB support, text and binary BLOB handling, configurable segment buffer size, stream BLOB mode, inline BLOB size, and inline BLOB cache settings. See [Go examples](examples_test.go#L305).
+- Configurable fetch batch size for result sets. See [Go examples](examples_test.go#L36).
+- Firebird type mapping through `fbtype`, including `DATE`, `TIME`, `TIMESTAMP`, `TIMESTAMP WITH TIME ZONE`, text/varchar, OCTETS, BOOLEAN, integer types, `INT128`, NUMERIC/DECIMAL, `DECFLOAT(16)`, `DECFLOAT(34)`, arrays, NULL wrappers, and zero-null helpers. See [Go examples](examples_test.go#L340).
+- Advanced type support in the `database/sql` layer, including BLOBs, arrays, `TIME`, `INT128`, NUMERIC/DECIMAL, DECFLOAT, OCTETS, and timestamp with time zone values. See [database/sql example](stdlib/example_test.go#L11).
+- Firebird array support, including reading, writing, and scanning array values through the native API and the `database/sql` compatibility layer. See [Go examples](examples_test.go#L369).
+- Row collection helpers for scanning rows into values, maps, and structs. See [row examples](rows_test.go#L155).
+- Query, prepare, connect, acquire, and release tracing hooks, plus the `tracelog` package. See [Go examples](examples_test.go#L436).
 
 ## Planned Features
 
@@ -83,4 +81,7 @@ go mod init fbxdemo
 go mod tidy
 ```
 
-See [devdoc/examples.md](devdoc/examples.md) for focused feature snippets.
+See the focused Go examples in [examples_test.go](examples_test.go),
+[fbevent/example_test.go](fbevent/example_test.go),
+[fbxpool/example_test.go](fbxpool/example_test.go), and
+[stdlib/example_test.go](stdlib/example_test.go).
