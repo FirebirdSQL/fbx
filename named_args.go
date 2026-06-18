@@ -3,6 +3,7 @@ package fbx
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"unicode/utf8"
 )
@@ -34,6 +35,90 @@ type StrictNamedArgs map[string]any
 // RewriteQuery implements the QueryRewriter interface.
 func (sna StrictNamedArgs) RewriteQuery(ctx context.Context, conn *Conn, sql string, args []any) (newSQL string, newArgs []any, err error) {
 	return rewriteQuery(sna, sql, true)
+}
+
+// StructArgs can be used as the first argument to a query method. It behaves like NamedArgs, but builds the named
+// arguments from the exported fields of structArg. Field names are used by default and can be overridden with the "db"
+// struct tag. Fields tagged with `db:"-"` are ignored.
+func StructArgs(structArg any) QueryRewriter {
+	return structArgs{
+		arg: structArg,
+	}
+}
+
+// StrictStructArgs can be used in the same way as StructArgs, but provided struct fields are also checked to include
+// all named arguments that the sql query uses, and no extra arguments.
+func StrictStructArgs(structArg any) QueryRewriter {
+	return structArgs{
+		arg:    structArg,
+		strict: true,
+	}
+}
+
+type structArgs struct {
+	arg    any
+	strict bool
+}
+
+// RewriteQuery implements the QueryRewriter interface.
+func (sa structArgs) RewriteQuery(ctx context.Context, conn *Conn, sql string, args []any) (newSQL string, newArgs []any, err error) {
+	na, err := structToNamedArgs(sa.arg)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return rewriteQuery(na, sql, sa.strict)
+}
+
+func structToNamedArgs(arg any) (map[string]any, error) {
+	v := reflect.ValueOf(arg)
+	if !v.IsValid() {
+		return nil, fmt.Errorf("expected struct or pointer to struct, got nil")
+	}
+
+	for v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			return nil, fmt.Errorf("expected struct or pointer to struct, got nil")
+		}
+		v = v.Elem()
+	}
+
+	if v.Kind() != reflect.Struct {
+		return nil, fmt.Errorf("expected struct or pointer to struct, got %T", arg)
+	}
+
+	na := make(map[string]any, v.NumField())
+	appendStructNamedArgs(na, v)
+	return na, nil
+}
+
+func appendStructNamedArgs(na map[string]any, v reflect.Value) {
+	t := v.Type()
+	for i := 0; i < t.NumField(); i++ {
+		sf := t.Field(i)
+		fv := v.Field(i)
+
+		if sf.Anonymous && sf.Type.Kind() == reflect.Struct {
+			appendStructNamedArgs(na, fv)
+			continue
+		}
+		if sf.PkgPath != "" {
+			continue
+		}
+
+		name, tagPresent := sf.Tag.Lookup(structTagKey)
+		if tagPresent {
+			name, _, _ = strings.Cut(name, ",")
+		}
+		if name == "-" {
+			continue
+		}
+		if !tagPresent {
+			name = sf.Name
+		}
+
+		na[name] = fv.Interface()
+	}
 }
 
 type namedArg string
@@ -168,7 +253,7 @@ func namedArgState(l *sqlLexer) stateFn {
 			if _, found := l.namedArgs[na]; !found {
 				l.namedArgs[na] = struct{}{}
 			}
-			l.parts = append(l.parts, namedArg(na))
+			l.parts = append(l.parts, na)
 			l.start = l.pos
 			return rawState
 		}

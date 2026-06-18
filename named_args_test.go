@@ -160,3 +160,84 @@ func TestStrictNamedArgsRewriteQuery(t *testing.T) {
 		}
 	}
 }
+
+func TestStructArgsRewriteQuery(t *testing.T) {
+	t.Parallel()
+
+	type baseArgs struct {
+		AccountID int32 `db:"account_id"`
+		Ignored   int32 `db:"-"`
+	}
+	type queryArgs struct {
+		baseArgs
+		ID   int32
+		Name string `db:"name"`
+	}
+
+	args := &queryArgs{
+		baseArgs: baseArgs{
+			AccountID: 7,
+			Ignored:   99,
+		},
+		ID:   42,
+		Name: "Ada",
+	}
+
+	sql, rewrittenArgs, err := fbx.StructArgs(args).RewriteQuery(
+		context.Background(),
+		nil,
+		"select * from users where id = @ID and name = @name and account_id = @account_id",
+		nil,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "select * from users where id = ? and name = ? and account_id = ?", sql)
+	assert.Equal(t, []any{int32(42), "Ada", int32(7)}, rewrittenArgs)
+}
+
+func TestStrictStructArgsRewriteQuery(t *testing.T) {
+	t.Parallel()
+
+	type queryArgs struct {
+		ID   int32
+		Name string `db:"name"`
+	}
+
+	sql, rewrittenArgs, err := fbx.StrictStructArgs(queryArgs{ID: 42, Name: "Ada"}).RewriteQuery(
+		context.Background(),
+		nil,
+		"select * from users where id = @ID and name = @name",
+		nil,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "select * from users where id = ? and name = ?", sql)
+	assert.Equal(t, []any{int32(42), "Ada"}, rewrittenArgs)
+
+	_, _, err = fbx.StrictStructArgs(queryArgs{ID: 42, Name: "Ada"}).RewriteQuery(
+		context.Background(),
+		nil,
+		"select * from users where id = @ID",
+		nil,
+	)
+	require.Error(t, err)
+
+	_, _, err = fbx.StrictStructArgs(struct{ ID int32 }{ID: 42}).RewriteQuery(
+		context.Background(),
+		nil,
+		"select * from users where id = @ID and name = @name",
+		nil,
+	)
+	require.Error(t, err)
+}
+
+func TestStructArgsErrors(t *testing.T) {
+	t.Parallel()
+
+	for _, arg := range []any{
+		nil,
+		(*struct{ ID int32 })(nil),
+		map[string]any{"ID": int32(42)},
+	} {
+		_, _, err := fbx.StructArgs(arg).RewriteQuery(context.Background(), nil, "select @ID", nil)
+		require.Error(t, err)
+	}
+}
