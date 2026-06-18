@@ -101,12 +101,22 @@ type connLockError struct {
 	status string
 }
 
+// ErrConnClosed is returned, possibly wrapped, when an operation is attempted on a closed connection.
+var ErrConnClosed = errors.New("conn closed")
+
 func (e *connLockError) SafeToRetry() bool {
 	return true // a lock failure by definition happens before the connection is used.
 }
 
 func (e *connLockError) Error() string {
 	return e.status
+}
+
+func (e *connLockError) Unwrap() error {
+	if e.status == "conn closed" {
+		return ErrConnClosed
+	}
+	return nil
 }
 
 // ParseConfigError is the error returned when a connection string cannot be parsed.
