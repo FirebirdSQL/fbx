@@ -23,7 +23,7 @@ Firebird values, tracing hooks, and modern Red Database / Firebird features.
 - Transactions with Firebird TPB support, isolation/access mode options, lock timeout, raw TPB mode, helper functions, and pseudo-nested transactions via savepoints. See [Go examples](examples_test.go#L268).
 - Streaming and lazy BLOB support, text and binary BLOB handling, configurable segment buffer size, stream BLOB mode, inline BLOB size, and inline BLOB cache settings. See [Go examples](examples_test.go#L305).
 - Configurable fetch batch size for result sets. See [Go examples](examples_test.go#L36).
-- Firebird type mapping through `fbtype`, including `DATE`, `TIME`, `TIMESTAMP`, `TIMESTAMP WITH TIME ZONE`, text/varchar, OCTETS, BOOLEAN, integer types, `INT128`, NUMERIC/DECIMAL, `DECFLOAT(16)`, `DECFLOAT(34)`, arrays, NULL wrappers, and zero-null helpers. See [Go examples](examples_test.go#L340).
+- Firebird type mapping through `fbtype`, including `DATE`, `TIME`, `TIMESTAMP`, `TIMESTAMP WITH TIME ZONE`, `CHAR`, `VARCHAR`, OCTETS, BOOLEAN, integer types, `INT128`, NUMERIC/DECIMAL, `DECFLOAT(16)`, `DECFLOAT(34)`, arrays, NULL wrappers, and zero-null helpers. See [Go examples](examples_test.go#L340).
 - Advanced type support in the `database/sql` layer, including BLOBs, arrays, `TIME`, `INT128`, NUMERIC/DECIMAL, DECFLOAT, OCTETS, and timestamp with time zone values. See [database/sql example](stdlib/example_test.go#L11).
 - Firebird array support, including reading, writing, and scanning array values through the native API and the `database/sql` compatibility layer. See [Go examples](examples_test.go#L369).
 - Row collection helpers for scanning rows into values, maps, and structs. See [row examples](rows_test.go#L155).
