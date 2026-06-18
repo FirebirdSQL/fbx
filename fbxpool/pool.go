@@ -533,19 +533,20 @@ func (p *Pool) checkConnsHealth() bool {
 	resources := p.p.AcquireAllIdle()
 	for _, res := range resources {
 		// We're okay going under minConns if the lifetime is up
-		if p.isExpired(res) && totalConns >= p.minConns {
+		switch {
+		case p.isExpired(res) && totalConns >= p.minConns:
 			atomic.AddInt64(&p.lifetimeDestroyCount, 1)
 			res.Destroy()
 			destroyed = true
 			// Since Destroy is async we manually decrement totalConns.
 			totalConns--
-		} else if res.IdleDuration() > p.maxConnIdleTime && totalConns > p.minConns {
+		case res.IdleDuration() > p.maxConnIdleTime && totalConns > p.minConns:
 			atomic.AddInt64(&p.idleDestroyCount, 1)
 			res.Destroy()
 			destroyed = true
 			// Since Destroy is async we manually decrement totalConns.
 			totalConns--
-		} else {
+		default:
 			res.ReleaseUnused()
 		}
 	}
@@ -620,6 +621,7 @@ func (p *Pool) Acquire(ctx context.Context) (c *Conn, err error) {
 		cr := res.Value()
 
 		if p.isExpired(res) {
+			atomic.AddInt64(&p.lifetimeDestroyCount, 1)
 			res.Destroy()
 			continue
 		}
