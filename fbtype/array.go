@@ -348,6 +348,9 @@ func (ad *ArrayData) decodeBinary(m *Map, src []byte, array ArraySetter, realInd
 			realIndexes = realIndexes[1:]
 		}
 		if elemLen >= 0 {
+			if len(src[position:]) < elemLen {
+				return fmt.Errorf("array element %d length %d exceeds remaining %d bytes", i, elemLen, len(src[position:]))
+			}
 			elemSrc = src[position : position+elemLen]
 			position += elemLen
 		}
