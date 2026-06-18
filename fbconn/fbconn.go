@@ -631,7 +631,13 @@ func connectPreferred(ctx context.Context, config *Config, connectOneConfigs []*
 	}
 
 	if fallbackConnectOneConfig != nil {
-		fbConn, err := connectOne(ctx, config, fallbackConnectOneConfig, true)
+		fallbackCtx := octx
+		if config.ConnectTimeout != 0 {
+			var cancel context.CancelFunc
+			fallbackCtx, cancel = context.WithTimeout(octx, config.ConnectTimeout)
+			defer cancel()
+		}
+		fbConn, err := connectOne(fallbackCtx, config, fallbackConnectOneConfig, true)
 		if err == nil {
 			return fbConn, nil
 		}
