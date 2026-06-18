@@ -61,7 +61,7 @@ func writeTestOpConnect(t *testing.T, wireCrypt bool, operation int) (int, []byt
 	gotOperation, err := r.ReadInt32()
 	require.NoError(t, err)
 	requireInt32(t, r, ConnectVersion3)
-	requireInt32(t, r, GenericAchitectureClient)
+	requireInt32(t, r, GenericArchitectureClient)
 	_, err = r.ReadBuffer()
 	require.NoError(t, err)
 	_, err = r.ReadInt32()

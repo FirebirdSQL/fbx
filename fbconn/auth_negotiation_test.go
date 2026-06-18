@@ -209,7 +209,7 @@ func writeProbeAccept(w *fbproto.XDRWriter, encoding *fbproto.Encoding, opcode i
 	if err := w.WriteInt32(fbproto.PROTOCOL_VERSION19); err != nil {
 		return err
 	}
-	if err := w.WriteInt32(fbproto.GenericAchitectureClient); err != nil {
+	if err := w.WriteInt32(fbproto.GenericArchitectureClient); err != nil {
 		return err
 	}
 	if err := w.WriteInt32(fbproto.Ptype_lazy_send); err != nil {
