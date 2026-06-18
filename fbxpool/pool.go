@@ -619,6 +619,11 @@ func (p *Pool) Acquire(ctx context.Context) (c *Conn, err error) {
 
 		cr := res.Value()
 
+		if p.isExpired(res) {
+			res.Destroy()
+			continue
+		}
+
 		shouldPingParams := ShouldPingParams{Conn: cr.conn, IdleDuration: res.IdleDuration()}
 		if p.shouldPing(ctx, shouldPingParams) {
 			err := func() error {
