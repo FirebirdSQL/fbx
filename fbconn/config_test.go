@@ -479,6 +479,34 @@ func TestParseConfigInvalidFetchBatchSize(t *testing.T) {
 	require.Contains(t, err.Error(), "invalid fetch_batch_size")
 }
 
+func TestParseConfigConnStringAllowedKeys(t *testing.T) {
+	config, err := fbconn.ParseConfigWithOptions(
+		"host=localhost dbname=testdb createdb=true",
+		fbconn.ParseConfigOptions{ConnStringAllowedKeys: []string{"host", "database", "create_database"}},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "localhost", config.Host)
+	require.Equal(t, "testdb", config.Database)
+	require.True(t, config.CreateDatabase)
+
+	_, err = fbconn.ParseConfigWithOptions(
+		"host=localhost password=secret",
+		fbconn.ParseConfigOptions{ConnStringAllowedKeys: []string{"host"}},
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), `connection string key "password" is not in ConnStringAllowedKeys`)
+}
+
+func TestParseConfigConnStringAllowedKeysURLAliases(t *testing.T) {
+	config, err := fbconn.ParseConfigWithOptions(
+		"firebird://localhost/?dbname=testdb&createdb=true",
+		fbconn.ParseConfigOptions{ConnStringAllowedKeys: []string{"host", "dbname", "createdb"}},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "testdb", config.Database)
+	require.True(t, config.CreateDatabase)
+}
+
 func TestConfigCopyReturnsEqualConfig(t *testing.T) {
 	connString := "firebird://jack:secret@localhost:3050/mydb?application_name=fbxtest&connect_timeout=5"
 	original, err := fbconn.ParseConfig(connString)

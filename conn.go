@@ -41,7 +41,7 @@ type ConnConfig struct {
 	createdByParseConfig bool // Used to enforce created by ParseConfig rule.
 }
 
-// ParseConfigOptions contains options that control how a config is built such as getsslpassword.
+// ParseConfigOptions contains options that control how a config is built.
 type ParseConfigOptions struct {
 	fbconn.ParseConfigOptions
 }
@@ -173,8 +173,7 @@ func DropDatabase(ctx context.Context, connString string) error {
 	return err
 }
 
-// ConnectWithOptions behaves exactly like Connect with the addition of options. At the present options is only used to
-// provide a GetSSLPassword function.
+// ConnectWithOptions behaves exactly like Connect with the addition of ParseConfigOptions.
 func ConnectWithOptions(ctx context.Context, connString string, options ParseConfigOptions) (*Conn, error) {
 	connConfig, err := ParseConfigWithOptions(connString, options)
 	if err != nil {
@@ -247,8 +246,7 @@ func DropDatabaseConfig(ctx context.Context, connConfig *ConnConfig) error {
 	return err
 }
 
-// ParseConfigWithOptions behaves exactly as ParseConfig does with the addition of options. At the present options is
-// only used to provide a GetSSLPassword function.
+// ParseConfigWithOptions behaves exactly as ParseConfig does with the addition of ParseConfigOptions.
 func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*ConnConfig, error) {
 	config, err := fbconn.ParseConfigWithOptions(connString, options.ParseConfigOptions)
 	if err != nil {
