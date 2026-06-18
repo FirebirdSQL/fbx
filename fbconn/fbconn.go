@@ -1413,6 +1413,9 @@ func (fbConn *FbConn) Prepare(ctx context.Context, sql string) (*Statement, erro
 	}
 	st, err := fbConn.PrepareTx(ctx, tx, sql)
 	if err != nil {
+		if rbErr := fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx, err); rbErr != nil {
+			err = errors.Join(err, fmt.Errorf("rollback internal tx: %w", rbErr))
+		}
 		return nil, err
 	}
 	return st, nil
@@ -1602,7 +1605,13 @@ func (fbConn *FbConn) ExecImmediate(ctx context.Context, sql string) error {
 		fbConn.asyncClose()
 		return err
 	}
-	return fbConn.ExecImmediateTx(ctx, tx, sql)
+	if err := fbConn.ExecImmediateTx(ctx, tx, sql); err != nil {
+		if rbErr := fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx, err); rbErr != nil {
+			err = errors.Join(err, fmt.Errorf("rollback internal tx: %w", rbErr))
+		}
+		return err
+	}
+	return nil
 }
 
 // ExecImmediateTx executes statement immediate inside specified transaction
@@ -1741,8 +1750,8 @@ func (fbConn *FbConn) ExecParamsTx(ctx context.Context, tx *FBTransaction, sql s
 		if SafeToRetry(err) || errors.As(err, &fbErr) {
 			closeConn = false
 		}
-		if closeConn {
-			_ = tx.Rollback(ctx)
+		if rbErr := fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx, err); rbErr != nil {
+			err = errors.Join(err, fmt.Errorf("rollback internal tx: %w", rbErr))
 		}
 		res := ResultReader{
 			fbConn: fbConn,
@@ -1767,8 +1776,8 @@ func (fbConn *FbConn) ExecParamsTx(ctx context.Context, tx *FBTransaction, sql s
 		if SafeToRetry(rr.err) || errors.As(rr.err, &fbErr) {
 			closeConn = false
 		}
-		if closeConn || (tx == fbConn.internalTransaction && !tx.Closed) {
-			_ = tx.Rollback(ctx)
+		if rbErr := fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx, rr.err); rbErr != nil {
+			rr.err = errors.Join(rr.err, fmt.Errorf("rollback internal tx: %w", rbErr))
 		}
 		res := ResultReader{
 			fbConn: fbConn,
@@ -2038,6 +2047,9 @@ func (fbConn *FbConn) getArrayDimensions(ctx context.Context, tx *FBTransaction,
 
 func (fbConn *FbConn) getArray(ctx context.Context, arrayId int64, datatype uint32, length, l int, sdl []byte) ([]byte, error) {
 	tx, err := fbConn.ensureInternalTransaction(ctx, nil, false)
+	if err != nil {
+		return nil, err
+	}
 
 	opGetSlice := fbproto.OpGetSlice{
 		TransactionHandle: tx.Handle,
@@ -2076,6 +2088,9 @@ func (fbConn *FbConn) getArray(ctx context.Context, arrayId int64, datatype uint
 
 func (fbConn *FbConn) putArray(ctx context.Context, array []byte, length int, sdl []byte) ([]byte, error) {
 	tx, err := fbConn.ensureInternalTransaction(ctx, nil, false)
+	if err != nil {
+		return nil, err
+	}
 
 	opPutSlice := fbproto.OpPutSlice{
 		TransactionHandle: tx.Handle,
@@ -2452,6 +2467,14 @@ func (rr *ResultReader) Values() [][]byte {
 	return rr.rowValues
 }
 
+// SetCallerErr propagates an error from upstream callers (e.g., higher-level row
+// scan processing in fbx that detects a failure not visible to fbconn) into the ResultReader.
+func (rr *ResultReader) SetCallerErr(err error) {
+	if err != nil && rr.err == nil {
+		rr.err = err
+	}
+}
+
 // cleanupGracePeriod bounds cleanup network calls (e.g. op_free_statement) that
 // must run even after the caller's ctx has been cancelled.
 const cleanupGracePeriod = 5 * time.Second
@@ -2460,6 +2483,32 @@ const cleanupGracePeriod = 5 * time.Second
 // bounded timeout for the network call.
 func cleanupContext(parent context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(parent), cleanupGracePeriod)
+}
+
+// rollbackInternalTxIfAutocommitOnError rolls back the connection's implicit internal
+// transaction on an error path. No-op when tx is user-supplied, already closed,
+// Autocommit is disabled, or opErr is SafeToRetry (the operation failed before
+// reaching the server, so server-side tx state cannot have changed).
+func (fbConn *FbConn) rollbackInternalTxIfAutocommitOnError(ctx context.Context, tx *FBTransaction, opErr error) error {
+	if tx == nil || tx != fbConn.internalTransaction || tx.Closed {
+		return nil
+	}
+	if !fbConn.config.Autocommit || fbConn.explicitTransaction {
+		return nil
+	}
+	if SafeToRetry(opErr) {
+		return nil
+	}
+	cleanupCtx, cancel := cleanupContext(ctx)
+	defer cancel()
+	if err := tx.Rollback(cleanupCtx); err != nil {
+		var fbErr *FbError
+		if errors.As(err, &fbErr) {
+			fbConn.asyncClose()
+		}
+		return err
+	}
+	return nil
 }
 
 // Close consumes any remaining result data and returns the command tag or
@@ -2488,8 +2537,14 @@ func (rr *ResultReader) Close() (QueryStatus, error) {
 		}
 
 		if rr.boundTransaction != nil && rr.boundTransaction == rr.fbConn.internalTransaction && rr.fbConn.config.Autocommit && !rr.fbConn.explicitTransaction {
-			if err := rr.boundTransaction.Commit(context.Background()); err != nil && rr.err == nil {
-				rr.err = err
+			if rr.err != nil {
+				if rbErr := rr.fbConn.rollbackInternalTxIfAutocommitOnError(rr.ctx, rr.boundTransaction, rr.err); rbErr != nil {
+					rr.err = errors.Join(rr.err, fmt.Errorf("rollback internal tx: %w", rbErr))
+				}
+			} else {
+				if err := rr.boundTransaction.Commit(context.Background()); err != nil {
+					rr.err = err
+				}
 			}
 		}
 	}

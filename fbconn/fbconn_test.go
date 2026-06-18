@@ -2758,3 +2758,206 @@ func TestPassProcessName(t *testing.T) {
 	require.Equal(t, 1, len(res.Rows))
 	assert.Equal(t, exec, string(res.Rows[0][0]))
 }
+
+func TestRollbackInternalTxOnExecImmediateErrorAutocommit(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	require.True(t, config.Autocommit, "default Autocommit must be true for this test")
+
+	conn, err := fbconn.ConnectConfig(ctx, config)
+	require.NoError(t, err)
+	defer closeConn(t, conn)
+
+	subjectID := subjectAttachmentID(t, conn)
+
+	err = conn.ExecImmediate(ctx, "select * from fbx_table_does_not_exist_for_rollback_test")
+	require.Error(t, err)
+
+	assert.False(t, conn.ActiveTx(), "internal tx must be rolled back on error in autocommit mode")
+	assert.Equal(t, 0, activeTxCountOnServer(t, subjectID),
+		"server-side: no leaked tx after ExecImmediate failure")
+}
+
+func TestPreserveInternalTxOnExecImmediateErrorNoAutocommit(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	config.Autocommit = false
+
+	conn, err := fbconn.ConnectConfig(ctx, config)
+	require.NoError(t, err)
+	defer closeConn(t, conn)
+
+	err = conn.ExecImmediate(ctx, "select * from fbx_table_does_not_exist_for_rollback_test")
+	require.Error(t, err)
+
+	assert.True(t, conn.ActiveTx(), "internal tx must persist on error when Autocommit is disabled")
+}
+
+func TestPrepareErrorReleasesInternalTxOnServer(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	require.True(t, config.Autocommit)
+
+	conn, err := fbconn.ConnectConfig(ctx, config)
+	require.NoError(t, err)
+	defer closeConn(t, conn)
+
+	subjectID := subjectAttachmentID(t, conn)
+
+	_, err = conn.Prepare(ctx, "select * from fbx_no_such_table_prepare_err")
+	require.Error(t, err)
+
+	assert.False(t, conn.ActiveTx(), "Go-side: internal tx must be rolled back")
+	assert.Equal(t, 0, activeTxCountOnServer(t, subjectID),
+		"server-side: no leaked tx on subject after Prepare failure")
+}
+
+func TestExecParamsPrepareErrorReleasesInternalTxOnServer(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	require.True(t, config.Autocommit)
+
+	conn, err := fbconn.ConnectConfig(ctx, config)
+	require.NoError(t, err)
+	defer closeConn(t, conn)
+
+	subjectID := subjectAttachmentID(t, conn)
+
+	res := conn.ExecParams(ctx, "select * from fbx_no_such_table_execparams_err", nil).Read()
+	require.Error(t, res.Err)
+
+	assert.False(t, conn.ActiveTx())
+	assert.Equal(t, 0, activeTxCountOnServer(t, subjectID))
+}
+
+func TestExecParamsExecErrorReleasesInternalTxOnServer(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	require.True(t, config.Autocommit)
+
+	conn, err := fbconn.ConnectConfig(ctx, config)
+	require.NoError(t, err)
+	defer closeConn(t, conn)
+
+	const table = "fbx_dup_key_test"
+	require.NoError(t, conn.ExecImmediate(ctx, "recreate table "+table+" (id integer not null primary key)"))
+	defer func() { _ = conn.ExecImmediate(context.Background(), "drop table "+table) }()
+	require.NoError(t, conn.ExecImmediate(ctx, "insert into "+table+" (id) values (1)"))
+
+	subjectID := subjectAttachmentID(t, conn)
+
+	res := conn.ExecParams(ctx, "insert into "+table+" (id) values (?)", [][]byte{{0, 0, 0, 1}}).Read()
+	require.Error(t, res.Err)
+
+	assert.False(t, conn.ActiveTx())
+	assert.Equal(t, 0, activeTxCountOnServer(t, subjectID))
+}
+
+func TestOpenBlobErrorReleasesInternalTxOnServer(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	require.True(t, config.Autocommit)
+
+	conn, err := fbconn.ConnectConfig(ctx, config)
+	require.NoError(t, err)
+	defer closeConn(t, conn)
+
+	subjectID := subjectAttachmentID(t, conn)
+
+	_, err = conn.OpenBlob(ctx, nil, 1234567890123456, nil, false)
+	require.Error(t, err)
+
+	assert.False(t, conn.ActiveTx())
+	assert.Equal(t, 0, activeTxCountOnServer(t, subjectID))
+}
+
+func TestSuccessThenFailReleasesInternalTxOnServer(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	require.True(t, config.Autocommit)
+
+	conn, err := fbconn.ConnectConfig(ctx, config)
+	require.NoError(t, err)
+	defer closeConn(t, conn)
+
+	const table = "fbx_success_then_fail_test"
+	require.NoError(t, conn.ExecImmediate(ctx, "recreate table "+table+" (id integer)"))
+	defer func() { _ = conn.ExecImmediate(context.Background(), "drop table "+table) }()
+
+	subjectID := subjectAttachmentID(t, conn)
+
+	require.NoError(t, conn.ExecImmediate(ctx, "insert into "+table+" (id) values (42)"))
+	require.False(t, conn.ActiveTx(), "internal tx must be committed after successful autocommit Exec")
+
+	err = conn.ExecImmediate(ctx, "select * from fbx_no_such_table_combined_scenario")
+	require.Error(t, err)
+
+	assert.False(t, conn.ActiveTx(), "Go-side: internal tx of the failed call must be rolled back")
+	assert.Equal(t, 0, activeTxCountOnServer(t, subjectID),
+		"server-side: no leaked tx from either prior success or current failure")
+
+	res := conn.Exec(ctx, "select cast(id as varchar(20)) from "+table).Read()
+	require.NoError(t, res.Err)
+	require.Len(t, res.Rows, 1)
+	assert.Equal(t, "42", strings.TrimSpace(string(res.Rows[0][0])))
+}
+
+func TestRollbackInternalTxOnResultReaderCloseErrorAutocommit(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	require.True(t, config.Autocommit, "default Autocommit must be true for this test")
+
+	conn, err := fbconn.ConnectConfig(ctx, config)
+	require.NoError(t, err)
+	defer closeConn(t, conn)
+
+	const table = "fbx_rr_rollback_test"
+	require.NoError(t, conn.ExecImmediate(ctx, "recreate table "+table+"(id integer)"))
+	defer func() {
+		_ = conn.ExecImmediate(context.Background(), "drop table "+table)
+	}()
+
+	subjectID := subjectAttachmentID(t, conn)
+
+	config.Autocommit = false
+	require.NoError(t, conn.ExecImmediate(ctx, "insert into "+table+"(id) values (1)"))
+	require.True(t, conn.ActiveTx(), "setup insert must remain in the internal tx")
+
+	config.Autocommit = true
+	rr := conn.ExecParams(ctx, "select 1 / cast(? as integer) from rdb$database", [][]byte{{0, 0, 0, 0}})
+	for rr.NextRow() {
+	}
+	_, err = rr.Close()
+	require.Error(t, err)
+
+	res := conn.Exec(ctx, "select id from "+table).Read()
+	require.NoError(t, res.Err)
+	assert.Empty(t, res.Rows, "fetch-time error must roll back the implicit internal tx")
+
+	assert.Equal(t, 0, activeTxCountOnServer(t, subjectID),
+		"server-side: no leaked tx after fetch-time error and Close")
+}

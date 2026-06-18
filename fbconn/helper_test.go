@@ -3,8 +3,10 @@ package fbconn_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -13,6 +15,43 @@ import (
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx/fbconn"
 )
+
+// subjectAttachmentID returns the subject conn's MON$ATTACHMENT_ID. Call this
+// BEFORE the failing scenario — the SELECT runs autocommit and leaves the subject
+// in a clean state, so subsequent observation reflects only the scenario's effect.
+func subjectAttachmentID(t testing.TB, subject *fbconn.FbConn) int64 {
+	t.Helper()
+	res := subject.Exec(context.Background(),
+		"select cast(current_connection as varchar(20)) from rdb$database",
+	).Read()
+	require.NoError(t, res.Err)
+	require.NotEmpty(t, res.Rows)
+	require.NotEmpty(t, res.Rows[0])
+	id, err := strconv.ParseInt(strings.TrimSpace(string(res.Rows[0][0])), 10, 64)
+	require.NoError(t, err)
+	return id
+}
+
+// activeTxCountOnServer counts active transactions on the server for the given
+// subject attachment using a SEPARATE observer connection. 
+func activeTxCountOnServer(t testing.TB, subjectAttachmentID int64) int {
+	t.Helper()
+	observer, err := fbconn.Connect(context.Background(), os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	defer func() { _ = observer.Close(context.Background()) }()
+
+	sql := fmt.Sprintf(
+		"select cast(count(*) as varchar(20)) from mon$transactions where mon$attachment_id = %d",
+		subjectAttachmentID,
+	)
+	res := observer.Exec(context.Background(), sql).Read()
+	require.NoError(t, res.Err)
+	require.NotEmpty(t, res.Rows)
+	require.NotEmpty(t, res.Rows[0])
+	n, err := strconv.Atoi(strings.TrimSpace(string(res.Rows[0][0])))
+	require.NoError(t, err)
+	return n
+}
 
 var generateSeriesTemplate = `WITH RECURSIVE generate_series(%[3]s)
 AS (SELECT %[1]d FROM RDB$DATABASE UNION ALL SELECT (%[3]s + 1)

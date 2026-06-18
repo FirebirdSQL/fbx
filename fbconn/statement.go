@@ -3,6 +3,7 @@ package fbconn
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 
 	"rdb.red-soft.ru/fbx/fbproto"
@@ -172,7 +173,13 @@ func (st *Statement) Exec(ctx context.Context, paramValues [][]byte) *ResultRead
 		}
 		tx = st.conn.internalTransaction
 	}
-	return st.ExecTx(ctx, tx, paramValues)
+	rr = st.ExecTx(ctx, tx, paramValues)
+	if rr.err != nil {
+		if rbErr := st.conn.rollbackInternalTxIfAutocommitOnError(ctx, tx, rr.err); rbErr != nil {
+			rr.err = errors.Join(rr.err, fmt.Errorf("rollback internal tx: %w", rbErr))
+		}
+	}
+	return rr
 }
 
 // ExecTx executed a prepared statement inside specified transaction

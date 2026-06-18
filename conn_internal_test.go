@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -112,4 +113,38 @@ func countStatementHandlesForSQL(t testing.TB, conn *Conn, sql string) int64 {
 	).Scan(&count)
 	require.NoError(t, err)
 	return count
+}
+
+func TestScanErrorRollsBackInternalTxAutocommit(t *testing.T) {
+	connConfig := mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE"))
+	require.True(t, connConfig.Autocommit, "default Autocommit must be true for this test")
+
+	conn := mustConnect(t, connConfig)
+	defer func() {
+		require.NoError(t, conn.Close(context.Background()))
+	}()
+
+	ctx := context.Background()
+	const table = "fbx_scan_err_rollback_test"
+	_, err := conn.Exec(ctx, "recreate table "+table+" (id integer)")
+	require.NoError(t, err)
+	defer func() { _, _ = conn.Exec(context.Background(), "drop table "+table) }()
+
+	conn.config.Autocommit = false
+	_, err = conn.Exec(ctx, "insert into "+table+" (id) values (1)")
+	require.NoError(t, err)
+	require.True(t, conn.fbConn.ActiveTx(), "setup insert must remain in the internal tx")
+
+	conn.config.Autocommit = true
+	var dst time.Time
+	err = conn.QueryRow(ctx, "select cast(42 as integer) from rdb$database").Scan(&dst)
+	require.Error(t, err)
+	var scanErr ScanArgError
+	require.ErrorAs(t, err, &scanErr, "expected ScanArgError from type-mismatched Scan")
+
+	var count int64
+	err = conn.QueryRow(ctx, "select count(*) from "+table).Scan(&count)
+	require.NoError(t, err)
+	assert.EqualValues(t, 0, count,
+		"scan-time error must roll back the implicit internal tx, dropping the setup INSERT")
 }
