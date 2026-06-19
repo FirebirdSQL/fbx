@@ -65,17 +65,18 @@ func TestTimestampTzTranscode(t *testing.T) {
 			t.Skip("timestamp with time zone is not supported by server engine version <= 3")
 		}
 
-		inputTime := time.Date(2013, 1, 2, 3, 4, 5, 600000, time.Local)
+		loc, err := time.LoadLocation("Europe/Moscow")
+		require.NoError(t, err)
+
+		inputTime := time.Date(2013, 1, 2, 3, 4, 5, 600000, loc)
 
 		var outputTime time.Time
 
-		err := conn.QueryRow(context.Background(), "select cast(? as timestamp with time zone) from rdb$database", inputTime).Scan(&outputTime)
+		err = conn.QueryRow(context.Background(), "select cast(? as timestamp with time zone) from rdb$database", inputTime).Scan(&outputTime)
 		if err != nil {
 			t.Fatalf("QueryRow Scan failed: %v", err)
 		}
-		if !inputTime.Equal(outputTime) {
-			t.Errorf("Did not transcode time successfully: %v is not %v", outputTime, inputTime)
-		}
+		assert.Equal(t, inputTime, outputTime)
 	})
 }
 

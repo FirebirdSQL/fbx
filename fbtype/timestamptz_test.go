@@ -1,7 +1,9 @@
 package fbtype
 
 import (
+	"encoding/binary"
 	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 
@@ -37,7 +39,7 @@ func assertSameOffset(t *testing.T, got, want time.Time) {
 	}
 }
 
-func TestTimestamptzCodec_RoundTrip_Time(t *testing.T) {
+func TestTimestamptzCodecRoundTripTime(t *testing.T) {
 	var c TimestamptzCodec
 
 	locMSK := mustLoadLocation(t, "Europe/Moscow")
@@ -92,28 +94,102 @@ func TestTimestamptzCodec_RoundTrip_Time(t *testing.T) {
 
 			assertSameInstant(t, got, tt.time)
 			assertSameOffset(t, got, tt.time)
+			if !reflect.DeepEqual(got, tt.time) {
+				t.Fatalf("time values differ after roundtrip:\n  got  = %#v\n  want = %#v", got, tt.time)
+			}
 		})
 	}
 }
 
-func TestTimestamptzCodec_RoundTrip_String(t *testing.T) {
+func TestTimestamptzCodecRoundTripOffsetLocation(t *testing.T) {
 	var c TimestamptzCodec
 
 	tests := []struct {
-		name string
-		str  string
+		name          string
+		time          time.Time
+		wantLocName   string
+		wantDeepEqual bool
 	}{
 		{
-			name: "plus 14",
-			str:  "2025-12-10T10:00:00+14:00",
+			name:          "canonical offset",
+			time:          time.Date(2025, 12, 10, 18, 0, 0, 123400000, time.FixedZone("+04:00", 4*60*60)),
+			wantLocName:   "+04:00",
+			wantDeepEqual: true,
 		},
 		{
-			name: "minus 12",
-			str:  "2025-12-10T23:00:00-12:00",
+			name:          "custom fixed zone name",
+			time:          time.Date(2025, 12, 10, 18, 0, 0, 123400000, time.FixedZone("MSK", 4*60*60)),
+			wantLocName:   "+04:00",
+			wantDeepEqual: false,
 		},
 		{
-			name: "with fraction",
-			str:  "2025-12-10T18:00:00.1234+03:00",
+			name:          "negative half-hour offset",
+			time:          time.Date(2025, 12, 10, 18, 0, 0, 123400000, time.FixedZone("-05:30", -(5*60+30)*60)),
+			wantLocName:   "-05:30",
+			wantDeepEqual: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			typeMetadata := NewTypeMetadata(fbproto.SQL_TYPE_TIMESTAMP_TZ, 0, 0, 0)
+			planEnc := c.PlanEncode(nil, typeMetadata, tt.time)
+			if planEnc == nil {
+				t.Fatalf("PlanEncode returned nil for time.Time")
+			}
+
+			buf, err := planEnc.Encode(tt.time, nil)
+			if err != nil {
+				t.Fatalf("Encode failed: %v", err)
+			}
+
+			var got time.Time
+			planScan := c.PlanScan(nil, typeMetadata, &got)
+			if planScan == nil {
+				t.Fatalf("PlanScan returned nil for *time.Time")
+			}
+
+			if err := planScan.Scan(buf, &got); err != nil {
+				t.Fatalf("Scan failed: %v", err)
+			}
+
+			assertSameInstant(t, got, tt.time)
+			assertSameOffset(t, got, tt.time)
+			if got.Location().String() != tt.wantLocName {
+				t.Fatalf("location name = %q, want %q", got.Location().String(), tt.wantLocName)
+			}
+			if tt.wantDeepEqual && !reflect.DeepEqual(got, tt.time) {
+				t.Fatalf("time values differ after roundtrip:\n  got  = %#v\n  want = %#v", got, tt.time)
+			}
+			if !tt.wantDeepEqual && reflect.DeepEqual(got, tt.time) {
+				t.Fatalf("custom fixed zone name was unexpectedly preserved")
+			}
+		})
+	}
+}
+
+func TestTimestamptzCodecRoundTripString(t *testing.T) {
+	var c TimestamptzCodec
+
+	tests := []struct {
+		name        string
+		str         string
+		wantLocName string
+	}{
+		{
+			name:        "plus 14",
+			str:         "2025-12-10T10:00:00+14:00",
+			wantLocName: "+14:00",
+		},
+		{
+			name:        "minus 12",
+			str:         "2025-12-10T23:00:00-12:00",
+			wantLocName: "-12:00",
+		},
+		{
+			name:        "with fraction",
+			str:         "2025-12-10T18:00:00.1234+03:00",
+			wantLocName: "+03:00",
 		},
 	}
 
@@ -150,11 +226,29 @@ func TestTimestamptzCodec_RoundTrip_String(t *testing.T) {
 
 			assertSameInstant(t, got, want)
 			assertSameOffset(t, got, want)
+			if got.Location().String() != tt.wantLocName {
+				t.Fatalf("location name = %q, want %q", got.Location().String(), tt.wantLocName)
+			}
 		})
 	}
 }
 
-func TestTimestamptzCodec_RoundTrip_TimestamptzStruct(t *testing.T) {
+func TestTimestamptzCodecEncodeInvalidString(t *testing.T) {
+	var c TimestamptzCodec
+
+	typeMetadata := NewTypeMetadata(fbproto.SQL_TYPE_TIMESTAMP_TZ, 0, 0, 0)
+	planEnc := c.PlanEncode(nil, typeMetadata, "not-a-timestamp")
+	if planEnc == nil {
+		t.Fatalf("PlanEncode returned nil for string")
+	}
+
+	_, err := planEnc.Encode("not-a-timestamp", nil)
+	if err == nil {
+		t.Fatalf("Encode expected error, got nil")
+	}
+}
+
+func TestTimestamptzCodecRoundTripTimestamptzStruct(t *testing.T) {
 	var c TimestamptzCodec
 
 	locUTC := time.UTC
@@ -219,11 +313,14 @@ func TestTimestamptzCodec_RoundTrip_TimestamptzStruct(t *testing.T) {
 			}
 			assertSameInstant(t, got.Time, tt.in.Time)
 			assertSameOffset(t, got.Time, tt.in.Time)
+			if !reflect.DeepEqual(got.Time, tt.in.Time) {
+				t.Fatalf("time values differ after roundtrip:\n  got  = %#v\n  want = %#v", got.Time, tt.in.Time)
+			}
 		})
 	}
 }
 
-func TestTimestamptzCodec_Encode_NullStruct(t *testing.T) {
+func TestTimestamptzCodecEncodeNullStruct(t *testing.T) {
 	var c TimestamptzCodec
 
 	in := Timestamptz{Valid: false}
@@ -243,7 +340,19 @@ func TestTimestamptzCodec_Encode_NullStruct(t *testing.T) {
 	}
 }
 
-func TestTimestamptz_MarshalJSON(t *testing.T) {
+func TestDecodeTimestamptzBinaryRejectsInvalidInput(t *testing.T) {
+	if _, err := decodeTimestamptzBinary([]byte{1, 2, 3}); err == nil {
+		t.Fatalf("decodeTimestamptzBinary expected length error, got nil")
+	}
+
+	src := make([]byte, 12)
+	binary.BigEndian.PutUint32(src[4:8], uint32(microsecondsPerDay/100))
+	if _, err := decodeTimestamptzBinary(src); err == nil {
+		t.Fatalf("decodeTimestamptzBinary expected time-of-day range error, got nil")
+	}
+}
+
+func TestTimestamptzMarshalJSON(t *testing.T) {
 	locMinus6 := time.FixedZone("TEST-6", -6*60*60)
 	locUTC := time.UTC
 
@@ -288,7 +397,7 @@ func TestTimestamptz_MarshalJSON(t *testing.T) {
 	}
 }
 
-func TestTimestamptz_UnmarshalJSON(t *testing.T) {
+func TestTimestamptzUnmarshalJSON(t *testing.T) {
 	type tc struct {
 		name      string
 		json      string
@@ -354,7 +463,7 @@ func TestTimestamptz_UnmarshalJSON(t *testing.T) {
 	}
 }
 
-func TestTimestamptz_ScanAndValue(t *testing.T) {
+func TestTimestamptzScanAndValue(t *testing.T) {
 	type tc struct {
 		name string
 		src  time.Time
@@ -419,10 +528,57 @@ func TestTimestamptz_ScanAndValue(t *testing.T) {
 	}
 }
 
-func TestTimestamptz_Scan_UnsupportedType(t *testing.T) {
+func TestTimestamptzScanUnsupportedType(t *testing.T) {
 	var ts Timestamptz
 	if err := ts.Scan("not-a-time"); err == nil {
 		t.Fatalf("Scan(string) expected error, got nil")
+	}
+}
+
+func TestTzRawFromTimeRejectsOutOfRangeOffset(t *testing.T) {
+	tm := time.Date(2025, 1, 1, 0, 0, 0, 0, time.FixedZone("TOO-FAR", 24*60*60))
+
+	if _, err := tzRawFromTime(tm); err == nil {
+		t.Fatalf("tzRawFromTime expected offset range error, got nil")
+	}
+}
+
+func TestTzRawFromTimeFallsBackToOffsetWhenLocationNameOffsetMismatches(t *testing.T) {
+	tm := time.Date(2025, 1, 1, 0, 0, 0, 0, time.FixedZone("Europe/Moscow", 9*60*60))
+
+	tzRaw, err := tzRawFromTime(tm)
+	if err != nil {
+		t.Fatalf("tzRawFromTime failed: %v", err)
+	}
+
+	regionRaw, ok := fbproto.ResolveTzRawByLocationName("Europe/Moscow")
+	if !ok {
+		t.Fatalf("Europe/Moscow timezone ID is not registered")
+	}
+	if tzRaw == regionRaw {
+		t.Fatalf("tzRawFromTime encoded mismatched fixed zone as Europe/Moscow region")
+	}
+
+	const wantOffsetRaw = uint16(9*60 + 1439)
+	if tzRaw != wantOffsetRaw {
+		t.Fatalf("tzRawFromTime = %d, want offset raw %d", tzRaw, wantOffsetRaw)
+	}
+}
+
+func TestTzRawFromTimePrefersNamedUTC(t *testing.T) {
+	tm := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	tzRaw, err := tzRawFromTime(tm)
+	if err != nil {
+		t.Fatalf("tzRawFromTime failed: %v", err)
+	}
+
+	wantTzRaw, ok := fbproto.ResolveTzRawByLocationName("UTC")
+	if !ok {
+		t.Fatalf("UTC timezone ID is not registered")
+	}
+	if tzRaw != wantTzRaw {
+		t.Fatalf("tzRawFromTime = %d, want named UTC raw %d", tzRaw, wantTzRaw)
 	}
 }
 
@@ -500,7 +656,7 @@ func TestTzRawRoundTripWithResolve(t *testing.T) {
 			resolvedLoc := fbproto.ResolveLocationByTzRaw(tzRaw)
 
 			_, offOrig := tm.Zone()
-			_, offResolved := time.Date(2025, 1, 1, 0, 0, 0, 0, resolvedLoc).Zone()
+			_, offResolved := tm.In(resolvedLoc).Zone()
 
 			if offOrig != offResolved {
 				t.Fatalf("%s: offset mismatch after tzRaw roundtrip: orig=%d, resolved=%d",

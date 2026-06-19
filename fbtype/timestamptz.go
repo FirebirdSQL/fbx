@@ -372,6 +372,10 @@ func decodeTimestamptzBinary(src []byte) (Timestamptz, error) {
 }
 
 func tzRawFromTime(t time.Time) (uint16, error) {
+	if tzRaw, ok := tzRawFromLocation(t); ok {
+		return tzRaw, nil
+	}
+
 	_, offsetSeconds := t.Zone()
 	offsetMinutes := offsetSeconds / 60
 
@@ -380,4 +384,20 @@ func tzRawFromTime(t time.Time) (uint16, error) {
 	}
 
 	return uint16(offsetMinutes + 1439), nil
+}
+
+func tzRawFromLocation(t time.Time) (uint16, bool) {
+	loc := t.Location()
+	tzRaw, ok := fbproto.ResolveTzRawByLocationName(loc.String())
+	if !ok {
+		return 0, false
+	}
+
+	_, originalOffset := t.Zone()
+	_, resolvedOffset := t.In(fbproto.ResolveLocationByTzRaw(tzRaw)).Zone()
+	if originalOffset != resolvedOffset {
+		return 0, false
+	}
+
+	return tzRaw, true
 }
