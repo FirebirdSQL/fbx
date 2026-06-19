@@ -40,6 +40,14 @@ func (sna StrictNamedArgs) RewriteQuery(ctx context.Context, conn *Conn, sql str
 // StructArgs can be used as the first argument to a query method. It behaves like NamedArgs, but builds the named
 // arguments from the exported fields of structArg. Field names are used by default and can be overridden with the "db"
 // struct tag. Fields tagged with `db:"-"` are ignored.
+//
+// For example:
+//
+//	type EmployeeFilter struct {
+//		EmpNo int32 `db:"emp_no"`
+//	}
+//
+//	conn.Query(ctx, "select first_name from employee where emp_no=@emp_no", fbx.StructArgs(EmployeeFilter{EmpNo: 2}))
 func StructArgs(structArg any) QueryRewriter {
 	return structArgs{
 		arg: structArg,
@@ -48,6 +56,15 @@ func StructArgs(structArg any) QueryRewriter {
 
 // StrictStructArgs can be used in the same way as StructArgs, but provided struct fields are also checked to include
 // all named arguments that the sql query uses, and no extra arguments.
+//
+// For example, this query returns an error because LastName is not used by the SQL query:
+//
+//	type EmployeeFilter struct {
+//		EmpNo    int32  `db:"emp_no"`
+//		LastName string `db:"last_name"`
+//	}
+//
+//	conn.Query(ctx, "select first_name from employee where emp_no=@emp_no", fbx.StrictStructArgs(EmployeeFilter{EmpNo: 2}))
 func StrictStructArgs(structArg any) QueryRewriter {
 	return structArgs{
 		arg:    structArg,
