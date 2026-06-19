@@ -80,6 +80,20 @@ func TestTimestampTzTranscode(t *testing.T) {
 	})
 }
 
+func TestSmallintScanIntoAny(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		var s any
+		err := conn.QueryRow(ctx, "select cast(1 as smallint) from rdb$database").Scan(&s)
+		require.NoError(t, err)
+		assert.Equal(t, int16(1), s)
+	})
+}
+
 func TestPointerPointer(t *testing.T) {
 	t.Parallel()
 

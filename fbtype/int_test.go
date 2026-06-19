@@ -45,6 +45,7 @@ func TestInt2Codec(t *testing.T) {
 		{Param: 1, Result: new(int16), Test: isExpectedEq(int16(1))},
 		{Param: math.MaxInt16, Result: new(int16), Test: isExpectedEq(int16(math.MaxInt16))},
 		{Param: 1, Result: new(fbtype.Int2), Test: isExpectedEq(fbtype.Int2{Int16: 1, Valid: true})},
+		{Param: 1, Result: new(any), Test: isExpectedEq(int16(1))},
 		{Param: fbtype.Int2{}, Result: new(fbtype.Int2), Test: isExpectedEq(fbtype.Int2{})},
 		{Param: nil, Result: new(*int16), Test: isExpectedEq((*int16)(nil))},
 		{Param: "11", Result: new(int16), Test: isExpectedEq(int16(11))},
