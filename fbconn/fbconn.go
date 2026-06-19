@@ -922,46 +922,42 @@ connectLoop:
 		}
 	}
 
-	opInfoDatabase := fbproto.OpInfoDatabase{
-		Parameters:   []byte{fbproto.Isc_info_firebird_version, fbproto.Isc_info_end},
-		BufferLength: 256,
-	}
+	err = fbConn.getDatabaseInfo([]byte{fbproto.Isc_info_firebird_version, fbproto.Isc_info_end}, func(buf []byte) error {
+		r := NewServerInfoBufferReader(buf)
+		var item byte
+		var err error
+		for {
+			if item, err = r.ReadByte(); err != nil {
+				return err
+			}
+			switch item {
+			case fbproto.Isc_info_end:
+				return nil
+			case fbproto.Isc_info_firebird_version:
+				v, err := r.ReadStringValue()
+				if err != nil {
+					return err
+				}
+				re := regexp.MustCompile(`-V[0-9]+`)
+				versionString := re.FindString(v)
+				if len(versionString) < 3 {
+					return fmt.Errorf("server version string parsing error")
+				}
+				fbConn.serverMajorVersion, err = strconv.Atoi(versionString[2:])
+				if err != nil {
+					return err
+				}
+			case fbproto.Isc_info_truncated:
+				return InfoTruncationError{0}
+			default:
+				return fmt.Errorf("unknown database info item: %d", item)
+			}
+		}
+	})
 
-	if err = fbConn.client.WriteMessage(&opInfoDatabase); err != nil {
-		fbConn.conn.Close()
-		return nil, newPerDialConnectError("failed to send opInfoDatabase", err)
-	}
-	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
-		fbConn.conn.Close()
-		return nil, newPerDialConnectError("failed to flush opInfoDatabase", err)
-	}
-
-	msg, err := fbConn.receiveMessage()
 	if err != nil {
 		fbConn.conn.Close()
-		return nil, newPerDialConnectError("failed", err)
-	}
-	switch m := msg.(type) {
-	case *fbproto.OpResponse:
-		if len(m.Data) > 0 && m.Data[0] == fbproto.Isc_info_firebird_version {
-			re := regexp.MustCompile(`-V[0-9]+`)
-			versionString := re.FindString(string(m.Data))
-			if len(versionString) < 3 {
-				fbConn.conn.Close()
-				return nil, newPerDialConnectError("error while trying to get server version", fmt.Errorf("version parsing error"))
-			}
-			fbConn.serverMajorVersion, err = strconv.Atoi(versionString[2:])
-			if err != nil {
-				fbConn.conn.Close()
-				return nil, err
-			}
-		} else {
-			fbConn.conn.Close()
-			return nil, newPerDialConnectError("error while trying to get server version", fmt.Errorf("unexpected response"))
-		}
-	case *fbproto.ErrorResponse:
-		fbConn.conn.Close()
-		return nil, ErrorResponseToFbError(m)
+		return nil, newPerDialConnectError("error while trying to get database info", err)
 	}
 
 	return fbConn, nil
