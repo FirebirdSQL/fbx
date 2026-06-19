@@ -151,8 +151,7 @@ func TestConnBatchInsertSliceSmall(t *testing.T) {
 		f timestamp with time zone
 	)`)
 
-	//FIXME: impossible to roundtrip location
-	tzedTime := time.Date(2010, 2, 3, 4, 5, 6, 0, time.FixedZone("", +3*60*60))
+	tzedTime := time.Date(2010, 2, 3, 4, 5, 6, 0, time.FixedZone("+03:00", +3*60*60))
 
 	//FIXME: impossible to roundtrip int16 through smallint
 	inputRows := [][]any{
@@ -214,8 +213,7 @@ func TestConnBatchInsertLarge(t *testing.T) {
 		g timestamp with time zone
 	)`)
 
-	//FIXME: impossible to roundtrip location
-	tzedTime := time.Date(2010, 2, 3, 4, 5, 6, 0, time.FixedZone("", +3*60*60))
+	tzedTime := time.Date(2010, 2, 3, 4, 5, 6, 0, time.FixedZone("+03:00", +3*60*60))
 
 	inputRows := [][]any{}
 
