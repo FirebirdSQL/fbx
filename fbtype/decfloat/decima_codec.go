@@ -6,14 +6,14 @@ import (
 )
 
 type DecodedDecimal struct {
-	Signum    Signum
-	Type      DecimalType
-	Exponent  int32
+	Signum      Signum
+	Type        DecimalType
+	Exponent    int32
 	Coefficient *big.Int
 }
 
 type DecimalCodec struct {
-	Format          DecimalFormat
+	Format           DecimalFormat
 	CoefficientCoder *DenselyPackedDecimalCodec
 }
 
@@ -67,9 +67,9 @@ func (c *DecimalCodec) ParseBytes(decBytes []byte) (DecodedDecimal, error) {
 	coeff := c.CoefficientCoder.DecodeValue(signum, firstDigit, decBytes, lsbIndex)
 
 	return DecodedDecimal{
-		Signum:     signum,
-		Type:       DecimalFinite,
-		Exponent:   exponent,
+		Signum:      signum,
+		Type:        DecimalFinite,
+		Exponent:    exponent,
 		Coefficient: coeff,
 	}, nil
 }
@@ -144,7 +144,7 @@ func decodeExponent(decBytes []byte, exponentMSB int, exponentBitsRemaining int)
 		exponent = (exponent << exponentBitsRemaining) |
 			(int(decBytes[byteIndex]&0xFF) >> (8 - exponentBitsRemaining))
 	}
-	
+
 	return exponent
 }
 

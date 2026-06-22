@@ -14,7 +14,7 @@ type DecimalFormat struct {
 	exponentContinuationBits    int
 	coefficientContinuationBits int
 
-	eLimit      int
+	eLimit       int
 	exponentBias int
 
 	maxCoefficient *big.Int
@@ -33,9 +33,9 @@ var (
 
 func NewDecimalFormat(formatBitLength int, coefficientDigits int) DecimalFormat {
 	f := DecimalFormat{
-		formatBitLength:    formatBitLength,
-		formatByteLength:   formatBitLength / 8,
-		coefficientDigits:  coefficientDigits,
+		formatBitLength:   formatBitLength,
+		formatByteLength:  formatBitLength / 8,
+		coefficientDigits: coefficientDigits,
 	}
 	f.coefficientContinuationBits = calculateCoefficientContinuationBits(coefficientDigits)
 	f.exponentContinuationBits = calculateExponentContinuationBits(formatBitLength, f.coefficientContinuationBits)
@@ -84,7 +84,7 @@ func (f DecimalFormat) ValidateFiniteCoefficientAndExponent(coefficient *big.Int
 }
 
 func calculateCoefficientContinuationBits(coefficientDigits int) int {
-	return dpdBitsPerGroup * (coefficientDigits-1) / dpdDigitsPerGroup
+	return dpdBitsPerGroup * (coefficientDigits - 1) / dpdDigitsPerGroup
 }
 
 func calculateExponentContinuationBits(formatBitLength int, coefficientContinuationBits int) int {

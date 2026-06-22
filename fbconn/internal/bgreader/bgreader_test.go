@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"rdb.red-soft.ru/fbx/fbconn/internal/bgreader"
 	"github.com/stretchr/testify/require"
+	"rdb.red-soft.ru/fbx/fbconn/internal/bgreader"
 )
 
 func TestBGReaderReadWhenStopped(t *testing.T) {

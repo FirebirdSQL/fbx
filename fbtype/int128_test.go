@@ -254,6 +254,6 @@ func isExpectedInt128(expected *big.Int, valid bool) func(any) bool {
 func makeInt128(v *big.Int) fbtype.Int128 {
 	var z big.Int
 	z.Set(v)
-	
+
 	return fbtype.Int128{Int: z, Valid: true}
 }
