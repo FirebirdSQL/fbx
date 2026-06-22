@@ -128,6 +128,20 @@ func (fbConn *FbConn) getInfoSQlRecords(statementHandle int, itemsParser func([]
 	return fbConn.getServerInfo(msgBuilder, truncationHandler, itemsParser)
 }
 
+func (fbConn *FbConn) getDatabaseInfo(infoItems []byte, itemsParser func([]byte) error) error {
+	infoSize := 256
+	msgBuilder := func() fbproto.ClientMessage {
+		return &fbproto.OpInfoDatabase{
+			Parameters:   infoItems,
+			BufferLength: infoSize,
+		}
+	}
+	truncationHandler := func(truncationError InfoTruncationError) {
+		infoSize *= 2
+	}
+	return fbConn.getServerInfo(msgBuilder, truncationHandler, itemsParser)
+}
+
 func (fbConn *FbConn) getServerInfo(msgBuilder func() fbproto.ClientMessage, truncationHandler func(err InfoTruncationError), itemsParser func([]byte) error) error {
 	var err error
 	for {
