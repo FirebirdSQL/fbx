@@ -1,17 +1,19 @@
 package main
 
+import "C"
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"regexp"
+	"strings"
 )
 
-// To rebuild messages: go run ./_tools/msgs fbproto/errmsgs.go
+// To rebuild error messages:   go run ./_tools/msgs msg fbproto/errmsgs.go
+// To rebuild builtin tz list:  go run ./_tools/msgs tz fbproto/builtin_tz.go
 
 //#include "msgs.h"
 import "C"
-import (
-	"strings"
-)
 
 var outFile *os.File
 var sbMessages strings.Builder
@@ -25,18 +27,38 @@ func writeOut(val string) {
 	}
 }
 
+func usage() {
+	fmt.Printf("Usage: msgs <msg|tz> <file>\n")
+}
+
 func main() {
 	var err error
 
-	if len(os.Args) < 2 {
-		fmt.Println("Output file required")
+	if len(os.Args) < 3 {
+		usage()
 		os.Exit(1)
 	}
-	if outFile, err = os.OpenFile(os.Args[1], os.O_CREATE|os.O_RDWR, 0644); err != nil {
+
+	genType := os.Args[1]
+	if genType != "msg" && genType != "tz" {
+		usage()
+		os.Exit(1)
+	}
+
+	if outFile, err = os.OpenFile(os.Args[2], os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644); err != nil {
 		fmt.Printf("Unable to open file: %v\n", err)
 		os.Exit(1)
 	}
 	defer outFile.Close()
+
+	if genType == "msg" {
+		genMsgs()
+	} else {
+		genTz()
+	}
+}
+
+func genMsgs() {
 	C.process_messages()
 
 	writeOut(`// Code generated from _tools/msgs DO NOT EDIT.
@@ -55,6 +77,40 @@ type fberror struct {
 
 	writeOut("var errmsgs = map[int]fberror{\n")
 	writeOut(sbMessages.String())
+	writeOut("}\n")
+}
+
+func genTz() {
+	tzFile, err := os.OpenFile("_tools/msgs/include/firebird/TimeZones.h", os.O_RDONLY, 0644)
+	if err != nil {
+		fmt.Printf("Unable to open file: %v\n", err)
+		os.Exit(1)
+	}
+	defer tzFile.Close()
+
+	writeOut(`// Code generated from _tools/msgs/include/firebird/TimeZones.h DO NOT EDIT.
+package fbproto
+
+var timezoneNameByID = map[int]string{
+`)
+
+	r := regexp.MustCompile(`#define\s+fb_tzid_.*\s+(\d+)\s+\/\*\s+([^\s]+)\s+\*\/`)
+
+	scanner := bufio.NewScanner(tzFile)
+	for scanner.Scan() {
+		line := scanner.Text()
+		match := r.FindStringSubmatch(line)
+		if match != nil {
+			writeOut(fmt.Sprintf("\t%s: \"%s\",\n", match[1], match[2]))
+		} else {
+			fmt.Printf("Skipping line '%s'\n", line)
+		}
+	}
+	err = scanner.Err()
+	if err != nil {
+		fmt.Printf("Unable to read file file: %v\n", err)
+		os.Exit(1)
+	}
 	writeOut("}\n")
 }
 
