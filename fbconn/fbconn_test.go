@@ -964,6 +964,34 @@ func TestConnExecPrepared(t *testing.T) {
 	ensureConnValid(t, fbConn)
 }
 
+func TestConnFetchAfterConnectionBreakReturnsFbError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	connString := os.Getenv("FBX_TEST_DATABASE")
+	if connString == "" {
+		t.Skip("Skipping due to missing environment variable FBX_TEST_DATABASE")
+	}
+
+	fbConn, err := fbconn.Connect(ctx, connString)
+	require.NoError(t, err)
+	defer closeConn(t, fbConn)
+
+	result := fbConn.Exec(ctx, "select cast(rdb$relation_id as integer) from rdb$relations")
+	require.NotEmpty(t, result.FieldDescriptions())
+
+	err = fbConn.Conn().Close()
+	require.NoError(t, err)
+
+	readResult := result.Read()
+	require.Error(t, readResult.Err)
+
+	var fbErr *fbconn.FbError
+	require.ErrorAs(t, readResult.Err, &fbErr)
+	require.Equal(t, "08006", fbErr.Code)
+	require.True(t, fbConn.IsClosed())
+}
+
 func TestConnExecPreparedCanceled(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()

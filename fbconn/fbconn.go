@@ -2279,6 +2279,8 @@ func (rr *ResultReader) NextRow() bool {
 				Messages:        fetchBatchSize,
 			})
 		}); err != nil {
+			rr.fbConn.asyncClose()
+			rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(rr.ctx, normalizeConnClosedError(err)))
 			return false
 		}
 		rr.fetchExecuted = true
