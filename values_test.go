@@ -65,17 +65,18 @@ func TestTimestampTzTranscode(t *testing.T) {
 			t.Skip("timestamp with time zone is not supported by server engine version <= 3")
 		}
 
-		inputTime := time.Date(2013, 1, 2, 3, 4, 5, 600000, time.Local)
+		loc, err := time.LoadLocation("Europe/Moscow")
+		require.NoError(t, err)
+
+		inputTime := time.Date(2013, 1, 2, 3, 4, 5, 600000, loc)
 
 		var outputTime time.Time
 
-		err := conn.QueryRow(context.Background(), "select cast(? as timestamp with time zone) from rdb$database", inputTime).Scan(&outputTime)
+		err = conn.QueryRow(context.Background(), "select cast(? as timestamp with time zone) from rdb$database", inputTime).Scan(&outputTime)
 		if err != nil {
 			t.Fatalf("QueryRow Scan failed: %v", err)
 		}
-		if !inputTime.Equal(outputTime) {
-			t.Errorf("Did not transcode time successfully: %v is not %v", outputTime, inputTime)
-		}
+		assert.Equal(t, inputTime, outputTime)
 	})
 }
 
@@ -114,16 +115,18 @@ func TestPointerPointer(t *testing.T) {
 			expected.f64 = &f64
 			b := true
 			expected.b = &b
-			t := time.Unix(123, 5000)
+			t := time.Unix(123, 500000)
 			expected.t = &t
 		}
 
-		tests := []struct {
+		type testCase struct {
 			sql       string
 			queryArgs []any
 			scanArgs  []any
 			expected  allTypes
-		}{
+		}
+
+		tests := []testCase{
 			{"select cast(? as varchar(255)) from rdb$database", []any{expected.s}, []any{&actual.s}, allTypes{s: expected.s}},
 			{"select cast(? as varchar(255)) from rdb$database", []any{zero.s}, []any{&actual.s}, allTypes{}},
 			{"select cast(? as smallint) from rdb$database", []any{expected.i16}, []any{&actual.i16}, allTypes{i16: expected.i16}},
@@ -138,9 +141,13 @@ func TestPointerPointer(t *testing.T) {
 			{"select cast(? as double precision) from rdb$database", []any{zero.f64}, []any{&actual.f64}, allTypes{}},
 			{"select cast(? as boolean) from rdb$database", []any{expected.b}, []any{&actual.b}, allTypes{b: expected.b}},
 			{"select cast(? as boolean) from rdb$database", []any{zero.b}, []any{&actual.b}, allTypes{}},
-			//FIXME: fbx need properly converting to sqldata buffer
-			// {"select cast(? as timestamp with time zone) from rdb$database", []any{expected.t}, []any{&actual.t}, allTypes{t: expected.t}},
-			// {"select cast(? as timestamp with time zone) from rdb$database", []any{zero.t}, []any{&actual.t}, allTypes{}},
+		}
+
+		if getServerMajorVersionForConn(ctx, t, conn) > 3 {
+			tests = append(tests,
+				testCase{"select cast(? as timestamp with time zone) from rdb$database", []any{expected.t}, []any{&actual.t}, allTypes{t: expected.t}},
+				testCase{"select cast(? as timestamp with time zone) from rdb$database", []any{zero.t}, []any{&actual.t}, allTypes{}},
+			)
 		}
 
 		for i, tt := range tests {
@@ -158,8 +165,11 @@ func TestPointerPointer(t *testing.T) {
 			assert.Equal(t, tt.expected.f32, actual.f32)
 			assert.Equal(t, tt.expected.f64, actual.f64)
 			assert.Equal(t, tt.expected.b, actual.b)
-			if tt.expected.t != nil || actual.t != nil {
-				assert.True(t, tt.expected.t.Equal(*actual.t))
+			switch {
+			case tt.expected.t == nil:
+				assert.Nil(t, actual.t)
+			case assert.NotNil(t, actual.t):
+				assert.True(t, tt.expected.t.Equal(*actual.t), "expected %v, got %v", *tt.expected.t, *actual.t)
 			}
 
 			ensureConnValid(t, conn)
