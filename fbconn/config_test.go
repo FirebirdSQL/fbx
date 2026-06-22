@@ -588,7 +588,7 @@ func TestParseConfigEnv(t *testing.T) {
 		}
 	}
 
-	fbEnvvars := []string{"FBHOST", "FBPORT", "FBDATABASE", "FBUSER", "FBPASSWORD", "FBAPPNAME", "FBSSLMODE", "FBCONNECT_TIMEOUT", "FBSSLSNI", "FBTZ", "FBFETCH_BATCH_SIZE"}
+	fbEnvvars := []string{"FBHOST", "FBPORT", "FBDATABASE", "FBUSER", "FBPASSWORD", "FBAPPNAME", "FBCONNECT_TIMEOUT", "FBTZ", "FBFETCH_BATCH_SIZE"}
 
 	tests := []struct {
 		name    string
