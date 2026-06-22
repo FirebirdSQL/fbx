@@ -40,6 +40,7 @@
 							   from metadata primarily to flag
 							   SQLDA (in DSQL)               */
 #define DSC_json  		8
+#define DSC_computed  128	/* not stored, used in RelationNode::makeFormat() */
 
 #define dtype_unknown	0
 #define dtype_text		1

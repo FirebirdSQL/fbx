@@ -1007,6 +1007,26 @@ const (
 	Isc_no_user_att_while_restore = 335545318
 	Isc_genseq_stepmustbe_nonzero = 335545319
 	Isc_argmustbe_exact_function = 335545320
+	Isc_sysf_argmustbe_range_inc0_1 = 335545321
+	Isc_argmustbe_numeric_function = 335545322
+	Isc_percetile_only_one_sort_item = 335545323
+	Isc_argmustbe_const_within_group = 335545324
+	Isc_update_overwrite = 335545325
+	Isc_pman_plugin_dirname = 335545326
+	Isc_private_constant = 335545327
+	Isc_package_alias_help = 335545328
+	Isc_bad_constant_blr = 335545329
+	Isc_bad_constant_desc = 335545330
+	Isc_bad_constant_name = 335545331
+	Isc_bad_constant_type = 335545332
+	Isc_not_defined_constant = 335545333
+	Isc_const_name = 335545334
+	Isc_private_table = 335545335
+	Isc_temp_space_invalid_pos = 335545336
+	Isc_dsql_agg_non_agg_context = 335545337
+	Isc_dsql_agg_param_not_accum = 335545338
+	Isc_dsql_agg_exit_group = 335545339
+	Isc_dsql_agg_return = 335545340
 	Isc_bad_ext_file = 335546320
 	Isc_wrong_adp_fields_def = 335546321
 	Isc_wrong_adp_field_name = 335546322
@@ -1034,9 +1054,6 @@ const (
 	Isc_trace_write_error = 335546345
 	Isc_no_granted_policy = 335546346
 	Isc_regexp_substr_error = 335546347
-	Isc_ts_file_exists = 335546348
-	Isc_tablespace_name = 335546349
-	Isc_ts_file_not_exists = 335546350
 	Isc_secdb_coonection_error = 335546351
 	Isc_policies_reading_error = 335546352
 	Isc_get_policies_error = 335546353
@@ -1129,6 +1146,8 @@ const (
 	Isc_dsql_wrong_param_num = 336003111
 	Isc_dsql_invalid_drop_ss_clause = 336003112
 	Isc_upd_ins_cannot_default = 336003113
+	Isc_dsql_ltt_invalid_reference = 336003114
+	Isc_dsql_using_statement_must_contain_clause = 336003115
 	Isc_dyn_filter_not_found = 336068645
 	Isc_dyn_func_not_found = 336068649
 	Isc_dyn_index_not_found = 336068656
@@ -1225,6 +1244,8 @@ const (
 	Isc_dyn_cannot_mod_obj_sys_schema = 336068927
 	Isc_dyn_cannot_create_reserved_schema = 336068928
 	Isc_dyn_cannot_infer_schema = 336068929
+	Isc_dyn_column_name_exists = 336068931
+	Isc_dyn_function_mismatch = 336068935
 	Isc_dyn_dup_domain_rdb = 336069609
 	Isc_dyn_dup_trigger_rdb = 336069610
 	Isc_dyn_dup_package_rdb = 336069611
@@ -1232,16 +1253,11 @@ const (
 	Isc_dyn_job_not_found = 336069613
 	Isc_dyn_invalid_ddl_job = 336069614
 	Isc_dyn_alter_job_no_clause = 336069615
-	Isc_dyn_ts_not_found = 336069616
-	Isc_dyn_cant_set_ts_table = 336069617
 	Isc_dyn_cant_modify_collation = 336069618
-	Isc_dyn_cant_set_ts_index = 336069619
 	Isc_dyn_foreign_server_not_found = 336069620
 	Isc_dyn_user_mapping_not_found = 336069621
 	Isc_dyn_job_already_exists = 336069622
-	Isc_dyn_ts_already_exists = 336069623
 	Isc_dyn_foreign_server_already_exists = 336069624
-	Isc_dyn_cant_set_ts_external_table = 336069625
 	Isc_gbak_unknown_switch = 336330753
 	Isc_gbak_page_size_missing = 336330754
 	Isc_gbak_page_size_toobig = 336330755
@@ -1340,6 +1356,10 @@ const (
 	Isc_gbak_invalid_data = 336331094
 	Isc_gbak_inv_bkup_ver2 = 336331096
 	Isc_gbak_db_format_too_old2 = 336331100
+	Isc_gbak_writing_constants = 336331175
+	Isc_gbak_writing_constant = 336331176
+	Isc_gbak_constant = 336331177
+	Isc_gbak_restoring_constant = 336331178
 	Isc_gbak_db_not_online = 336331762
 	Isc_gbak_gfix_online = 336331763
 	Isc_gbak_db_not_online_reason = 336331778
@@ -1479,6 +1499,9 @@ const (
 	Isc_dsql_recreate_schema_failed = 336397338
 	Isc_dsql_alter_schema_failed = 336397339
 	Isc_dsql_create_alter_schema_failed = 336397340
+	Isc_dsql_create_const_failed = 336397341
+	Isc_dsql_alter_const_failed = 336397342
+	Isc_dsql_create_alter_const_failed = 336397343
 	Isc_dsql_create_policy_failed = 336398288
 	Isc_dsql_alter_policy_failed = 336398289
 	Isc_dsql_drop_policy_failed = 336398290
@@ -1488,11 +1511,6 @@ const (
 	Isc_dsql_create_alter_job_failed = 336398294
 	Isc_dsql_drop_job_failed = 336398295
 	Isc_dsql_recreate_job_failed = 336398296
-	Isc_dsql_create_ts_failed = 336398297
-	Isc_dsql_alter_ts_failed = 336398298
-	Isc_dsql_create_alter_ts_failed = 336398299
-	Isc_dsql_drop_ts_failed = 336398300
-	Isc_dsql_recreate_ts_failed = 336398301
 	Isc_dsql_create_foreign_server_failed = 336398302
 	Isc_dsql_alter_foreign_server_failed = 336398303
 	Isc_dsql_create_alter_foreign_server_failed = 336398304
@@ -1503,11 +1521,12 @@ const (
 	Isc_dsql_create_alter_user_mapping_failed = 336398309
 	Isc_dsql_recreate_user_mapping_failed = 336398310
 	Isc_dsql_drop_user_mapping_failed = 336398311
-	Isc_dsql_foreign_table_not_found = 336398312
-	Isc_dsql_create_foreign_table_failed = 336398313
-	Isc_dsql_alter_foreign_table_failed = 336398314
-	Isc_dsql_drop_foreign_table_failed = 336398315
-	Isc_dsql_recreate_foreign_table_failed = 336398316
+	Isc_dsql_comment_on_user_mapping_failed = 336398312
+	Isc_dsql_foreign_table_not_found = 336398313
+	Isc_dsql_create_foreign_table_failed = 336398314
+	Isc_dsql_alter_foreign_table_failed = 336398315
+	Isc_dsql_drop_foreign_table_failed = 336398316
+	Isc_dsql_recreate_foreign_table_failed = 336398317
 	Isc_gsec_cant_open_db = 336723983
 	Isc_gsec_switches_error = 336723984
 	Isc_gsec_no_op_spec = 336723985
@@ -2426,7 +2445,7 @@ var errmsgs = map[int]fberror{
 	Isc_dsql_window_incompat_frames: {"If <window frame bound 1> specifies @1, then <window frame bound 2> shall not specify @2\n", "42000"},
 	Isc_dsql_window_range_multi_key: {"RANGE based window with <expr> {PRECEDING | FOLLOWING} cannot have ORDER BY with more than one value\n", "42000"},
 	Isc_dsql_window_range_inv_key_type: {"RANGE based window with <offset> PRECEDING/FOLLOWING must have a single ORDER BY key of numerical, date, time or timestamp types\n", "42000"},
-	Isc_dsql_window_frame_value_inv_type: {"Window RANGE/ROWS PRECEDING/FOLLOWING value must be of a numerical type\n", "42000"},
+	Isc_dsql_window_frame_value_inv_type: {"Window RANGE/ROWS/GROUPS PRECEDING/FOLLOWING value must be of a numerical type\n", "42000"},
 	Isc_window_frame_value_invalid: {"Invalid PRECEDING or FOLLOWING offset in window function: cannot be negative\n", "42000"},
 	Isc_dsql_window_not_found: {"Window @1 not found\n", "42000"},
 	Isc_dsql_window_cant_overr_part: {"Cannot use PARTITION BY clause while overriding the window @1\n", "42000"},
@@ -2593,7 +2612,7 @@ var errmsgs = map[int]fberror{
 	Isc_invalid_blob_util_handle: {"Invalid RDB$BLOB_UTIL handle\n", "42000"},
 	Isc_bad_temp_blob_id: {"Invalid temporary BLOB ID\n", "42000"},
 	Isc_ods_upgrade_err: {"ODS upgrade failed while adding new system %s\n", "HY000"},
-	Isc_bad_par_workers: {"Wrong parallel workers value @1, valid range are from 1 to @2\n", "HY000"},
+	Isc_bad_par_workers: {"Wrong parallel workers value @1, valid range is from 1 to @2\n", "HY000"},
 	Isc_idx_expr_not_found: {"Definition of index expression is not found for index @1\n", "42000"},
 	Isc_idx_cond_not_found: {"Definition of index condition is not found for index @1\n", "42000"},
 	Isc_uninitialized_var: {"Variable @1 is not initialized\n", "42000"},
@@ -2628,6 +2647,26 @@ var errmsgs = map[int]fberror{
 	Isc_no_user_att_while_restore: {"User attachments are not allowed for the database being restored\n", "HY000"},
 	Isc_genseq_stepmustbe_nonzero: {"Argument STEP must be different than zero for function @1\n", "42000"},
 	Isc_argmustbe_exact_function: {"Arguments for @1 function must be exact numeric types\n", "42000"},
+	Isc_sysf_argmustbe_range_inc0_1: {"Argument for @1 must be in the range [0, 1]\n", "42000"},
+	Isc_argmustbe_numeric_function: {"Argument for @1 function must be numeric types\n", "42000"},
+	Isc_percetile_only_one_sort_item: {"The PERCENTILE_DISC and PERENTILE_CONT functions support only one sort item in WITHIN GROUP\n", "42000"},
+	Isc_argmustbe_const_within_group: {"Argument for @1 function must be constant within each group\n", "42000"},
+	Isc_update_overwrite: {"UPDATE will overwrite changes made by the trigger or by the another UPDATE in the same cursor\n", "27000"},
+	Isc_pman_plugin_dirname: {"Plugin @1 can not be loaded - name should not contain directory separator and path component\n", "00000"},
+	Isc_private_constant: {"The constant @1 is private\n", "42000"},
+	Isc_package_alias_help: {"Use an alias to resolve the conflict\n", "42000"},
+	Isc_bad_constant_blr: {"Error while parsing BLR value of the constant @1\n", "2F000"},
+	Isc_bad_constant_desc: {"Error while reading type of the constant with name @1\n", "2F000"},
+	Isc_bad_constant_name: {"Constant @1 cannot be found\n", "2F000"},
+	Isc_bad_constant_type: {"@1 is not supported to be a constant type\n", "2F000"},
+	Isc_not_defined_constant: {"The constant @1 is not defined\n", "42000"},
+	Isc_const_name: {"CONSTANT @1\n", "42000"},
+	Isc_private_table: {"Table @1 is private to package @2\n", "42000"},
+	Isc_temp_space_invalid_pos: {"Invalid position to read/write in a temporary file (positon: @1, size: @2)\n", "HY000"},
+	Isc_dsql_agg_non_agg_context: {"Aggregate function @1 cannot be used in non-aggregate context\n", "42000"},
+	Isc_dsql_agg_param_not_accum: {"Aggregate function input parameters may be referenced only in ON ACCUMULATE DO\n", "42000"},
+	Isc_dsql_agg_exit_group: {"EXIT is not allowed in ON GROUP DO section of aggregate function\n", "42000"},
+	Isc_dsql_agg_return: {"RETURN is not allowed in ON START DO, ON ACCUMULATE DO or ON FINISH DO sections of aggregate function; use EXIT instead\n", "42000"},
 	Isc_bad_ext_file: {"Invalid external file format\n", "22000"},
 	Isc_wrong_adp_fields_def: {"Wrong set of adapter fields\n", "42000"},
 	Isc_wrong_adp_field_name: {"Adapter field named \"@1\" is not supported\n", "42000"},
@@ -2655,9 +2694,6 @@ var errmsgs = map[int]fberror{
 	Isc_trace_write_error: {"Error when trying to write to the trace file\n", "22000"},
 	Isc_no_granted_policy: {"User @1 does not have granted policy\n", "02000"},
 	Isc_regexp_substr_error: {"Error calculating substring using regular expression: @2\n", "42000"},
-	Isc_ts_file_exists: {"Tablespace \"@1\" creation error. File \"@2\" exists.\n", "08001"},
-	Isc_tablespace_name: {"TABLESPACE @1\n", "42000"},
-	Isc_ts_file_not_exists: {"Tablespace \"@1\" alteration error. File \"@2\" does not exist.\n", "08001"},
 	Isc_secdb_coonection_error: {"Error while trying to attach the security DB\n", "22000"},
 	Isc_policies_reading_error: {"Error while trying to read the PLG$POLICIES\n", "22000"},
 	Isc_get_policies_error: {"@1 failed during selecting from SEC$POLICIES\n", "22000"},
@@ -2750,6 +2786,8 @@ var errmsgs = map[int]fberror{
 	Isc_dsql_wrong_param_num: {"Wrong number of parameters (expected @1, got @2)\n", "07001"},
 	Isc_dsql_invalid_drop_ss_clause: {"Invalid DROP SQL SECURITY clause\n", "42000"},
 	Isc_upd_ins_cannot_default: {"UPDATE OR INSERT value for field @1, part of the implicit or explicit MATCHING clause, cannot be DEFAULT\n", "42000"},
+	Isc_dsql_ltt_invalid_reference: {"LOCAL TEMPORARY TABLE @1 cannot be referenced in @2\n", "42000"},
+	Isc_dsql_using_statement_must_contain_clause: {"USING statement must contain at least one clause\n", "42000"},
 	Isc_dyn_filter_not_found: {"BLOB Filter @1 not found\n", "42000"},
 	Isc_dyn_func_not_found: {"Function @1 not found\n", "42000"},
 	Isc_dyn_index_not_found: {"Index not found\n", "42000"},
@@ -2846,6 +2884,8 @@ var errmsgs = map[int]fberror{
 	Isc_dyn_cannot_mod_obj_sys_schema: {"Cannot CREATE/ALTER/DROP @1 in SYSTEM schema\n", "28000"},
 	Isc_dyn_cannot_create_reserved_schema: {"Schema name @1 is reserved and cannot be created\n", "HY000"},
 	Isc_dyn_cannot_infer_schema: {"Cannot infer schema name as there is no valid schema in the search path\n", "42000"},
+	Isc_dyn_column_name_exists: {"Column @1 already exists in table @2\n", "42000"},
+	Isc_dyn_function_mismatch: {"Function @1 cannot change between aggregate and non-aggregate\n", "42000"},
 	Isc_dyn_dup_domain_rdb: {"Domain @1 already exists\n", "42000"},
 	Isc_dyn_dup_trigger_rdb: {"Trigger @1 already exists\n", "42000"},
 	Isc_dyn_dup_package_rdb: {"Package @1 already exists\n", "42000"},
@@ -2853,16 +2893,11 @@ var errmsgs = map[int]fberror{
 	Isc_dyn_job_not_found: {"Job @1 not found\n", "42000"},
 	Isc_dyn_invalid_ddl_job: {"Invalid DDL statement for job @1\n", "HY000"},
 	Isc_dyn_alter_job_no_clause: {"ALTER JOB requires at least one clause to be specified\n", "42000"},
-	Isc_dyn_ts_not_found: {"Tablespace @1 not found\n", "42000"},
-	Isc_dyn_cant_set_ts_table: {"Cannot set tablespace for temporary table @1\n", "42000"},
 	Isc_dyn_cant_modify_collation: {"Cannot change collation of field '@1.@2' to @3\n", "42000"},
-	Isc_dyn_cant_set_ts_index: {"Cannot set tablespace for temporary index @1\n", "42000"},
 	Isc_dyn_foreign_server_not_found: {"Foreign server @1 not found\n", "42000"},
 	Isc_dyn_user_mapping_not_found: {"User mapping for user @1 and server @2 not found\n", "42000"},
 	Isc_dyn_job_already_exists: {"Job @1 already exists\n", "42000"},
-	Isc_dyn_ts_already_exists: {"Tablespace @1 already exists\n", "42000"},
 	Isc_dyn_foreign_server_already_exists: {"Foreign server @1 already exists\n", "42000"},
-	Isc_dyn_cant_set_ts_external_table: {"Cannot set tablespace for external table @1\n", "42000"},
 	Isc_gbak_unknown_switch: {"found unknown switch\n", "00000"},
 	Isc_gbak_page_size_missing: {"page size parameter missing\n", "00000"},
 	Isc_gbak_page_size_toobig: {"Page size specified (@1) greater than limit (32768 bytes)\n", "00000"},
@@ -2961,6 +2996,10 @@ var errmsgs = map[int]fberror{
 	Isc_gbak_invalid_data: {"Invalid data detected. Use -FIX_FSS_DATA option.\n", "00000"},
 	Isc_gbak_inv_bkup_ver2: {"Expected backup version @2..@3.  Found @1\n", "00000"},
 	Isc_gbak_db_format_too_old2: {"database format @1 is too old to backup\n", "00000"},
+	Isc_gbak_writing_constants: {"writing constants\n", "00000"},
+	Isc_gbak_writing_constant: {"writing constant %s\n", "00000"},
+	Isc_gbak_constant: {"constant (in RDB$CONSTANTS)\n", "00000"},
+	Isc_gbak_restoring_constant: {"restoring constant %s\n", "00000"},
 	Isc_gbak_db_not_online: {"Database is not online due to failure to restore one or more objects.\n", "00000"},
 	Isc_gbak_gfix_online: {"Run gfix -online to bring database online.\n", "00000"},
 	Isc_gbak_db_not_online_reason: {"Database is not online due to @1.\n", "00000"},
@@ -3100,6 +3139,9 @@ var errmsgs = map[int]fberror{
 	Isc_dsql_recreate_schema_failed: {"RECREATE SCHEMA @1 failed\n", "42000"},
 	Isc_dsql_alter_schema_failed: {"ALTER SCHEMA @1 failed\n", "42000"},
 	Isc_dsql_create_alter_schema_failed: {"CREATE OR ALTER SCHEMA @1 failed\n", "42000"},
+	Isc_dsql_create_const_failed: {"CREATE CONSTANT @1 failed\n", "42000"},
+	Isc_dsql_alter_const_failed: {"ALTER CONSTANT @1 failed\n", "42000"},
+	Isc_dsql_create_alter_const_failed: {"CREATE OR ALTER CONSTANT @1 failed\n", "42000"},
 	Isc_dsql_create_policy_failed: {"CREATE POLICY @1 failed\n", "42000"},
 	Isc_dsql_alter_policy_failed: {"ALTER POLICY @1 failed\n", "42000"},
 	Isc_dsql_drop_policy_failed: {"DROP POLICY @1 failed\n", "42000"},
@@ -3109,11 +3151,6 @@ var errmsgs = map[int]fberror{
 	Isc_dsql_create_alter_job_failed: {"CREATE OR ALTER JOB @1 failed\n", "42000"},
 	Isc_dsql_drop_job_failed: {"DROP JOB @1 failed\n", "42000"},
 	Isc_dsql_recreate_job_failed: {"RECREATE JOB @1 failed\n", "42000"},
-	Isc_dsql_create_ts_failed: {"CREATE TABLESPACE @1 failed\n", "42000"},
-	Isc_dsql_alter_ts_failed: {"ALTER TABLESPACE @1 failed\n", "42000"},
-	Isc_dsql_create_alter_ts_failed: {"CREATE OR ALTER TABLESPACE @1 failed\n", "42000"},
-	Isc_dsql_drop_ts_failed: {"DROP TABLESPACE @1 failed\n", "42000"},
-	Isc_dsql_recreate_ts_failed: {"RECREATE TABLESPACE @1 failed\n", "42000"},
 	Isc_dsql_create_foreign_server_failed: {"CREATE SERVER @1 failed\n", "42000"},
 	Isc_dsql_alter_foreign_server_failed: {"ALTER SERVER @1 failed\n", "42000"},
 	Isc_dsql_create_alter_foreign_server_failed: {"CREATE OR ALTER SERVER @1 failed\n", "42000"},
@@ -3124,6 +3161,7 @@ var errmsgs = map[int]fberror{
 	Isc_dsql_create_alter_user_mapping_failed: {"CREATE OR ALTER USER MAPPING FOR USER @1 AND SERVER @2 failed\n", "42000"},
 	Isc_dsql_recreate_user_mapping_failed: {"RECREATE USER MAPPING FOR USER @1 AND SERVER @2 failed\n", "42000"},
 	Isc_dsql_drop_user_mapping_failed: {"DROP USER MAPPING FOR USER @1 AND SERVER @2 failed\n", "42000"},
+	Isc_dsql_comment_on_user_mapping_failed: {"COMMENT ON USER MAPPING FOR USER @1 AND SERVER @2 failed\n", "42000"},
 	Isc_dsql_foreign_table_not_found: {"Foreign table @1 does not exist\n", "42S02"},
 	Isc_dsql_create_foreign_table_failed: {"CREATE FOREIGN TABLE @1 failed\n", "42000"},
 	Isc_dsql_alter_foreign_table_failed: {"ALTER FOREIGN TABLE @1 failed\n", "42000"},

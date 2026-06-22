@@ -17,22 +17,23 @@
 #define TOK_TO 270
 #define TOK_KEYVALUE 271
 #define TOK_DATETIME 272
-#define TOK_METHOD 273
-#define TOK_STARTS 274
-#define TOK_WITH 275
-#define TOK_LIKE_REGEX 276
-#define TOK_FLAGS 277
-#define TOK_IS 278
-#define TOK_UNKNOWN 279
-#define TOK_EXISTS 280
-#define TOK_AND 281
-#define TOK_OR 282
-#define TOK_EQ 283
-#define TOK_NEQ 284
-#define TOK_LEQ 285
-#define TOK_GEQ 286
-#define TOK_UMINUS 287
-#define TOK_UPLUS 288
+#define TOK_DECIMAL 273
+#define TOK_METHOD 274
+#define TOK_STARTS 275
+#define TOK_WITH 276
+#define TOK_LIKE_REGEX 277
+#define TOK_FLAGS 278
+#define TOK_IS 279
+#define TOK_UNKNOWN 280
+#define TOK_EXISTS 281
+#define TOK_AND 282
+#define TOK_OR 283
+#define TOK_EQ 284
+#define TOK_NEQ 285
+#define TOK_LEQ 286
+#define TOK_GEQ 287
+#define TOK_UMINUS 288
+#define TOK_UPLUS 289
 #define YYERRCODE 256
 
 #endif /* _yacc_defines_keywords */
@@ -46,13 +47,19 @@ typedef union
 	SLONG int32Val;
 	SINT64 int64Val;
 	double doubleVal;
-	FBJSON::RangeSize rangeVal;
 	Firebird::string* stringPtr;
+	struct DecimalPair
+	{
+		FBJSON::JsonExprNode* scale;
+		FBJSON::JsonExprNode* precision;
+	} pairVal;
+
+	FBJSON::RangeSize rangeVal;
 	FBJSON::PathMethod methodType;
-	FBJSON::ExprNode* exprNode;
+	FBJSON::JsonExprNode* exprNode;
 	FBJSON::PathVariable* variable;
 	FBJSON::FilterNode* filterNode;
-	FBJSON::FilterOperation exprOperation;
+	FBJSON::JsonExprOperation exprOperation;
 	FBJSON::PathVariable::Type variableType;
 	FBJSON::PathVariable::Position passingPos;
 	FBJSON::JsonPathContext* jpathContext;

@@ -121,6 +121,9 @@ func addMessage(code C.int, message *C.char, class *C.char, subClass *C.char, sy
 	var sub string = C.GoString(subClass)
 	var sym string = C.GoString(symbol)
 	name := fmt.Sprintf("Isc_%s", sym)
+	if code == 335545286 {
+		fmt.Println(msg)
+	}
 
 	if !strings.HasSuffix(msg, `\n"`) {
 		msg = msg[:len(msg)-1]
