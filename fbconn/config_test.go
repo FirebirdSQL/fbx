@@ -63,24 +63,24 @@ func TestParseConfig(t *testing.T) {
 	}{
 		{
 			name:       "simple url",
-			connString: "firebird://jack:secret@localhost:5432/mydb",
+			connString: "firebird://ivan:secret@localhost:3050/mydb",
 			config: &fbconn.Config{
-				User:          "jack",
+				User:          "ivan",
 				Password:      "secret",
 				Host:          "localhost",
-				Port:          5432,
+				Port:          3050,
 				Database:      "mydb",
 				RuntimeParams: map[string]string{},
 			},
 		},
 		{
 			name:       "database url everything",
-			connString: "firebird://jack:secret@localhost:5432/mydb?application_name=fbxtest&search_path=myschema&connect_timeout=5",
+			connString: "firebird://ivan:secret@localhost:3050/mydb?application_name=fbxtest&search_path=myschema&connect_timeout=5",
 			config: &fbconn.Config{
-				User:           "jack",
+				User:           "ivan",
 				Password:       "secret",
 				Host:           "localhost",
-				Port:           5432,
+				Port:           3050,
 				Database:       "mydb",
 				ConnectTimeout: 5 * time.Second,
 				RuntimeParams: map[string]string{
@@ -91,12 +91,12 @@ func TestParseConfig(t *testing.T) {
 		},
 		{
 			name:       "database url fetch batch size",
-			connString: "firebird://jack:secret@localhost:5432/mydb?fetch_batch_size=123",
+			connString: "firebird://ivan:secret@localhost:3050/mydb?fetch_batch_size=123",
 			config: &fbconn.Config{
-				User:           "jack",
+				User:           "ivan",
 				Password:       "secret",
 				Host:           "localhost",
-				Port:           5432,
+				Port:           3050,
 				Database:       "mydb",
 				FetchBatchSize: 123,
 				RuntimeParams:  map[string]string{},
@@ -104,12 +104,12 @@ func TestParseConfig(t *testing.T) {
 		},
 		{
 			name:       "database url create database",
-			connString: "firebird://jack:secret@localhost:5432/mydb?create_database=true",
+			connString: "firebird://ivan:secret@localhost:3050/mydb?create_database=true",
 			config: &fbconn.Config{
-				User:           "jack",
+				User:           "ivan",
 				Password:       "secret",
 				Host:           "localhost",
-				Port:           5432,
+				Port:           3050,
 				Database:       "mydb",
 				CreateDatabase: true,
 				RuntimeParams:  map[string]string{},
@@ -117,23 +117,23 @@ func TestParseConfig(t *testing.T) {
 		},
 		{
 			name:       "database url missing password",
-			connString: "firebird://jack@localhost:5432/mydb",
+			connString: "firebird://ivan@localhost:3050/mydb",
 			config: &fbconn.Config{
-				User:          "jack",
+				User:          "ivan",
 				Host:          "localhost",
-				Port:          5432,
+				Port:          3050,
 				Database:      "mydb",
 				RuntimeParams: map[string]string{},
 			},
 		},
 		{
 			name:       "database url custom auth plugin list",
-			connString: "firebird://jack:secret@localhost:5432/mydb?auth_plugin_list=Srp,Legacy_Auth",
+			connString: "firebird://ivan:secret@localhost:3050/mydb?auth_plugin_list=Srp,Legacy_Auth",
 			config: &fbconn.Config{
-				User:           "jack",
+				User:           "ivan",
 				Password:       "secret",
 				Host:           "localhost",
-				Port:           5432,
+				Port:           3050,
 				Database:       "mydb",
 				RuntimeParams:  map[string]string{},
 				AuthPluginList: []string{"Srp", "Legacy_Auth"},
@@ -141,23 +141,23 @@ func TestParseConfig(t *testing.T) {
 		},
 		{
 			name:       "database url missing user and password",
-			connString: "firebird://localhost:5432/mydb",
+			connString: "firebird://localhost:3050/mydb",
 			config: &fbconn.Config{
 				SystemUser:    defaultUser,
 				Host:          "localhost",
-				Port:          5432,
+				Port:          3050,
 				Database:      "mydb",
 				RuntimeParams: map[string]string{},
 			},
 		},
 		{
 			name:       "database url missing port",
-			connString: "firebird://jack:secret@localhost:5432/mydb",
+			connString: "firebird://ivan:secret@localhost:3050/mydb",
 			config: &fbconn.Config{
-				User:          "jack",
+				User:          "ivan",
 				Password:      "secret",
 				Host:          "localhost",
-				Port:          5432,
+				Port:          3050,
 				Database:      "mydb",
 				RuntimeParams: map[string]string{},
 			},
@@ -197,42 +197,42 @@ func TestParseConfig(t *testing.T) {
 		},
 		{
 			name:       "database url firebird protocol",
-			connString: "firebird://jack@localhost:5432/mydb",
+			connString: "firebird://ivan@localhost:3050/mydb",
 			config: &fbconn.Config{
-				User:          "jack",
+				User:          "ivan",
 				Host:          "localhost",
-				Port:          5432,
+				Port:          3050,
 				Database:      "mydb",
 				RuntimeParams: map[string]string{},
 			},
 		},
 		{
 			name:       "database url IPv4 with port",
-			connString: "firebird://jack@127.0.0.1:5433/mydb",
+			connString: "firebird://ivan@127.0.0.1:3051/mydb",
 			config: &fbconn.Config{
-				User:          "jack",
+				User:          "ivan",
 				Host:          "127.0.0.1",
-				Port:          5433,
+				Port:          3051,
 				Database:      "mydb",
 				RuntimeParams: map[string]string{},
 			},
 		},
 		{
 			name:       "database url IPv6 with port",
-			connString: "firebird://jack@[2001:db8::1]:5433/mydb",
+			connString: "firebird://ivan@[2001:db8::1]:3051/mydb",
 			config: &fbconn.Config{
-				User:          "jack",
+				User:          "ivan",
 				Host:          "2001:db8::1",
-				Port:          5433,
+				Port:          3051,
 				Database:      "mydb",
 				RuntimeParams: map[string]string{},
 			},
 		},
 		{
 			name:       "database url IPv6 no port",
-			connString: "firebird://jack@[2001:db8::1]/mydb",
+			connString: "firebird://ivan@[2001:db8::1]/mydb",
 			config: &fbconn.Config{
-				User:          "jack",
+				User:          "ivan",
 				Host:          "2001:db8::1",
 				Port:          defaultPort,
 				Database:      "mydb",
@@ -241,12 +241,12 @@ func TestParseConfig(t *testing.T) {
 		},
 		{
 			name:       "Key/value everything",
-			connString: "user=jack password=secret host=localhost port=5432 dbname=mydb application_name=fbxtest search_path=myschema connect_timeout=5",
+			connString: "user=ivan password=secret host=localhost port=3050 dbname=mydb application_name=fbxtest search_path=myschema connect_timeout=5",
 			config: &fbconn.Config{
-				User:           "jack",
+				User:           "ivan",
 				Password:       "secret",
 				Host:           "localhost",
-				Port:           5432,
+				Port:           3050,
 				Database:       "mydb",
 				ConnectTimeout: 5 * time.Second,
 				RuntimeParams: map[string]string{
@@ -257,12 +257,12 @@ func TestParseConfig(t *testing.T) {
 		},
 		{
 			name:       "Key/value fetch batch size",
-			connString: "user=jack password=secret host=localhost port=5432 dbname=mydb fetch_batch_size=77",
+			connString: "user=ivan password=secret host=localhost port=3050 dbname=mydb fetch_batch_size=77",
 			config: &fbconn.Config{
-				User:           "jack",
+				User:           "ivan",
 				Password:       "secret",
 				Host:           "localhost",
-				Port:           5432,
+				Port:           3050,
 				Database:       "mydb",
 				FetchBatchSize: 77,
 				RuntimeParams:  map[string]string{},
@@ -270,12 +270,12 @@ func TestParseConfig(t *testing.T) {
 		},
 		{
 			name:       "Key/value create database",
-			connString: "user=jack password=secret host=localhost port=5432 dbname=mydb create_database=true",
+			connString: "user=ivan password=secret host=localhost port=3050 dbname=mydb create_database=true",
 			config: &fbconn.Config{
-				User:           "jack",
+				User:           "ivan",
 				Password:       "secret",
 				Host:           "localhost",
-				Port:           5432,
+				Port:           3050,
 				Database:       "mydb",
 				CreateDatabase: true,
 				RuntimeParams:  map[string]string{},
@@ -283,33 +283,33 @@ func TestParseConfig(t *testing.T) {
 		},
 		{
 			name:       "Key/value with escaped single quote",
-			connString: "user=jack\\'s password=secret host=localhost port=5432 dbname=mydb",
+			connString: "user=ivan\\'s password=secret host=localhost port=3050 dbname=mydb",
 			config: &fbconn.Config{
-				User:          "jack's",
+				User:          "ivan's",
 				Password:      "secret",
 				Host:          "localhost",
-				Port:          5432,
+				Port:          3050,
 				Database:      "mydb",
 				RuntimeParams: map[string]string{},
 			},
 		},
 		{
 			name:       "Key/value with escaped backslash",
-			connString: "user=jack password=sooper\\\\secret host=localhost port=5432 dbname=mydb",
+			connString: "user=ivan password=sooper\\\\secret host=localhost port=3050 dbname=mydb",
 			config: &fbconn.Config{
-				User:          "jack",
+				User:          "ivan",
 				Password:      "sooper\\secret",
 				Host:          "localhost",
-				Port:          5432,
+				Port:          3050,
 				Database:      "mydb",
 				RuntimeParams: map[string]string{},
 			},
 		},
 		{
 			name:       "Key/value with single quoted values",
-			connString: "user='jack' host='localhost' dbname='mydb'",
+			connString: "user='ivan' host='localhost' dbname='mydb'",
 			config: &fbconn.Config{
-				User:          "jack",
+				User:          "ivan",
 				Host:          "localhost",
 				Port:          defaultPort,
 				Database:      "mydb",
@@ -318,9 +318,9 @@ func TestParseConfig(t *testing.T) {
 		},
 		{
 			name:       "Key/value with single quoted value with escaped single quote",
-			connString: "user='jack\\'s' host='localhost' dbname='mydb'",
+			connString: "user='ivan\\'s' host='localhost' dbname='mydb'",
 			config: &fbconn.Config{
-				User:          "jack's",
+				User:          "ivan's",
 				Host:          "localhost",
 				Port:          defaultPort,
 				Database:      "mydb",
@@ -329,9 +329,9 @@ func TestParseConfig(t *testing.T) {
 		},
 		{
 			name:       "Key/value with empty single quoted value",
-			connString: "user='jack' password='' host='localhost' dbname='mydb'",
+			connString: "user='ivan' password='' host='localhost' dbname='mydb'",
 			config: &fbconn.Config{
-				User:          "jack",
+				User:          "ivan",
 				Host:          "localhost",
 				Port:          defaultPort,
 				Database:      "mydb",
@@ -340,9 +340,9 @@ func TestParseConfig(t *testing.T) {
 		},
 		{
 			name:       "Key/value with space between key and value",
-			connString: "user = 'jack' password = '' host = 'localhost' dbname = 'mydb'",
+			connString: "user = 'ivan' password = '' host = 'localhost' dbname = 'mydb'",
 			config: &fbconn.Config{
-				User:          "jack",
+				User:          "ivan",
 				Host:          "localhost",
 				Port:          defaultPort,
 				Database:      "mydb",
@@ -395,9 +395,9 @@ func TestParseConfig(t *testing.T) {
 		},
 		{
 			name:       "URL without host but with port still uses default host",
-			connString: "firebird://jack:secret@:1/mydb",
+			connString: "firebird://ivan:secret@:1/mydb",
 			config: &fbconn.Config{
-				User:          "jack",
+				User:          "ivan",
 				Password:      "secret",
 				Host:          defaultHost,
 				Port:          1,
@@ -453,7 +453,7 @@ func TestParseConfigKVWithTrailingEmptyEqualDoesNotPanic(t *testing.T) {
 }
 
 func TestParseConfigKVLeadingEqual(t *testing.T) {
-	_, err := fbconn.ParseConfig("= user=jack")
+	_, err := fbconn.ParseConfig("= user=ivan")
 	require.Error(t, err)
 }
 
@@ -472,7 +472,7 @@ func TestParseConfigInvalidFetchBatchSize(t *testing.T) {
 }
 
 func TestConfigCopyReturnsEqualConfig(t *testing.T) {
-	connString := "firebird://jack:secret@localhost:3050/mydb?application_name=fbxtest&connect_timeout=5"
+	connString := "firebird://ivan:secret@localhost:3050/mydb?application_name=fbxtest&connect_timeout=5"
 	original, err := fbconn.ParseConfig(connString)
 	require.NoError(t, err)
 
@@ -481,14 +481,14 @@ func TestConfigCopyReturnsEqualConfig(t *testing.T) {
 }
 
 func TestConfigCopyOriginalConfigDidNotChange(t *testing.T) {
-	connString := "firebird://jack:secret@localhost:3050/mydb?application_name=fbxtest&connect_timeout=5"
+	connString := "firebird://ivan:secret@localhost:3050/mydb?application_name=fbxtest&connect_timeout=5"
 	original, err := fbconn.ParseConfig(connString)
 	require.NoError(t, err)
 
 	copied := original.Copy()
 	assertConfigsEqual(t, original, copied, "Test Config.Copy() returns equal config")
 
-	copied.Port = uint16(5433)
+	copied.Port = uint16(3051)
 	copied.RuntimeParams["foo"] = "bar"
 
 	assert.Equal(t, uint16(3050), original.Port)
@@ -530,7 +530,7 @@ func TestNetworkAddress(t *testing.T) {
 		},
 	}
 	for i, tt := range tests {
-		gotNet, _ := fbconn.NetworkAddress(tt.host, 5432)
+		gotNet, _ := fbconn.NetworkAddress(tt.host, 3050)
 
 		assert.Equalf(t, tt.wantNet, gotNet, "Test %d (%s)", i, tt.name)
 	}
