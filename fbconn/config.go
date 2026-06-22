@@ -192,9 +192,7 @@ func NetworkAddress(host string, port uint16) (network, address string) {
 //
 //	FBHOST, FBPORT, FBDATABASE, FBUSER, FBPASSWORD
 //	FBAPPNAME, FBTZ, FBCONNECT_TIMEOUT, FBFETCH_BATCH_SIZE
-//	FBTARGETSESSIONATTRS
-//	FBSSLMODE, FBSSLKEY, FBSSLCERT, FBSSLROOTCERT, FBSSLPASSWORD, FBSSLSNI, FBSSLNEGOTIATION
-//	FBPASSFILE, FBSERVICE, FBSERVICEFILE, FBOPTIONS
+//	FBTARGETSESSIONATTRS, FBOPTIONS
 //
 // Any unrecognized options are preserved in Config.RuntimeParams.
 //
@@ -432,20 +430,10 @@ func parseEnvSettings() map[string]string {
 		"FBDATABASE":           "database",
 		"FBUSER":               "user",
 		"FBPASSWORD":           "password",
-		"FBPASSFILE":           "passfile",
 		"FBAPPNAME":            "application_name",
 		"FBCONNECT_TIMEOUT":    "connect_timeout",
-		"FBSSLMODE":            "sslmode",
-		"FBSSLKEY":             "sslkey",
-		"FBSSLCERT":            "sslcert",
-		"FBSSLSNI":             "sslsni",
-		"FBSSLROOTCERT":        "sslrootcert",
-		"FBSSLPASSWORD":        "sslpassword",
-		"FBSSLNEGOTIATION":     "sslnegotiation",
 		"FBTARGETSESSIONATTRS": "target_session_attrs",
 		"FBFETCH_BATCH_SIZE":   "fetch_batch_size",
-		"FBSERVICE":            "service",
-		"FBSERVICEFILE":        "servicefile",
 		"FBTZ":                 "timezone",
 		"FBOPTIONS":            "options",
 		"FBSEARCHPATH":         "search_path",
@@ -656,33 +644,6 @@ func parseKeywordValueSettings(s string) (map[string]string, error) {
 	}
 
 	return settings, nil
-}
-
-func parseServiceSettings(servicefilePath, serviceName string) (map[string]string, error) {
-	//servicefile, err := fbservicefile.ReadServicefile(servicefilePath)
-	//if err != nil {
-	//	return nil, fmt.Errorf("failed to read service file: %v", servicefilePath)
-	//}
-	//
-	//service, err := servicefile.GetService(serviceName)
-	//if err != nil {
-	//	return nil, fmt.Errorf("unable to find service: %v", serviceName)
-	//}
-	//
-	//nameMap := map[string]string{
-	//	"dbname": "database",
-	//}
-	//
-	//settings := make(map[string]string, len(service.Settings))
-	//for k, v := range service.Settings {
-	//	if k2, present := nameMap[k]; present {
-	//		k = k2
-	//	}
-	//	settings[k] = v
-	//}
-	//
-	//return settings, nil
-	panic("implement me")
 }
 
 func parsePort(s string) (uint16, error) {

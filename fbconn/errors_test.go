@@ -35,8 +35,8 @@ func TestConfigError(t *testing.T) {
 		},
 		{
 			name:        "weird url with slash in password",
-			err:         fbconn.NewParseConfigError("firebirdsql://user:pass/word@host:5432/db_name", "msg", nil),
-			expectedMsg: "cannot parse `firebirdsql://user:xxxxx@host:5432/db_name`: msg",
+			err:         fbconn.NewParseConfigError("firebirdsql://user:pass/word@host:3050/db_name", "msg", nil),
+			expectedMsg: "cannot parse `firebirdsql://user:xxxxx@host:3050/db_name`: msg",
 		},
 		{
 			name:        "url without password",

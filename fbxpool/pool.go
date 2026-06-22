@@ -354,10 +354,10 @@ func NewWithConfig(ctx context.Context, config *Config) (*Pool, error) {
 // See Config for definitions of these arguments.
 //
 //	# Example Keyword/Value
-//	user=jack password=secret host=fb.example.com port=3050 database=mydb pool_max_conns=10 pool_max_conn_lifetime=1h30m
+//	user=ivan password=secret host=fb.example.com port=3050 database=mydb pool_max_conns=10 pool_max_conn_lifetime=1h30m
 //
 //	# Example URL
-//	firebird://jack:secret@fb.example.com:3050/mydb?pool_max_conns=10&pool_max_conn_lifetime=1h30m
+//	firebird://ivan:secret@fb.example.com:3050/mydb?pool_max_conns=10&pool_max_conn_lifetime=1h30m
 func ParseConfig(connString string) (*Config, error) {
 	connConfig, err := fbx.ParseConfig(connString)
 	if err != nil {
