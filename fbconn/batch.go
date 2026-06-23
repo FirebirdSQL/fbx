@@ -50,6 +50,8 @@ type BatchError struct {
 	Err error
 }
 
+var errBatchExecutionFailed = errors.New("batch execution failed")
+
 type BatchCompletion struct {
 	TotalRecords uint32
 	UpdateCounts []int64
@@ -227,7 +229,11 @@ func (b *Batch) Execute(ctx context.Context, tx *FBTransaction) (*BatchCompletio
 	}
 
 	if execTx == b.st.conn.internalTransaction && b.st.conn.config.Autocommit && !b.st.conn.explicitTransaction {
-		if err := execTx.Commit(context.Background()); err != nil {
+		if completion.HasErrors() {
+			if err := b.st.conn.rollbackInternalTxIfAutocommitOnError(ctx, execTx, errBatchExecutionFailed); err != nil {
+				return completion, errors.Join(errBatchExecutionFailed, fmt.Errorf("rollback internal tx: %w", err))
+			}
+		} else if err := execTx.Commit(context.Background()); err != nil {
 			return completion, err
 		}
 	}

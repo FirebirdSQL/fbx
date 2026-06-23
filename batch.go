@@ -56,6 +56,11 @@ type BatchOptions struct {
 	// ContinueOnError requests Firebird multi-error mode. When enabled, the
 	// server continues executing rows after per-row errors and reports all row
 	// errors it can return in the batch completion response.
+	//
+	// This affects error reporting only, not transaction atomicity: in
+	// autocommit mode a batch with any per-row error is still rolled back as a
+	// whole (see PreparedBatch.Exec). Use an explicit transaction if you want
+	// to keep the rows that were applied successfully.
 	ContinueOnError bool
 
 	// DetailedErrors requests the number of detailed per-row errors returned by
@@ -312,6 +317,10 @@ func (b *PreparedBatch) flushWithSource(ctx context.Context, source string) erro
 }
 
 // Exec flushes queued rows, executes the batch, and returns the result.
+//
+// In autocommit mode (the batch is not bound to an explicit transaction) Exec
+// is atomic: if the server reports any per-row error, the implicit transaction
+// is rolled back and no rows are applied. 
 func (b *PreparedBatch) Exec(ctx context.Context) (BatchResult, error) {
 	if b == nil {
 		return BatchResult{}, fmt.Errorf("prepared batch is nil")

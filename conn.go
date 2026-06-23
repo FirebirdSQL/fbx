@@ -461,6 +461,10 @@ func (c *Conn) Flush(ctx context.Context, name string) error {
 }
 
 // ExecBatch flushes queued rows for a named batch, executes it, and returns the result.
+//
+// Like PreparedBatch.Exec, ExecBatch is atomic in autocommit mode: any per-row
+// error rolls the whole batch back (no rows applied), in both stop-on-first and
+// ContinueOnError modes. 
 func (c *Conn) ExecBatch(ctx context.Context, name string) (BatchResult, error) {
 	return c.execBatchTx(ctx, nil, name)
 }
