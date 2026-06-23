@@ -35,7 +35,8 @@ type ConnConfig struct {
 	// may cache statement/description metadata to reduce round trips and parsing overhead.
 	DefaultQueryExecMode QueryExecMode
 
-	// BatchInsertPendingSize is maximum size of pending data in batch before Conn.BatchInsert will flush it to server
+	// BatchInsertPendingSize is maximum size of pending data in batch before
+	// [Conn.BatchInsert] will flush it to server.
 	BatchInsertPendingSize int
 
 	createdByParseConfig bool // Used to enforce created by ParseConfig rule.
@@ -312,7 +313,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 //     Default: 512.
 //
 //   - batch_insert_pending_size
-//     The maximum size of pending data in batch before Conn.BatchInsert will flush it to server
+//     The maximum size of pending data in batch before [Conn.BatchInsert] will flush it to server.
 //     Default: 128*1024.
 func ParseConfig(connString string) (*ConnConfig, error) {
 	return ParseConfigWithOptions(connString, ParseConfigOptions{})
@@ -382,17 +383,18 @@ func (c *Conn) DropDatabase(ctx context.Context) error {
 }
 
 // Prepare creates a prepared statement with name and sql. sql can contain placeholders for bound parameters. These
-// placeholders are referenced positionally as ?. name can be used instead of sql with Query, QueryRow, and
-// Exec to execute the statement.
+// placeholders are referenced positionally as ?. name can be used instead of sql with [Conn.Query], [Conn.QueryRow], and
+// [Conn.Exec] to execute the statement.
 //
 // If sql starts with "batch ", Prepare creates a named batch.
-// Use Exec to add rows, Flush to send queued rows, and ExecBatch to execute the batch.
+// Use [Conn.Exec] to add rows, [Conn.Flush] to send queued rows, and
+// [Conn.ExecBatch] to execute the batch.
 //
 // The underlying Firebird identifier for the prepared statement will be name if name != sql or a digest of sql if
 // name == sql.
 //
 // Prepare is idempotent; i.e. it is safe to call Prepare multiple times with the same name and sql arguments. This
-// allows a code path to Prepare and Query/Exec without concern for if the statement has already been prepared.
+// allows a code path to Prepare and [Conn.Query]/[Conn.Exec] without concern for if the statement has already been prepared.
 func (c *Conn) Prepare(ctx context.Context, name, sql string) (sd *fbconn.StatementDescription, err error) {
 	return c.prepareTx(ctx, nil, name, sql)
 }
@@ -473,16 +475,17 @@ func (c *Conn) Flush(ctx context.Context, name string) error {
 
 // ExecBatch flushes queued rows for a named batch, executes it, and returns the result.
 //
-// Like PreparedBatch.Exec, ExecBatch is atomic in autocommit mode: any per-row
-// error rolls the whole batch back (no rows applied), in both stop-on-first and
-// ContinueOnError modes.
+// Like [PreparedBatch.Exec], ExecBatch is atomic in autocommit mode: any
+// per-row error rolls the whole batch back (no rows applied), in both
+// stop-on-first and BatchOptions.ContinueOnError modes.
 func (c *Conn) ExecBatch(ctx context.Context, name string) (BatchResult, error) {
 	return c.execBatchTx(ctx, nil, name)
 }
 
 // CancelBatch discards every row queued for a named batch — both the local
 // buffer and any rows already flushed to the server. The prepared batch
-// statement is kept and can be reused via Exec/Flush/ExecBatch.
+// statement is kept and can be reused via [Conn.Exec], [Conn.Flush], and
+// [Conn.ExecBatch].
 //
 // CancelBatch does not deallocate the named batch. Use [Conn.Deallocate] when
 // the named batch is no longer needed.

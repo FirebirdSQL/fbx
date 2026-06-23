@@ -102,8 +102,8 @@ type BatchInsertRowsSource interface {
 	// Values returns the values for the current row.
 	Values() ([]any, error)
 
-	// Err returns any error that has been encountered by the BatchInsertRowsSource. If
-	// this is not nil Conn.BatchInsert will abort the batch insert.
+	// Err returns any error that has been encountered by the [BatchInsertRowsSource].
+	// If this is not nil, [Conn.BatchInsert] will abort the batch insert.
 	Err() error
 }
 

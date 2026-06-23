@@ -1164,3 +1164,38 @@ func TestPreparedBatchAutocommitRollsBackOnRowError(t *testing.T) {
 	require.Empty(t, loadBatchDMLRows(t, ctx, checkConn, table),
 		"valid first row must not be committed when a later row fails")
 }
+
+func TestNamedBatchAutocommitRollsBackOnRowError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	conn := mustConnectString(t, defaultConnTestRunner.CreateConfig(ctx, t).ConnString())
+	defer closeConn(t, conn)
+	skipIfBatchUnsupported(ctx, t, conn)
+
+	checkConn := mustConnectString(t, defaultConnTestRunner.CreateConfig(ctx, t).ConnString())
+	defer closeConn(t, checkConn)
+
+	table := batchTestTableName(t, "fbx_nb_partial")
+	batchName := batchTestTableName(t, "ins_batch")
+
+	_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(50) not null)")
+	require.NoError(t, err)
+
+	_, err = conn.Prepare(ctx, batchName, "batch insert into "+table+" (id, note) values (?, ?)")
+	require.NoError(t, err)
+	defer func() { require.NoError(t, conn.Deallocate(ctx, batchName)) }()
+
+	_, err = conn.Exec(ctx, batchName, 1, "one")
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, batchName, 2, nil)
+	require.NoError(t, err)
+
+	_, err = conn.ExecBatch(ctx, batchName)
+
+	var batchErr *fbx.BatchExecutionError
+	require.ErrorAs(t, err, &batchErr)
+
+	require.Empty(t, loadBatchDMLRows(t, ctx, checkConn, table),
+		"valid first row must not be committed when a later row fails")
+}

@@ -51,8 +51,9 @@ when to flush queued rows.
 	_ = res
 
 Always call [PreparedBatch.Close] when the batch is no longer needed.
-[PreparedBatch.Cancel] can be used before Exec to discard both locally queued
-rows and rows already flushed to the server while keeping the batch reusable.
+[PreparedBatch.Cancel] can be used before [PreparedBatch.Exec] to discard both
+locally queued rows and rows already flushed to the server while keeping the
+batch reusable.
 
 # Named Batches
 
@@ -89,8 +90,9 @@ report more of them; it does not change transaction atomicity.
 
 In autocommit mode, a connection-scoped batch is atomic: if any per-row error is
 reported, fbx rolls back the implicit internal transaction and no rows from that
-execution are committed. Inside an explicit [Tx], Exec does not commit or roll
-back; the caller decides what to do after inspecting the result and error.
+execution are committed. Inside an explicit [Tx], [PreparedBatch.Exec] does not
+commit or roll back; the caller decides what to do after inspecting the result
+and error.
 
 # Transactions
 

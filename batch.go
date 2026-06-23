@@ -15,7 +15,7 @@ const (
 )
 
 // BatchOptions configures batches created with [Conn.PrepareBatchWithOptions]
-// or Tx.PrepareBatchWithOptions.
+// or [Tx.PrepareBatchWithOptions].
 //
 // Zero values keep the driver defaults.
 type BatchOptions struct {
@@ -29,7 +29,7 @@ type BatchOptions struct {
 	//
 	// This affects error reporting only, not transaction atomicity: in
 	// autocommit mode a batch with any per-row error is still rolled back as a
-	// whole (see PreparedBatch.Exec). Use an explicit transaction if you want
+	// whole (see [PreparedBatch.Exec]). Use an explicit transaction if you want
 	// to inspect the result and decide whether to commit rows that were applied
 	// successfully.
 	ContinueOnError bool
@@ -72,7 +72,7 @@ type BatchResult struct {
 // without a detailed status vector. It is wrapped into BatchError.Err when
 // MultiError mode is in effect and the server exceeds the DetailedErrors
 // budget — Firebird then sends only the row number for the remaining errors.
-// Use errors.Is to detect such rows from a BatchExecutionError.
+// Use errors.Is to detect such rows from a [BatchExecutionError].
 var ErrBatchRowFailed = errors.New("batch row failed")
 
 // BatchError describes a single row error returned by batch execution.
@@ -81,7 +81,7 @@ type BatchError struct {
 	Row int
 
 	// Err is the detailed row error returned by the server, or an error wrapping
-	// ErrBatchRowFailed when only simplified row information was returned.
+	// [ErrBatchRowFailed] when only simplified row information was returned.
 	Err error
 }
 
@@ -130,7 +130,7 @@ func (e *BatchExecutionError) Unwrap() []error {
 //
 // Create a connection-scoped batch with [Conn.PrepareBatch] or
 // [Conn.PrepareBatchWithOptions]. Create a transaction-scoped batch with
-// Tx.PrepareBatch or Tx.PrepareBatchWithOptions.
+// [Tx.PrepareBatch] or [Tx.PrepareBatchWithOptions].
 //
 // [PreparedBatch.Add] encodes one row into the local buffer. [PreparedBatch.Flush]
 // sends locally buffered rows to the server-side batch buffer without executing
@@ -138,15 +138,16 @@ func (e *BatchExecutionError) Unwrap() []error {
 // batch, and returns a [BatchResult].
 //
 // Connection-scoped batches use the connection's internal transaction. In
-// autocommit mode Exec is atomic: if the server reports any per-row error, the
-// driver rolls back the internal transaction and no rows from that execution are
-// committed. Transaction-scoped batches never commit or roll back the user's
-// transaction; call Tx.Commit or Tx.Rollback yourself after inspecting the
-// result and error.
+// autocommit mode [PreparedBatch.Exec] is atomic: if the server reports any
+// per-row error, the driver rolls back the internal transaction and no rows from
+// that execution are committed. Transaction-scoped batches never commit or roll
+// back the user's transaction; call [Tx.Commit] or [Tx.Rollback] yourself after
+// inspecting the result and error.
 //
 // Always call [PreparedBatch.Close] when the batch is no longer needed.
-// [PreparedBatch.Cancel] can be used before Exec to discard both local rows and
-// rows already flushed to the server while keeping the PreparedBatch reusable.
+// [PreparedBatch.Cancel] can be used before [PreparedBatch.Exec] to discard both
+// local rows and rows already flushed to the server while keeping the
+// PreparedBatch reusable.
 // PreparedBatch is not safe for concurrent use.
 type PreparedBatch struct {
 	conn *Conn
@@ -473,9 +474,10 @@ func (b *PreparedBatch) releaseStoredStatement(ctx context.Context) error {
 }
 
 // ClearPending discards rows that are still buffered locally and have not been
-// transmitted to the server yet. Rows already sent by a prior Flush remain in
-// the server-side batch buffer and will still be applied on the next Exec; use
-// Cancel to discard those too.
+// transmitted to the server yet. Rows already sent by a prior
+// [PreparedBatch.Flush] remain in the server-side batch buffer and will still be
+// applied on the next [PreparedBatch.Exec]; use [PreparedBatch.Cancel] to
+// discard those too.
 //
 // ClearPending performs no wire I/O and never returns an error.
 func (b *PreparedBatch) ClearPending() {
@@ -489,13 +491,13 @@ func (b *PreparedBatch) ClearPending() {
 
 // Cancel performs a full reset: drops queued rows, releases the server-side
 // batch context, and rolls back any internally owned statement and
-// transaction. PreparedBatch stays valid — the next Add/Flush/Exec re-prepares
-// what it needs. For tx-scoped batches the user's statement and tx are left
-// alone.
+// transaction. PreparedBatch stays valid — the next [PreparedBatch.Add],
+// [PreparedBatch.Flush], or [PreparedBatch.Exec] re-prepares what it needs. For
+// tx-scoped batches the user's statement and tx are left alone.
 //
 // Returns an error if the batch is closed or has pending cleanup from a prior
-// Exec (call Close instead). On context cancellation, retry with a fresh
-// context to free server-side resources.
+// [PreparedBatch.Exec] (call [PreparedBatch.Close] instead). On context
+// cancellation, retry with a fresh context to free server-side resources.
 func (b *PreparedBatch) Cancel(ctx context.Context) error {
 	if b == nil {
 		return fmt.Errorf("prepared batch is nil")
@@ -511,9 +513,10 @@ func (b *PreparedBatch) Cancel(ctx context.Context) error {
 }
 
 // Close releases every resource owned by the batch and marks it unusable.
-// Idempotent. Must be called even after Exec returns an error, otherwise the
-// prepared statement and any internal transaction stay allocated. On context
-// cancellation, retry with a fresh context to free server-side resources.
+// Idempotent. Must be called even after [PreparedBatch.Exec] returns an error,
+// otherwise the prepared statement and any internal transaction stay allocated.
+// On context cancellation, retry with a fresh context to free server-side
+// resources.
 func (b *PreparedBatch) Close(ctx context.Context) error {
 	if b == nil || b.closed {
 		return nil
