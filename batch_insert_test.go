@@ -39,7 +39,7 @@ func TestConnBatchInsertWithAllQueryExecModes(t *testing.T) {
 			d varchar(64))`)
 
 			inputRows := [][]any{
-				{int32(0), int32(1), int64(2), "abc"},
+				{int16(0), int32(1), int64(2), "abc"},
 				{nil, nil, nil, nil},
 			}
 
@@ -95,9 +95,8 @@ func TestConnBatchInsertFromSmall(t *testing.T) {
 		f date
 	)`)
 
-	//FIXME: impossible to roundtrip int16 through smallint
 	inputRows := [][]any{
-		{int32(0), int32(1), int64(2), "abc", "efg", time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)},
+		{int16(0), int32(1), int64(2), "abc", "efg", time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)},
 		{nil, nil, nil, nil, nil, nil},
 	}
 
@@ -153,9 +152,8 @@ func TestConnBatchInsertSliceSmall(t *testing.T) {
 
 	tzedTime := time.Date(2010, 2, 3, 4, 5, 6, 0, time.FixedZone("+03:00", +3*60*60))
 
-	//FIXME: impossible to roundtrip int16 through smallint
 	inputRows := [][]any{
-		{int32(0), int32(1), int64(2), "abc", "efg", tzedTime},
+		{int16(0), int32(1), int64(2), "abc", "efg", tzedTime},
 		{nil, nil, nil, nil, nil, nil},
 	}
 
@@ -217,9 +215,8 @@ func TestConnBatchInsertLarge(t *testing.T) {
 
 	inputRows := [][]any{}
 
-	//FIXME: impossible to roundtrip int16 through smallint
 	for range 10_000 {
-		inputRows = append(inputRows, []any{int32(0), int32(1), int64(2), "abc", "efg", time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC), tzedTime})
+		inputRows = append(inputRows, []any{int16(0), int32(1), int64(2), "abc", "efg", time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC), tzedTime})
 	}
 
 	count, err := conn.BatchInsert(ctx, fbx.Identifier{"FOO"}, []string{"A", "B", "C", "D", "E", "F", "G"}, fbx.BatchInsertRows(inputRows))

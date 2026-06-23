@@ -143,6 +143,28 @@ func TestMapScanBinaryFormatInterfacePtr(t *testing.T) {
 	assert.Equal(t, "foo", got)
 }
 
+func TestMapScanSmallintIntoAnyReturnsInt16(t *testing.T) {
+	m := fbtype.NewMap()
+	var got any
+
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 0, 4, 0)
+	err := m.Scan(typeMetadata, []byte{0, 0, 0, 1}, &got)
+
+	require.NoError(t, err)
+	assert.Equal(t, int16(1), got)
+}
+
+func TestMapScanIntegerIntoAnyReturnsInt32(t *testing.T) {
+	m := fbtype.NewMap()
+	var got any
+
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 0, 4, 0)
+	err := m.Scan(typeMetadata, []byte{0, 0, 0, 1}, &got)
+
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), got)
+}
+
 func TestMapScanUnknownTypeIDToPtrToAny(t *testing.T) {
 	unknownTypeID := uint32(999999)
 	srcBuf := []byte("foo")

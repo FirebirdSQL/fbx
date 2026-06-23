@@ -8,6 +8,7 @@ import (
 	"math"
 	"strconv"
 
+	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/internal/fbio"
 )
 
@@ -737,6 +738,15 @@ func (c Int4Codec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src
 func (c Int4Codec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
+	}
+
+	if typeMetadata.TypeID == fbproto.SQL_TYPE_SHORT {
+		var n int16
+		err := codecScan(c, m, typeMetadata, src, &n)
+		if err != nil {
+			return nil, err
+		}
+		return n, nil
 	}
 
 	var n int32
