@@ -1,35 +1,3 @@
-// PreparedBatch stores rows for a batch DML statement.
-// Supported statements: INSERT, UPDATE, and DELETE without result sets.
-//
-// 1) Object API:
-//
-//	pb, err := conn.PrepareBatch(ctx, "insert into t(id, note) values (?, ?)")
-//	if err != nil { ... }
-//	defer pb.Close(ctx)
-//
-//	_ = pb.Add(1, "one")
-//	_ = pb.Add(2, "two")
-//
-//	res, err := pb.Exec(ctx)
-//
-// Object batches are manual. Use [PreparedBatch.PendingBytes] and [PreparedBatch.Flush]
-// if you want to control when queued rows are sent. [PreparedBatch.ClearPending]
-// drops only locally buffered rows; [PreparedBatch.Cancel] additionally discards
-// rows that have already been flushed to the server.
-//
-// 2) Named API:
-//
-//	_, err := conn.Prepare(ctx, "b1", "batch insert into t(id, note) values (?, ?)")
-//	if err != nil { ... }
-//	defer conn.Deallocate(ctx, "b1")
-//
-//	_, _ = conn.Exec(ctx, "b1", 1, "one")
-//	_, _ = conn.Exec(ctx, "b1", 2, "two")
-//
-//	res, err := conn.ExecBatch(ctx, "b1")
-//
-// Named batches support built-in auto-flush.
-
 package fbx
 
 import (
@@ -46,8 +14,10 @@ const (
 	defaultPreparedBatchFlushSize = 128 * 1024
 )
 
-// BatchOptions configures object-style batches created with PrepareBatchWithOptions.
-// Zero values keep the default behavior.
+// BatchOptions configures batches created with [Conn.PrepareBatchWithOptions]
+// or Tx.PrepareBatchWithOptions.
+//
+// Zero values keep the driver defaults.
 type BatchOptions struct {
 	// BufferBytes requests the server-side batch buffer size in bytes.
 	// Zero uses the server default.
@@ -60,15 +30,25 @@ type BatchOptions struct {
 	// This affects error reporting only, not transaction atomicity: in
 	// autocommit mode a batch with any per-row error is still rolled back as a
 	// whole (see PreparedBatch.Exec). Use an explicit transaction if you want
-	// to keep the rows that were applied successfully.
+	// to inspect the result and decide whether to commit rows that were applied
+	// successfully.
 	ContinueOnError bool
 
 	// DetailedErrors requests the number of detailed per-row errors returned by
-	// the server. Zero keeps the driver default.
+	// the server.
+	//
+	// Zero keeps the driver default: one detailed error in stop-on-first-error
+	// mode, or the server default when ContinueOnError is enabled.
 	DetailedErrors int
 }
 
-// BatchResult is returned by PreparedBatch.Exec and Conn.ExecBatch.
+// BatchResult describes the server completion data returned by
+// [PreparedBatch.Exec] and [Conn.ExecBatch].
+//
+// When execution returns a [BatchExecutionError], BatchResult still describes
+// what the server processed before the error response. In autocommit mode those
+// successful rows are rolled back by the driver when any per-row error is
+// reported.
 type BatchResult struct {
 	// Affected is the sum of positive per-row update counts. If the server
 	// returned no per-row counts (RecordCounts disabled), Affected falls back
@@ -97,12 +77,17 @@ var ErrBatchRowFailed = errors.New("batch row failed")
 
 // BatchError describes a single row error returned by batch execution.
 type BatchError struct {
+	// Row is the zero-based row index in submission order.
 	Row int
+
+	// Err is the detailed row error returned by the server, or an error wrapping
+	// ErrBatchRowFailed when only simplified row information was returned.
 	Err error
 }
 
 // BatchExecutionError reports one or more row errors returned by batch execution.
 type BatchExecutionError struct {
+	// Errors contains the row errors reported by the server.
 	Errors []BatchError
 }
 
@@ -141,6 +126,28 @@ func (e *BatchExecutionError) Unwrap() []error {
 	return errs
 }
 
+// PreparedBatch stores encoded rows for one Firebird batch DML statement.
+//
+// Create a connection-scoped batch with [Conn.PrepareBatch] or
+// [Conn.PrepareBatchWithOptions]. Create a transaction-scoped batch with
+// Tx.PrepareBatch or Tx.PrepareBatchWithOptions.
+//
+// [PreparedBatch.Add] encodes one row into the local buffer. [PreparedBatch.Flush]
+// sends locally buffered rows to the server-side batch buffer without executing
+// them. [PreparedBatch.Exec] flushes remaining rows, executes the server-side
+// batch, and returns a [BatchResult].
+//
+// Connection-scoped batches use the connection's internal transaction. In
+// autocommit mode Exec is atomic: if the server reports any per-row error, the
+// driver rolls back the internal transaction and no rows from that execution are
+// committed. Transaction-scoped batches never commit or roll back the user's
+// transaction; call Tx.Commit or Tx.Rollback yourself after inspecting the
+// result and error.
+//
+// Always call [PreparedBatch.Close] when the batch is no longer needed.
+// [PreparedBatch.Cancel] can be used before Exec to discard both local rows and
+// rows already flushed to the server while keeping the PreparedBatch reusable.
+// PreparedBatch is not safe for concurrent use.
 type PreparedBatch struct {
 	conn *Conn
 	tx   *dbTx
@@ -166,12 +173,17 @@ type PreparedBatch struct {
 	eqb ExtendedQueryBuilder
 }
 
-// Add appends one row to the batch buffer.
+// Add appends one encoded row to the local batch buffer.
+//
+// Add does not send batch data to the server and does not execute the batch.
+// Object-style batches do not auto-flush; call [PreparedBatch.Flush] yourself
+// when [PreparedBatch.PendingBytes] reaches a useful threshold.
 func (b *PreparedBatch) Add(args ...any) error {
 	return b.addEncoded(context.Background(), args, false)
 }
 
-// PendingBytes returns the size of queued encoded rows that have not been sent yet.
+// PendingBytes returns the size of locally queued encoded rows that have not
+// been sent to the server yet.
 func (b *PreparedBatch) PendingBytes() int {
 	if b == nil {
 		return 0
@@ -282,7 +294,12 @@ func (b *PreparedBatch) addEncoded(ctx context.Context, args []any, allowAutoFlu
 	return nil
 }
 
-// Flush sends queued rows to the server without executing the batch.
+// Flush sends locally queued rows to the server-side batch buffer without
+// executing the batch.
+//
+// Rows sent by Flush stay pending on the server until [PreparedBatch.Exec],
+// [PreparedBatch.Cancel], or [PreparedBatch.Close]. Flush is a no-op when there
+// are no locally queued rows.
 func (b *PreparedBatch) Flush(ctx context.Context) error {
 	return b.flushWithSource(ctx, "manual")
 }
@@ -318,9 +335,14 @@ func (b *PreparedBatch) flushWithSource(ctx context.Context, source string) erro
 
 // Exec flushes queued rows, executes the batch, and returns the result.
 //
-// In autocommit mode (the batch is not bound to an explicit transaction) Exec
-// is atomic: if the server reports any per-row error, the implicit transaction
-// is rolled back and no rows are applied. 
+// Exec returns a [BatchExecutionError] when the server reports per-row errors.
+// The returned [BatchResult] still contains server completion data such as
+// update counts.
+//
+// In autocommit mode on a connection-scoped batch, Exec is atomic: any per-row
+// error rolls back the internal transaction and no rows from that execution are
+// committed. In an explicit transaction, Exec leaves commit and rollback
+// decisions to the caller.
 func (b *PreparedBatch) Exec(ctx context.Context) (BatchResult, error) {
 	if b == nil {
 		return BatchResult{}, fmt.Errorf("prepared batch is nil")

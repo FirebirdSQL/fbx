@@ -12,14 +12,20 @@ The primary way of establishing a connection is with [Connect]:
 The connection string can be in URL or key/value format. A config can also be
 created with [ParseConfig] and then passed to [ConnectConfig].
 
-Batching
+# Batching
 
-fbx has two batch styles.
+fbx exposes Firebird native batch DML for INSERT, UPDATE, and DELETE statements
+with parameters and without result sets. Blob and array parameters are rejected
+by the batch API. There are two batch styles: object batches and named batches.
 
-Object batches use [Conn.PrepareBatch] or [Conn.PrepareBatchWithOptions]. Rows are
-added with [PreparedBatch.Add]. Sending is manual with [PreparedBatch.Flush] and
-[PreparedBatch.Exec]. [PreparedBatch.PendingBytes] can be used to decide when to
-flush queued rows.
+# Object Batches
+
+Object batches are created with [Conn.PrepareBatch] or
+[Conn.PrepareBatchWithOptions]. Rows are added with [PreparedBatch.Add]. Sending
+is manual: [PreparedBatch.Flush] sends queued rows to the server-side batch
+buffer without executing them, and [PreparedBatch.Exec] flushes any remaining
+rows and executes the batch. [PreparedBatch.PendingBytes] can be used to decide
+when to flush queued rows.
 
 	pb, err := conn.PrepareBatch(context.Background(), "insert into t(id, note) values (?, ?)")
 	if err != nil {
@@ -44,9 +50,17 @@ flush queued rows.
 	}
 	_ = res
 
-Named batches use [Conn.Prepare] with SQL that starts with "batch ". Rows are added
-with [Conn.Exec]. They can be sent with [Conn.Flush] and executed with [Conn.ExecBatch].
-Named batches support built-in auto-flush.
+Always call [PreparedBatch.Close] when the batch is no longer needed.
+[PreparedBatch.Cancel] can be used before Exec to discard both locally queued
+rows and rows already flushed to the server while keeping the batch reusable.
+
+# Named Batches
+
+Named batches use [Conn.Prepare] with SQL that starts with "batch ". Rows are
+added with [Conn.Exec] using the prepared batch name. Adding a row does not
+execute the batch; it only encodes the row and may auto-flush queued rows to the
+server. Use [Conn.Flush] to send queued rows explicitly and [Conn.ExecBatch] to
+execute the batch. Named batches are released with [Conn.Deallocate].
 
 	_, err := conn.Prepare(context.Background(), "b1", "batch insert into t(id, note) values (?, ?)")
 	if err != nil {
@@ -66,7 +80,19 @@ Named batches support built-in auto-flush.
 	}
 	_ = res
 
-Transactions
+# Batch Results and Errors
+
+[PreparedBatch.Exec] and [Conn.ExecBatch] return a [BatchResult]. If the server
+reports per-row errors, the error can be inspected as a [BatchExecutionError].
+BatchOptions.ContinueOnError asks the server to continue after row errors and
+report more of them; it does not change transaction atomicity.
+
+In autocommit mode, a connection-scoped batch is atomic: if any per-row error is
+reported, fbx rolls back the implicit internal transaction and no rows from that
+execution are committed. Inside an explicit [Tx], Exec does not commit or roll
+back; the caller decides what to do after inspecting the result and error.
+
+# Transactions
 
 Transactions are started by calling [Conn.Begin].
 

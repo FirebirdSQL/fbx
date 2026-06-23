@@ -6,8 +6,8 @@ import (
 	"fmt"
 )
 
-// BatchInsertRows returns a BatchInsertRowsSource interface over the provided rows slice
-// making it usable by Conn.BatchInsert.
+// BatchInsertRows adapts rows to the [BatchInsertRowsSource] interface used by
+// [Conn.BatchInsert].
 func BatchInsertRows(rows [][]any) BatchInsertRowsSource {
 	return &batchInsertRows{rows: rows, idx: -1}
 }
@@ -30,8 +30,10 @@ func (b *batchInsertRows) Err() error {
 	return nil
 }
 
-// BatchInsertSlice returns a BatchInsertRowsSource interface over a dynamic func
-// making it usable by Conn.BatchInsert.
+// BatchInsertSlice adapts an indexed callback to the [BatchInsertRowsSource]
+// interface used by [Conn.BatchInsert].
+//
+// The callback is called with indexes from 0 to length-1.
 func BatchInsertSlice(length int, next func(int) ([]any, error)) BatchInsertRowsSource {
 	return &batchInsertSliceFunc{next: next, idx: -1, len: length}
 }
@@ -60,11 +62,14 @@ func (b *batchInsertSliceFunc) Err() error {
 	return b.err
 }
 
-// BatchInsertFunc returns a BatchInsertRowsSource interface that relies on nxtf for values.
-// nxtf returns rows until it either signals an 'end of data' by returning row=nil and err=nil,
-// or it returns an error. If nxtf returns an error, the batch insert is aborted.
-func BatchInsertFunc(nxtf func() (row []any, err error)) BatchInsertRowsSource {
-	return &batchInsertFunc{next: nxtf}
+// BatchInsertFunc adapts next to the [BatchInsertRowsSource] interface used by
+// [Conn.BatchInsert].
+//
+// next returns rows until it either signals the end of data by returning
+// row == nil and err == nil, or it returns an error. If next returns an error,
+// the batch insert is aborted.
+func BatchInsertFunc(next func() (row []any, err error)) BatchInsertRowsSource {
+	return &batchInsertFunc{next: next}
 }
 
 type batchInsertFunc struct {
@@ -87,7 +92,7 @@ func (b *batchInsertFunc) Err() error {
 	return b.err
 }
 
-// BatchInsertRowsSource is the interface used by Conn.BatchInsert as the source for insert data.
+// BatchInsertRowsSource provides rows to [Conn.BatchInsert].
 type BatchInsertRowsSource interface {
 	// Next returns true if there is another row and makes the next row data
 	// available to Values(). When there are no more rows available or an error
@@ -159,13 +164,13 @@ func (b *batchInsert) run(ctx context.Context) (int64, error) {
 	return br.Affected, nil
 }
 
-// BatchInsert uses the Firebird's batch operations to perform bulk data insertion. It returns the number of rows inserted and
-// an error.
+// BatchInsert uses Firebird native batch operations to perform bulk insertion.
 //
-// BatchInsert uses delimited (quoted) table and column identifiers thus identifiers are case-sensitive. Use uppercased
-// identifiers if your objects is created with regular (non-quoted) identifiers
+// BatchInsert returns the number of inserted rows. It uses quoted table and
+// column identifiers, so identifiers are case-sensitive. Use upper-case
+// identifiers for objects created with regular, unquoted SQL identifiers.
 //
-// See BatchInsertRows, BatchInsertFunc, BatchInsertSlice
+// See [BatchInsertRows], [BatchInsertFunc], and [BatchInsertSlice].
 func (c *Conn) BatchInsert(ctx context.Context, tableName Identifier, columnNames []string, rowSrc BatchInsertRowsSource) (int64, error) {
 	bi := &batchInsert{
 		conn:        c,

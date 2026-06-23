@@ -409,12 +409,20 @@ func (c *Conn) prepareTx(ctx context.Context, tx *dbTx, name string, sql string)
 	return st.Description, nil
 }
 
-// PrepareBatch creates a batch object for INSERT, UPDATE, or DELETE without result sets.
+// PrepareBatch creates a connection-scoped batch for INSERT, UPDATE, or DELETE
+// without result sets.
+//
+// The returned [PreparedBatch] uses the connection's internal transaction.
+// Always call [PreparedBatch.Close] when the batch is no longer needed.
 func (c *Conn) PrepareBatch(ctx context.Context, sql string) (*PreparedBatch, error) {
 	return c.prepareBatchTx(ctx, nil, sql, BatchOptions{})
 }
 
-// PrepareBatchWithOptions creates a batch object with additional batch options.
+// PrepareBatchWithOptions creates a connection-scoped batch with additional
+// batch options.
+//
+// The returned [PreparedBatch] uses the connection's internal transaction.
+// Always call [PreparedBatch.Close] when the batch is no longer needed.
 func (c *Conn) PrepareBatchWithOptions(ctx context.Context, sql string, opts BatchOptions) (*PreparedBatch, error) {
 	return c.prepareBatchTx(ctx, nil, sql, opts)
 }
@@ -456,6 +464,9 @@ func (c *Conn) prepareBatchTx(ctx context.Context, tx *dbTx, sql string, opts Ba
 }
 
 // Flush sends queued rows for a named batch without executing it.
+//
+// Rows are queued for a named batch by calling [Conn.Exec] with the prepared
+// batch name. Flush is a no-op when the named batch has no locally queued rows.
 func (c *Conn) Flush(ctx context.Context, name string) error {
 	return c.flushTx(ctx, nil, name)
 }
@@ -464,7 +475,7 @@ func (c *Conn) Flush(ctx context.Context, name string) error {
 //
 // Like PreparedBatch.Exec, ExecBatch is atomic in autocommit mode: any per-row
 // error rolls the whole batch back (no rows applied), in both stop-on-first and
-// ContinueOnError modes. 
+// ContinueOnError modes.
 func (c *Conn) ExecBatch(ctx context.Context, name string) (BatchResult, error) {
 	return c.execBatchTx(ctx, nil, name)
 }
@@ -472,6 +483,9 @@ func (c *Conn) ExecBatch(ctx context.Context, name string) (BatchResult, error) 
 // CancelBatch discards every row queued for a named batch — both the local
 // buffer and any rows already flushed to the server. The prepared batch
 // statement is kept and can be reused via Exec/Flush/ExecBatch.
+//
+// CancelBatch does not deallocate the named batch. Use [Conn.Deallocate] when
+// the named batch is no longer needed.
 func (c *Conn) CancelBatch(ctx context.Context, name string) error {
 	return c.cancelBatchTx(ctx, nil, name)
 }
