@@ -1587,7 +1587,6 @@ func (fbConn *FbConn) sendCancelOperation(ctx context.Context, kind int) error {
 	if err := fbConn.withWriteLockAndFlush(func() error {
 		return fbConn.client.WriteMessage(&fbproto.OpCancel{Kind: kind})
 	}); err != nil {
-		fbConn.asyncClose()
 		return err
 	}
 
@@ -3063,12 +3062,8 @@ func (h *CancelRequestContextWatcherHandler) HandleCancel(context.Context) {
 			}
 		}
 
-		cancelRequestParentCtx := handleUnwatchedAfterCancelCalledCtx
+		cancelRequestParentCtx := context.Background()
 		if h.CancelRequestDelay == 0 {
-			// Zero-delay mode should always attempt sending op_cancel. If we tie
-			// send context to Unwatch here, fast Unwatch can cancel before send.
-			cancelRequestParentCtx = context.Background()
-
 			// If a write is currently in progress, wait briefly for it to finish.
 			// This avoids racing a concurrent write+flush path while preserving a
 			// best-effort cancel attempt in zero-delay mode.
