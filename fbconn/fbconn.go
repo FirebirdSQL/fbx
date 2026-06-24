@@ -1572,7 +1572,8 @@ func (fbConn *FbConn) internalPrepareTx(ctx context.Context, tx *FBTransaction, 
 }
 
 // CancelRequest sends a cancel request to the server. It returns an error if unable to deliver the cancel
-// request, but lack of an error does not ensure that the query was canceled.
+// request, but lack of an error does not ensure that the query was canceled. Delivery errors do not close the
+// connection; callers that consider a failed cancel request fatal must close the connection themselves.
 func (fbConn *FbConn) CancelRequest(ctx context.Context) error {
 	return fbConn.sendCancelOperation(ctx, fbproto.Fb_cancel_raise)
 }
@@ -3084,7 +3085,7 @@ func (h *CancelRequestContextWatcherHandler) HandleCancel(context.Context) {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()) {
 				return
 			}
-			// CancelRequest already closes on transport/protocol errors, but keep fail-safe behavior explicit.
+			// A failed cancel request can leave the connection state ambiguous, so prevent further reuse.
 			h.Conn.asyncClose()
 		}
 	}()
