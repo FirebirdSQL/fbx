@@ -11,7 +11,7 @@ import (
 	"rdb.red-soft.ru/fbx/fbproto"
 )
 
-// TxIsoLevel is the transaction isolation level (serializable, repeatable read, read committed or read uncommitted)
+// TxIsoLevel is the transaction isolation level ([fbx.Serializable], [fbx.RepeatableRead], [fbx.ReadCommitted])
 type TxIsoLevel string
 
 // Transaction isolation levels
@@ -21,7 +21,7 @@ const (
 	ReadCommitted  TxIsoLevel = "read committed"
 )
 
-// TxAccessMode is the transaction access mode (read write or read only)
+// TxAccessMode is the transaction access mode ([fbx.ReadWrite], [fbx.ReadOnly])
 type TxAccessMode string
 
 // Transaction access modes
