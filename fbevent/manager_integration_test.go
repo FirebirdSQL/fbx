@@ -25,10 +25,8 @@ func TestManagerWaitForEventTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	manager, err := fbevent.NewManager(connString)
+	manager, err := fbevent.Connect(ctx, connString)
 	require.NoError(t, err)
-
-	require.NoError(t, manager.Connect(ctx))
 	defer func() {
 		require.NoError(t, manager.Close(context.Background()))
 	}()
@@ -48,10 +46,8 @@ func TestManagerWaitForEventTriggered(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	manager, err := fbevent.NewManager(connString)
+	manager, err := fbevent.Connect(ctx, connString)
 	require.NoError(t, err)
-
-	require.NoError(t, manager.Connect(ctx))
 	defer func() {
 		require.NoError(t, manager.Close(context.Background()))
 	}()
@@ -96,9 +92,8 @@ func TestManagerAddRemoveEventListener(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	manager, err := fbevent.NewManager(connString)
+	manager, err := fbevent.Connect(ctx, connString)
 	require.NoError(t, err)
-	require.NoError(t, manager.Connect(ctx))
 	defer func() {
 		require.NoError(t, manager.Close(context.Background()))
 	}()
@@ -142,9 +137,8 @@ func TestManagerMultipleListeners(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	manager, err := fbevent.NewManager(connString)
+	manager, err := fbevent.Connect(ctx, connString)
 	require.NoError(t, err)
-	require.NoError(t, manager.Connect(ctx))
 	defer func() {
 		require.NoError(t, manager.Close(context.Background()))
 	}()
@@ -184,7 +178,7 @@ func TestManagerMultipleListeners(t *testing.T) {
 	require.Equal(t, 1, receivedB.EventCount)
 }
 
-func TestManagerCreateForDisconnectsWhenConnectionClosed(t *testing.T) {
+func TestManagerConnectForDisconnectsWhenConnectionClosed(t *testing.T) {
 	connString := requireIntegrationConnString(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -193,8 +187,8 @@ func TestManagerCreateForDisconnectsWhenConnectionClosed(t *testing.T) {
 	conn, err := fbx.Connect(ctx, connString)
 	require.NoError(t, err)
 
-	manager := fbevent.CreateFor(conn)
-	require.NoError(t, manager.Connect(ctx))
+	manager, err := fbevent.ConnectFor(ctx, conn)
+	require.NoError(t, err)
 	require.True(t, manager.IsConnected())
 
 	require.NoError(t, conn.Close(ctx))
@@ -208,10 +202,9 @@ func TestManagerLifecycleDefaultConnectDisconnectReconnect(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	manager, err := fbevent.NewManager(connString)
+	manager, err := fbevent.Connect(ctx, connString)
 	require.NoError(t, err)
 
-	require.NoError(t, manager.Connect(ctx))
 	require.True(t, manager.IsConnected())
 
 	err = manager.Connect(ctx)
@@ -230,7 +223,7 @@ func TestManagerLifecycleDefaultConnectDisconnectReconnect(t *testing.T) {
 	require.NoError(t, manager.Close(ctx))
 }
 
-func TestManagerCreateForCloseKeepsUnderlyingConnectionAlive(t *testing.T) {
+func TestManagerConnectForCloseKeepsUnderlyingConnectionAlive(t *testing.T) {
 	connString := requireIntegrationConnString(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -242,8 +235,8 @@ func TestManagerCreateForCloseKeepsUnderlyingConnectionAlive(t *testing.T) {
 		require.NoError(t, conn.Close(context.Background()))
 	}()
 
-	manager := fbevent.CreateFor(conn)
-	require.NoError(t, manager.Connect(ctx))
+	manager, err := fbevent.ConnectFor(ctx, conn)
+	require.NoError(t, err)
 	require.True(t, manager.IsConnected())
 
 	require.NoError(t, manager.Close(ctx))
@@ -258,9 +251,8 @@ func TestManagerWaitForEventContextDeadlineExceeded(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	manager, err := fbevent.NewManager(connString)
+	manager, err := fbevent.Connect(ctx, connString)
 	require.NoError(t, err)
-	require.NoError(t, manager.Connect(ctx))
 	defer func() {
 		require.NoError(t, manager.Close(context.Background()))
 	}()
@@ -282,9 +274,8 @@ func TestManagerDuplicateSameListenerDeliveredPerRegistration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	manager, err := fbevent.NewManager(connString)
+	manager, err := fbevent.Connect(ctx, connString)
 	require.NoError(t, err)
-	require.NoError(t, manager.Connect(ctx))
 	defer func() {
 		require.NoError(t, manager.Close(context.Background()))
 	}()
@@ -334,9 +325,8 @@ func TestManagerDifferentClosureListenersSelectiveRemove(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
 
-	manager, err := fbevent.NewManager(connString)
+	manager, err := fbevent.Connect(ctx, connString)
 	require.NoError(t, err)
-	require.NoError(t, manager.Connect(ctx))
 	defer func() {
 		require.NoError(t, manager.Close(context.Background()))
 	}()
@@ -429,9 +419,8 @@ func TestManagerWorkflowScenarioFromCmdEvents(t *testing.T) {
 		require.NoError(t, shippingPoster.Close(context.Background()))
 	}()
 
-	manager, err := fbevent.NewManager(connString)
+	manager, err := fbevent.Connect(ctx, connString)
 	require.NoError(t, err)
-	require.NoError(t, manager.Connect(ctx))
 	defer func() {
 		require.NoError(t, manager.Close(context.Background()))
 	}()
@@ -555,9 +544,8 @@ func TestManagerWaitForEventOneShotFromCmdEvents(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	manager, err := fbevent.NewManager(connString)
+	manager, err := fbevent.Connect(ctx, connString)
 	require.NoError(t, err)
-	require.NoError(t, manager.Connect(ctx))
 	defer func() {
 		require.NoError(t, manager.Close(context.Background()))
 	}()

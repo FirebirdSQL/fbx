@@ -33,10 +33,9 @@ type listenerRegistration struct {
 // Manager owns Firebird event registrations and delivers matching events to
 // listeners.
 //
-// Managers should be constructed with [NewManager], [NewManagerConfig], or
-// [CreateFor]. Call [Manager.Connect] before registering listeners, and call
-// [Manager.Close] or [Manager.Disconnect] when event processing is no longer
-// needed.
+// Use [Connect], [ConnectWithOptions], [ConnectConfig], or [ConnectFor] to
+// create a connected Manager. Call [Manager.Close] or [Manager.Disconnect] when
+// event processing is no longer needed.
 type Manager struct {
 	mu sync.Mutex
 	// listenerOpMu serializes listener add/remove operations that can cause
@@ -81,25 +80,54 @@ type Manager struct {
 	beforeEnsureEventHandler func()
 }
 
-// NewManager parses connString and returns a manager that owns its database
+// Connect parses connString with [fbx.ParseConfig], establishes a connection
+// with a Firebird server, and returns a connected [Manager] that owns that
 // connection.
-//
-// The connection is opened by [Manager.Connect], not by NewManager. Closing or
-// disconnecting the manager also closes the owned connection.
-func NewManager(connString string) (*Manager, error) {
+func Connect(ctx context.Context, connString string) (*Manager, error) {
 	cfg, err := fbx.ParseConfig(connString)
 	if err != nil {
 		return nil, err
 	}
-	return NewManagerConfig(cfg), nil
+	return ConnectConfig(ctx, cfg)
 }
 
-// NewManagerConfig returns a manager that owns a connection created from cfg.
+// ConnectWithOptions parses connString with [fbx.ParseConfigWithOptions],
+// establishes a connection with a Firebird server, and returns a connected
+// [Manager] that owns that connection.
+func ConnectWithOptions(ctx context.Context, connString string, options fbx.ParseConfigOptions) (*Manager, error) {
+	cfg, err := fbx.ParseConfigWithOptions(connString, options)
+	if err != nil {
+		return nil, err
+	}
+	return ConnectConfig(ctx, cfg)
+}
+
+// ConnectConfig establishes a connection with a Firebird server using cfg and
+// returns a connected [Manager] that owns that connection.
 //
-// The config is copied before it is stored, so later changes to cfg do not
-// affect the manager. The connection is opened by [Manager.Connect], not by
-// NewManagerConfig.
-func NewManagerConfig(cfg *fbx.ConnConfig) *Manager {
+// The cfg parameter must be an [fbx.ConnConfig] created by [fbx.ParseConfig].
+func ConnectConfig(ctx context.Context, cfg *fbx.ConnConfig) (*Manager, error) {
+	manager := newManagerConfig(cfg)
+	if err := manager.Connect(ctx); err != nil {
+		return nil, err
+	}
+	return manager, nil
+}
+
+// ConnectFor starts event processing for an existing [fbx.Conn] and returns a
+// connected [Manager] that does not own that connection.
+//
+// Closing or disconnecting the returned manager unregisters event listeners but
+// leaves conn open.
+func ConnectFor(ctx context.Context, conn *fbx.Conn) (*Manager, error) {
+	manager := newManagerForConn(conn)
+	if err := manager.Connect(ctx); err != nil {
+		return nil, err
+	}
+	return manager, nil
+}
+
+func newManagerConfig(cfg *fbx.ConnConfig) *Manager {
 	var cfgCopy *fbx.ConnConfig
 	var connString string
 	if cfg != nil {
@@ -118,11 +146,7 @@ func NewManagerConfig(cfg *fbx.ConnConfig) *Manager {
 	}
 }
 
-// CreateFor returns a manager that uses an existing connection.
-//
-// The returned manager does not own conn. [Manager.Close] and
-// [Manager.Disconnect] unregister event listeners but leave conn open.
-func CreateFor(conn *fbx.Conn) *Manager {
+func newManagerForConn(conn *fbx.Conn) *Manager {
 	return &Manager{
 		mode:              managerModeManaged,
 		conn:              conn,
@@ -136,9 +160,10 @@ func CreateFor(conn *fbx.Conn) *Manager {
 
 // Connect starts event processing for the manager.
 //
-// For a manager created with [NewManager] or [NewManagerConfig], Connect opens
-// the database connection. For a manager created with [CreateFor], Connect uses
-// the existing connection and returns an error if it is nil or closed. Connect
+// For a manager returned by [Connect], [ConnectWithOptions], or [ConnectConfig],
+// Connect opens a new database connection after the manager has been
+// disconnected. For a manager returned by [ConnectFor], Connect uses the
+// existing connection and returns an error if it is nil or closed. Connect
 // returns an error when called on an already connected manager.
 func (m *Manager) Connect(ctx context.Context) error {
 	m.mu.Lock()
@@ -200,7 +225,7 @@ func (m *Manager) Connect(ctx context.Context) error {
 // Disconnect stops event processing and unregisters all listeners.
 //
 // For a manager that owns its connection, Disconnect also closes that
-// connection. For a manager created with [CreateFor], the underlying connection
+// connection. For a manager created with [ConnectFor], the underlying connection
 // is left open. Disconnect returns an error when called on an already
 // disconnected manager.
 func (m *Manager) Disconnect(ctx context.Context) error {
@@ -316,7 +341,7 @@ func (m *Manager) disconnect(ctx context.Context, strict bool, waitDispatcher bo
 
 // IsConnected reports whether the manager is currently connected.
 //
-// For a manager created with [CreateFor], IsConnected also observes whether the
+// For a manager created with [ConnectFor], IsConnected also observes whether the
 // underlying connection has already been closed and updates the manager state if
 // needed.
 func (m *Manager) IsConnected() bool {

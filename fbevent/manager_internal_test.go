@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbconn"
 )
 
@@ -21,6 +22,22 @@ func addRegisteredListenerForTest(m *Manager, eventName string, listener EventLi
 	m.listeners[eventName] = append(m.listeners[eventName], reg)
 	m.listenerEventName[handle] = eventName
 	return handle
+}
+
+func TestConnectReturnsParseError(t *testing.T) {
+	t.Parallel()
+
+	manager, err := Connect(context.Background(), "://")
+	require.Error(t, err)
+	require.Nil(t, manager)
+}
+
+func TestConnectWithOptionsReturnsParseError(t *testing.T) {
+	t.Parallel()
+
+	manager, err := ConnectWithOptions(context.Background(), "://", fbx.ParseConfigOptions{})
+	require.Error(t, err)
+	require.Nil(t, manager)
 }
 
 func TestAddEventListenerReturnsUniqueHandles(t *testing.T) {
