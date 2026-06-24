@@ -12,6 +12,7 @@ variables:
   FB40_VERSION: 4.0.6.3221-0
   FB50_VERSION: 5.0.3.1683-0
   FBX_TEST_DATABASE: database=employee host=localhost port=3050 user=sysdba password=masterkey
+  GOLANGCI_LINT_VERSION: v2.12.2
 
 .go-cache:
   variables:
@@ -134,3 +135,15 @@ report:coverage:
   needs: ["coverage:merge"]
   only:
     - main
+
+lint:
+  tags: [docker, linux, x86_64]
+  image: golangci/golangci-lint:$GOLANGCI_LINT_VERSION
+  stage: test
+  script:
+    - golangci-lint run --issues-exit-code 0 --output.code-climate.path gl-code-quality-report.json --output.text.path stdout
+  artifacts:
+    reports:
+      codequality: gl-code-quality-report.json
+    paths:
+      - gl-code-quality-report.json
