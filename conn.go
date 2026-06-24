@@ -134,7 +134,7 @@ func cleanupContext(parent context.Context) (context.Context, context.CancelFunc
 }
 
 // Connect establishes a connection with a Firebird server with a connection string. See
-// fbconn.Connect for details.
+// [fbconn.Connect], [fbx.ParseConfig], [fbconn.ParseConfig] for details.
 func Connect(ctx context.Context, connString string) (*Conn, error) {
 	connConfig, err := ParseConfig(connString)
 	if err != nil {
