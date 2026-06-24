@@ -130,6 +130,25 @@ func TestCancelRequestContextWatcherHandlerWatchEnableErrorClosesConnAndPrevents
 	require.Error(t, fbConn.lock())
 }
 
+func TestCancelRequestContextWatcherHandlerHandleCancelTimeoutDoesNotCloseConn(t *testing.T) {
+	h, fbConn := newWatcherHandlerForWindowTests()
+	h.CancelRequestDelay = 0
+	h.DeadlineDelay = 50 * time.Millisecond
+
+	var calls atomic.Int32
+	h.sendCancelOperationFunc = func(_ context.Context, kind int) error {
+		require.Equal(t, fbproto.Fb_cancel_raise, kind)
+		calls.Add(1)
+		return context.DeadlineExceeded
+	}
+
+	h.HandleCancel(context.Background())
+	h.HandleUnwatchAfterCancel()
+
+	require.EqualValues(t, 1, calls.Load())
+	require.False(t, fbConn.IsClosed())
+}
+
 func TestCancelRequestContextWatcherHandlerHandleCancelZeroDelayStillSendsCancelWithFastUnwatch(t *testing.T) {
 	const iterations = 100
 
@@ -168,6 +187,56 @@ func TestCancelRequestContextWatcherHandlerHandleCancelRespectsGraceWindow(t *te
 	h.HandleUnwatchAfterCancel()
 
 	require.EqualValues(t, 0, calls.Load())
+}
+
+func TestCancelRequestContextWatcherHandlerDelayedCancelNotCanceledByUnwatchAfterSendStarts(t *testing.T) {
+	h, fbConn := newWatcherHandlerForWindowTests()
+	h.CancelRequestDelay = 5 * time.Millisecond
+	h.DeadlineDelay = 5 * time.Second
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var calls atomic.Int32
+	h.sendCancelOperationFunc = func(ctx context.Context, kind int) error {
+		require.Equal(t, fbproto.Fb_cancel_raise, kind)
+		calls.Add(1)
+		close(started)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-release:
+			return nil
+		}
+	}
+
+	h.HandleCancel(context.Background())
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for cancel request to start")
+	}
+
+	unwatchDone := make(chan struct{})
+	go func() {
+		h.HandleUnwatchAfterCancel()
+		close(unwatchDone)
+	}()
+
+	select {
+	case <-unwatchDone:
+		t.Fatal("unwatch canceled an already-started cancel request")
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	close(release)
+	select {
+	case <-unwatchDone:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for unwatch after cancel")
+	}
+
+	require.EqualValues(t, 1, calls.Load())
+	require.False(t, fbConn.IsClosed())
 }
 
 func TestCancelRequestContextWatcherHandlerHandleCancelZeroDelayUsesFallbackDeadline(t *testing.T) {
@@ -277,15 +346,20 @@ func (c *blockFirstWriteConn) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-func TestSendCancelOperationConcurrentFlushDoesNotPanic(t *testing.T) {
-	conn := &blockFirstWriteConn{
-		writeStarted: make(chan struct{}),
-		releaseWrite: make(chan struct{}),
-	}
+type writeErrorConn struct {
+	noopConn
+	err error
+}
 
+func (c *writeErrorConn) Write(_ []byte) (int, error) {
+	return 0, c.err
+}
+
+func newCancelOperationTestFbConn(conn net.Conn) *FbConn {
 	fbConn := &FbConn{
 		conn:        conn,
 		writer:      bufio.NewWriter(conn),
+		status:      connStatusIdle,
 		cleanupDone: make(chan struct{}),
 	}
 	fbConn.bgReader = bgreader.New(conn)
@@ -296,6 +370,26 @@ func TestSendCancelOperationConcurrentFlushDoesNotPanic(t *testing.T) {
 	})
 	fbConn.slowWriteTimer.Stop()
 	fbConn.client = fbproto.NewClient(fbConn.bgReader, fbConn.writer, nil)
+	return fbConn
+}
+
+func TestSendCancelOperationWriteErrorDoesNotCloseConn(t *testing.T) {
+	writeErr := errors.New("write failed")
+	fbConn := newCancelOperationTestFbConn(&writeErrorConn{err: writeErr})
+
+	err := fbConn.sendCancelOperation(context.Background(), fbproto.Fb_cancel_raise)
+
+	require.ErrorIs(t, err, writeErr)
+	require.False(t, fbConn.IsClosed())
+}
+
+func TestSendCancelOperationConcurrentFlushDoesNotPanic(t *testing.T) {
+	conn := &blockFirstWriteConn{
+		writeStarted: make(chan struct{}),
+		releaseWrite: make(chan struct{}),
+	}
+
+	fbConn := newCancelOperationTestFbConn(conn)
 
 	type callResult struct {
 		err error

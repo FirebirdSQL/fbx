@@ -1572,7 +1572,8 @@ func (fbConn *FbConn) internalPrepareTx(ctx context.Context, tx *FBTransaction, 
 }
 
 // CancelRequest sends a cancel request to the server. It returns an error if unable to deliver the cancel
-// request, but lack of an error does not ensure that the query was canceled.
+// request, but lack of an error does not ensure that the query was canceled. Delivery errors do not close the
+// connection; callers that consider a failed cancel request fatal must close the connection themselves.
 func (fbConn *FbConn) CancelRequest(ctx context.Context) error {
 	return fbConn.sendCancelOperation(ctx, fbproto.Fb_cancel_raise)
 }
@@ -1587,7 +1588,6 @@ func (fbConn *FbConn) sendCancelOperation(ctx context.Context, kind int) error {
 	if err := fbConn.withWriteLockAndFlush(func() error {
 		return fbConn.client.WriteMessage(&fbproto.OpCancel{Kind: kind})
 	}); err != nil {
-		fbConn.asyncClose()
 		return err
 	}
 
@@ -2279,6 +2279,8 @@ func (rr *ResultReader) NextRow() bool {
 				Messages:        fetchBatchSize,
 			})
 		}); err != nil {
+			rr.fbConn.asyncClose()
+			rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(rr.ctx, normalizeConnClosedError(err)))
 			return false
 		}
 		rr.fetchExecuted = true
@@ -3061,12 +3063,8 @@ func (h *CancelRequestContextWatcherHandler) HandleCancel(context.Context) {
 			}
 		}
 
-		cancelRequestParentCtx := handleUnwatchedAfterCancelCalledCtx
+		cancelRequestParentCtx := context.Background()
 		if h.CancelRequestDelay == 0 {
-			// Zero-delay mode should always attempt sending op_cancel. If we tie
-			// send context to Unwatch here, fast Unwatch can cancel before send.
-			cancelRequestParentCtx = context.Background()
-
 			// If a write is currently in progress, wait briefly for it to finish.
 			// This avoids racing a concurrent write+flush path while preserving a
 			// best-effort cancel attempt in zero-delay mode.
@@ -3087,7 +3085,7 @@ func (h *CancelRequestContextWatcherHandler) HandleCancel(context.Context) {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()) {
 				return
 			}
-			// CancelRequest already closes on transport/protocol errors, but keep fail-safe behavior explicit.
+			// A failed cancel request can leave the connection state ambiguous, so prevent further reuse.
 			h.Conn.asyncClose()
 		}
 	}()
