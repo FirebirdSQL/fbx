@@ -1,12 +1,9 @@
 package fbtype
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"math/big"
-	"net"
-	"net/netip"
 	"reflect"
 	"time"
 )
@@ -465,99 +462,6 @@ func (w timeWrapper) TimeValue() (Time, error) {
 		int64(t.Second())*microsecondsPerSecond +
 		int64(t.Nanosecond())/1000
 	return Time{Microseconds: usec, Valid: true}, nil
-}
-
-type netIPNetWrapper net.IPNet
-
-func (w *netIPNetWrapper) ScanNetipPrefix(v netip.Prefix) error {
-	if !v.IsValid() {
-		return fmt.Errorf("cannot scan NULL into *net.IPNet")
-	}
-
-	*w = netIPNetWrapper{
-		IP:   v.Addr().AsSlice(),
-		Mask: net.CIDRMask(v.Bits(), v.Addr().BitLen()),
-	}
-
-	return nil
-}
-func (w netIPNetWrapper) NetipPrefixValue() (netip.Prefix, error) {
-	ip, ok := netip.AddrFromSlice(w.IP)
-	if !ok {
-		return netip.Prefix{}, errors.New("invalid net.IPNet")
-	}
-
-	ones, _ := w.Mask.Size()
-
-	return netip.PrefixFrom(ip, ones), nil
-}
-
-type netIPWrapper net.IP
-
-func (w netIPWrapper) SkipUnderlyingTypePlan() {}
-
-func (w *netIPWrapper) ScanNetipPrefix(v netip.Prefix) error {
-	if !v.IsValid() {
-		*w = nil
-		return nil
-	}
-
-	if v.Addr().BitLen() != v.Bits() {
-		return fmt.Errorf("cannot scan %v to *net.IP", v)
-	}
-
-	*w = netIPWrapper(v.Addr().AsSlice())
-	return nil
-}
-
-func (w netIPWrapper) NetipPrefixValue() (netip.Prefix, error) {
-	if w == nil {
-		return netip.Prefix{}, nil
-	}
-
-	addr, ok := netip.AddrFromSlice([]byte(w))
-	if !ok {
-		return netip.Prefix{}, errors.New("invalid net.IP")
-	}
-
-	return netip.PrefixFrom(addr, addr.BitLen()), nil
-}
-
-type netipPrefixWrapper netip.Prefix
-
-func (w *netipPrefixWrapper) ScanNetipPrefix(v netip.Prefix) error {
-	*w = netipPrefixWrapper(v)
-	return nil
-}
-
-func (w netipPrefixWrapper) NetipPrefixValue() (netip.Prefix, error) {
-	return netip.Prefix(w), nil
-}
-
-type netipAddrWrapper netip.Addr
-
-func (w *netipAddrWrapper) ScanNetipPrefix(v netip.Prefix) error {
-	if !v.IsValid() {
-		*w = netipAddrWrapper(netip.Addr{})
-		return nil
-	}
-
-	if v.Addr().BitLen() != v.Bits() {
-		return fmt.Errorf("cannot scan %v to netip.Addr", v)
-	}
-
-	*w = netipAddrWrapper(v.Addr())
-
-	return nil
-}
-
-func (w netipAddrWrapper) NetipPrefixValue() (netip.Prefix, error) {
-	addr := (netip.Addr)(w)
-	if !addr.IsValid() {
-		return netip.Prefix{}, nil
-	}
-
-	return netip.PrefixFrom(addr, addr.BitLen()), nil
 }
 
 type fmtStringerWrapper struct {
