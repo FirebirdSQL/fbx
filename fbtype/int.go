@@ -638,27 +638,36 @@ func (dst *Int4) UnmarshalJSON(b []byte) error {
 type Int4Codec struct{}
 
 func (Int4Codec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
+	small := typeMetadata.TypeID == fbproto.SQL_TYPE_SHORT
 	switch value.(type) {
 	case int32:
-		return encodePlanInt4CodecBinaryInt32{}
+		return encodePlanInt4CodecBinaryInt32{small: small}
 	case Int64Valuer:
-		return encodePlanInt4CodecBinaryInt64Valuer{}
+		return encodePlanInt4CodecBinaryInt64Valuer{small: small}
 	case string:
-		return encodePlanInt4CodecBinaryFromString{}
+		return encodePlanInt4CodecBinaryFromString{small: small}
 	}
 	return nil
 }
 
-type encodePlanInt4CodecBinaryInt32 struct{}
+type encodePlanInt4CodecBinaryInt32 struct{ small bool }
 
-func (encodePlanInt4CodecBinaryInt32) Encode(value any, buf []byte) (newBuf []byte, err error) {
+func (p encodePlanInt4CodecBinaryInt32) Encode(value any, buf []byte) (newBuf []byte, err error) {
 	n := value.(int32)
-	return fbio.AppendInt32BE(buf, int32(n)), nil
+	if p.small {
+		if n > math.MaxInt16 {
+			return nil, fmt.Errorf("%d is greater than maximum value for smallint", n)
+		}
+		if n < math.MinInt16 {
+			return nil, fmt.Errorf("%d is less than minimum value for smallint", n)
+		}
+	}
+	return fbio.AppendInt32BE(buf, n), nil
 }
 
-type encodePlanInt4CodecBinaryInt64Valuer struct{}
+type encodePlanInt4CodecBinaryInt64Valuer struct{ small bool }
 
-func (encodePlanInt4CodecBinaryInt64Valuer) Encode(value any, buf []byte) (newBuf []byte, err error) {
+func (p encodePlanInt4CodecBinaryInt64Valuer) Encode(value any, buf []byte) (newBuf []byte, err error) {
 	n, err := value.(Int64Valuer).Int64Value()
 	if err != nil {
 		return nil, err
@@ -668,23 +677,31 @@ func (encodePlanInt4CodecBinaryInt64Valuer) Encode(value any, buf []byte) (newBu
 		return nil, nil
 	}
 
-	if n.Int64 > math.MaxInt32 {
-		return nil, fmt.Errorf("%d is greater than maximum value for int4", n.Int64)
+	maxv, minv, typeName := int64(math.MaxInt32), int64(math.MinInt32), "int4"
+	if p.small {
+		maxv, minv, typeName = math.MaxInt16, math.MinInt16, "smallint"
 	}
-	if n.Int64 < math.MinInt32 {
-		return nil, fmt.Errorf("%d is less than minimum value for int4", n.Int64)
+	if n.Int64 > maxv {
+		return nil, fmt.Errorf("%d is greater than maximum value for %s", n.Int64, typeName)
+	}
+	if n.Int64 < minv {
+		return nil, fmt.Errorf("%d is less than minimum value for %s", n.Int64, typeName)
 	}
 
 	return fbio.AppendInt32BE(buf, int32(n.Int64)), nil
 }
 
-type encodePlanInt4CodecBinaryFromString struct{}
+type encodePlanInt4CodecBinaryFromString struct{ small bool }
 
-func (encodePlanInt4CodecBinaryFromString) Encode(value any, buf []byte) ([]byte, error) {
+func (p encodePlanInt4CodecBinaryFromString) Encode(value any, buf []byte) ([]byte, error) {
 	s := value.(string)
-	n, err := strconv.ParseInt(s, 10, 32)
+	bitSize, typeName := 32, "int"
+	if p.small {
+		bitSize, typeName = 16, "smallint"
+	}
+	n, err := strconv.ParseInt(s, 10, bitSize)
 	if err != nil {
-		return nil, fmt.Errorf("cannot parse %q as int: %w", s, err)
+		return nil, fmt.Errorf("cannot parse %q as %s: %w", s, typeName, err)
 	}
 	return fbio.AppendInt32BE(buf, int32(n)), nil
 }
