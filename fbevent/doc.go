@@ -22,16 +22,15 @@ created by [ConnectFor] does not close the underlying connection.
 # Listening with Callbacks
 
 [Manager.AddEventListener] registers an [EventListener] for an event name on a
-connected manager. The returned [ListenerHandle] identifies that registration
-and can be passed to [Manager.RemoveEventListener].
+connected manager. The returned [ListenerCloser] removes that registration.
 
-	handle, err := manager.AddEventListener("orders_changed", fbevent.EventListenerFunc(func(event fbevent.DatabaseEvent) {
+	listenerCloser, err := manager.AddEventListener("orders_changed", fbevent.EventListenerFunc(func(event fbevent.DatabaseEvent) {
 		fmt.Printf("%s: %d\n", event.EventName, event.EventCount)
 	}))
 	if err != nil {
 		return err
 	}
-	defer manager.RemoveEventListener(handle)
+	defer listenerCloser.Close()
 
 # Channel Subscriptions
 
