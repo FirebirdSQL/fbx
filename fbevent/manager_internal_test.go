@@ -56,12 +56,14 @@ func TestAddEventListenerReturnsUniqueHandles(t *testing.T) {
 	first := EventListenerFunc(func(DatabaseEvent) {})
 	second := EventListenerFunc(func(DatabaseEvent) {})
 
-	firstHandle, err := m.AddEventListener("EVT", first)
+	firstCloser, err := m.AddEventListener("EVT", first)
 	require.NoError(t, err)
 
-	secondHandle, err := m.AddEventListener("EVT", second)
+	secondCloser, err := m.AddEventListener("EVT", second)
 	require.NoError(t, err)
 
+	firstHandle := firstCloser.Handle()
+	secondHandle := secondCloser.Handle()
 	require.NotEqual(t, InvalidListenerHandle, firstHandle)
 	require.NotEqual(t, InvalidListenerHandle, secondHandle)
 	require.NotEqual(t, firstHandle, secondHandle)
@@ -94,6 +96,27 @@ func TestRemoveEventListenerByHandle(t *testing.T) {
 	require.NoError(t, m.RemoveEventListener(firstHandle))
 	require.Len(t, m.listeners["EVT"], 1)
 	require.Equal(t, secondHandle, m.listeners["EVT"][0].handle)
+}
+
+func TestListenerCloserCloseRemovesListener(t *testing.T) {
+	t.Parallel()
+
+	m := &Manager{
+		connected:         true,
+		listeners:         make(map[string][]listenerRegistration),
+		listenerEventName: make(map[ListenerHandle]string),
+		handlers:          make(map[string]*fbEventHandler),
+	}
+	existingHandle := addRegisteredListenerForTest(m, "EVT", EventListenerFunc(func(DatabaseEvent) {}))
+
+	listenerCloser, err := m.AddEventListener("EVT", EventListenerFunc(func(DatabaseEvent) {}))
+	require.NoError(t, err)
+
+	require.NoError(t, listenerCloser.Close())
+	require.NoError(t, listenerCloser.Close())
+
+	require.Len(t, m.listeners["EVT"], 1)
+	require.Equal(t, existingHandle, m.listeners["EVT"][0].handle)
 }
 
 func TestIsConnectedManagedDisconnectedDoesNotBlock(t *testing.T) {
@@ -195,10 +218,10 @@ func TestAddEventListenerCreatesSeparateRegistrationsForSameListener(t *testing.
 
 	firstHandle := addRegisteredListenerForTest(m, "EVT", listener)
 
-	secondHandle, err := m.AddEventListener("EVT", listener)
+	secondCloser, err := m.AddEventListener("EVT", listener)
 	require.NoError(t, err)
 	require.Len(t, m.listeners["EVT"], 2)
-	require.NotEqual(t, firstHandle, secondHandle)
+	require.NotEqual(t, firstHandle, secondCloser.Handle())
 }
 
 func TestAddRemoveEventListenerWithDifferentClosuresFromSameLiteral(t *testing.T) {

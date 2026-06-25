@@ -163,12 +163,12 @@ func ExampleManager_AddEventListener() {
 	})
 
 	eventName := "FBX_EXAMPLE_LISTENER"
-	handle, err := manager.AddEventListener(eventName, listener)
+	listenerCloser, err := manager.AddEventListener(eventName, listener)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	defer manager.RemoveEventListener(handle)
+	defer listenerCloser.Close()
 
 	if err := postEvent(ctx, notifier, eventName); err != nil {
 		fmt.Println(err)

@@ -110,7 +110,7 @@ func TestManagerAddRemoveEventListener(t *testing.T) {
 		events <- e
 	})
 
-	listenerHandle, err := manager.AddEventListener(eventName, listener)
+	listenerCloser, err := manager.AddEventListener(eventName, listener)
 	if skipIfAuxEventPortUnavailable(t, err) {
 		return
 	}
@@ -121,7 +121,7 @@ func TestManagerAddRemoveEventListener(t *testing.T) {
 	require.Equal(t, eventName, got.EventName)
 	require.Equal(t, 1, got.EventCount)
 
-	require.NoError(t, manager.RemoveEventListener(listenerHandle))
+	require.NoError(t, listenerCloser.Close())
 	require.NoError(t, postEvents(ctx, notifier, eventName))
 
 	select {
@@ -350,7 +350,7 @@ func TestManagerDifferentClosureListenersSelectiveRemove(t *testing.T) {
 	listenerA := makeListener(&deliveredA)
 	listenerB := makeListener(&deliveredB)
 
-	listenerAHandle, err := manager.AddEventListener(eventName, listenerA)
+	listenerACloser, err := manager.AddEventListener(eventName, listenerA)
 	if skipIfAuxEventPortUnavailable(t, err) {
 		return
 	}
@@ -379,7 +379,7 @@ func TestManagerDifferentClosureListenersSelectiveRemove(t *testing.T) {
 	require.Equal(t, phase1Posted, deliveredA.Load()-baseA)
 	require.Equal(t, phase1Posted, deliveredB.Load()-baseB)
 
-	require.NoError(t, manager.RemoveEventListener(listenerAHandle))
+	require.NoError(t, listenerACloser.Close())
 
 	const phase2Posted = int64(3)
 	require.NoError(t, postEventCountIntegration(ctx, notifier, eventName, int(phase2Posted)))
@@ -482,7 +482,7 @@ func TestManagerWorkflowScenarioFromCmdEvents(t *testing.T) {
 
 	_, err = manager.AddEventListener(paymentConfirmed, paymentListener)
 	require.NoError(t, err)
-	auditHandle, err := manager.AddEventListener(paymentConfirmed, auditListener)
+	auditCloser, err := manager.AddEventListener(paymentConfirmed, auditListener)
 	require.NoError(t, err)
 	_, err = manager.AddEventListener(orderShipped, shippedListener)
 	require.NoError(t, err)
@@ -505,7 +505,7 @@ func TestManagerWorkflowScenarioFromCmdEvents(t *testing.T) {
 	require.NoError(t, waitForCounterAtLeastIntegration(ctx, &shippedCount, phase1Target, 12*time.Second, asyncErrs, manager, "phase1 shipped"))
 
 	auditBeforeRemove := auditCount.Load()
-	require.NoError(t, manager.RemoveEventListener(auditHandle))
+	require.NoError(t, auditCloser.Close())
 
 	require.NoError(t, emitOrdersIntegration(ctx, producer, orderCreated, ordersPhase2, 2, 100*time.Millisecond))
 

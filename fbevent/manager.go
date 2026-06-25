@@ -392,18 +392,18 @@ func (m *Manager) SetWaitTimeout(timeout time.Duration) {
 	m.mu.Unlock()
 }
 
-// AddEventListener registers listener for eventName and returns its handle.
+// AddEventListener registers listener for eventName and returns a closer.
 //
 // The manager must be connected, eventName must be non-empty, and listener must
 // be non-nil. Each successful call creates a separate registration, even when
-// the same listener value is registered more than once. Pass the returned handle
-// to [Manager.RemoveEventListener] to remove that registration.
-func (m *Manager) AddEventListener(eventName string, listener EventListener) (ListenerHandle, error) {
+// the same listener value is registered more than once. Call [ListenerCloser.Close]
+// to remove that registration.
+func (m *Manager) AddEventListener(eventName string, listener EventListener) (*ListenerCloser, error) {
 	if eventName == "" {
-		return InvalidListenerHandle, errors.New("eventName must not be empty")
+		return nil, errors.New("eventName must not be empty")
 	}
 	if listener == nil {
-		return InvalidListenerHandle, errors.New("listener must not be nil")
+		return nil, errors.New("listener must not be nil")
 	}
 	m.listenerOpMu.Lock()
 	defer m.listenerOpMu.Unlock()
@@ -411,7 +411,7 @@ func (m *Manager) AddEventListener(eventName string, listener EventListener) (Li
 	m.mu.Lock()
 	if !m.connected {
 		m.mu.Unlock()
-		return InvalidListenerHandle, errors.New("can't add event listeners to disconnected manager")
+		return nil, errors.New("can't add event listeners to disconnected manager")
 	}
 	if m.listeners == nil {
 		m.listeners = make(map[string][]listenerRegistration)
@@ -435,8 +435,9 @@ func (m *Manager) AddEventListener(eventName string, listener EventListener) (Li
 	m.listenerEventName[handle] = eventName
 	m.mu.Unlock()
 
+	closer := newListenerCloser(m, handle)
 	if hasListeners {
-		return handle, nil
+		return closer, nil
 	}
 
 	m.mu.Lock()
@@ -448,9 +449,9 @@ func (m *Manager) AddEventListener(eventName string, listener EventListener) (Li
 
 	if err := m.ensureEventHandler(eventName); err != nil {
 		m.removeListenerSilently(handle)
-		return InvalidListenerHandle, err
+		return nil, err
 	}
-	return handle, nil
+	return closer, nil
 }
 
 // RemoveEventListener removes the listener registration identified by handle.
