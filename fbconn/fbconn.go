@@ -275,21 +275,34 @@ func DropDatabaseConfig(ctx context.Context, config *Config) error {
 // When respond is false, the generated reply remains in authManager for the
 // following attach DPB instead of being sent in op_cont_auth.
 func (fbConn *FbConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *auth.AuthManager, respond bool) error {
-	if err := fbConn.handleAcceptMetadata(msg, authManager); err != nil {
-		return err
+	isStepNil := true
+	var authData []byte
+
+	if authManager.GetCurrentPlugin().Name() == msg.PluginName {
+		if err := fbConn.handleAcceptMetadata(msg, authManager); err != nil {
+			return err
+		}
+
+		step, err := authManager.HandleServerChallenge(msg.PluginName, msg.Data)
+		if err != nil {
+			return err
+		}
+		if step != nil {
+			authData = step.Reply
+			isStepNil = false
+		}
+	} else {
+		authManager.SetCurrentPlugin(msg.PluginName)
+		authData = authManager.GetCurrentPlugin().InitialClientData()
 	}
 
-	step, err := authManager.HandleServerChallenge(msg.PluginName, msg.Data)
-	if err != nil {
-		return err
-	}
-	if respond && step != nil {
+	if respond && (!isStepNil || authData != nil) {
 		pluginList := ""
 		if !fbConn.authContFirstSent {
 			pluginList = authManager.BuildList()
 			fbConn.authContFirstSent = true
 		}
-		return fbConn.sendContAuth(step.Reply, msg.PluginName, pluginList, nil)
+		return fbConn.sendContAuth(authData, msg.PluginName, pluginList, nil)
 	}
 	return nil
 }
@@ -350,20 +363,28 @@ func (fbConn *FbConn) handleAuthResponse(msg *fbproto.OpResponse, config *Config
 // after op_attach. The plugin list is omitted because it was already advertised
 // during the initial negotiation.
 func (fbConn *FbConn) handlePostAttachAuthChallenge(authManager *auth.AuthManager, pluginName string, data []byte, keys []byte) error {
-	if fbConn.wireCrypt != nil {
-		if err := fbConn.wireCrypt.AddServerKeys(keys); err != nil {
+	var authData []byte
+
+	if authManager.GetCurrentPlugin().Name() == pluginName {
+		if fbConn.wireCrypt != nil {
+			if err := fbConn.wireCrypt.AddServerKeys(keys); err != nil {
+				return err
+			}
+		}
+
+		step, err := authManager.HandleServerChallenge(pluginName, data)
+		if err != nil {
 			return err
 		}
+		if step == nil {
+			return nil
+		}
+		authData = step.Reply
+	} else {
+		authManager.SetCurrentPlugin(pluginName)
+		authData = authManager.GetCurrentPlugin().InitialClientData()
 	}
-
-	step, err := authManager.HandleServerChallenge(pluginName, data)
-	if err != nil {
-		return err
-	}
-	if step == nil {
-		return nil
-	}
-	return fbConn.sendContAuth(step.Reply, pluginName, "", nil)
+	return fbConn.sendContAuth(authData, pluginName, "", nil)
 }
 
 // finishAttachAuth completes authentication that continues after op_attach and
