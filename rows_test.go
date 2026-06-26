@@ -243,6 +243,38 @@ func ExampleCollectRows() {
 	// [1 2 3 4 5]
 }
 
+func ExampleCollectableRow() {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	conn, err := fbx.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
+	if err != nil {
+		fmt.Printf("Unable to establish connection: %v", err)
+		return
+	}
+	defer conn.Close(ctx)
+
+	rows, _ := conn.Query(ctx, "select 'Joe' as name, 42 as age from rdb$database")
+	people, err := fbx.CollectRows(rows, func(row fbx.CollectableRow) (string, error) {
+		values, err := row.Values()
+		if err != nil {
+			return "", err
+		}
+
+		fields := row.FieldDescriptions()
+		return fmt.Sprintf("%s=%v %s=%v", fields[0].Name, values[0], fields[1].Name, values[1]), nil
+	})
+	if err != nil {
+		fmt.Printf("CollectRows error: %v", err)
+		return
+	}
+
+	fmt.Println(people[0])
+
+	// Output:
+	// NAME=Joe AGE=42
+}
+
 func TestCollectOneRow(t *testing.T) {
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		rows, _ := conn.Query(ctx, `select 42 from rdb$database`)
@@ -462,6 +494,30 @@ func TestRowToMap(t *testing.T) {
 			assert.EqualValues(t, i, slice[i]["AGE"])
 		}
 	})
+}
+
+func ExampleRowToMap() {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	conn, err := fbx.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
+	if err != nil {
+		fmt.Printf("Unable to establish connection: %v", err)
+		return
+	}
+	defer conn.Close(ctx)
+
+	rows, _ := conn.Query(ctx, "select 'Joe' as name, 42 as age from rdb$database")
+	people, err := fbx.CollectRows(rows, fbx.RowToMap)
+	if err != nil {
+		fmt.Printf("CollectRows error: %v", err)
+		return
+	}
+
+	fmt.Println(people[0]["NAME"], people[0]["AGE"])
+
+	// Output:
+	// Joe 42
 }
 
 func TestRowToStructByPos(t *testing.T) {

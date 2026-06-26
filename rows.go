@@ -556,7 +556,13 @@ func ForEachRow(rows Rows, scans []any, fn func() error) (fbconn.QueryStatus, er
 	return rows.QueryStatus(), nil
 }
 
-// CollectableRow is the subset of Rows methods that a RowToFunc is allowed to call.
+// CollectableRow is the subset of [Rows] methods available to a [RowToFunc]
+// while [CollectRows], [AppendRows], [CollectOneRow], or [CollectExactlyOneRow]
+// is converting the current row.
+//
+// A [RowToFunc] must not retain the CollectableRow or data returned by
+// [CollectableRow.RawValues] after it returns. Use [CollectableRow.Scan] or
+// [CollectableRow.Values] when the result needs to outlive the function call.
 type CollectableRow interface {
 	FieldDescriptions() []fbconn.FieldDescription
 	Scan(dest ...any) error
@@ -569,7 +575,8 @@ type RowToFunc[T any] func(row CollectableRow) (T, error)
 
 // AppendRows iterates through rows, calling fn for each row, and appending the results into a slice of T.
 //
-// This function closes the rows automatically on return.
+// If fn returns an error, iteration stops and the error is returned. This
+// function closes rows automatically on return.
 func AppendRows[T any, S ~[]T](slice S, rows Rows, fn RowToFunc[T]) (S, error) {
 	defer rows.Close()
 
@@ -588,9 +595,12 @@ func AppendRows[T any, S ~[]T](slice S, rows Rows, fn RowToFunc[T]) (S, error) {
 	return slice, nil
 }
 
-// CollectRows iterates through rows, calling fn for each row, and collecting the results into a slice of T.
+// CollectRows iterates through rows, calling fn for each row, and collecting the
+// results into a slice of T.
 //
-// This function closes the rows automatically on return.
+// If fn returns an error, iteration stops and the error is returned. CollectRows
+// always closes rows before returning, so callers do not need to call
+// [Rows.Close] after passing rows to CollectRows.
 func CollectRows[T any](rows Rows, fn RowToFunc[T]) ([]T, error) {
 	return AppendRows([]T{}, rows, fn)
 }
@@ -658,21 +668,24 @@ func CollectExactlyOneRow[T any](rows Rows, fn RowToFunc[T]) (T, error) {
 	return value, rows.Err()
 }
 
-// RowTo returns a T scanned from row.
+// RowTo returns a T scanned from row. It is a convenience [RowToFunc] for
+// single-column queries.
 func RowTo[T any](row CollectableRow) (T, error) {
 	var value T
 	err := row.Scan(&value)
 	return value, err
 }
 
-// RowToAddrOf returns a the address of a T scanned from row.
+// RowToAddrOf returns the address of a T scanned from row. It is a convenience
+// [RowToFunc] for single-column queries where []*T is preferred over []T.
 func RowToAddrOf[T any](row CollectableRow) (*T, error) {
 	var value T
 	err := row.Scan(&value)
 	return &value, err
 }
 
-// RowToMap returns a map scanned from row.
+// RowToMap returns a map scanned from row. The map keys are the column names
+// reported by [CollectableRow.FieldDescriptions].
 func RowToMap(row CollectableRow) (map[string]any, error) {
 	var value map[string]any
 	err := row.Scan((*mapRowScanner)(&value))
