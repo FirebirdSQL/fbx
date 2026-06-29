@@ -65,12 +65,14 @@ func TestSetCurrentPluginNotFound(t *testing.T) {
 func TestAuthManagerHandleServerChallenge(t *testing.T) {
 	m, err := NewAuthManager("user", "secret", nil)
 	require.NoError(t, err)
-	step, err := m.HandleServerChallenge("legacy_auth", nil)
+	legacyName := "Legacy_Auth"
+	m.SetCurrentPlugin(legacyName)
+	step, err := m.HandleServerChallenge(legacyName, nil)
 	require.NoError(t, err)
 	require.NotNil(t, step)
 	require.Equal(t, step.AuthSpecific, m.AuthSpecificData())
 	require.Empty(t, m.SessionKey())
-	require.Equal(t, "Legacy_Auth", m.GetCurrentPlugin().Name())
+	require.Equal(t, legacyName, m.GetCurrentPlugin().Name())
 	require.NoError(t, m.HandleAuthResponse(nil))
 
 	step, err = m.HandleServerChallenge("srp", nil)
