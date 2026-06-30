@@ -412,9 +412,16 @@ func (scanPlanAnyToUndecodedBytes) Scan(src []byte, dst any) error {
 // to be usable. ok indicates if a suitable wrapper was found.
 type TryWrapScanPlanFunc func(target any) (plan WrappedScanPlanNextSetter, nextTarget any, ok bool)
 
+type WrappedScanPlanNextSetter interface {
+	SetNext(ScanPlan)
+	ScanPlan
+}
+
+// pointerPointerScanPlan adapts **T scan targets to the *T target expected by
+// the next plan. SQL NULL clears the outer pointer; non-NULL values allocate a
+// new inner value before delegating.
 type pointerPointerScanPlan struct {
-	dstType reflect.Type
-	next    ScanPlan
+	next ScanPlan
 }
 
 func (plan *pointerPointerScanPlan) SetNext(next ScanPlan) { plan.next = next }
@@ -436,7 +443,7 @@ func TryPointerPointerScanPlan(target any) (plan WrappedScanPlanNextSetter, next
 	if dstValue := reflect.ValueOf(target); dstValue.Kind() == reflect.Ptr {
 		elemValue := dstValue.Elem()
 		if elemValue.Kind() == reflect.Ptr {
-			plan = &pointerPointerScanPlan{dstType: dstValue.Type()}
+			plan = &pointerPointerScanPlan{}
 			return plan, reflect.Zero(elemValue.Type()).Interface(), true
 		}
 	}
@@ -444,11 +451,14 @@ func TryPointerPointerScanPlan(target any) (plan WrappedScanPlanNextSetter, next
 	return nil, nil, false
 }
 
-// SkipUnderlyingTypePlanner prevents PlanScan and PlanDecode from trying to use the underlying type.
+// SkipUnderlyingTypePlanner prevents PlanScan and PlanEncode from trying to use
+// the underlying type.
 type SkipUnderlyingTypePlanner interface {
 	SkipUnderlyingTypePlan()
 }
 
+// elemKindToPointerTypes maps named scalar target kinds to the pointer type
+// used to find a scan plan for their underlying Go type.
 var elemKindToPointerTypes map[reflect.Kind]reflect.Type = map[reflect.Kind]reflect.Type{
 	reflect.Int:     reflect.TypeOf(new(int)),
 	reflect.Int8:    reflect.TypeOf(new(int8)),
@@ -466,8 +476,9 @@ var elemKindToPointerTypes map[reflect.Kind]reflect.Type = map[reflect.Kind]refl
 	reflect.Bool:    reflect.TypeOf(new(bool)),
 }
 
+// underlyingTypeScanPlan adapts pointers to named scalar, byte-slice, or array
+// types to a pointer to their underlying Go type before delegating.
 type underlyingTypeScanPlan struct {
-	dstType     reflect.Type
 	nextDstType reflect.Type
 	next        ScanPlan
 }
@@ -478,8 +489,9 @@ func (plan *underlyingTypeScanPlan) Scan(src []byte, dst any) error {
 	return plan.next.Scan(src, reflect.ValueOf(dst).Convert(plan.nextDstType).Interface())
 }
 
-// TryFindUnderlyingTypeScanPlan tries to convert to a Go builtin type. e.g. If value was of type MyString and
-// MyString was defined as a string then a wrapper plan would be returned that converts MyString to string.
+// TryFindUnderlyingTypeScanPlan tries to convert a target pointer to a pointer
+// to its underlying Go type. For example, *MyString where MyString is defined
+// as string can be planned as *string.
 func TryFindUnderlyingTypeScanPlan(dst any) (plan WrappedScanPlanNextSetter, nextDst any, ok bool) {
 	if _, ok := dst.(SkipUnderlyingTypePlanner); ok {
 		return nil, nil, false
@@ -510,21 +522,16 @@ func TryFindUnderlyingTypeScanPlan(dst any) (plan WrappedScanPlanNextSetter, nex
 		}
 
 		if nextDstType != nil && dstValue.Type() != nextDstType && dstValue.CanConvert(nextDstType) {
-			return &underlyingTypeScanPlan{dstType: dstValue.Type(), nextDstType: nextDstType}, dstValue.Convert(nextDstType).Interface(), true
+			return &underlyingTypeScanPlan{nextDstType: nextDstType}, dstValue.Convert(nextDstType).Interface(), true
 		}
 	}
 
 	return nil, nil, false
 }
 
-type WrappedScanPlanNextSetter interface {
-	SetNext(ScanPlan)
-	ScanPlan
-}
-
-// TryWrapBuiltinTypeScanPlan tries to wrap a builtin type with a wrapper that provides additional methods. e.g. If
-// value was of type int32 then a wrapper plan would be returned that converts target to a value that implements
-// Int64Scanner.
+// TryWrapBuiltinTypeScanPlan tries to wrap a pointer to a Go builtin type with
+// a wrapper type that implements fbtype scanner interfaces. For example, *int32
+// can be planned as *int32Wrapper, which implements [Int64Scanner].
 func TryWrapBuiltinTypeScanPlan(target any) (plan WrappedScanPlanNextSetter, nextDst any, ok bool) {
 	switch target := target.(type) {
 	case *int8:
@@ -555,14 +562,6 @@ func TryWrapBuiltinTypeScanPlan(target any) (plan WrappedScanPlanNextSetter, nex
 		return &wrapStringScanPlan{}, (*stringWrapper)(target), true
 	case *time.Time:
 		return &wrapTimeScanPlan{}, (*timeWrapper)(target), true
-	// case *time.Duration:
-	// 	return &wrapDurationScanPlan{}, (*durationWrapper)(target), true
-	// case *map[string]*string:
-	// 	return &wrapMapStringToPointerStringScanPlan{}, (*mapStringToPointerStringWrapper)(target), true
-	// case *map[string]string:
-	// 	return &wrapMapStringToStringScanPlan{}, (*mapStringToStringWrapper)(target), true
-	// case *[16]byte:
-	// 	return &wrapByte16ScanPlan{}, (*byte16Wrapper)(target), true
 	case *[]byte:
 		return &wrapByteSliceScanPlan{}, (*byteSliceWrapper)(target), true
 	}
@@ -570,6 +569,9 @@ func TryWrapBuiltinTypeScanPlan(target any) (plan WrappedScanPlanNextSetter, nex
 	return nil, nil, false
 }
 
+// The wrap*ScanPlan types below convert the original builtin target pointer to
+// its matching wrapper type from builtin_wrappers.go, then delegate to the next
+// plan selected for that wrapper.
 type wrapInt8ScanPlan struct {
 	next ScanPlan
 }
@@ -710,46 +712,6 @@ func (plan *wrapTimeScanPlan) Scan(src []byte, dst any) error {
 	return plan.next.Scan(src, (*timeWrapper)(dst.(*time.Time)))
 }
 
-// type wrapDurationScanPlan struct {
-// 	next ScanPlan
-// }
-
-// func (plan *wrapDurationScanPlan) SetNext(next ScanPlan) { plan.next = next }
-
-// func (plan *wrapDurationScanPlan) Scan(src []byte, dst any) error {
-// 	return plan.next.Scan(src, (*durationWrapper)(dst.(*time.Duration)))
-// }
-
-// type wrapMapStringToPointerStringScanPlan struct {
-// 	next ScanPlan
-// }
-
-// func (plan *wrapMapStringToPointerStringScanPlan) SetNext(next ScanPlan) { plan.next = next }
-
-// func (plan *wrapMapStringToPointerStringScanPlan) Scan(src []byte, dst any) error {
-// 	return plan.next.Scan(src, (*mapStringToPointerStringWrapper)(dst.(*map[string]*string)))
-// }
-
-// type wrapMapStringToStringScanPlan struct {
-// 	next ScanPlan
-// }
-
-// func (plan *wrapMapStringToStringScanPlan) SetNext(next ScanPlan) { plan.next = next }
-
-// func (plan *wrapMapStringToStringScanPlan) Scan(src []byte, dst any) error {
-// 	return plan.next.Scan(src, (*mapStringToStringWrapper)(dst.(*map[string]string)))
-// }
-
-// type wrapByte16ScanPlan struct {
-// 	next ScanPlan
-// }
-
-// func (plan *wrapByte16ScanPlan) SetNext(next ScanPlan) { plan.next = next }
-
-// func (plan *wrapByte16ScanPlan) Scan(src []byte, dst any) error {
-// 	return plan.next.Scan(src, (*byte16Wrapper)(dst.(*[16]byte)))
-// }
-
 type wrapByteSliceScanPlan struct {
 	next ScanPlan
 }
@@ -760,7 +722,8 @@ func (plan *wrapByteSliceScanPlan) Scan(src []byte, dst any) error {
 	return plan.next.Scan(src, (*byteSliceWrapper)(dst.(*[]byte)))
 }
 
-// TryWrapStructPlan tries to wrap a struct with a wrapper that implements CompositeIndexGetter.
+// TryWrapStructScanPlan wraps a pointer to a struct as an index-addressable
+// field scanner for codecs that scan composite-like values field by field.
 func TryWrapStructScanPlan(target any) (plan WrappedScanPlanNextSetter, nextValue any, ok bool) {
 	targetValue := reflect.ValueOf(target)
 	if targetValue.Kind() != reflect.Ptr {
@@ -806,7 +769,9 @@ func (plan *wrapAnyPtrStructScanPlan) Scan(src []byte, target any) error {
 	return plan.next.Scan(src, &w)
 }
 
-// TryWrapPtrSliceScanPlan tries to wrap a pointer to a single dimension slice.
+// TryWrapPtrSliceScanPlan adapts a pointer to a single-dimensional slice to an
+// ArraySetter-compatible target. Common slice element types use FlatArray[T];
+// other single-dimensional slices use reflection.
 func TryWrapPtrSliceScanPlan(target any) (plan WrappedScanPlanNextSetter, nextValue any, ok bool) {
 	// Avoid using reflect path for common types.
 	switch target := target.(type) {
@@ -834,12 +799,18 @@ func TryWrapPtrSliceScanPlan(target any) (plan WrappedScanPlanNextSetter, nextVa
 	targetElemType := targetType.Elem()
 
 	if targetElemType.Kind() == reflect.Slice {
+		if targetElemType.Elem().Kind() == reflect.Slice {
+			return nil, nil, false
+		}
+
 		slice := reflect.New(targetElemType).Elem()
 		return &wrapPtrSliceReflectScanPlan{}, &anySliceArrayReflect{slice: slice}, true
 	}
 	return nil, nil, false
 }
 
+// wrapPtrSliceScanPlan adapts common *[]T targets to *FlatArray[T] before
+// delegating to an ArraySetter-compatible scan plan.
 type wrapPtrSliceScanPlan[T any] struct {
 	next ScanPlan
 }
@@ -850,6 +821,9 @@ func (plan *wrapPtrSliceScanPlan[T]) Scan(src []byte, target any) error {
 	return plan.next.Scan(src, (*FlatArray[T])(target.(*[]T)))
 }
 
+// wrapPtrSliceReflectScanPlan adapts uncommon *[]T targets to an
+// anySliceArrayReflect before delegating to an ArraySetter-compatible scan
+// plan.
 type wrapPtrSliceReflectScanPlan struct {
 	next ScanPlan
 }
@@ -860,7 +834,10 @@ func (plan *wrapPtrSliceReflectScanPlan) Scan(src []byte, target any) error {
 	return plan.next.Scan(src, &anySliceArrayReflect{slice: reflect.ValueOf(target).Elem()})
 }
 
-// TryWrapPtrMultiDimSliceScanPlan tries to wrap a pointer to a multi-dimension slice.
+// TryWrapPtrMultiDimSliceScanPlan adapts a pointer to a multi-dimensional
+// slice to an ArraySetter-compatible target. Existing slice contents may be
+// ragged because scanning replaces them with the dimensions from the source
+// value.
 func TryWrapPtrMultiDimSliceScanPlan(target any) (plan WrappedScanPlanNextSetter, nextValue any, ok bool) {
 	targetValue := reflect.ValueOf(target)
 	if targetValue.Kind() != reflect.Ptr {
@@ -872,15 +849,16 @@ func TryWrapPtrMultiDimSliceScanPlan(target any) (plan WrappedScanPlanNextSetter
 	if targetElemValue.Kind() == reflect.Slice {
 		elemElemKind := targetElemValue.Type().Elem().Kind()
 		if elemElemKind == reflect.Slice {
-			if !isRagged(targetElemValue) {
-				return &wrapPtrMultiDimSliceScanPlan{}, &anyMultiDimSliceArray{slice: targetValue.Elem()}, true
-			}
+			return &wrapPtrMultiDimSliceScanPlan{}, &anyMultiDimSliceArray{slice: targetValue.Elem()}, true
 		}
 	}
 
 	return nil, nil, false
 }
 
+// wrapPtrMultiDimSliceScanPlan adapts *[][]T and deeper slice targets to an
+// anyMultiDimSliceArray before delegating to an ArraySetter-compatible scan
+// plan.
 type wrapPtrMultiDimSliceScanPlan struct {
 	next ScanPlan
 }
@@ -891,7 +869,9 @@ func (plan *wrapPtrMultiDimSliceScanPlan) Scan(src []byte, target any) error {
 	return plan.next.Scan(src, &anyMultiDimSliceArray{slice: reflect.ValueOf(target).Elem()})
 }
 
-// TryWrapPtrArrayScanPlan tries to wrap a pointer to a single dimension array.
+// TryWrapPtrArrayScanPlan adapts a pointer to a fixed-length Go array to an
+// ArraySetter-compatible target. Unlike slice targets, fixed arrays cannot be
+// resized or cleared when scanning.
 func TryWrapPtrArrayScanPlan(target any) (plan WrappedScanPlanNextSetter, nextValue any, ok bool) {
 	targetValue := reflect.ValueOf(target)
 	if targetValue.Kind() != reflect.Ptr {
@@ -906,6 +886,8 @@ func TryWrapPtrArrayScanPlan(target any) (plan WrappedScanPlanNextSetter, nextVa
 	return nil, nil, false
 }
 
+// wrapPtrArrayReflectScanPlan adapts *[N]T targets to an anyArrayArrayReflect
+// before delegating to an ArraySetter-compatible scan plan.
 type wrapPtrArrayReflectScanPlan struct {
 	next ScanPlan
 }

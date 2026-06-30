@@ -494,7 +494,8 @@ func (w byteSliceWrapper) TextValue() (Text, error) {
 	return Text{String: string(w), Valid: true}, nil
 }
 
-// structWrapper implements CompositeIndexGetter for a struct.
+// structWrapper exposes exported struct fields by index for codecs that encode
+// composite-like values field by field.
 type structWrapper struct {
 	s              any
 	exportedFields []reflect.Value
@@ -512,7 +513,8 @@ func (w structWrapper) Index(i int) any {
 	return w.exportedFields[i].Interface()
 }
 
-// ptrStructWrapper implements CompositeIndexScanner for a pointer to a struct.
+// ptrStructWrapper exposes exported struct fields as scan targets for codecs
+// that scan composite-like values field by field.
 type ptrStructWrapper struct {
 	s              any
 	exportedFields []reflect.Value
@@ -530,6 +532,8 @@ func (w *ptrStructWrapper) ScanIndex(i int) any {
 	return w.exportedFields[i].Addr().Interface()
 }
 
+// anySliceArrayReflect exposes an arbitrary single-dimensional slice as an
+// ArrayGetter or ArraySetter when no specialized FlatArray[T] conversion exists.
 type anySliceArrayReflect struct {
 	slice reflect.Value
 }
@@ -564,6 +568,10 @@ func (a *anySliceArrayReflect) ScanIndex(i int) any {
 	return a.slice.Index(i).Addr().Interface()
 }
 
+// anyMultiDimSliceArray exposes a rectangular multi-dimensional slice as an
+// ArrayGetter or ArraySetter. During scanning SetDimensions rebuilds the nested
+// slices from source dimensions and then keeps a flat backing slice so ScanIndex
+// can address elements by linear index.
 type anyMultiDimSliceArray struct {
 	slice      reflect.Value
 	dimensions []ArrayDimension
@@ -695,6 +703,10 @@ func (a *anyMultiDimSliceArray) ScanIndex(i int) any {
 	return a.slice.Index(i).Addr().Interface()
 }
 
+// anyArrayArrayReflect exposes a fixed-length one-dimensional Go array as an
+// ArrayGetter or ArraySetter. SetDimensions validates that the source array
+// length matches the fixed Go array length because the destination cannot grow,
+// shrink, or represent SQL NULL.
 type anyArrayArrayReflect struct {
 	array reflect.Value
 }
