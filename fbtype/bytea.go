@@ -43,21 +43,9 @@ func (b *PreallocBytes) ScanBytes(v []byte) error {
 	return nil
 }
 
+// UndecodedBytes receives a copy of the raw Firebird bytes for any scanned
+// value without codec decoding.
 type UndecodedBytes []byte
-
-type scanPlanAnyToUndecodedBytes struct{}
-
-func (scanPlanAnyToUndecodedBytes) Scan(src []byte, dst any) error {
-	dstBuf := dst.(*UndecodedBytes)
-	if src == nil {
-		*dstBuf = nil
-		return nil
-	}
-
-	*dstBuf = make([]byte, len(src))
-	copy(*dstBuf, src)
-	return nil
-}
 
 type ByteaCodec struct{}
 

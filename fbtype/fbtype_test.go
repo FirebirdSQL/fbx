@@ -226,6 +226,75 @@ func TestMapScanUnknownTypeIDIntoSQLScanner(t *testing.T) {
 	assert.False(t, s.Valid)
 }
 
+func TestMapScanRegisteredTypeIntoSQLScannerReceivesDatabaseSQLValue(t *testing.T) {
+	m := fbtype.NewMap()
+
+	n, err := fbtype.ParseNumeric("12.34")
+	require.NoError(t, err)
+
+	src, err := fbtype.EncodeNumericBinaryFB(nil, n, -2, 4)
+	require.NoError(t, err)
+
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 1, 4, -2)
+	var got any
+	scanner := sqlScannerFunc(func(src any) error {
+		got = src
+		return nil
+	})
+
+	err = m.Scan(typeMetadata, src, scanner)
+	require.NoError(t, err)
+	require.IsType(t, float64(0), got)
+	assert.Equal(t, 12.34, got)
+
+	got = "not nil"
+	err = m.Scan(typeMetadata, nil, scanner)
+	require.NoError(t, err)
+	assert.Nil(t, got)
+}
+
+func TestMapScanUnregisteredTypeIntoSQLScannerReceivesRawBytes(t *testing.T) {
+	m := fbtype.NewMap()
+
+	typeMetadata := fbtype.NewTypeMetadata(unregisteredTypeID, 0, 3, 0)
+	src := []byte{1, 2, 3}
+	var got any
+	scanner := sqlScannerFunc(func(src any) error {
+		got = src
+		return nil
+	})
+
+	err := m.Scan(typeMetadata, src, scanner)
+	require.NoError(t, err)
+	gotBytes, ok := got.([]byte)
+	require.True(t, ok)
+	assert.Equal(t, src, gotBytes)
+
+	got = "not nil"
+	err = m.Scan(typeMetadata, nil, scanner)
+	require.NoError(t, err)
+	assert.Nil(t, got)
+}
+
+func TestMapScanUndecodedBytesCopiesRawBytes(t *testing.T) {
+	m := fbtype.NewMap()
+
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 0, 4, 0)
+	src := []byte{0, 0, 0, 42}
+	var got fbtype.UndecodedBytes
+
+	err := m.Scan(typeMetadata, src, &got)
+	require.NoError(t, err)
+	assert.Equal(t, []byte{0, 0, 0, 42}, []byte(got))
+
+	src[3] = 99
+	assert.Equal(t, []byte{0, 0, 0, 42}, []byte(got))
+
+	err = m.Scan(typeMetadata, nil, &got)
+	require.NoError(t, err)
+	assert.Nil(t, got)
+}
+
 type scannerString string
 
 func (ss *scannerString) Scan(v any) error {

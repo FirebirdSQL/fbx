@@ -11,6 +11,8 @@ import (
 	"rdb.red-soft.ru/fbx/fbproto"
 )
 
+var ErrScanTargetTypeChanged = errors.New("scan target type changed")
+
 // A Codec converts between Go and Firebird values. A Codec must not be mutated after it is registered with a Map.
 type Codec interface {
 
@@ -27,14 +29,6 @@ type Codec interface {
 
 	// DecodeValue returns decoded src.
 	DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error)
-}
-
-type nullAssignmentError struct {
-	dst any
-}
-
-func (e *nullAssignmentError) Error() string {
-	return fmt.Sprintf("cannot assign NULL to %T", e.dst)
 }
 
 // Type represents a Firebird data type. It must not be mutated after it is registered with a Map.
@@ -250,6 +244,11 @@ type ScanPlan interface {
 	Scan(src []byte, target any) error
 }
 
+// scanPlanCodecSQLScanner is used by [Map.planScan] for database/sql
+// [sql.Scanner] targets when the Firebird type has a registered [Codec]. It
+// decodes Firebird bytes into a driver.Value-compatible value before calling
+// Scanner.Scan, so custom scanners receive the same kind of value they would
+// expect from database/sql.
 type scanPlanCodecSQLScanner struct {
 	c            Codec
 	m            *Map
@@ -266,8 +265,11 @@ func (plan *scanPlanCodecSQLScanner) Scan(src []byte, dst any) error {
 	return scanner.Scan(value)
 }
 
-type scanPlanSQLScanner struct {
-}
+// scanPlanSQLScanner is used by [Map.planScan] for database/sql [sql.Scanner]
+// targets when the Firebird type has no registered [Codec]. Without a typed
+// decode step, non-NULL values are passed as raw bytes and SQL NULL is passed
+// as a nil interface value.
+type scanPlanSQLScanner struct{}
 
 func (plan *scanPlanSQLScanner) Scan(src []byte, dst any) error {
 	scanner := dst.(sql.Scanner)
@@ -280,82 +282,10 @@ func (plan *scanPlanSQLScanner) Scan(src []byte, dst any) error {
 	}
 }
 
-type scanPlanString struct {
-	typeId   uint32
-	length   uint32
-	encoding *fbproto.Encoding
-}
-
-// func (s scanPlanString) Scan(src []byte, dst any) error {
-// 	if src == nil {
-// 		return fmt.Errorf("cannot scan NULL into %T", dst)
-// 	}
-
-// 	var res string
-// 	if err := decodeFBString(src, s.typeId == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, res); err != nil {
-// 		return err
-// 	}
-
-// 	p := (dst).(*string)
-// 	*p = res
-// 	return nil
-// }
-
-func (s scanPlanString) Scan(src []byte, dst any) error {
-	if src == nil {
-		return fmt.Errorf("cannot scan NULL into %T", dst)
-	}
-
-	var tmp string
-	if err := decodeFBString(src, s.typeId == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, &tmp); err != nil {
-		return err
-	}
-
-	switch d := dst.(type) {
-	case *string:
-		*d = tmp
-		return nil
-
-	case **string:
-		if *d == nil {
-			*d = new(string)
-		}
-		**d = tmp
-		return nil
-
-	case TextScanner:
-		return d.ScanText(Text{String: tmp, Valid: true})
-
-	default:
-		return fmt.Errorf("scanPlanString: cannot scan string into %T", dst)
-	}
-}
-
-type scanPlanAnyTextToBytes struct {
-	typeId   uint32
-	length   uint32
-	encoding *fbproto.Encoding
-}
-
-func (s scanPlanAnyTextToBytes) Scan(src []byte, dst any) error {
-	dstBuf := dst.(*[]byte)
-	if src == nil {
-		*dstBuf = nil
-		return nil
-	}
-
-	var res string
-	if err := decodeFBString(src, s.typeId == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, &res); err != nil {
-		return err
-	}
-
-	b := []byte(res)
-	*dstBuf = make([]byte, len(b))
-	copy(*dstBuf, b)
-
-	return nil
-}
-
+// scanPlanFail is the fallback returned by [Map.planScan] when no direct plan,
+// wrapper plan, sql.Scanner adapter, or *any fallback can handle the target. It
+// reports the scan mismatch, with a special NULL path for targets that can
+// accept NULL independently of the server-reported type.
 type scanPlanFail struct {
 	m            *Map
 	typeMetadata TypeMetadata
@@ -397,10 +327,89 @@ func (plan *scanPlanFail) Scan(src []byte, dst any) error {
 	return fmt.Errorf("cannot scan %s (type id %d) with subtype %d into %T", dataTypeName, plan.typeMetadata.TypeID, plan.typeMetadata.SubType, dst)
 }
 
+// pointerEmptyInterfaceScanPlan is used by [Map.planScan] for *any targets. It
+// delegates to the selected [Codec]'s DecodeValue method so the target receives
+// the codec's default Go representation.
+type pointerEmptyInterfaceScanPlan struct {
+	codec        Codec
+	m            *Map
+	typeMetadata TypeMetadata
+}
+
+func (plan *pointerEmptyInterfaceScanPlan) Scan(src []byte, dst any) error {
+	value, err := plan.codec.DecodeValue(plan.m, plan.typeMetadata, src)
+	if err != nil {
+		return err
+	}
+
+	ptrAny := dst.(*any)
+	*ptrAny = value
+
+	return nil
+}
+
+// scanPlanString is used by [Map.planScan] as the fast path for scanning
+// Firebird TEXT and VARYING values into string-like targets. It decodes the
+// value with the charset from [TypeMetadata] before assigning it to *string,
+// **string, or [TextScanner].
+type scanPlanString struct {
+	typeId   uint32
+	length   uint32
+	encoding *fbproto.Encoding
+}
+
+func (s scanPlanString) Scan(src []byte, dst any) error {
+	if src == nil {
+		return fmt.Errorf("cannot scan NULL into %T", dst)
+	}
+
+	var tmp string
+	if err := decodeFBString(src, s.typeId == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, &tmp); err != nil {
+		return err
+	}
+
+	switch d := dst.(type) {
+	case *string:
+		*d = tmp
+		return nil
+
+	case **string:
+		if *d == nil {
+			*d = new(string)
+		}
+		**d = tmp
+		return nil
+
+	case TextScanner:
+		return d.ScanText(Text{String: tmp, Valid: true})
+
+	default:
+		return fmt.Errorf("scanPlanString: cannot scan string into %T", dst)
+	}
+}
+
+// scanPlanAnyToUndecodedBytes is used by [Map.planScan] for *UndecodedBytes
+// targets before type lookup. It returns the raw Firebird bytes for any server
+// type without invoking a codec; non-NULL values are copied because src is only
+// valid during Scan, and SQL NULL becomes a nil slice.
+type scanPlanAnyToUndecodedBytes struct{}
+
+func (scanPlanAnyToUndecodedBytes) Scan(src []byte, dst any) error {
+	dstBuf := dst.(*UndecodedBytes)
+	if src == nil {
+		*dstBuf = nil
+		return nil
+	}
+
+	*dstBuf = make([]byte, len(src))
+	copy(*dstBuf, src)
+	return nil
+}
+
 // TryWrapScanPlanFunc is a function that tries to create a wrapper plan for target. If successful it returns a plan
 // that will convert the target passed to Scan and then call the next plan. nextTarget is target as it will be converted
 // by plan. It must be used to find another suitable ScanPlan. When it is found SetNext must be called on plan for it
-// to be usabled. ok indicates if a suitable wrapper was found.
+// to be usable. ok indicates if a suitable wrapper was found.
 type TryWrapScanPlanFunc func(target any) (plan WrappedScanPlanNextSetter, nextTarget any, ok bool)
 
 type pointerPointerScanPlan struct {
@@ -751,24 +760,6 @@ func (plan *wrapByteSliceScanPlan) Scan(src []byte, dst any) error {
 	return plan.next.Scan(src, (*byteSliceWrapper)(dst.(*[]byte)))
 }
 
-type pointerEmptyInterfaceScanPlan struct {
-	codec        Codec
-	m            *Map
-	typeMetadata TypeMetadata
-}
-
-func (plan *pointerEmptyInterfaceScanPlan) Scan(src []byte, dst any) error {
-	value, err := plan.codec.DecodeValue(plan.m, plan.typeMetadata, src)
-	if err != nil {
-		return err
-	}
-
-	ptrAny := dst.(*any)
-	*ptrAny = value
-
-	return nil
-}
-
 // TryWrapStructPlan tries to wrap a struct with a wrapper that implements CompositeIndexGetter.
 func TryWrapStructScanPlan(target any) (plan WrappedScanPlanNextSetter, nextValue any, ok bool) {
 	targetValue := reflect.ValueOf(target)
@@ -1019,8 +1010,6 @@ func (m *Map) Scan(typeMetadata TypeMetadata, src []byte, dst any) error {
 	plan := m.PlanScan(typeMetadata, dst)
 	return plan.Scan(src, dst)
 }
-
-var ErrScanTargetTypeChanged = errors.New("scan target type changed")
 
 func codecScan(codec Codec, m *Map, typeMetadata TypeMetadata, src []byte, dst any) error {
 	scanPlan := codec.PlanScan(m, typeMetadata, dst)
