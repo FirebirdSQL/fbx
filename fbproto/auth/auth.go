@@ -5,6 +5,11 @@ import (
 	"strings"
 )
 
+type ConnConf struct {
+	User     string
+	Password string
+}
+
 // AuthPluginStep describes the client output produced by one authentication
 // plugin step. Reply contains bytes for the next wire message, AuthSpecific
 // contains the plugin-native authentication value, and SessionKey contains key
@@ -49,15 +54,15 @@ var defaultPluginSequence = []string{
 	"Legacy_Auth",
 }
 
-var pluginConstructors = map[string]func(password string) AuthPlugin{
-	"srp":    func(string) AuthPlugin { return NewSrpAuthPlugin() },
-	"srp256": func(string) AuthPlugin { return NewSrp256AuthPlugin() },
-	"srp224": func(string) AuthPlugin { return NewSrp224AuthPlugin() },
-	"srp384": func(string) AuthPlugin { return NewSrp384AuthPlugin() },
-	"srp512": func(string) AuthPlugin { return NewSrp512AuthPlugin() },
-	"gss":    func(string) AuthPlugin { return NewGssAuthPlugin() },
-	"legacy_auth": func(password string) AuthPlugin {
-		return NewLegacyAuthPlugin(password)
+var pluginConstructors = map[string]func(conf ConnConf) AuthPlugin{
+	"srp":    func(ConnConf) AuthPlugin { return NewSrpAuthPlugin() },
+	"srp256": func(ConnConf) AuthPlugin { return NewSrp256AuthPlugin() },
+	"srp224": func(ConnConf) AuthPlugin { return NewSrp224AuthPlugin() },
+	"srp384": func(ConnConf) AuthPlugin { return NewSrp384AuthPlugin() },
+	"srp512": func(ConnConf) AuthPlugin { return NewSrp512AuthPlugin() },
+	"gss":    func(ConnConf) AuthPlugin { return NewGssAuthPlugin() },
+	"legacy_auth": func(conf ConnConf) AuthPlugin {
+		return NewLegacyAuthPlugin(conf.Password)
 	},
 }
 
@@ -93,7 +98,7 @@ type SpecificDataChunk struct {
 // RegisterAuthPlugin allows to register custom authentication plugins.
 // To register it, you need to pass the name of the plugin and its constructor.
 // Constructor must be like in pluginConstructors map.
-func RegisterAuthPlugin(name string, constructor func(string) AuthPlugin) error {
+func RegisterAuthPlugin(name string, constructor func(ConnConf) AuthPlugin) error {
 	lowerName := strings.ToLower(name)
 	if _, ok := pluginConstructors[lowerName]; !ok {
 		defaultPluginSequence = append(defaultPluginSequence, strings.TrimSpace(name))
@@ -126,7 +131,8 @@ func NewAuthManager(user string, password string, pluginNames []string) (*AuthMa
 			continue
 		}
 
-		plugin, ok := createAuthPlugin(trimmed, password)
+		conf := ConnConf{User: user, Password: password}
+		plugin, ok := createAuthPlugin(trimmed, conf)
 		if !ok {
 			return nil, fmt.Errorf("auth: unknown authentication plugin %q", name)
 		}
@@ -183,7 +189,8 @@ func (m *AuthManager) SetCurrentPlugin(name string) (AuthPlugin, bool) {
 	for idx, plugin := range m.plugins {
 		for _, advertised := range plugin.Advertise() {
 			if strings.EqualFold(advertised, name) {
-				if fresh, ok := createAuthPlugin(plugin.Name(), m.password); ok {
+				conf := ConnConf{User: m.user, Password: m.password}
+				if fresh, ok := createAuthPlugin(plugin.Name(), conf); ok {
 					plugin = fresh
 					m.plugins[idx] = fresh
 				}
@@ -329,12 +336,12 @@ func (m *AuthManager) pluginNames() []string {
 	return names
 }
 
-func createAuthPlugin(name string, password string) (AuthPlugin, bool) {
+func createAuthPlugin(name string, conf ConnConf) (AuthPlugin, bool) {
 	constructor, ok := pluginConstructors[strings.ToLower(strings.TrimSpace(name))]
 	if !ok {
 		return nil, false
 	}
-	return constructor(password), true
+	return constructor(conf), true
 }
 
 // UnsupportedPluginError reports a server-selected authentication plugin that
