@@ -55,17 +55,17 @@ type FbWarningHandler func(*FbConn, *FbWarning)
 
 // FbConn is a low-level FirebirdSQL connection handle. It is not safe for concurrent usage.
 type FbConn struct {
-	conn            net.Conn
-	txStatus        byte
-	client          *fbproto.Client
-	wireCrypt       *wirecrypt.Manager
-	bgReader        *bgreader.BGReader
-	writer          *bufio.Writer
-	writeMu         sync.Mutex
-	slowWriteTimer  *time.Timer
-	bgReaderStarted chan struct{}
-	writeInProgress atomic.Bool
-	dbHandle        int
+	conn             net.Conn
+	txStatus         byte
+	client           *fbproto.Client
+	wireCrypt        *wirecrypt.Manager
+	bgReader         *bgreader.BGReader
+	writer           *bufio.Writer
+	writeMu          sync.Mutex
+	slowWriteTimer   *time.Timer
+	bgReaderStarted  chan struct{}
+	writeInProgress  atomic.Bool
+	attachmentHandle int
 
 	customData map[string]any
 
@@ -212,6 +212,23 @@ func DropDatabaseWithOptions(ctx context.Context, connString string, parseConfig
 // If config.Fallbacks are present they will sequentially be tried in case of error establishing network connection. An
 // authentication error will terminate the chain of attempts and be returned as the error.
 func ConnectConfig(ctx context.Context, config *Config) (*FbConn, error) {
+	fbConn, err := connectConfig(ctx, config, connectTargetDatabase)
+	if err != nil {
+		return nil, err
+	}
+
+	if config.AfterConnect != nil {
+		err := config.AfterConnect(ctx, fbConn)
+		if err != nil {
+			fbConn.conn.Close()
+			return nil, &ConnectError{Config: config, err: fmt.Errorf("AfterConnect error: %w", err)}
+		}
+	}
+
+	return fbConn, nil
+}
+
+func connectConfig(ctx context.Context, config *Config, target connectTarget) (*FbConn, error) {
 	// Default values are set in ParseConfig. Enforce initial creation by ParseConfig rather than setting defaults from
 	// zero values.
 	if !config.createdByParseConfig {
@@ -229,18 +246,10 @@ func ConnectConfig(ctx context.Context, config *Config) (*FbConn, error) {
 		return nil, &ConnectError{Config: config, err: fmt.Errorf("hostname resolving error: %w", errors.Join(allErrors...))}
 	}
 
-	fbConn, errs := connectPreferred(ctx, config, connectConfigs)
+	fbConn, errs := connectPreferred(ctx, config, connectConfigs, target)
 	if len(errs) > 0 {
 		allErrors = append(allErrors, errs...)
 		return nil, &ConnectError{Config: config, err: errors.Join(allErrors...)}
-	}
-
-	if config.AfterConnect != nil {
-		err := config.AfterConnect(ctx, fbConn)
-		if err != nil {
-			fbConn.conn.Close()
-			return nil, &ConnectError{Config: config, err: fmt.Errorf("AfterConnect error: %w", err)}
-		}
 	}
 
 	return fbConn, nil
@@ -420,7 +429,7 @@ func (fbConn *FbConn) finishAttachAuth(config *Config, authManager *auth.AuthMan
 			if err != nil {
 				return fmt.Errorf("authentication failed: %w", err)
 			}
-			fbConn.dbHandle = m.Object
+			fbConn.attachmentHandle = m.Object
 			if continueLoop {
 				pendingCryptAck = true
 				if err := fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
@@ -582,7 +591,12 @@ func buildConnectOneConfigs(ctx context.Context, config *Config) ([]*connectOneC
 // connectPreferred attempts to connect to the preferred host from connectOneConfigs. The connections are attempted in
 // order. If a connection is successful it is returned. If no connection is successful then all errors are returned. If
 // a connection attempt returns a [NotPreferredError], then that host will be used if no other hosts are successful.
-func connectPreferred(ctx context.Context, config *Config, connectOneConfigs []*connectOneConfig) (*FbConn, []error) {
+func connectPreferred(
+	ctx context.Context,
+	config *Config,
+	connectOneConfigs []*connectOneConfig,
+	target connectTarget,
+) (*FbConn, []error) {
 	octx := ctx
 	var allErrors []error
 
@@ -600,7 +614,7 @@ func connectPreferred(ctx context.Context, config *Config, connectOneConfigs []*
 			ctx = octx
 		}
 
-		fbConn, err := connectOne(ctx, config, c, false)
+		fbConn, err := connectOne(ctx, config, c, false, target)
 		if fbConn != nil {
 			return fbConn, nil
 		}
@@ -631,7 +645,7 @@ func connectPreferred(ctx context.Context, config *Config, connectOneConfigs []*
 	}
 
 	if fallbackConnectOneConfig != nil {
-		fbConn, err := connectOne(ctx, config, fallbackConnectOneConfig, true)
+		fbConn, err := connectOne(ctx, config, fallbackConnectOneConfig, true, target)
 		if err == nil {
 			return fbConn, nil
 		}
@@ -643,7 +657,7 @@ func connectPreferred(ctx context.Context, config *Config, connectOneConfigs []*
 
 // connectOne makes one connection attempt to a single host.
 func connectOne(ctx context.Context, config *Config, connectConfig *connectOneConfig,
-	ignoreNotPreferredErr bool,
+	ignoreNotPreferredErr bool, target connectTarget,
 ) (*FbConn, error) {
 	fbConn := new(FbConn)
 	fbConn.config = config
@@ -713,9 +727,14 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 		return nil, newPerDialConnectError("authentication setup failed", fmt.Errorf("no authentication plugins available"))
 	}
 
+	connectObjectName := config.Database
+	if target == connectTargetService {
+		connectObjectName = defaultServiceName
+	}
+
 	opConnect := fbproto.OpConnect{
 		Operation:        fbproto.Op_attach,
-		Database:         config.Database,
+		Database:         connectObjectName,
 		User:             config.User,
 		SystemUser:       config.SystemUser,
 		SystemHost:       config.SystemHost,
@@ -727,7 +746,7 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 		WireCrypt:        config.WireCrypt,
 		Encoding:         fbConn.Encoding,
 	}
-	if config.CreateDatabase {
+	if target == connectTargetDatabase && config.CreateDatabase {
 		opConnect.Operation = fbproto.Op_create
 	}
 
@@ -820,6 +839,15 @@ connectLoop:
 
 	if fbConn.wireCrypt != nil {
 		fbConn.wireCrypt.ClearServerKeys()
+	}
+
+	if target == connectTargetService {
+		if err := fbConn.attachService(config, authManager); err != nil {
+			fbConn.conn.Close()
+			return nil, newPerDialConnectError("opServiceAttach failed", err)
+		}
+		fbConn.status = connStatusIdle
+		return fbConn, nil
 	}
 
 	var dpb *fbproto.DPBWriterV2
@@ -2812,7 +2840,7 @@ func (fbConn *FbConn) Hijack() (*HijackedConn, error) {
 
 	return &HijackedConn{
 		Conn:               fbConn.conn,
-		DBHandle:           fbConn.dbHandle,
+		DBHandle:           fbConn.attachmentHandle,
 		TxStatus:           fbConn.txStatus,
 		Client:             fbConn.client,
 		WireCrypt:          fbConn.wireCrypt,
@@ -2833,7 +2861,7 @@ func (fbConn *FbConn) Hijack() (*HijackedConn, error) {
 func Construct(hc *HijackedConn) (*FbConn, error) {
 	fbConn := &FbConn{
 		conn:               hc.Conn,
-		dbHandle:           hc.DBHandle,
+		attachmentHandle:   hc.DBHandle,
 		txStatus:           hc.TxStatus,
 		client:             hc.Client,
 		wireCrypt:          hc.WireCrypt,
