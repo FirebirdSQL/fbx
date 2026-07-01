@@ -240,6 +240,17 @@ func TestMapScanBinaryFormatInterfacePtr(t *testing.T) {
 	assert.Equal(t, "foo", got)
 }
 
+func TestMapScanTextIntoStringWithUnsupportedCharsetReturnsError(t *testing.T) {
+	m := fbtype.NewMap()
+	var got string
+
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 99, 3, 0)
+	err := m.Scan(typeMetadata, []byte("foo"), &got)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot scan")
+}
+
 func TestMapScanSmallintIntoAnyReturnsInt16(t *testing.T) {
 	m := fbtype.NewMap()
 	var got any

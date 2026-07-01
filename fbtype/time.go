@@ -347,7 +347,15 @@ func (scanPlanBinaryTimeToString) Scan(src []byte, dst any) error {
 }
 
 func (c TimeCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
-	return codecDecodeToTextFormat(c, m, typeMetadata, src)
+	if src == nil {
+		return nil, nil
+	}
+
+	_, formatted, err := decodeTimeBinary(src)
+	if err != nil {
+		return nil, err
+	}
+	return formatted, nil
 }
 
 func (c TimeCodec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {

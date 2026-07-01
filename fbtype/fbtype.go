@@ -11,17 +11,21 @@ import (
 	"rdb.red-soft.ru/fbx/fbproto"
 )
 
+// ErrScanTargetTypeChanged is returned by scan plans when Scan is called with a
+// target type different from the type used to build the plan.
 var ErrScanTargetTypeChanged = errors.New("scan target type changed")
 
-// A Codec converts between Go and Firebird values. A Codec must not be mutated after it is registered with a Map.
+// Codec converts between Go and Firebird values. A Codec must not be mutated
+// after it is registered with a Map.
 type Codec interface {
 
-	// PlanEncode returns an EncodePlan for encoding value into Firebird format for typeid. If no plan can be
-	// found then nil is returned.
+	// PlanEncode returns an EncodePlan for encoding value into Firebird format.
+	// If no plan can be found then nil is returned.
 	PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan
 
-	// PlanScan returns a ScanPlan for scanning a Firebird value into a destination with the same type as target. If
-	// no plan can be found then nil is returned.
+	// PlanScan returns a ScanPlan for scanning a Firebird value into a
+	// destination with the same type as target. If no plan can be found then nil
+	// is returned.
 	PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan
 
 	// DecodeDatabaseSQLValue returns src decoded into a value compatible with the sql.Scanner interface.
@@ -31,13 +35,16 @@ type Codec interface {
 	DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error)
 }
 
-// Type represents a Firebird data type. It must not be mutated after it is registered with a Map.
+// Type represents a Firebird data type. It must not be mutated after it is
+// registered with a Map.
 type Type struct {
 	Codec  Codec
 	Name   string
 	TypeID uint32
 }
 
+// TypeMetadata describes a Firebird value as reported by the server. Codecs use
+// it to select plans and interpret raw wire bytes.
 type TypeMetadata struct {
 	TypeID    uint32
 	SubType   int32
@@ -46,10 +53,11 @@ type TypeMetadata struct {
 	ArrayData *ArrayData
 }
 
-func NewTypeMetadata(typeId uint32, subType int32, length uint32, scale int32) TypeMetadata {
+// NewTypeMetadata creates TypeMetadata for a non-array Firebird value.
+func NewTypeMetadata(typeID uint32, subType int32, length uint32, scale int32) TypeMetadata {
 	var tm TypeMetadata
 
-	tm.TypeID = typeId
+	tm.TypeID = typeID
 	tm.SubType = subType
 	tm.Length = length
 	tm.Scale = scale
@@ -57,12 +65,14 @@ func NewTypeMetadata(typeId uint32, subType int32, length uint32, scale int32) T
 	return tm
 }
 
+// SetArrayMetadata attaches array element and dimension metadata.
 func (tm *TypeMetadata) SetArrayMetadata(arrayData *ArrayData) {
 	tm.ArrayData = arrayData
 }
 
-// Map is the mapping between Firebird server types and Go type handling logic. It can encode values for
-// transmission to a Firebird server and scan received values.
+// Map is the mapping between Firebird server types and Go type handling logic.
+// It can encode values for transmission to a Firebird server and scan received
+// values.
 type Map struct {
 	typeidToType      map[uint32]*Type
 	nameToType        map[string]*Type
@@ -72,16 +82,18 @@ type Map struct {
 
 	memoizedEncodePlans map[TypeMetadata]map[reflect.Type]EncodePlan
 
-	// TryWrapEncodePlanFuncs is a slice of functions that will wrap a value that cannot be encoded by the Codec. Every
-	// time a wrapper is found the PlanEncode method will be recursively called with the new value. This allows several layers of wrappers
-	// to be built up. There are default functions placed in this slice by NewMap(). In most cases these functions
-	// should run last. i.e. Additional functions should typically be prepended not appended.
+	// TryWrapEncodePlanFuncs is a slice of functions that wrap a value that
+	// cannot be encoded by the Codec. Every time a wrapper is found,
+	// PlanEncode is recursively called with the new value. This allows
+	// several layers of wrappers to be built up. Default functions should
+	// usually run last, so additional functions should typically be prepended.
 	TryWrapEncodePlanFuncs []TryWrapEncodePlanFunc
 
-	// TryWrapScanPlanFuncs is a slice of functions that will wrap a target that cannot be scanned into by the Codec. Every
-	// time a wrapper is found the PlanScan method will be recursively called with the new target. This allows several layers of wrappers
-	// to be built up. There are default functions placed in this slice by NewMap(). In most cases these functions
-	// should run last. i.e. Additional functions should typically be prepended not appended.
+	// TryWrapScanPlanFuncs is a slice of functions that wrap a target that
+	// cannot be scanned into by the Codec. Every time a wrapper is found,
+	// PlanScan is recursively called with the new target. This allows several
+	// layers of wrappers to be built up. Default functions should usually run
+	// last, so additional functions should typically be prepended.
 	TryWrapScanPlanFuncs []TryWrapScanPlanFunc
 }
 
@@ -94,6 +106,8 @@ func (m *Map) Copy() *Map {
 	return newMap
 }
 
+// NewMap creates a Map with the default wrapper functions and fallback access
+// to the package-level default type registrations.
 func NewMap() *Map {
 	defaultMapInitOnce.Do(initDefaultMap)
 
@@ -134,32 +148,36 @@ func (m *Map) RegisterTypes(types []*Type) {
 	}
 }
 
-// RegisterType registers a data type with the Map. t must not be mutated after it is registered.
+// RegisterType registers a data type with the Map. t must not be mutated after
+// it is registered.
 func (m *Map) RegisterType(t *Type) {
 	m.typeidToType[t.TypeID] = t
 	m.nameToType[t.Name] = t
 
-	// Invalidated by type registration
+	// Invalidate caches affected by type registration.
 	m.reflectTypeToType = nil
 	for k := range m.memoizedEncodePlans {
 		delete(m.memoizedEncodePlans, k)
 	}
 }
 
-// RegisterDefaultFbType registers a mapping of a Go type to a Firebird type name. Typically the data type to be
-// encoded or decoded is determined by the Firebird TypeID. But if the TypeID of a value to be encoded or decoded is
-// unknown, this additional mapping will be used by TypeForValue to determine a suitable data type.
+// RegisterDefaultFbType registers a mapping of a Go type to a Firebird type
+// name. Typically the data type to be encoded or decoded is determined by the
+// Firebird TypeID. But if the TypeID of a value to be encoded or decoded is
+// unknown, this additional mapping will be used by TypeForValue to determine a
+// suitable data type.
 func (m *Map) RegisterDefaultFbType(value any, name string) {
 	m.reflectTypeToName[reflect.TypeOf(value)] = name
 
-	// Invalidated by type registration
+	// Invalidate caches affected by type registration.
 	m.reflectTypeToType = nil
 	for k := range m.memoizedEncodePlans {
 		delete(m.memoizedEncodePlans, k)
 	}
 }
 
-// TypeForTypeID returns the Type registered for the given TypeID. The returned Type must not be mutated.
+// TypeForTypeID returns the Type registered for the given TypeID. The returned
+// Type must not be mutated.
 func (m *Map) TypeForTypeID(typeid uint32, subType int32) (*Type, bool) {
 	id := MakeTypeSubtype(typeid, subType)
 	if dt, ok := m.typeidToType[id]; ok {
@@ -194,7 +212,8 @@ func (m *Map) TypeForTypeID(typeid uint32, subType int32) (*Type, bool) {
 	return dt, ok
 }
 
-// TypeForName returns the Type registered for the given name. The returned Type must not be mutated.
+// TypeForName returns the Type registered for the given name. The returned Type
+// must not be mutated.
 func (m *Map) TypeForName(name string) (*Type, bool) {
 	if dt, ok := m.nameToType[name]; ok {
 		return dt, true
@@ -213,9 +232,10 @@ func (m *Map) buildReflectTypeToType() {
 	}
 }
 
-// TypeForValue finds a data type suitable for v. Use RegisterType to register types that can encode and decode
-// themselves. Use RegisterDefaultFbType to register that can be handled by a registered data type.  The returned Type
-// must not be mutated.
+// TypeForValue finds a data type suitable for v. Use RegisterType to register
+// types that can encode and decode themselves. Use RegisterDefaultFbType to
+// register Go types that can be handled by a registered data type. The returned
+// Type must not be mutated.
 func (m *Map) TypeForValue(v any) (*Type, bool) {
 	if m.reflectTypeToType == nil {
 		m.buildReflectTypeToType()
@@ -229,18 +249,19 @@ func (m *Map) TypeForValue(v any) (*Type, bool) {
 	return dt, ok
 }
 
-// EncodePlan is a precompiled plan to encode a particular type into a particular TypeID.
+// EncodePlan is a precompiled plan to encode a particular type into a
+// particular TypeID.
 type EncodePlan interface {
-	// Encode appends the encoded bytes of value to buf. If value is the SQL value NULL then append nothing and return
-	// (nil, nil). The caller of Encode is responsible for writing the correct NULL value or the length of the data
-	// written.
+	// Encode appends the encoded bytes of value to buf. If value is SQL NULL,
+	// Encode appends nothing and returns (nil, nil). The caller is responsible
+	// for writing the correct NULL marker or data length.
 	Encode(value any, buf []byte) (newBuf []byte, err error)
 }
 
 // ScanPlan is a precompiled plan to scan into a type of destination.
 type ScanPlan interface {
-	// Scan scans src into target. src is only valid during the call to Scan. The ScanPlan must not retain a reference to
-	// src.
+	// Scan scans src into target. src is only valid during the call to Scan. The
+	// ScanPlan must not retain a reference to src.
 	Scan(src []byte, target any) error
 }
 
@@ -275,7 +296,7 @@ func (plan *scanPlanSQLScanner) Scan(src []byte, dst any) error {
 	scanner := dst.(sql.Scanner)
 
 	if src == nil {
-		// This is necessary because interface value []byte:nil does not equal nil:nil
+		// An interface value holding []byte(nil) does not compare equal to nil.
 		return scanner.Scan(nil)
 	} else {
 		return scanner.Scan(src)
@@ -292,14 +313,16 @@ type scanPlanFail struct {
 }
 
 func (plan *scanPlanFail) Scan(src []byte, dst any) error {
-	// If src is NULL it might be possible to scan into dst even though it is the types are not compatible. While this
-	// may seem to be a contrived case it can occur when selecting NULL directly. Firebird assigns it the type of text.
-	// It would be surprising to the caller to have to cast the NULL (e.g. `cast(null as int)`). So try to figure out a
+	// If src is NULL it might be possible to scan into dst even though the types
+	// are not compatible. This can occur when selecting NULL directly. Firebird
+	// assigns it the type of text, but it would be surprising to require the
+	// caller to cast the NULL (e.g. `cast(null as int)`), so try to find a
 	// compatible data type for dst and scan with that.
 	if src == nil {
-		// As a horrible hack try all types to find anything that can scan into dst.
+		// Try all registered types to find any plan that can scan NULL into dst.
 		for typeid := range plan.m.typeidToType {
-			// using planScan instead of Scan or PlanScan to avtypeid polluting the planned scan cache.
+			// Use planScan instead of Scan or PlanScan to avoid polluting the
+			// planned scan cache.
 			plan.typeMetadata.TypeID = typeid
 			plan := plan.m.planScan(plan.typeMetadata, dst, 0)
 			if _, ok := plan.(*scanPlanFail); !ok {
@@ -406,12 +429,13 @@ func (scanPlanAnyToUndecodedBytes) Scan(src []byte, dst any) error {
 	return nil
 }
 
-// TryWrapScanPlanFunc is a function that tries to create a wrapper plan for target. If successful it returns a plan
-// that will convert the target passed to Scan and then call the next plan. nextTarget is target as it will be converted
-// by plan. It must be used to find another suitable ScanPlan. When it is found SetNext must be called on plan for it
-// to be usable. ok indicates if a suitable wrapper was found.
+// TryWrapScanPlanFunc tries to create a wrapper plan for target. If successful
+// it returns a plan that converts the original target before calling the next
+// plan, plus nextTarget as the converted target used to find that next plan.
 type TryWrapScanPlanFunc func(target any) (plan WrappedScanPlanNextSetter, nextTarget any, ok bool)
 
+// WrappedScanPlanNextSetter is a ScanPlan wrapper that receives the next plan
+// after recursive planning succeeds.
 type WrappedScanPlanNextSetter interface {
 	SetNext(ScanPlan)
 	ScanPlan
@@ -437,8 +461,8 @@ func (plan *pointerPointerScanPlan) Scan(src []byte, dst any) error {
 	return plan.next.Scan(src, el.Interface())
 }
 
-// TryPointerPointerScanPlan handles a pointer to a pointer by setting the target to nil for SQL NULL and allocating and
-// scanning for non-NULL.
+// TryPointerPointerScanPlan handles a pointer to a pointer by setting the
+// target to nil for SQL NULL and allocating and scanning for non-NULL.
 func TryPointerPointerScanPlan(target any) (plan WrappedScanPlanNextSetter, nextTarget any, ok bool) {
 	if dstValue := reflect.ValueOf(target); dstValue.Kind() == reflect.Ptr {
 		elemValue := dstValue.Elem()
@@ -916,21 +940,15 @@ func (m *Map) planScan(typeMetadata TypeMetadata, target any, depth int) ScanPla
 		return scanPlanAnyToUndecodedBytes{}
 	}
 
-	switch target.(type) {
-	case *string:
+	isTextType := typeMetadata.TypeID == fbproto.SQL_TYPE_TEXT || typeMetadata.TypeID == fbproto.SQL_TYPE_VARYING
+	if _, ok := target.(*string); ok && isTextType {
 		charsetId := CharacterSetForType(typeMetadata.TypeID, typeMetadata.SubType, typeMetadata.Scale)
 		name, err := fbproto.CharacterSetIdIntoName(charsetId)
-		if err != nil {
-			return nil
-		}
-		encoding, err := fbproto.NewEncoding(name)
-		if err != nil {
-			return nil
-		}
-
-		switch typeMetadata.TypeID {
-		case fbproto.SQL_TYPE_TEXT, fbproto.SQL_TYPE_VARYING:
-			return scanPlanString{typeId: typeMetadata.TypeID, encoding: encoding, length: typeMetadata.Length}
+		if err == nil {
+			encoding, err := fbproto.NewEncoding(name)
+			if err == nil {
+				return scanPlanString{typeId: typeMetadata.TypeID, encoding: encoding, length: typeMetadata.Length}
+			}
 		}
 	}
 
@@ -949,9 +967,9 @@ func (m *Map) planScan(typeMetadata TypeMetadata, target any, depth int) ScanPla
 		}
 	}
 
-	// This needs to happen before trying m.TryWrapScanPlanFuncs. Otherwise, a sql.Scanner would not get called if it was
-	// defined on a type that could be unwrapped such as `type myString string`.
-	//
+	// This needs to happen before trying m.TryWrapScanPlanFuncs. Otherwise, a
+	// sql.Scanner would not get called if it was defined on a type that could be
+	// unwrapped such as `type myString string`.
 	if _, ok := target.(sql.Scanner); ok {
 		if dt == nil {
 			return &scanPlanSQLScanner{}
@@ -984,6 +1002,9 @@ func (m *Map) planScan(typeMetadata TypeMetadata, target any, depth int) ScanPla
 	return &scanPlanFail{m: m, typeMetadata: typeMetadata}
 }
 
+// Scan scans src into dst using a plan selected from typeMetadata and dst. It is
+// a convenience wrapper around PlanScan for callers that do not need to reuse
+// the resulting plan.
 func (m *Map) Scan(typeMetadata TypeMetadata, src []byte, dst any) error {
 	if dst == nil {
 		return nil
@@ -993,6 +1014,9 @@ func (m *Map) Scan(typeMetadata TypeMetadata, src []byte, dst any) error {
 	return plan.Scan(src, dst)
 }
 
+// codecScan scans src into dst using a single codec directly. Codec
+// DecodeValue and DecodeDatabaseSQLValue implementations use it to avoid
+// repeating their own PlanScan boilerplate.
 func codecScan(codec Codec, m *Map, typeMetadata TypeMetadata, src []byte, dst any) error {
 	scanPlan := codec.PlanScan(m, typeMetadata, dst)
 	if scanPlan == nil {
@@ -1001,21 +1025,41 @@ func codecScan(codec Codec, m *Map, typeMetadata TypeMetadata, src []byte, dst a
 	return scanPlan.Scan(src, dst)
 }
 
-func codecDecodeToTextFormat(codec Codec, m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
+// SQLScanner returns a database/sql.Scanner adapter for v. It is primarily used
+// with the stdlib database/sql layer to scan Firebird arrays, where the driver
+// value carries both array metadata and the raw array buffer.
+//
+// If v already implements sql.Scanner it is returned unchanged. Otherwise v
+// must be a target supported by the Firebird array scan path, such as *[]T,
+// *Array[T], *FlatArray[T], or a compatible array/slice target.
+func (m *Map) SQLScanner(v any) sql.Scanner {
+	if s, ok := v.(sql.Scanner); ok {
+		return s
+	}
+
+	return &sqlScannerWrapper{m: m, v: v}
+}
+
+type sqlScannerWrapper struct {
+	m *Map
+	v any
+}
+
+func (w *sqlScannerWrapper) Scan(src any) error {
+	_, err := getArrayDecodeType(w.v)
+	if err != nil {
+		return err
+	}
 	if src == nil {
-		return nil, nil
+		return nil
 	}
+	array, ok := src.(ArraySQLScanner)
+	if !ok {
+		return fmt.Errorf("cannot convert to sql.Scanner: cannot find registered type for %T", w.v)
+	}
+	sp := planScanArray{m: w.m, arrayData: array.ArrayData}
 
-	value, err := codec.DecodeValue(m, typeMetadata, src)
-	if err != nil {
-		return nil, err
-	}
-	buf, err := m.Encode(typeMetadata, value, nil)
-	if err != nil {
-		return nil, err
-	}
-	return string(buf), nil
-
+	return sp.Scan(array.ArrayBuffer, w.v)
 }
 
 // PlanEncode returns an EncodePlan for encoding value into Firebird format for typeid. If no plan can be
@@ -1732,46 +1776,10 @@ func (m *Map) Encode(typeMetadata TypeMetadata, value any, buf []byte) (newBuf [
 	return newBuf, nil
 }
 
-// SQLScanner returns a database/sql.Scanner for v. This is necessary for types like Array[T] and Range[T] where the
-// type needs assistance from Map to implement the sql.Scanner interface. It is not necessary for types like Box that
-// implement sql.Scanner directly.
-//
-// This uses the type of v to look up the Firebird TypeID that v presumably came from. This means v must be registered
-// with m by calling RegisterDefaultFbType.
-func (m *Map) SQLScanner(v any) sql.Scanner {
-	if s, ok := v.(sql.Scanner); ok {
-		return s
-	}
-
-	return &sqlScannerWrapper{m: m, v: v}
-}
-
-type sqlScannerWrapper struct {
-	m *Map
-	v any
-}
-
-func (w *sqlScannerWrapper) Scan(src any) error {
-	_, err := getArrayDecodeType(w.v)
-	if err != nil {
-		return err
-	}
-	if src == nil {
-		return nil
-	}
-	array, ok := src.(ArraySQLScanner)
-	if !ok {
-		return fmt.Errorf("cannot convert to sql.Scanner: cannot find registered type for %T", w.v)
-	}
-	sp := planScanArray{m: w.m, arrayData: array.ArrayData}
-
-	return sp.Scan(array.ArrayBuffer, w.v)
-}
-
 var valuerReflectType = reflect.TypeFor[driver.Valuer]()
 
-// isNilDriverValuer returns true if value is any type of nil unless it implements driver.Valuer. *T is not considered to implement
-// driver.Valuer if it is only implemented by T.
+// isNilDriverValuer reports whether value is nil and whether a nil
+// driver.Valuer should still have Value called.
 func isNilDriverValuer(value any) (isNil bool, callNilDriverValuer bool) {
 	if value == nil {
 		return true, false
@@ -1787,8 +1795,7 @@ func isNilDriverValuer(value any) (isNil bool, callNilDriverValuer bool) {
 
 		if _, ok := value.(driver.Valuer); ok {
 			if kind == reflect.Ptr {
-				// The type assertion will succeed if driver.Valuer is implemented on T or *T. Check if it is implemented on *T
-				// by checking if it is not implemented on *T.
+				// Call Value only when driver.Valuer is implemented on *T.
 				return true, !refVal.Type().Elem().Implements(valuerReflectType)
 			} else {
 				return true, true
@@ -1801,8 +1808,9 @@ func isNilDriverValuer(value any) (isNil bool, callNilDriverValuer bool) {
 	}
 }
 
-func CharacterSetForType(typeId uint32, subType int32, scale int32) int32 {
-	switch typeId {
+// CharacterSetForType returns the Firebird character set id for type metadata.
+func CharacterSetForType(typeID uint32, subType int32, scale int32) int32 {
+	switch typeID {
 	case fbproto.SQL_TYPE_TEXT, fbproto.SQL_TYPE_VARYING:
 		return subType & 0xFF
 	case fbproto.SQL_TYPE_BLOB:
