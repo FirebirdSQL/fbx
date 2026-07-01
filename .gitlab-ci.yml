@@ -46,6 +46,15 @@ format:
     paths:
       - reports
 
+.minio_template:
+  tags: [docker, linux, x86_64]
+  stage: test
+  image:
+    name: registry.red-soft.biz:5000/docker-images/3rdparty/minio/mc:RELEASE.2023-10-14T01-57-03Z
+    entrypoint: ['']
+  before_script:
+    - mc alias set minio ${MINIO_SERVER} ${MINIO_USER} ${MINIO_PASSWORD}
+
 test:rdb:
   extends: .test_template
   variables:
@@ -121,11 +130,7 @@ coverage:merge:
   coverage: '/total:\s+\(statements\)\s+\d+.\d+%/'
 
 report:coverage:
-  tags: [docker, linux, x86_64]
-  stage: test
-  image:
-    name: registry.red-soft.biz:5000/docker-images/3rdparty/minio/mc:RELEASE.2023-10-14T01-57-03Z
-    entrypoint: ['']
+  extends: .minio_template
   script:
     - mc alias set minio ${MINIO_SERVER} ${MINIO_USER} ${MINIO_PASSWORD}
     - mc rm -r --force minio/reports/coverage/fbx/${CI_COMMIT_REF_NAME}
@@ -147,3 +152,24 @@ lint:
       codequality: gl-code-quality-report.json
     paths:
       - gl-code-quality-report.json
+
+docs:gen:
+  tags: [docker, linux, x86_64]
+  stage: test
+  extends: .go-cache
+  script:
+    - go run github.com/sourcey/sourcey/go/sourcey-godoc/cmd/sourcey-godoc@latest generate --out fbx
+  artifacts:
+    paths:
+      - fbx
+
+docs:deploy:
+  extends: .minio_template
+  script:
+    - mc rm -r --force minio/docs/fbx
+    - mc cp -r fbx minio/docs
+    - echo Docs ${MINIO_SERVER}docs/fbx/index.html
+  dependencies: ["docs:gen"]
+  needs: ["docs:gen"]
+  only:
+    - main
