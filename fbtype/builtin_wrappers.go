@@ -494,44 +494,6 @@ func (w byteSliceWrapper) TextValue() (Text, error) {
 	return Text{String: string(w), Valid: true}, nil
 }
 
-// structWrapper exposes exported struct fields by index for codecs that encode
-// composite-like values field by field.
-type structWrapper struct {
-	s              any
-	exportedFields []reflect.Value
-}
-
-func (w structWrapper) IsNull() bool {
-	return w.s == nil
-}
-
-func (w structWrapper) Index(i int) any {
-	if i >= len(w.exportedFields) {
-		return fmt.Errorf("%#v only has %d public fields - %d is out of bounds", w.s, len(w.exportedFields), i)
-	}
-
-	return w.exportedFields[i].Interface()
-}
-
-// ptrStructWrapper exposes exported struct fields as scan targets for codecs
-// that scan composite-like values field by field.
-type ptrStructWrapper struct {
-	s              any
-	exportedFields []reflect.Value
-}
-
-func (w *ptrStructWrapper) ScanNull() error {
-	return fmt.Errorf("cannot scan NULL into %#v", w.s)
-}
-
-func (w *ptrStructWrapper) ScanIndex(i int) any {
-	if i >= len(w.exportedFields) {
-		return fmt.Errorf("%#v only has %d public fields - %d is out of bounds", w.s, len(w.exportedFields), i)
-	}
-
-	return w.exportedFields[i].Addr().Interface()
-}
-
 // anySliceArrayReflect exposes an arbitrary single-dimensional slice as an
 // ArrayGetter or ArraySetter when no specialized FlatArray[T] conversion exists.
 type anySliceArrayReflect struct {

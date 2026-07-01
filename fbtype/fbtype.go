@@ -28,10 +28,10 @@ type Codec interface {
 	// is returned.
 	PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan
 
-	// DecodeDatabaseSQLValue returns src decoded into a value compatible with the sql.Scanner interface.
+	// DecodeDatabaseSQLValue decodes src into a driver.Value-compatible value.
 	DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error)
 
-	// DecodeValue returns decoded src.
+	// DecodeValue decodes src into the codec's default Go representation.
 	DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error)
 }
 
@@ -123,7 +123,6 @@ func NewMap() *Map {
 			TryWrapBuiltinTypeEncodePlan,
 			TryWrapFindUnderlyingTypeEncodePlan,
 			TryWrapStringerEncodePlan,
-			TryWrapStructEncodePlan,
 			TryWrapSliceEncodePlan,
 			TryWrapMultiDimSliceEncodePlan,
 			TryWrapArrayEncodePlan,
@@ -133,7 +132,6 @@ func NewMap() *Map {
 			TryPointerPointerScanPlan,
 			TryWrapBuiltinTypeScanPlan,
 			TryFindUnderlyingTypeScanPlan,
-			TryWrapStructScanPlan,
 			TryWrapPtrSliceScanPlan,
 			TryWrapPtrMultiDimSliceScanPlan,
 			TryWrapPtrArrayScanPlan,
@@ -178,22 +176,22 @@ func (m *Map) RegisterDefaultFbType(value any, name string) {
 
 // TypeForTypeID returns the Type registered for the given TypeID. The returned
 // Type must not be mutated.
-func (m *Map) TypeForTypeID(typeid uint32, subType int32) (*Type, bool) {
-	id := MakeTypeSubtype(typeid, subType)
+func (m *Map) TypeForTypeID(typeID uint32, subType int32) (*Type, bool) {
+	id := MakeTypeSubtype(typeID, subType)
 	if dt, ok := m.typeidToType[id]; ok {
 		return dt, true
 	}
 
 	// Firebird may encode collation into high bits of subtype for TEXT/VARYING.
 	// For binary text (OCTETS), the low byte is sufficient to identify the codec.
-	if typeid == fbproto.SQL_TYPE_TEXT || typeid == fbproto.SQL_TYPE_VARYING {
-		idNoCollation := MakeTypeSubtype(typeid, subType&0xFF)
+	if typeID == fbproto.SQL_TYPE_TEXT || typeID == fbproto.SQL_TYPE_VARYING {
+		idNoCollation := MakeTypeSubtype(typeID, subType&0xFF)
 		if dt, ok := m.typeidToType[idNoCollation]; ok {
 			return dt, true
 		}
 	}
 
-	if dt, ok := m.typeidToType[typeid]; ok {
+	if dt, ok := m.typeidToType[typeID]; ok {
 		return dt, true
 	}
 
@@ -201,14 +199,14 @@ func (m *Map) TypeForTypeID(typeid uint32, subType int32) (*Type, bool) {
 		return dt, true
 	}
 
-	if typeid == fbproto.SQL_TYPE_TEXT || typeid == fbproto.SQL_TYPE_VARYING {
-		idNoCollation := MakeTypeSubtype(typeid, subType&0xFF)
+	if typeID == fbproto.SQL_TYPE_TEXT || typeID == fbproto.SQL_TYPE_VARYING {
+		idNoCollation := MakeTypeSubtype(typeID, subType&0xFF)
 		if dt, ok := defaultMap.typeidToType[idNoCollation]; ok {
 			return dt, true
 		}
 	}
 
-	dt, ok := defaultMap.typeidToType[typeid]
+	dt, ok := defaultMap.typeidToType[typeID]
 	return dt, ok
 }
 
@@ -746,53 +744,6 @@ func (plan *wrapByteSliceScanPlan) Scan(src []byte, dst any) error {
 	return plan.next.Scan(src, (*byteSliceWrapper)(dst.(*[]byte)))
 }
 
-// TryWrapStructScanPlan wraps a pointer to a struct as an index-addressable
-// field scanner for codecs that scan composite-like values field by field.
-func TryWrapStructScanPlan(target any) (plan WrappedScanPlanNextSetter, nextValue any, ok bool) {
-	targetValue := reflect.ValueOf(target)
-	if targetValue.Kind() != reflect.Ptr {
-		return nil, nil, false
-	}
-
-	var targetElemValue reflect.Value
-	if targetValue.IsNil() {
-		targetElemValue = reflect.Zero(targetValue.Type().Elem())
-	} else {
-		targetElemValue = targetValue.Elem()
-	}
-	targetElemType := targetElemValue.Type()
-
-	if targetElemType.Kind() == reflect.Struct {
-		exportedFields := getExportedFieldValues(targetElemValue)
-		if len(exportedFields) == 0 {
-			return nil, nil, false
-		}
-
-		w := ptrStructWrapper{
-			s:              target,
-			exportedFields: exportedFields,
-		}
-		return &wrapAnyPtrStructScanPlan{}, &w, true
-	}
-
-	return nil, nil, false
-}
-
-type wrapAnyPtrStructScanPlan struct {
-	next ScanPlan
-}
-
-func (plan *wrapAnyPtrStructScanPlan) SetNext(next ScanPlan) { plan.next = next }
-
-func (plan *wrapAnyPtrStructScanPlan) Scan(src []byte, target any) error {
-	w := ptrStructWrapper{
-		s:              target,
-		exportedFields: getExportedFieldValues(reflect.ValueOf(target).Elem()),
-	}
-
-	return plan.next.Scan(src, &w)
-}
-
 // TryWrapPtrSliceScanPlan adapts a pointer to a single-dimensional slice to an
 // ArraySetter-compatible target. Common slice element types use FlatArray[T];
 // other single-dimensional slices use reflection.
@@ -1062,8 +1013,8 @@ func (w *sqlScannerWrapper) Scan(src any) error {
 	return sp.Scan(array.ArrayBuffer, w.v)
 }
 
-// PlanEncode returns an EncodePlan for encoding value into Firebird format for typeid. If no plan can be
-// found then nil is returned.
+// PlanEncode returns an EncodePlan for encoding value with the given Firebird
+// type metadata. If no plan can be found then nil is returned.
 func (m *Map) PlanEncode(typeMetadata TypeMetadata, value any) EncodePlan {
 	return m.planEncodeDepth(typeMetadata, value, 0)
 }
@@ -1074,13 +1025,6 @@ func (m *Map) planEncodeDepth(typeMetadata TypeMetadata, value any, depth int) E
 		return nil
 	}
 
-	//memoize type id + subtype
-	// memoId := MakeTypeSubtype(typeid, subType)
-	// typeidMemo := m.memoizedEncodePlans[memoId]
-	// if typeidMemo == nil {
-	// 	typeidMemo = make(map[reflect.Type][2]EncodePlan)
-	// 	m.memoizedEncodePlans[memoId] = typeidMemo
-	// }
 	typeidMemo := m.memoizedEncodePlans[typeMetadata]
 	if typeidMemo == nil {
 		typeidMemo = make(map[reflect.Type]EncodePlan)
@@ -1103,9 +1047,8 @@ func (m *Map) planEncode(typeMetadata TypeMetadata, value any, depth int) Encode
 	if dataType, ok := m.TypeForTypeID(typeMetadata.TypeID, typeMetadata.SubType); ok {
 		dt = dataType
 	} else {
-		// If no type for the TypeID was found, then either it is unknowable (e.g. the simple protocol) or it is an
-		// unregistered type. In either case try to find the type and TypeID that matches the value (e.g. a []byte would be
-		// registered to Firebird bytea).
+		// If the metadata TypeID is unknown or unregistered, try to find a
+		// suitable Firebird type from the Go value.
 		if dataType, ok := m.TypeForValue(value); ok {
 			dt = dataType
 			typeMetadata.TypeID = dt.TypeID // Preserve assumed TypeID in case we are recursively called below.
@@ -1134,12 +1077,18 @@ func (m *Map) planEncode(typeMetadata TypeMetadata, value any, depth int) Encode
 	return nil
 }
 
+// encodePlanDriverValuer encodes values through database/sql/driver.Valuer
+// after direct codec and wrapper planning fails.
 type encodePlanDriverValuer struct {
 	m            *Map
 	typeMetadata TypeMetadata
 }
 
 func (plan *encodePlanDriverValuer) Encode(value any, buf []byte) (newBuf []byte, err error) {
+	if isNil, callNilDriverValuer := isNilDriverValuer(value); isNil && !callNilDriverValuer {
+		return nil, nil
+	}
+
 	dv := value.(driver.Valuer)
 	if dv == nil {
 		return nil, nil
@@ -1182,12 +1131,13 @@ func (plan *encodePlanDriverValuer) Encode(value any, buf []byte) (newBuf []byte
 	return newBuf, nil
 }
 
-// TryWrapEncodePlanFunc is a function that tries to create a wrapper plan for value. If successful it returns a plan
-// that will convert the value passed to Encode and then call the next plan. nextValue is value as it will be converted
-// by plan. It must be used to find another suitable EncodePlan. When it is found SetNext must be called on plan for it
-// to be usabled. ok indicates if a suitable wrapper was found.
+// TryWrapEncodePlanFunc tries to create a wrapper plan for value. If
+// successful, nextValue is used to find the next EncodePlan and SetNext must be
+// called on the wrapper before use.
 type TryWrapEncodePlanFunc func(value any) (plan WrappedEncodePlanNextSetter, nextValue any, ok bool)
 
+// derefPointerEncodePlan adapts *T values to the T value expected by the next
+// plan. A nil pointer encodes as SQL NULL.
 type derefPointerEncodePlan struct {
 	next EncodePlan
 }
@@ -1204,8 +1154,8 @@ func (plan *derefPointerEncodePlan) Encode(value any, buf []byte) (newBuf []byte
 	return plan.next.Encode(ptr.Elem().Interface(), buf)
 }
 
-// TryWrapDerefPointerEncodePlan tries to dereference a pointer. e.g. If value was of type *string then a wrapper plan
-// would be returned that dereferences the value.
+// TryWrapDerefPointerEncodePlan wraps a pointer value by dereferencing it
+// before calling the next plan.
 func TryWrapDerefPointerEncodePlan(value any) (plan WrappedEncodePlanNextSetter, nextValue any, ok bool) {
 	if _, ok := value.(driver.Valuer); ok {
 		return nil, nil, false
@@ -1218,6 +1168,8 @@ func TryWrapDerefPointerEncodePlan(value any) (plan WrappedEncodePlanNextSetter,
 	return nil, nil, false
 }
 
+// kindToTypes maps named scalar kinds to their builtin Go types for underlying
+// type planning.
 var kindToTypes map[reflect.Kind]reflect.Type = map[reflect.Kind]reflect.Type{
 	reflect.Int:     reflect.TypeOf(int(0)),
 	reflect.Int8:    reflect.TypeOf(int8(0)),
@@ -1237,6 +1189,8 @@ var kindToTypes map[reflect.Kind]reflect.Type = map[reflect.Kind]reflect.Type{
 
 var byteSliceType = reflect.TypeOf([]byte{})
 
+// underlyingTypeEncodePlan converts a named scalar, named []byte, or named array
+// to its underlying Go type before calling the next plan.
 type underlyingTypeEncodePlan struct {
 	nextValueType reflect.Type
 	next          EncodePlan
@@ -1248,8 +1202,8 @@ func (plan *underlyingTypeEncodePlan) Encode(value any, buf []byte) (newBuf []by
 	return plan.next.Encode(reflect.ValueOf(value).Convert(plan.nextValueType).Interface(), buf)
 }
 
-// TryWrapFindUnderlyingTypeEncodePlan tries to convert to a Go builtin type. e.g. If value was of type MyString and
-// MyString was defined as a string then a wrapper plan would be returned that converts MyString to string.
+// TryWrapFindUnderlyingTypeEncodePlan wraps named scalar, byte slice, and array
+// values by converting them to their underlying Go type.
 func TryWrapFindUnderlyingTypeEncodePlan(value any) (plan WrappedEncodePlanNextSetter, nextValue any, ok bool) {
 	if value == nil {
 		return nil, nil, false
@@ -1288,11 +1242,8 @@ func TryWrapFindUnderlyingTypeEncodePlan(value any) (plan WrappedEncodePlanNextS
 	return nil, nil, false
 }
 
-// TryWrapStringerEncodePlan tries to wrap a fmt.Stringer type with a wrapper that provides TextValuer. This is
-// intentionally a separate function from TryWrapBuiltinTypeEncodePlan so it can be ordered after
-// TryWrapFindUnderlyingTypeEncodePlan. This ensures that named types with an underlying builtin type (e.g. type MyEnum
-// int32 with a String() method) prefer encoding via the underlying type's codec (e.g. as an integer) rather than via
-// Stringer. Stringer is only used as a fallback when no type-specific encoding plan succeeds.
+// TryWrapStringerEncodePlan wraps fmt.Stringer values as TextValuer. It runs
+// after underlying-type planning so named scalars prefer their underlying codec.
 func TryWrapStringerEncodePlan(value any) (plan WrappedEncodePlanNextSetter, nextValue any, ok bool) {
 	if _, ok := value.(driver.Valuer); ok {
 		return nil, nil, false
@@ -1305,14 +1256,15 @@ func TryWrapStringerEncodePlan(value any) (plan WrappedEncodePlanNextSetter, nex
 	return nil, nil, false
 }
 
+// WrappedEncodePlanNextSetter is an EncodePlan wrapper that receives the next
+// plan after recursive planning succeeds.
 type WrappedEncodePlanNextSetter interface {
 	SetNext(EncodePlan)
 	EncodePlan
 }
 
-// TryWrapBuiltinTypeEncodePlan tries to wrap a builtin type with a wrapper that provides additional methods. e.g. If
-// value was of type int32 then a wrapper plan would be returned that converts value to a type that implements
-// Int64Valuer.
+// TryWrapBuiltinTypeEncodePlan wraps builtin Go values with adapter types that
+// implement codec valuer interfaces.
 func TryWrapBuiltinTypeEncodePlan(value any) (plan WrappedEncodePlanNextSetter, nextValue any, ok bool) {
 	if _, ok := value.(driver.Valuer); ok {
 		return nil, nil, false
@@ -1347,14 +1299,6 @@ func TryWrapBuiltinTypeEncodePlan(value any) (plan WrappedEncodePlanNextSetter, 
 		return &wrapStringEncodePlan{}, stringWrapper(value), true
 	case time.Time:
 		return &wrapTimeEncodePlan{}, timeWrapper(value), true
-	// case time.Duration:
-	// 	return &wrapDurationEncodePlan{}, durationWrapper(value), true
-	// case map[string]*string:
-	// 	return &wrapMapStringToPointerStringEncodePlan{}, mapStringToPointerStringWrapper(value), true
-	// case map[string]string:
-	// return &wrapMapStringToStringEncodePlan{}, mapStringToStringWrapper(value), true
-	// case [16]byte:
-	// 	return &wrapByte16EncodePlan{}, byte16Wrapper(value), true
 	case []byte:
 		return &wrapByteSliceEncodePlan{}, byteSliceWrapper(value), true
 	}
@@ -1362,6 +1306,8 @@ func TryWrapBuiltinTypeEncodePlan(value any) (plan WrappedEncodePlanNextSetter, 
 	return nil, nil, false
 }
 
+// The wrap*EncodePlan types below adapt the original builtin value to the
+// matching wrapper type from builtin_wrappers.go before calling the next plan.
 type wrapInt8EncodePlan struct {
 	next EncodePlan
 }
@@ -1502,46 +1448,6 @@ func (plan *wrapTimeEncodePlan) Encode(value any, buf []byte) (newBuf []byte, er
 	return plan.next.Encode(timeWrapper(value.(time.Time)), buf)
 }
 
-// type wrapDurationEncodePlan struct {
-// 	next EncodePlan
-// }
-
-// func (plan *wrapDurationEncodePlan) SetNext(next EncodePlan) { plan.next = next }
-
-// func (plan *wrapDurationEncodePlan) Encode(value any, buf []byte) (newBuf []byte, err error) {
-// 	return plan.next.Encode(durationWrapper(value.(time.Duration)), buf)
-// }
-
-// type wrapMapStringToPointerStringEncodePlan struct {
-// 	next EncodePlan
-// }
-
-// func (plan *wrapMapStringToPointerStringEncodePlan) SetNext(next EncodePlan) { plan.next = next }
-
-// func (plan *wrapMapStringToPointerStringEncodePlan) Encode(value any, buf []byte) (newBuf []byte, err error) {
-// 	return plan.next.Encode(mapStringToPointerStringWrapper(value.(map[string]*string)), buf)
-// }
-
-// type wrapMapStringToStringEncodePlan struct {
-// 	next EncodePlan
-// }
-
-// func (plan *wrapMapStringToStringEncodePlan) SetNext(next EncodePlan) { plan.next = next }
-
-// func (plan *wrapMapStringToStringEncodePlan) Encode(value any, buf []byte) (newBuf []byte, err error) {
-// 	return plan.next.Encode(mapStringToStringWrapper(value.(map[string]string)), buf)
-// }
-
-// type wrapByte16EncodePlan struct {
-// 	next EncodePlan
-// }
-
-// func (plan *wrapByte16EncodePlan) SetNext(next EncodePlan) { plan.next = next }
-
-// func (plan *wrapByte16EncodePlan) Encode(value any, buf []byte) (newBuf []byte, err error) {
-// 	return plan.next.Encode(byte16Wrapper(value.([16]byte)), buf)
-// }
-
 type wrapByteSliceEncodePlan struct {
 	next EncodePlan
 }
@@ -1562,56 +1468,9 @@ func (plan *wrapFmtStringerEncodePlan) Encode(value any, buf []byte) (newBuf []b
 	return plan.next.Encode(fmtStringerWrapper{value.(fmt.Stringer)}, buf)
 }
 
-// TryWrapStructPlan tries to wrap a struct with a wrapper that implements CompositeIndexGetter.
-func TryWrapStructEncodePlan(value any) (plan WrappedEncodePlanNextSetter, nextValue any, ok bool) {
-	if _, ok := value.(driver.Valuer); ok {
-		return nil, nil, false
-	}
-
-	if valueType := reflect.TypeOf(value); valueType != nil && valueType.Kind() == reflect.Struct {
-		exportedFields := getExportedFieldValues(reflect.ValueOf(value))
-		if len(exportedFields) == 0 {
-			return nil, nil, false
-		}
-
-		w := structWrapper{
-			s:              value,
-			exportedFields: exportedFields,
-		}
-		return &wrapAnyStructEncodePlan{}, w, true
-	}
-
-	return nil, nil, false
-}
-
-type wrapAnyStructEncodePlan struct {
-	next EncodePlan
-}
-
-func (plan *wrapAnyStructEncodePlan) SetNext(next EncodePlan) { plan.next = next }
-
-func (plan *wrapAnyStructEncodePlan) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	w := structWrapper{
-		s:              value,
-		exportedFields: getExportedFieldValues(reflect.ValueOf(value)),
-	}
-
-	return plan.next.Encode(w, buf)
-}
-
-func getExportedFieldValues(structValue reflect.Value) []reflect.Value {
-	structType := structValue.Type()
-	exportedFields := make([]reflect.Value, 0, structValue.NumField())
-	for i := 0; i < structType.NumField(); i++ {
-		sf := structType.Field(i)
-		if sf.IsExported() {
-			exportedFields = append(exportedFields, structValue.Field(i))
-		}
-	}
-
-	return exportedFields
-}
-
+// TryWrapSliceEncodePlan wraps a single-dimensional slice as an ArrayGetter.
+// Common slice element types use FlatArray[T]; other one-dimensional slices use
+// reflection.
 func TryWrapSliceEncodePlan(value any) (plan WrappedEncodePlanNextSetter, nextValue any, ok bool) {
 	if _, ok := value.(driver.Valuer); ok {
 		return nil, nil, false
@@ -1636,6 +1495,9 @@ func TryWrapSliceEncodePlan(value any) (plan WrappedEncodePlanNextSetter, nextVa
 	}
 
 	if valueType := reflect.TypeOf(value); valueType != nil && valueType.Kind() == reflect.Slice {
+		if valueType.Elem().Kind() == reflect.Slice {
+			return nil, nil, false
+		}
 		w := anySliceArrayReflect{
 			slice: reflect.ValueOf(value),
 		}
@@ -1645,6 +1507,8 @@ func TryWrapSliceEncodePlan(value any) (plan WrappedEncodePlanNextSetter, nextVa
 	return nil, nil, false
 }
 
+// wrapSliceEncodePlan adapts common []T values to FlatArray[T] before
+// delegating to an ArrayGetter-compatible encode plan.
 type wrapSliceEncodePlan[T any] struct {
 	next EncodePlan
 }
@@ -1655,6 +1519,9 @@ func (plan *wrapSliceEncodePlan[T]) Encode(value any, buf []byte) (newBuf []byte
 	return plan.next.Encode((FlatArray[T])(value.([]T)), buf)
 }
 
+// wrapSliceEncodeReflectPlan adapts uncommon one-dimensional slices to
+// anySliceArrayReflect before delegating to an ArrayGetter-compatible encode
+// plan.
 type wrapSliceEncodeReflectPlan struct {
 	next EncodePlan
 }
@@ -1669,6 +1536,9 @@ func (plan *wrapSliceEncodeReflectPlan) Encode(value any, buf []byte) (newBuf []
 	return plan.next.Encode(w, buf)
 }
 
+// TryWrapMultiDimSliceEncodePlan wraps rectangular multi-dimensional slices as
+// ArrayGetter values. Ragged slices are skipped because Firebird arrays require
+// fixed dimensions.
 func TryWrapMultiDimSliceEncodePlan(value any) (plan WrappedEncodePlanNextSetter, nextValue any, ok bool) {
 	if _, ok := value.(driver.Valuer); ok {
 		return nil, nil, false
@@ -1691,6 +1561,9 @@ func TryWrapMultiDimSliceEncodePlan(value any) (plan WrappedEncodePlanNextSetter
 	return nil, nil, false
 }
 
+// wrapMultiDimSliceEncodePlan adapts a rectangular multi-dimensional slice to
+// anyMultiDimSliceArray before delegating to an ArrayGetter-compatible encode
+// plan.
 type wrapMultiDimSliceEncodePlan struct {
 	next EncodePlan
 }
@@ -1705,6 +1578,7 @@ func (plan *wrapMultiDimSliceEncodePlan) Encode(value any, buf []byte) (newBuf [
 	return plan.next.Encode(&w, buf)
 }
 
+// TryWrapArrayEncodePlan wraps fixed-length Go arrays as ArrayGetter values.
 func TryWrapArrayEncodePlan(value any) (plan WrappedEncodePlanNextSetter, nextValue any, ok bool) {
 	if _, ok := value.(driver.Valuer); ok {
 		return nil, nil, false
@@ -1720,6 +1594,9 @@ func TryWrapArrayEncodePlan(value any) (plan WrappedEncodePlanNextSetter, nextVa
 	return nil, nil, false
 }
 
+// wrapArrayEncodeReflectPlan adapts a fixed-length Go array to
+// anyArrayArrayReflect before delegating to an ArrayGetter-compatible encode
+// plan.
 type wrapArrayEncodeReflectPlan struct {
 	next EncodePlan
 }
@@ -1746,9 +1623,9 @@ func newEncodeError(value any, m *Map, typeid uint32, subType int32, err error) 
 	return fmt.Errorf("unable to encode %#v for %s (TypeID %d): %w", value, dataTypeName, typeid, err)
 }
 
-// Encode appends the encoded bytes of value to buf. If value is the SQL value NULL then append nothing and return
-// (nil, nil). The caller of Encode is responsible for writing the correct NULL value or the length of the data
-// written.
+// Encode appends the encoded bytes of value to buf. If value is SQL NULL, it
+// appends nothing and returns (nil, nil). The caller is responsible for writing
+// the NULL marker or encoded data length.
 func (m *Map) Encode(typeMetadata TypeMetadata, value any, buf []byte) (newBuf []byte, err error) {
 	if isNil, callNilDriverValuer := isNilDriverValuer(value); isNil {
 		if callNilDriverValuer {

@@ -14,16 +14,20 @@ var (
 	defaultMapInitOnce = sync.Once{}
 )
 
-func MakeTypeSubtype(t uint32, sub int32) uint32 {
-	return uint32(int32(t) | (sub << 16))
+// MakeTypeSubtype packs a Firebird TypeID and subtype into a single key used
+// for type registration lookups.
+func MakeTypeSubtype(typeID uint32, subType int32) uint32 {
+	return uint32(int32(typeID) | (subType << 16))
 }
 
-func GetType(t uint32) uint32 {
-	return uint32(int32(t) & 0xFFFF)
+// GetType extracts the Firebird TypeID from a key created by MakeTypeSubtype.
+func GetType(typeID uint32) uint32 {
+	return uint32(int32(typeID) & 0xFFFF)
 }
 
-func GetSubType(t uint32) int32 {
-	return int32(t) >> 16
+// GetSubType extracts the subtype from a key created by MakeTypeSubtype.
+func GetSubType(typeID uint32) int32 {
+	return int32(typeID) >> 16
 }
 
 func initDefaultMap() {
@@ -38,7 +42,6 @@ func initDefaultMap() {
 			TryWrapDerefPointerEncodePlan,
 			TryWrapBuiltinTypeEncodePlan,
 			TryWrapFindUnderlyingTypeEncodePlan,
-			TryWrapStructEncodePlan,
 			TryWrapSliceEncodePlan,
 			TryWrapMultiDimSliceEncodePlan,
 			TryWrapArrayEncodePlan,
@@ -48,7 +51,6 @@ func initDefaultMap() {
 			TryPointerPointerScanPlan,
 			TryWrapBuiltinTypeScanPlan,
 			TryFindUnderlyingTypeScanPlan,
-			TryWrapStructScanPlan,
 			TryWrapPtrSliceScanPlan,
 			TryWrapPtrMultiDimSliceScanPlan,
 			TryWrapPtrArrayScanPlan,

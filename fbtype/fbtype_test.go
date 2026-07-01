@@ -78,6 +78,16 @@ type _float32Slice []float32
 type _float64Slice []float64
 type _byteSlice []byte
 
+type skipUnderlyingString string
+
+func (skipUnderlyingString) SkipUnderlyingTypePlan() {}
+
+type structStringer struct{}
+
+func (structStringer) String() string {
+	return "struct stringer"
+}
+
 type stringerInt16 int16
 
 func (s stringerInt16) String() string {
@@ -102,43 +112,50 @@ func (f driverValuerFunc) Value() (driver.Value, error) {
 	return f()
 }
 
-type fieldIndexScanner interface {
-	ScanNull() error
-	ScanIndex(i int) any
-}
+type arrayGetterEncodeCodec struct{}
 
-type fieldIndexScanCodec struct{}
-
-func (fieldIndexScanCodec) PlanEncode(m *fbtype.Map, typeMetadata fbtype.TypeMetadata, value any) fbtype.EncodePlan {
-	return nil
-}
-
-func (fieldIndexScanCodec) PlanScan(m *fbtype.Map, typeMetadata fbtype.TypeMetadata, target any) fbtype.ScanPlan {
-	if _, ok := target.(fieldIndexScanner); ok {
-		return fieldIndexScanPlan{}
+func (arrayGetterEncodeCodec) PlanEncode(m *fbtype.Map, typeMetadata fbtype.TypeMetadata, value any) fbtype.EncodePlan {
+	if _, ok := value.(fbtype.ArrayGetter); ok {
+		return arrayGetterEncodePlan{}
 	}
 	return nil
 }
 
-func (fieldIndexScanCodec) DecodeDatabaseSQLValue(m *fbtype.Map, typeMetadata fbtype.TypeMetadata, src []byte) (driver.Value, error) {
+func (arrayGetterEncodeCodec) PlanScan(m *fbtype.Map, typeMetadata fbtype.TypeMetadata, target any) fbtype.ScanPlan {
+	return nil
+}
+
+func (arrayGetterEncodeCodec) DecodeDatabaseSQLValue(m *fbtype.Map, typeMetadata fbtype.TypeMetadata, src []byte) (driver.Value, error) {
 	return nil, nil
 }
 
-func (fieldIndexScanCodec) DecodeValue(m *fbtype.Map, typeMetadata fbtype.TypeMetadata, src []byte) (any, error) {
+func (arrayGetterEncodeCodec) DecodeValue(m *fbtype.Map, typeMetadata fbtype.TypeMetadata, src []byte) (any, error) {
 	return nil, nil
 }
 
-type fieldIndexScanPlan struct{}
+type arrayGetterEncodePlan struct{}
 
-func (fieldIndexScanPlan) Scan(src []byte, target any) error {
-	scanner := target.(fieldIndexScanner)
-	if src == nil {
-		return scanner.ScanNull()
+func (arrayGetterEncodePlan) Encode(value any, buf []byte) ([]byte, error) {
+	getter := value.(fbtype.ArrayGetter)
+	dimensions, err := getter.Dimensions([]int{1, 1, 1, 1})
+	if err != nil {
+		return nil, err
+	}
+	if dimensions == nil {
+		return nil, nil
 	}
 
-	*scanner.ScanIndex(0).(*int32) = 42
-	*scanner.ScanIndex(1).(*string) = "forty-two"
-	return nil
+	elementCount := 1
+	for _, dimension := range dimensions {
+		elementCount *= dimension.Length
+	}
+
+	values := make([]any, 0, elementCount)
+	for i := 0; i < elementCount; i++ {
+		values = append(values, getter.Index(i))
+	}
+
+	return append(buf, fmt.Sprintf("%v|%v", dimensions, values)...), nil
 }
 
 type arraySetterScanCodec struct {
@@ -472,28 +489,6 @@ func TestMapScanNumericIntoBuiltinWrappers(t *testing.T) {
 	assert.Equal(t, float32(12.5), f32)
 }
 
-func TestMapScanStructWrapperProvidesExportedFieldTargets(t *testing.T) {
-	m := fbtype.NewMap()
-	typeID := uint32(999998)
-	m.RegisterType(&fbtype.Type{Name: "field_index_scan_test", TypeID: typeID, Codec: fieldIndexScanCodec{}})
-
-	var got struct {
-		ID     int32
-		Name   string
-		hidden string
-	}
-
-	typeMetadata := fbtype.NewTypeMetadata(typeID, 0, 0, 0)
-	err := m.Scan(typeMetadata, []byte{1}, &got)
-	require.NoError(t, err)
-	assert.Equal(t, int32(42), got.ID)
-	assert.Equal(t, "forty-two", got.Name)
-	assert.Empty(t, got.hidden)
-
-	err = m.Scan(typeMetadata, nil, &got)
-	assert.Error(t, err)
-}
-
 func TestMapScanPtrSliceWrapperUsesFlatArrayForCommonTypes(t *testing.T) {
 	m := fbtype.NewMap()
 	typeID := uint32(999997)
@@ -540,6 +535,32 @@ func TestMapScanPtrSliceWrapperUsesReflectForUncommonTypes(t *testing.T) {
 	assert.Nil(t, got)
 }
 
+func TestMapEncodeSliceWrapperUsesFlatArrayForCommonTypes(t *testing.T) {
+	m := fbtype.NewMap()
+	typeID := uint32(999986)
+	m.RegisterType(&fbtype.Type{Name: "array_getter_encode_int16_test", TypeID: typeID, Codec: arrayGetterEncodeCodec{}})
+
+	typeMetadata := fbtype.NewTypeMetadata(typeID, 0, 0, 0)
+	buf, err := m.Encode(typeMetadata, []int16{1, 2, 3}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "[{1 3}]|[1 2 3]", string(buf))
+
+	buf, err = m.Encode(typeMetadata, []int16(nil), nil)
+	require.NoError(t, err)
+	assert.Nil(t, buf)
+}
+
+func TestMapEncodeSliceWrapperUsesReflectForUncommonTypes(t *testing.T) {
+	m := fbtype.NewMap()
+	typeID := uint32(999985)
+	m.RegisterType(&fbtype.Type{Name: "array_getter_encode_bool_test", TypeID: typeID, Codec: arrayGetterEncodeCodec{}})
+
+	typeMetadata := fbtype.NewTypeMetadata(typeID, 0, 0, 0)
+	buf, err := m.Encode(typeMetadata, []bool{true, false, true}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "[{1 3}]|[true false true]", string(buf))
+}
+
 func TestMapScanPtrSliceWrapperSkipsMultiDimensionalSlices(t *testing.T) {
 	m := fbtype.NewMap()
 	typeID := uint32(999995)
@@ -560,6 +581,28 @@ func TestMapScanPtrSliceWrapperSkipsMultiDimensionalSlices(t *testing.T) {
 	err := m.Scan(typeMetadata, []byte{1}, &got)
 	require.NoError(t, err)
 	assert.Equal(t, [][]int16{{1, 2}, {3, 4}}, got)
+}
+
+func TestMapEncodeMultiDimensionalSliceUsesMultiDimensionalWrapper(t *testing.T) {
+	m := fbtype.NewMap()
+	typeID := uint32(999984)
+	m.RegisterType(&fbtype.Type{Name: "array_getter_encode_multi_dim_test", TypeID: typeID, Codec: arrayGetterEncodeCodec{}})
+
+	typeMetadata := fbtype.NewTypeMetadata(typeID, 0, 0, 0)
+	buf, err := m.Encode(typeMetadata, [][]int16{{1, 2}, {3, 4}}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "[{1 2} {1 2}]|[1 2 3 4]", string(buf))
+}
+
+func TestMapEncodeArrayWrapperUsesReflectForFixedArray(t *testing.T) {
+	m := fbtype.NewMap()
+	typeID := uint32(999983)
+	m.RegisterType(&fbtype.Type{Name: "array_getter_encode_fixed_array_test", TypeID: typeID, Codec: arrayGetterEncodeCodec{}})
+
+	typeMetadata := fbtype.NewTypeMetadata(typeID, 0, 0, 0)
+	buf, err := m.Encode(typeMetadata, [3]int16{1, 2, 3}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "[{1 3}]|[1 2 3]", string(buf))
 }
 
 func TestMapScanPtrMultiDimSliceWrapperOverwritesRaggedDestination(t *testing.T) {
@@ -772,6 +815,136 @@ func TestMapEncodeTextFormatDatabaseValuerThatIsRenamedSimpleType(t *testing.T) 
 	require.Equal(t, "3", string(buf))
 }
 
+func TestMapPlanEncodeDerefPointer(t *testing.T) {
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 0, 3, 0)
+	value := "foo"
+
+	plan := m.PlanEncode(typeMetadata, &value)
+	require.NotNil(t, plan)
+
+	buf, err := plan.Encode(&value, nil)
+	require.NoError(t, err)
+	require.Equal(t, "foo", string(buf))
+
+	var nilValue *string
+	buf, err = plan.Encode(nilValue, nil)
+	require.NoError(t, err)
+	require.Nil(t, buf)
+}
+
+func TestMapEncodeMemoizationUsesFullTypeMetadata(t *testing.T) {
+	m := fbtype.NewMap()
+
+	numericScale2 := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 1, 4, -2)
+	buf, err := m.Encode(numericScale2, "12", nil)
+	require.NoError(t, err)
+	require.Equal(t, []byte{0, 0, 4, 176}, buf)
+
+	numericScale0 := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 1, 4, 0)
+	buf, err = m.Encode(numericScale0, "12", nil)
+	require.NoError(t, err)
+	require.Equal(t, []byte{0, 0, 0, 12}, buf)
+}
+
+func TestMapEncodeRenamedStringUsesUnderlyingType(t *testing.T) {
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 0, 3, 0)
+
+	buf, err := m.Encode(typeMetadata, _string("foo"), nil)
+	require.NoError(t, err)
+	require.Equal(t, "foo", string(buf))
+}
+
+func TestMapEncodeSkipUnderlyingTypePlannerDoesNotUseUnderlyingType(t *testing.T) {
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 0, 3, 0)
+
+	buf, err := m.Encode(typeMetadata, skipUnderlyingString("foo"), nil)
+	require.Error(t, err)
+	require.Nil(t, buf)
+	require.Contains(t, err.Error(), "cannot find encode plan")
+}
+
+func TestTryWrapStringerEncodePlanWrapsAsTextValuer(t *testing.T) {
+	value := structStringer{}
+
+	wrapperPlan, nextValue, ok := fbtype.TryWrapStringerEncodePlan(value)
+	require.True(t, ok)
+	require.NotNil(t, wrapperPlan)
+
+	textValuer, ok := nextValue.(fbtype.TextValuer)
+	require.True(t, ok)
+	text, err := textValuer.TextValue()
+	require.NoError(t, err)
+	require.Equal(t, fbtype.Text{String: "struct stringer", Valid: true}, text)
+
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 0, 15, 0)
+	nextPlan := fbtype.TextCodec{}.PlanEncode(fbtype.NewMap(), typeMetadata, nextValue)
+	require.NotNil(t, nextPlan)
+	wrapperPlan.SetNext(nextPlan)
+
+	buf, err := wrapperPlan.Encode(value, nil)
+	require.NoError(t, err)
+	require.Equal(t, "struct stringer", string(buf))
+}
+
+func TestTryWrapStringerEncodePlanSkipsDriverValuer(t *testing.T) {
+	wrapperPlan, nextValue, ok := fbtype.TryWrapStringerEncodePlan(databaseValuerFmtStringer("foo"))
+
+	require.False(t, ok)
+	require.Nil(t, wrapperPlan)
+	require.Nil(t, nextValue)
+}
+
+func TestTryWrapBuiltinTypeEncodePlanWrapsInt16AsInt64Valuer(t *testing.T) {
+	wrapperPlan, nextValue, ok := fbtype.TryWrapBuiltinTypeEncodePlan(int16(200))
+	require.True(t, ok)
+	require.NotNil(t, wrapperPlan)
+
+	int64Valuer, ok := nextValue.(fbtype.Int64Valuer)
+	require.True(t, ok)
+	int64Value, err := int64Valuer.Int64Value()
+	require.NoError(t, err)
+	require.Equal(t, fbtype.Int8{Int64: 200, Valid: true}, int64Value)
+
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 0, 2, 0)
+	nextPlan := fbtype.Int4Codec{}.PlanEncode(fbtype.NewMap(), typeMetadata, nextValue)
+	require.NotNil(t, nextPlan)
+	wrapperPlan.SetNext(nextPlan)
+
+	buf, err := wrapperPlan.Encode(int16(200), nil)
+	require.NoError(t, err)
+	require.Equal(t, []byte{0, 0, 0, 200}, buf)
+}
+
+func TestTryWrapBuiltinTypeEncodePlanWrapsByteSliceAsTextValuer(t *testing.T) {
+	value := []byte("foo")
+	wrapperPlan, nextValue, ok := fbtype.TryWrapBuiltinTypeEncodePlan(value)
+	require.True(t, ok)
+	require.NotNil(t, wrapperPlan)
+
+	textValuer, ok := nextValue.(fbtype.TextValuer)
+	require.True(t, ok)
+	text, err := textValuer.TextValue()
+	require.NoError(t, err)
+	require.Equal(t, fbtype.Text{String: "foo", Valid: true}, text)
+
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 0, 3, 0)
+	nextPlan := fbtype.TextCodec{}.PlanEncode(fbtype.NewMap(), typeMetadata, nextValue)
+	require.NotNil(t, nextPlan)
+	wrapperPlan.SetNext(nextPlan)
+
+	buf, err := wrapperPlan.Encode(value, nil)
+	require.NoError(t, err)
+	require.Equal(t, "foo", string(buf))
+
+	var nilValue []byte
+	buf, err = wrapperPlan.Encode(nilValue, nil)
+	require.NoError(t, err)
+	require.Nil(t, buf)
+}
+
 type databaseValuerFmtStringer string
 
 func (s databaseValuerFmtStringer) Value() (driver.Value, error) {
@@ -780,6 +953,16 @@ func (s databaseValuerFmtStringer) Value() (driver.Value, error) {
 
 func (s databaseValuerFmtStringer) String() string {
 	return "foobar"
+}
+
+func TestMapEncodeDatabaseValuerPreferredOverStringer(t *testing.T) {
+	m := fbtype.NewMap()
+	src := databaseValuerFmtStringer("foo")
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 0, 6, 0)
+
+	buf, err := m.Encode(typeMetadata, src, nil)
+	require.NoError(t, err)
+	require.Nil(t, buf)
 }
 
 type databaseValuerStringFormat struct {
@@ -797,6 +980,59 @@ func TestMapEncodeBinaryFormatDatabaseValuerThatReturnsString(t *testing.T) {
 	buf, err := m.Encode(typeMetadata, src, nil)
 	require.NoError(t, err)
 	require.Equal(t, []byte{0, 0, 0, 42}, buf)
+}
+
+func TestMapEncodeDatabaseValuerReturnsError(t *testing.T) {
+	m := fbtype.NewMap()
+	wantErr := fmt.Errorf("valuer failed")
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 0, 3, 0)
+
+	buf, err := m.Encode(typeMetadata, driverValuerFunc(func() (driver.Value, error) {
+		return nil, wantErr
+	}), nil)
+
+	require.ErrorIs(t, err, wantErr)
+	require.Nil(t, buf)
+}
+
+type valueReceiverNilValuer string
+
+func (v valueReceiverNilValuer) Value() (driver.Value, error) {
+	return "value", nil
+}
+
+type pointerReceiverNilValuer struct{}
+
+func (*pointerReceiverNilValuer) Value() (driver.Value, error) {
+	return "pointer", nil
+}
+
+func TestMapEncodeNilDriverValuerCompatibility(t *testing.T) {
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 0, 7, 0)
+
+	var valueReceiver *valueReceiverNilValuer
+	buf, err := m.Encode(typeMetadata, valueReceiver, nil)
+	require.NoError(t, err)
+	require.Nil(t, buf)
+
+	var pointerReceiver *pointerReceiverNilValuer
+	buf, err = m.Encode(typeMetadata, pointerReceiver, nil)
+	require.NoError(t, err)
+	require.Equal(t, "pointer", string(buf))
+}
+
+func TestMapPlanEncodeNilDriverValuerWithValueReceiverIsNull(t *testing.T) {
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 0, 5, 0)
+	var value *valueReceiverNilValuer
+
+	plan := m.PlanEncode(typeMetadata, value)
+	require.NotNil(t, plan)
+
+	buf, err := plan.Encode(value, nil)
+	require.NoError(t, err)
+	require.Nil(t, buf)
 }
 
 func TestMapEncodeDatabaseValuerThatReturnsStringIntoUnregisteredTypeTextFormat(t *testing.T) {
@@ -901,22 +1137,23 @@ func (v databaseValuerUUID) Value() (driver.Value, error) {
 	return fmt.Sprintf("%x", v), nil
 }
 
-// PlanScan previously used a cache to improve performance. However, the cache could get confused in certain cases. The
-// example below was one such failure case.
+// PlanScan previously used a cache to improve performance. However, a cache
+// keyed only by Firebird metadata could reuse a plan selected for one target
+// type with a different target type.
 func TestCachedPlanScanConfusion(t *testing.T) {
-	t.Skip()
 	m := fbtype.NewMap()
-	var err error
 
-	var tags any
-	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 0, 14, 0)
-	err = m.Scan(typeMetadata, []byte("{foo,bar,baz}"), &tags)
-	require.NoError(t, err)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 0, 4, 0)
 
-	var cells [][]string
-	typeMetadata = fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 0, 21, 0)
-	err = m.Scan(typeMetadata, []byte("{{foo,bar},{baz,quz}}"), &cells)
+	var first any
+	err := m.Scan(typeMetadata, []byte{0, 0, 0, 42}, &first)
 	require.NoError(t, err)
+	require.Equal(t, int32(42), first)
+
+	var second int32
+	err = m.Scan(typeMetadata, []byte{0, 0, 0, 7}, &second)
+	require.NoError(t, err)
+	require.Equal(t, int32(7), second)
 }
 
 func BenchmarkMapScanInt4IntoBinaryDecoder(b *testing.B) {
