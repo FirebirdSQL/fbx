@@ -102,7 +102,7 @@ func initDefaultMap() {
 	registerDefaultFbTypeVariants[bool](defaultMap, "boolean")
 	registerDefaultFbTypeVariants[time.Time](defaultMap, "timestamptz")
 	registerDefaultFbTypeVariants[string](defaultMap, "text")
-	registerDefaultFbTypeVariants[[]byte](defaultMap, "bytea")
+	registerDefaultFbTypeVariants[[]byte](defaultMap, "octets")
 
 	// fbtype provided structs
 	registerDefaultFbTypeVariants[Bool](defaultMap, "boolean")

@@ -39,7 +39,7 @@ fbtype maps between all common base types directly between Go and Firebird. In p
     netip.Addr    inet
     netip.Prefix  cidr
 
-    []byte        bytea
+    []byte        octets
 
 Null Values
 
