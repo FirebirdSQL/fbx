@@ -9,15 +9,15 @@ import (
 
 func TestOpServiceAttachWrite(t *testing.T) {
 	var buf bytes.Buffer
+	enc, err := NewEncoding("UTF8")
+	require.NoError(t, err)
 
-	err := (&OpServiceAttach{
+	err = (&OpServiceAttach{
+		Encoding:    enc,
 		ServiceName: "service_mgr",
 		SPB:         []byte{Isc_spb_version, Isc_spb_current_version},
 	}).Write(NewXDRWriter(&buf))
 
-	require.NoError(t, err)
-
-	enc, err := NewEncoding("UTF8")
 	require.NoError(t, err)
 
 	r := NewXDRReader(bytes.NewReader(buf.Bytes()))
@@ -118,7 +118,10 @@ func TestOpServiceTrace(t *testing.T) {
 	client := NewClient(&in, &out, enc)
 	client.Trace(&trace, TracerOptions{SuppressTimestamps: true})
 
-	require.NoError(t, client.WriteMessage(&OpServiceAttach{ServiceName: "service_mgr"}))
+	require.NoError(t, client.WriteMessage(&OpServiceAttach{
+		Encoding:    enc,
+		ServiceName: "service_mgr",
+	}))
 	require.NoError(t, client.WriteMessage(&OpServiceStart{ServiceHandle: 42}))
 	require.NoError(t, client.WriteMessage(&OpServiceInfo{ServiceHandle: 42, BufferLength: 1024}))
 	require.NoError(t, client.WriteMessage(&OpServiceDetach{ServiceHandle: 42}))

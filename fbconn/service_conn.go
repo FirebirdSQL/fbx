@@ -106,6 +106,7 @@ func (fbConn *FbConn) attachService(config *Config, authManager *auth.AuthManage
 	spb := buildServiceAttachSPB(config, authManager)
 	if err := fbConn.withWriteLockAndFlush(func() error {
 		return fbConn.client.WriteMessage(&fbproto.OpServiceAttach{
+			Encoding:    fbConn.Encoding,
 			ServiceName: defaultServiceName,
 			SPB:         spb,
 		})

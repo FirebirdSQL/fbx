@@ -4,6 +4,9 @@ package fbproto
 
 // OpServiceAttach attaches to a Firebird service, usually service_mgr.
 type OpServiceAttach struct {
+	// Encoding encodes the service object name.
+	Encoding *Encoding
+
 	// ServiceName is the service object name sent to the server.
 	ServiceName string
 
@@ -19,12 +22,7 @@ func (op *OpServiceAttach) Write(x *XDRWriter) error {
 	if err := x.WriteInt32(0); err != nil {
 		return err
 	}
-
-	enc, err := NewEncoding("UTF8")
-	if err != nil {
-		return err
-	}
-	if err = x.WriteString(op.ServiceName, enc); err != nil {
+	if err := x.WriteString(op.ServiceName, op.Encoding); err != nil {
 		return err
 	}
 	return x.WriteBuffer(op.SPB)
