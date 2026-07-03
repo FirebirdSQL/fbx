@@ -27,6 +27,8 @@ func TestBuildBackupActionSPB(t *testing.T) {
 		ConvertExternalTables: true,
 		Expand:                true,
 		Factor:                32,
+		ParallelWorkers:       4,
+		Replace:               true,
 		NoDatabaseTriggers:    true,
 		Zip:                   true,
 		Compressor:            "zstd:3:1",
@@ -46,6 +48,12 @@ func TestBuildBackupActionSPB(t *testing.T) {
 	offset++
 	require.Equal(t, uint32(32), binary.LittleEndian.Uint32(spb[offset:offset+4]))
 	offset += 4
+	require.Equal(t, byte(fbproto.Isc_spb_bkp_parallel_workers), spb[offset])
+	offset++
+	require.Equal(t, uint32(4), binary.LittleEndian.Uint32(spb[offset:offset+4]))
+	offset += 4
+	require.Equal(t, byte(fbproto.Isc_spb_bkp_replace), spb[offset])
+	offset++
 	offset = requireServiceActionString(
 		t, spb, offset, fbproto.Isc_spb_bkp_compression, "zstd:3:1")
 	require.Equal(t, byte(fbproto.Isc_spb_options), spb[offset])
@@ -85,6 +93,22 @@ func TestBuildBackupActionSPBValidation(t *testing.T) {
 			backupFile: "/backup/employee.fbk",
 			options:    BackupOptions{Factor: -1},
 			wantError:  "backup factor must be between",
+		},
+		{
+			name:       "negative parallel workers",
+			database:   "/data/employee.fdb",
+			backupFile: "/backup/employee.fbk",
+			options:    BackupOptions{ParallelWorkers: -1},
+			wantError:  "backup parallel workers must be between",
+		},
+		{
+			name:       "parallel workers overflow",
+			database:   "/data/employee.fdb",
+			backupFile: "/backup/employee.fbk",
+			options: BackupOptions{
+				ParallelWorkers: int(int64(maxServiceActionInt32) + 1),
+			},
+			wantError: "backup parallel workers must be between",
 		},
 	}
 

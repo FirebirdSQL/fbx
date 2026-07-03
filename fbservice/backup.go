@@ -48,6 +48,15 @@ type BackupOptions struct {
 	// Factor sets the blocking factor. A zero value uses the server default.
 	Factor int
 
+	// ParallelWorkers sets the number of workers used by the backup. A zero
+	// value uses the server default. This option is available in Firebird 5 and
+	// later.
+	ParallelWorkers int
+
+	// Replace allows the backup service to overwrite an existing backup file.
+	// This option is available in RedDatabase 5.1 and later.
+	Replace bool
+
 	// NoDatabaseTriggers prevents database triggers from running during backup.
 	NoDatabaseTriggers bool
 
@@ -101,6 +110,8 @@ func (m *Manager) Backup(
 		ConvertExternalTables: option.ConvertExternal,
 		Expand:                option.Expand,
 		Factor:                option.Factor,
+		ParallelWorkers:       option.ParallelWorkers,
+		Replace:               option.Replace,
 		NoDatabaseTriggers:    option.NoDatabaseTriggers,
 		Zip:                   option.Zip,
 		Compressor:            option.Compressor,

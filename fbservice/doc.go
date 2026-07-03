@@ -18,9 +18,10 @@ Operations without special settings can omit their options:
 Pass BackupOptions to request verbose output or change backup behavior:
 
 	err = manager.Backup(ctx, database, backupFile, fbservice.BackupOptions{
-		Output:      os.Stdout,
-		Verbose:     true,
-		IgnoreLimbo: true,
+		Output:          os.Stdout,
+		Verbose:         true,
+		IgnoreLimbo:     true,
+		ParallelWorkers: 4,
 	})
 
 Manager does not write to standard output unless an operation explicitly

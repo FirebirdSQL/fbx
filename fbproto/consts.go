@@ -271,6 +271,7 @@ const (
 	Isc_spb_bkp_file               = 5
 	Isc_spb_bkp_factor             = 6
 	Isc_spb_bkp_length             = 7
+	Isc_spb_bkp_parallel_workers   = 21
 	Isc_spb_bkp_ignore_checksums   = 0x01
 	Isc_spb_bkp_ignore_limbo       = 0x02
 	Isc_spb_bkp_metadata_only      = 0x04
@@ -282,6 +283,7 @@ const (
 	Isc_spb_bkp_no_triggers        = 0x8000
 	Isc_spb_bkp_zip                = 0x010000
 	Isc_spb_bkp_compression        = 102
+	Isc_spb_bkp_replace            = 103
 
 	// restore
 	Isc_spb_res_buffers        = 9

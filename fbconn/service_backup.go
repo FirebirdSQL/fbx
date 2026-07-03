@@ -53,6 +53,15 @@ type BackupOptions struct {
 	// Factor sets the blocking factor. A zero value uses the server default.
 	Factor int
 
+	// ParallelWorkers sets the number of workers used by the backup. A zero
+	// value uses the server default. This option is available in Firebird 5 and
+	// later.
+	ParallelWorkers int
+
+	// Replace allows the backup service to overwrite an existing backup file.
+	// This option is available in RedDatabase 5.1 and later.
+	Replace bool
+
 	// NoDatabaseTriggers prevents database triggers from running during backup.
 	NoDatabaseTriggers bool
 
@@ -116,6 +125,19 @@ func buildBackupActionSPB(database string, backupFile string, options BackupOpti
 	if options.Factor > 0 {
 		spb.AppendByte(fbproto.Isc_spb_bkp_factor)
 		spb.AppendInt32(int32(options.Factor))
+	}
+	if options.ParallelWorkers < 0 || options.ParallelWorkers > maxServiceActionInt32 {
+		return nil, fmt.Errorf(
+			"backup parallel workers must be between 0 and %d",
+			maxServiceActionInt32,
+		)
+	}
+	if options.ParallelWorkers > 0 {
+		spb.AppendByte(fbproto.Isc_spb_bkp_parallel_workers)
+		spb.AppendInt32(int32(options.ParallelWorkers))
+	}
+	if options.Replace {
+		spb.AppendByte(fbproto.Isc_spb_bkp_replace)
 	}
 	if options.Compressor != "" {
 		if err := putServiceActionString(spb, fbproto.Isc_spb_bkp_compression, options.Compressor); err != nil {
