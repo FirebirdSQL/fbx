@@ -696,7 +696,7 @@ func (m *Map) planScan(typeMetadata TypeMetadata, target any, depth int) ScanPla
 		if dt != nil {
 			codec = dt.Codec
 		} else {
-			codec = ByteaCodec{}
+			codec = OctetsCodec{}
 		}
 		return &pointerEmptyInterfaceScanPlan{codec: codec, m: m, typeMetadata: typeMetadata}
 	}
