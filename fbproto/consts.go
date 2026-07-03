@@ -278,7 +278,10 @@ const (
 	Isc_spb_bkp_old_descriptions   = 0x10
 	Isc_spb_bkp_non_transportable  = 0x20
 	Isc_spb_bkp_convert            = 0x40
-	Isc_spb_bkp_expand             = 0x8
+	Isc_spb_bkp_expand             = 0x80
+	Isc_spb_bkp_no_triggers        = 0x8000
+	Isc_spb_bkp_zip                = 0x010000
+	Isc_spb_bkp_compression        = 102
 
 	// restore
 	Isc_spb_res_buffers        = 9
