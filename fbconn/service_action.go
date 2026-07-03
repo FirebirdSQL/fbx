@@ -94,6 +94,7 @@ func (c *ServiceConn) requestService(ctx context.Context, request fbproto.Client
 	case *fbproto.ErrorResponse:
 		return nil, ErrorResponseToFbError(message)
 	default:
+		fbConn.asyncClose()
 		return nil, fmt.Errorf("received unexpected service response: %v", message)
 	}
 }
