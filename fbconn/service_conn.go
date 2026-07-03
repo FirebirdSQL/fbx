@@ -23,7 +23,8 @@ const (
 // A ServiceConn is not safe for concurrent use. The caller must call
 // [ServiceConn.Close] when the connection is no longer needed.
 type ServiceConn struct {
-	conn *FbConn
+	conn         *FbConn
+	actionActive bool
 }
 
 // ServiceConfig contains settings used to establish a connection to the
@@ -35,7 +36,7 @@ type ServiceConfig struct {
 	ConnectionConfig *Config
 
 	// ExpectedDatabase identifies the database used to select authentication
-	// rules. It does not attach ServiceConn to that database.
+	// rules. It does not attach the service connection to that database.
 	ExpectedDatabase string
 }
 
@@ -45,7 +46,7 @@ type ServiceConfig struct {
 //
 // The database setting, when present, is sent to the service manager as the
 // expected database for authentication; ConnectService does not attach to that
-// database. ctx can cancel the connection attempt.
+// database. The context controls the connection attempt.
 func ConnectService(ctx context.Context, connString string) (*ServiceConn, error) {
 	config, err := ParseConfig(connString)
 	if err != nil {
@@ -60,9 +61,9 @@ func ConnectService(ctx context.Context, connString string) (*ServiceConn, error
 // ConnectServiceConfig establishes a connection to the Firebird service
 // manager using config.
 //
-// ConnectServiceConfig rejects database-only configuration such as
-// Config.ValidateConnect, Config.AfterConnect, Config.CreateDatabase, and
-// Config.DPB. ctx can cancel the connection attempt.
+// ConnectServiceConfig rejects database-only settings such as
+// [Config.ValidateConnect], [Config.AfterConnect], [Config.CreateDatabase],
+// and [Config.DPB]. The context controls the connection attempt.
 func ConnectServiceConfig(ctx context.Context, config *ServiceConfig) (*ServiceConn, error) {
 	connectionConfig, err := prepareServiceConnectionConfig(config)
 	if err != nil {
@@ -156,7 +157,7 @@ func putServiceAttachTag(spb *fbproto.XPBWriter, tag byte) {
 
 // Close attempts to detach from the service manager and always closes the
 // underlying network connection. It is safe to call Close more than once.
-// ctx limits the time available for the clean detach.
+// The context limits the time available for the clean detach.
 func (c *ServiceConn) Close(ctx context.Context) error {
 	if c == nil || c.conn == nil {
 		return nil

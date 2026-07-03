@@ -166,11 +166,42 @@ func TestConnectServiceConfigRejectsDatabaseOnlyOptions(t *testing.T) {
 	}
 }
 
+func TestConnectServiceConfigClosesConnectionOnEncodingError(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer func() { _ = serverConn.Close() }()
+	trackedConn := &closeTrackingConn{Conn: clientConn}
+
+	config, err := ParseConfig("firebird://sysdba:masterkey@mock/employee")
+	require.NoError(t, err)
+	config.Encoding = "invalid-encoding"
+	config.LookupFunc = func(context.Context, string) ([]string, error) {
+		return []string{"127.0.0.1"}, nil
+	}
+	config.DialFunc = func(context.Context, string, string) (net.Conn, error) {
+		return trackedConn, nil
+	}
+
+	_, err = ConnectServiceConfig(context.Background(), testServiceConfig(config))
+
+	require.ErrorContains(t, err, "encoding setup failed")
+	require.True(t, trackedConn.closed)
+}
+
 func testServiceConfig(config *Config) *ServiceConfig {
 	return &ServiceConfig{
 		ConnectionConfig: config,
 		ExpectedDatabase: config.Database,
 	}
+}
+
+type closeTrackingConn struct {
+	net.Conn
+	closed bool
+}
+
+func (c *closeTrackingConn) Close() error {
+	c.closed = true
+	return c.Conn.Close()
 }
 
 type serviceAttachProbeResult struct {

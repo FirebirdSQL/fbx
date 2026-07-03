@@ -695,7 +695,8 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 
 	fbConn.Encoding, err = fbproto.NewEncoding(config.Encoding)
 	if err != nil {
-		return nil, err
+		closeErr := fbConn.conn.Close()
+		return nil, newPerDialConnectError("encoding setup failed", errors.Join(err, closeErr))
 	}
 	fbConn.bgReader = bgreader.New(fbConn.conn)
 	fbConn.slowWriteTimer = time.AfterFunc(time.Duration(math.MaxInt64),
