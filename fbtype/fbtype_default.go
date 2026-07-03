@@ -38,23 +38,8 @@ func initDefaultMap() {
 
 		memoizedEncodePlans: make(map[TypeMetadata]map[reflect.Type]EncodePlan),
 
-		TryWrapEncodePlanFuncs: []TryWrapEncodePlanFunc{
-			TryWrapDerefPointerEncodePlan,
-			TryWrapBuiltinTypeEncodePlan,
-			TryWrapFindUnderlyingTypeEncodePlan,
-			TryWrapSliceEncodePlan,
-			TryWrapMultiDimSliceEncodePlan,
-			TryWrapArrayEncodePlan,
-		},
-
-		TryWrapScanPlanFuncs: []TryWrapScanPlanFunc{
-			TryPointerPointerScanPlan,
-			TryWrapBuiltinTypeScanPlan,
-			TryFindUnderlyingTypeScanPlan,
-			TryWrapPtrSliceScanPlan,
-			TryWrapPtrMultiDimSliceScanPlan,
-			TryWrapPtrArrayScanPlan,
-		},
+		TryWrapEncodePlanFuncs: defaultTryWrapEncodePlanFuncs(),
+		TryWrapScanPlanFuncs:   defaultTryWrapScanPlanFuncs(),
 	}
 
 	// Base types
@@ -75,6 +60,10 @@ func initDefaultMap() {
 	defaultMap.RegisterType(&Type{Name: "numeric", TypeID: MakeTypeSubtype(fbproto.SQL_TYPE_LONG, 1), Codec: &NumericCodec{}})
 	defaultMap.RegisterType(&Type{Name: "numeric", TypeID: MakeTypeSubtype(fbproto.SQL_TYPE_INT64, 1), Codec: &NumericCodec{}})
 	defaultMap.RegisterType(&Type{Name: "numeric", TypeID: MakeTypeSubtype(fbproto.SQL_TYPE_INT128, 1), Codec: &NumericCodec{}})
+	defaultMap.RegisterType(&Type{Name: "decimal", TypeID: MakeTypeSubtype(fbproto.SQL_TYPE_SHORT, 2), Codec: &NumericCodec{}})
+	defaultMap.RegisterType(&Type{Name: "decimal", TypeID: MakeTypeSubtype(fbproto.SQL_TYPE_LONG, 2), Codec: &NumericCodec{}})
+	defaultMap.RegisterType(&Type{Name: "decimal", TypeID: MakeTypeSubtype(fbproto.SQL_TYPE_INT64, 2), Codec: &NumericCodec{}})
+	defaultMap.RegisterType(&Type{Name: "decimal", TypeID: MakeTypeSubtype(fbproto.SQL_TYPE_INT128, 2), Codec: &NumericCodec{}})
 	defaultMap.RegisterType(&Type{Name: "octets", TypeID: MakeTypeSubtype(fbproto.SQL_TYPE_TEXT, 1), Codec: &OctetsCodec{}})
 	defaultMap.RegisterType(&Type{Name: "octets", TypeID: MakeTypeSubtype(fbproto.SQL_TYPE_VARYING, 1), Codec: &OctetsCodec{}})
 	defaultMap.RegisterType(&Type{Name: "decfloat16", TypeID: fbproto.SQL_TYPE_DEC64, Codec: DecFloat16Codec{}})

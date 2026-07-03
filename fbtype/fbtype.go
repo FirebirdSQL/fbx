@@ -98,6 +98,29 @@ func (m *Map) Copy() *Map {
 	return newMap
 }
 
+func defaultTryWrapEncodePlanFuncs() []TryWrapEncodePlanFunc {
+	return []TryWrapEncodePlanFunc{
+		TryWrapDerefPointerEncodePlan,
+		TryWrapBuiltinTypeEncodePlan,
+		TryWrapFindUnderlyingTypeEncodePlan,
+		TryWrapStringerEncodePlan,
+		TryWrapSliceEncodePlan,
+		TryWrapMultiDimSliceEncodePlan,
+		TryWrapArrayEncodePlan,
+	}
+}
+
+func defaultTryWrapScanPlanFuncs() []TryWrapScanPlanFunc {
+	return []TryWrapScanPlanFunc{
+		TryPointerPointerScanPlan,
+		TryWrapBuiltinTypeScanPlan,
+		TryFindUnderlyingTypeScanPlan,
+		TryWrapPtrSliceScanPlan,
+		TryWrapPtrMultiDimSliceScanPlan,
+		TryWrapPtrArrayScanPlan,
+	}
+}
+
 // NewMap creates a Map with the default wrapper functions and fallback access
 // to the package-level default type registrations.
 func NewMap() *Map {
@@ -110,24 +133,8 @@ func NewMap() *Map {
 
 		memoizedEncodePlans: make(map[TypeMetadata]map[reflect.Type]EncodePlan),
 
-		TryWrapEncodePlanFuncs: []TryWrapEncodePlanFunc{
-			TryWrapDerefPointerEncodePlan,
-			TryWrapBuiltinTypeEncodePlan,
-			TryWrapFindUnderlyingTypeEncodePlan,
-			TryWrapStringerEncodePlan,
-			TryWrapSliceEncodePlan,
-			TryWrapMultiDimSliceEncodePlan,
-			TryWrapArrayEncodePlan,
-		},
-
-		TryWrapScanPlanFuncs: []TryWrapScanPlanFunc{
-			TryPointerPointerScanPlan,
-			TryWrapBuiltinTypeScanPlan,
-			TryFindUnderlyingTypeScanPlan,
-			TryWrapPtrSliceScanPlan,
-			TryWrapPtrMultiDimSliceScanPlan,
-			TryWrapPtrArrayScanPlan,
-		},
+		TryWrapEncodePlanFuncs: defaultTryWrapEncodePlanFuncs(),
+		TryWrapScanPlanFuncs:   defaultTryWrapScanPlanFuncs(),
 	}
 }
 
