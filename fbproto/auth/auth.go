@@ -269,7 +269,7 @@ func (m *AuthManager) HandleServerChallenge(pluginName string, data []byte) (*Au
 	if !ok {
 		return nil, &UnsupportedPluginError{Name: pluginName}
 	}
-	if isPluginChanged {
+	if isPluginChanged && pluginName != "Gss" {
 		authData := plugin.InitialClientData()
 		step = &AuthPluginStep{Reply: cloneBytes(authData)}
 	} else {
