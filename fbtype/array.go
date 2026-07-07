@@ -337,6 +337,9 @@ func (ad *ArrayData) decodeBinary(m *Map, src []byte, array ArraySetter, realInd
 	indexPosition := 0
 	for i := 0; i < elementCount && position < len(src); i++ {
 		if ad.TypeId == fbproto.SQL_TYPE_VARYING {
+			if len(src[position:]) < 4 {
+				return fmt.Errorf("array body truncated at element %d", i)
+			}
 			elemLen = int(int32(binary.BigEndian.Uint32(src[position:])))
 			position += 4
 		}
@@ -345,6 +348,9 @@ func (ad *ArrayData) decodeBinary(m *Map, src []byte, array ArraySetter, realInd
 			realIndexes = realIndexes[1:]
 		}
 		if elemLen >= 0 {
+			if len(src[position:]) < elemLen {
+				return fmt.Errorf("array element %d length %d exceeds remaining %d bytes", i, elemLen, len(src[position:]))
+			}
 			elemSrc = src[position : position+elemLen]
 			position += elemLen
 		}
@@ -357,6 +363,9 @@ func (ad *ArrayData) decodeBinary(m *Map, src []byte, array ArraySetter, realInd
 			indexPosition++
 		}
 		if ad.TypeId == fbproto.SQL_TYPE_BOOLEAN {
+			if len(src[position:]) < 3 {
+				return fmt.Errorf("array boolean element %d padding exceeds remaining %d bytes", i, len(src[position:]))
+			}
 			position += 3 // skip padding
 		}
 	}
