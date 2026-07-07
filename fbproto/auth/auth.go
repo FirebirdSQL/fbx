@@ -268,14 +268,22 @@ func (m *AuthManager) BeginHandshake() *HandshakeRequest {
 // returns the next client response. It also stores the wire-format reply so an
 // attach-through-DPB flow can put the exact bytes into isc_dpb_specific_auth_data.
 func (m *AuthManager) HandleServerChallenge(pluginName string, data []byte) (*AuthPluginStep, error) {
+	var step *AuthPluginStep
+	var err error
+	isPluginChanged := m.GetCurrentPlugin().Name() != pluginName
 	m.authComplete = false
 	plugin, ok := m.SetCurrentPlugin(pluginName)
 	if !ok {
 		return nil, &UnsupportedPluginError{Name: pluginName}
 	}
-	step, err := plugin.HandleServerData(m.user, m.password, pluginName, data)
-	if err != nil {
-		return nil, err
+	if isPluginChanged && pluginName != "Gss" {
+		authData := plugin.InitialClientData()
+		step = &AuthPluginStep{Reply: cloneBytes(authData)}
+	} else {
+		step, err = plugin.HandleServerData(m.user, m.password, pluginName, data)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if step != nil && len(step.Reply) > 0 {
 		m.lastAuthSpecific = step.Reply
