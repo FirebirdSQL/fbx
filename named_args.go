@@ -44,7 +44,7 @@ func (sna StrictNamedArgs) RewriteQuery(ctx context.Context, conn *Conn, sql str
 //
 // Anonymous embedded struct fields are recursively flattened into the named arguments map. Anonymous embedded pointers
 // are not flattened. Options after a comma in a "db" tag are ignored, so `db:"emp_no,omitempty"` is treated as
-// `db:"emp_no"`.
+// `db:"emp_no"`. [StructArgs] returns an error if multiple fields map to the same named argument.
 //
 // For example:
 //
@@ -113,18 +113,22 @@ func structToNamedArgs(arg any) (map[string]any, error) {
 	}
 
 	na := make(map[string]any, v.NumField())
-	appendStructNamedArgs(na, v)
+	if err := appendStructNamedArgs(na, v); err != nil {
+		return nil, err
+	}
 	return na, nil
 }
 
-func appendStructNamedArgs(na map[string]any, v reflect.Value) {
+func appendStructNamedArgs(na map[string]any, v reflect.Value) error {
 	t := v.Type()
 	for i := 0; i < t.NumField(); i++ {
 		sf := t.Field(i)
 		fv := v.Field(i)
 
 		if sf.Anonymous && sf.Type.Kind() == reflect.Struct {
-			appendStructNamedArgs(na, fv)
+			if err := appendStructNamedArgs(na, fv); err != nil {
+				return err
+			}
 			continue
 		}
 		if sf.PkgPath != "" {
@@ -142,8 +146,13 @@ func appendStructNamedArgs(na map[string]any, v reflect.Value) {
 			name = sf.Name
 		}
 
+		if _, exists := na[name]; exists {
+			return fmt.Errorf("struct field %s maps to duplicate named argument %s", sf.Name, name)
+		}
 		na[name] = fv.Interface()
 	}
+
+	return nil
 }
 
 type namedArg string

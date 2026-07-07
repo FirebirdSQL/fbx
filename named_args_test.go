@@ -241,3 +241,25 @@ func TestStructArgsErrors(t *testing.T) {
 		require.Error(t, err)
 	}
 }
+
+func TestStructArgsDuplicateFieldNames(t *testing.T) {
+	t.Parallel()
+
+	type embeddedArgs struct {
+		ID int32 `db:"id"`
+	}
+
+	for _, arg := range []any{
+		struct {
+			ID      int32 `db:"id"`
+			OtherID int32 `db:"id"`
+		}{},
+		struct {
+			embeddedArgs
+			ID int32 `db:"id"`
+		}{},
+	} {
+		_, _, err := fbx.StructArgs(arg).RewriteQuery(context.Background(), nil, "select @id", nil)
+		require.ErrorContains(t, err, "duplicate named argument id")
+	}
+}
