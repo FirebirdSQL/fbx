@@ -742,7 +742,7 @@ func checkSessionAttrIsPrimary(ctx context.Context, fbConn *FbConn) (bool, error
 	return false, errors.New("Replication is not configured")
 }
 
-// ValidateConnectTargetSessionAttrsReplica is a ValidateConnectFunc that implements
+// ValidateConnectTargetSessionAttrsReplica is a [ValidateConnectFunc] that implements
 // target_session_attrs=replica.
 func ValidateConnectTargetSessionAttrsReplica(ctx context.Context, fbConn *FbConn) error {
 	isPrimary, err := checkSessionAttrIsPrimary(ctx, fbConn)
@@ -758,7 +758,7 @@ func ValidateConnectTargetSessionAttrsReplica(ctx context.Context, fbConn *FbCon
 	return nil
 }
 
-// ValidateConnectTargetSessionAttrsPrimary is a ValidateConnectFunc that implements
+// ValidateConnectTargetSessionAttrsPrimary is a [ValidateConnectFunc] that implements
 // target_session_attrs=primary.
 func ValidateConnectTargetSessionAttrsPrimary(ctx context.Context, fbConn *FbConn) error {
 	isPrimary, err := checkSessionAttrIsPrimary(ctx, fbConn)
@@ -774,7 +774,7 @@ func ValidateConnectTargetSessionAttrsPrimary(ctx context.Context, fbConn *FbCon
 	return nil
 }
 
-// ValidateConnectTargetSessionAttrsPreferReplica is a ValidateConnectFunc that implements
+// ValidateConnectTargetSessionAttrsPreferReplica is a [ValidateConnectFunc] that implements
 // target_session_attrs=prefer-replica.
 func ValidateConnectTargetSessionAttrsPreferReplica(ctx context.Context, fbConn *FbConn) error {
 	isPrimary, err := checkSessionAttrIsPrimary(ctx, fbConn)
