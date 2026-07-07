@@ -88,8 +88,16 @@ type ParseConfigOptions struct {
 	// when encrypted transport is used (if supported).
 	GetSSLPassword GetSSLPasswordFunc
 
-	// ConnStringAllowedKeys, if non-nil, restricts which parameter keys may appear in connString.
-	// Environment variables and built-in defaults are not checked.
+	// ConnStringAllowedKeys restricts which parameter keys may appear in connString when the slice is non-nil.
+	//
+	// This is useful when accepting a connection string from an untrusted source and only a known subset of parameters
+	// should be allowed.
+	//
+	// A nil slice means no restriction. An empty non-nil slice rejects every key in connString. Only keys explicitly
+	// present in connString are checked; environment variables and built-in defaults are not checked.
+	//
+	// Keys are compared after applying the same aliases that ParseConfig applies to connString keys, so aliases and
+	// canonical names are both accepted. For example, "dbname" and "database" both allow the database parameter.
 	ConnStringAllowedKeys []string
 }
 

@@ -37,9 +37,14 @@ func (sna StrictNamedArgs) RewriteQuery(ctx context.Context, conn *Conn, sql str
 	return rewriteQuery(sna, sql, true)
 }
 
-// StructArgs can be used as the first argument to a query method. It behaves like NamedArgs, but builds the named
-// arguments from the exported fields of structArg. Field names are used by default and can be overridden with the "db"
-// struct tag. Fields tagged with `db:"-"` are ignored.
+// StructArgs returns a QueryRewriter that builds named arguments from the exported fields of structArg.
+//
+// Field names are used by default and can be overridden with the "db" struct tag. Fields tagged with `db:"-"` are
+// ignored. structArg may be a struct or a pointer to a struct.
+//
+// Anonymous embedded struct fields are recursively flattened into the named arguments map. Anonymous embedded pointers
+// are not flattened. Options after a comma in a "db" tag are ignored, so `db:"emp_no,omitempty"` is treated as
+// `db:"emp_no"`.
 //
 // For example:
 //
@@ -54,8 +59,11 @@ func StructArgs(structArg any) QueryRewriter {
 	}
 }
 
-// StrictStructArgs can be used in the same way as StructArgs, but provided struct fields are also checked to include
-// all named arguments that the sql query uses, and no extra arguments.
+// StrictStructArgs returns a QueryRewriter that builds named arguments from structArg and requires them to match the
+// SQL query exactly.
+//
+// It uses the same field mapping rules as StructArgs. The rewrite fails if the SQL query contains a named argument
+// that is not present in structArg, or if structArg contains a named argument that is not used by the SQL query.
 //
 // For example, this query returns an error because LastName is not used by the SQL query:
 //
