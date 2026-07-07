@@ -18,6 +18,38 @@ const (
 	microsecondsPerMonth  = 30 * microsecondsPerDay
 )
 
+var timeAnchorDate = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+
+func timeOfDayMicroseconds(t time.Time) int64 {
+	return int64(t.Hour())*microsecondsPerHour +
+		int64(t.Minute())*microsecondsPerMinute +
+		int64(t.Second())*microsecondsPerSecond +
+		int64(t.Nanosecond())/1000
+}
+
+func timeFromMicroseconds(usec int64, date time.Time, loc *time.Location) time.Time {
+	hours := usec / microsecondsPerHour
+	usec -= hours * microsecondsPerHour
+	minutes := usec / microsecondsPerMinute
+	usec -= minutes * microsecondsPerMinute
+	seconds := usec / microsecondsPerSecond
+	usec -= seconds * microsecondsPerSecond
+
+	return time.Date(
+		date.Year(), date.Month(), date.Day(),
+		int(hours), int(minutes), int(seconds), int(usec)*1000,
+		loc,
+	)
+}
+
+func timeWithDate(t time.Time, date time.Time) time.Time {
+	return time.Date(
+		date.Year(), date.Month(), date.Day(),
+		t.Hour(), t.Minute(), t.Second(), t.Nanosecond(),
+		t.Location(),
+	)
+}
+
 type TimeScanner interface {
 	ScanTime(v Time) error
 }
@@ -30,8 +62,6 @@ type TimeValuer interface {
 //
 // Time is represented as the number of 100 microseconds since midnight in the same way that Firebird does. Other time and
 // date types in fbtype can use time.Time as the underlying representation.
-//
-// The time with time zone type is not supported. Use of time with time zone is discouraged by the Firebird documentation.
 type Time struct {
 	Microseconds int64 // Number of 100 microseconds since midnight
 	Valid        bool
@@ -65,10 +95,7 @@ func (t *Time) Scan(src any) error {
 		t.Valid = true
 		return nil
 	case time.Time:
-		t.Microseconds = int64(src.Hour())*microsecondsPerHour +
-			int64(src.Minute())*microsecondsPerMinute +
-			int64(src.Second())*microsecondsPerSecond +
-			int64(src.Nanosecond())/1000
+		t.Microseconds = timeOfDayMicroseconds(src)
 		t.Valid = true
 		return nil
 	}
@@ -222,11 +249,7 @@ type encodePlanTimeCodecBinaryTime struct{}
 func (encodePlanTimeCodecBinaryTime) Encode(value any, buf []byte) ([]byte, error) {
 	t := value.(time.Time)
 
-	usec := int64(t.Hour())*microsecondsPerHour +
-		int64(t.Minute())*microsecondsPerMinute +
-		int64(t.Second())*microsecondsPerSecond +
-		int64(t.Nanosecond())/1000
-
+	usec := timeOfDayMicroseconds(t)
 	if usec < 0 || usec >= microsecondsPerDay {
 		return nil, fmt.Errorf("fbtype: TIME value out of range (µs since midnight: %d)", usec)
 	}
@@ -269,18 +292,7 @@ func (scanPlanBinaryTimeToTime) Scan(src []byte, dst any) error {
 		return fmt.Errorf("TIME value out of range: %d microseconds", usec)
 	}
 
-	hours := usec / microsecondsPerHour
-	usec %= microsecondsPerHour
-
-	minutes := usec / microsecondsPerMinute
-	usec %= microsecondsPerMinute
-
-	seconds := usec / microsecondsPerSecond
-	usec %= microsecondsPerSecond
-
-	nanos := usec * 1000
-
-	*target = time.Date(2000, 1, 1, int(hours), int(minutes), int(seconds), int(nanos), time.UTC)
+	*target = timeFromMicroseconds(usec, timeAnchorDate, time.UTC)
 
 	return nil
 }

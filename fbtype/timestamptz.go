@@ -309,11 +309,7 @@ func encodeTimestamptzBinary(buf []byte, ts Timestamptz) ([]byte, error) {
 
 	days := int32((tMidnightUTC.Unix() - firebirdDateEpoch.Unix()) / secondsPerDay)
 
-	usec := int64(utc.Hour())*microsecondsPerHour +
-		int64(utc.Minute())*microsecondsPerMinute +
-		int64(utc.Second())*microsecondsPerSecond +
-		int64(utc.Nanosecond())/1000
-
+	usec := timeOfDayMicroseconds(utc)
 	if usec < 0 || usec >= microsecondsPerDay {
 		return nil, fmt.Errorf("fbtype: TIMESTAMPTZ time-of-day out of range (µs since midnight: %d)", usec)
 	}
@@ -346,23 +342,10 @@ func decodeTimestamptzBinary(src []byte) (Timestamptz, error) {
 		return Timestamptz{}, fmt.Errorf("TIMESTAMPTZ time-of-day out of range in decode (µs since midnight: %d)", usec)
 	}
 
-	hour := usec / microsecondsPerHour
-	usec -= hour * microsecondsPerHour
-	min := usec / microsecondsPerMinute
-	usec -= min * microsecondsPerMinute
-	sec := usec / microsecondsPerSecond
-	usec -= sec * microsecondsPerSecond
-
-	utc := time.Date(
-		tDate.Year(), tDate.Month(), tDate.Day(),
-		int(hour), int(min), int(sec), int(usec)*1000,
-		time.UTC,
-	)
-
 	tzRaw := uint16(tzVal & 0xFFFF)
 	loc := fbproto.ResolveLocationByTzRaw(tzRaw)
 
-	t := utc.In(loc)
+	t := timeFromMicroseconds(usec, tDate, time.UTC).In(loc)
 
 	return Timestamptz{
 		Time:  t,

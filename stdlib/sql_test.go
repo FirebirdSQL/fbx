@@ -1080,7 +1080,7 @@ func TestRowsColumnTypes(t *testing.T) {
 				ScanType: reflect.TypeOf(float64(0)),
 			}, {
 				Name:     "D",
-				TypeName: "32756",
+				TypeName: "TIMETZ",
 				Length: struct {
 					Len int64
 					OK  bool
@@ -1097,7 +1097,7 @@ func TestRowsColumnTypes(t *testing.T) {
 					Scale:     0,
 					OK:        false,
 				},
-				ScanType: reflect.TypeOf(""),
+				ScanType: reflect.TypeOf(time.Time{}),
 			},
 		}
 

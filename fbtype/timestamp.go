@@ -324,11 +324,7 @@ func encodeTimestampBinary(t time.Time, buf []byte) ([]byte, error) {
 	tMidnightUTC := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
 	days := int32((tMidnightUTC.Unix() - firebirdDateEpoch.Unix()) / secondsPerDay)
 
-	usec := int64(t.Hour())*microsecondsPerHour +
-		int64(t.Minute())*microsecondsPerMinute +
-		int64(t.Second())*microsecondsPerSecond +
-		int64(t.Nanosecond())/1000
-
+	usec := timeOfDayMicroseconds(t)
 	if usec < 0 || usec >= microsecondsPerDay {
 		return nil, fmt.Errorf("fbtype: TIMESTAMP time-of-day out of range (µs since midnight: %d)", usec)
 	}
@@ -356,23 +352,10 @@ func decodeTimestampBinary(src []byte, location *time.Location) (time.Time, erro
 		return time.Time{}, fmt.Errorf("TIMESTAMP time-of-day out of range in decode (µs since midnight: %d)", usec)
 	}
 
-	hour := usec / microsecondsPerHour
-	usec -= hour * microsecondsPerHour
-	min := usec / microsecondsPerMinute
-	usec -= min * microsecondsPerMinute
-	sec := usec / microsecondsPerSecond
-	usec -= sec * microsecondsPerSecond
-
 	loc := time.UTC
 	if location != nil {
 		loc = location
 	}
 
-	t := time.Date(
-		tDate.Year(), tDate.Month(), tDate.Day(),
-		int(hour), int(min), int(sec), int(usec)*1000,
-		loc,
-	)
-
-	return t, nil
+	return timeFromMicroseconds(usec, tDate, loc), nil
 }
