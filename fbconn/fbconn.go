@@ -2748,7 +2748,7 @@ func (fbConn *FbConn) flushWithPotentialWriteReadDeadlock() error {
 // operation that will use the underlying net.Conn directly. e.g. Before Conn() or Hijack().
 func (fbConn *FbConn) SyncConn(ctx context.Context) error {
 	if fbConn.status == connStatusClosed {
-		return errors.New("SyncConn: conn closed")
+		return fmt.Errorf("SyncConn: %w", ErrConnClosed)
 	}
 
 	for i := 0; i < 10; i++ {
