@@ -631,7 +631,13 @@ func connectPreferred(ctx context.Context, config *Config, connectOneConfigs []*
 	}
 
 	if fallbackConnectOneConfig != nil {
-		fbConn, err := connectOne(ctx, config, fallbackConnectOneConfig, true)
+		fallbackCtx := octx
+		if config.ConnectTimeout != 0 {
+			var cancel context.CancelFunc
+			fallbackCtx, cancel = context.WithTimeout(octx, config.ConnectTimeout)
+			defer cancel()
+		}
+		fbConn, err := connectOne(fallbackCtx, config, fallbackConnectOneConfig, true)
 		if err == nil {
 			return fbConn, nil
 		}
@@ -2740,7 +2746,7 @@ func (fbConn *FbConn) flushWithPotentialWriteReadDeadlock() error {
 // operation that will use the underlying net.Conn directly. e.g. Before Conn() or Hijack().
 func (fbConn *FbConn) SyncConn(ctx context.Context) error {
 	if fbConn.status == connStatusClosed {
-		return errors.New("SyncConn: conn closed")
+		return fmt.Errorf("SyncConn: %w", ErrConnClosed)
 	}
 
 	for i := 0; i < 10; i++ {

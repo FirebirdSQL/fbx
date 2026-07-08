@@ -101,12 +101,22 @@ type connLockError struct {
 	status string
 }
 
+// ErrConnClosed is returned, possibly wrapped, when an operation is attempted on a closed connection.
+var ErrConnClosed = errors.New("conn closed")
+
 func (e *connLockError) SafeToRetry() bool {
 	return true // a lock failure by definition happens before the connection is used.
 }
 
 func (e *connLockError) Error() string {
 	return e.status
+}
+
+func (e *connLockError) Unwrap() error {
+	if e.status == "conn closed" {
+		return ErrConnClosed
+	}
+	return nil
 }
 
 // ParseConfigError is the error returned when a connection string cannot be parsed.
@@ -142,13 +152,14 @@ func (e *ParseConfigError) Unwrap() error {
 func normalizeTimeoutError(ctx context.Context, err error) error {
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
-		if ctx.Err() == context.Canceled {
+		switch ctx.Err() {
+		case context.Canceled:
 			// Since the timeout was caused by a context cancellation, the actual error is context.Canceled not the timeout error.
 			return context.Canceled
-		} else if ctx.Err() == context.DeadlineExceeded {
+		case context.DeadlineExceeded:
 			return &errTimeout{err: ctx.Err()}
-		} else {
-			return &errTimeout{err: netErr}
+		default:
+			return &errTimeout{err: err}
 		}
 	}
 	return err

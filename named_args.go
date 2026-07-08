@@ -3,6 +3,7 @@ package fbx
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"unicode/utf8"
 )
@@ -34,6 +35,124 @@ type StrictNamedArgs map[string]any
 // RewriteQuery implements the QueryRewriter interface.
 func (sna StrictNamedArgs) RewriteQuery(ctx context.Context, conn *Conn, sql string, args []any) (newSQL string, newArgs []any, err error) {
 	return rewriteQuery(sna, sql, true)
+}
+
+// StructArgs returns a QueryRewriter that builds named arguments from the exported fields of structArg.
+//
+// Field names are used by default and can be overridden with the "db" struct tag. Fields tagged with `db:"-"` are
+// ignored. structArg may be a struct or a pointer to a struct.
+//
+// Anonymous embedded struct fields are recursively flattened into the named arguments map. Anonymous embedded pointers
+// are not flattened. Options after a comma in a "db" tag are ignored, so `db:"emp_no,omitempty"` is treated as
+// `db:"emp_no"`. [StructArgs] returns an error if multiple fields map to the same named argument.
+//
+// For example:
+//
+//	type EmployeeFilter struct {
+//		EmpNo int32 `db:"emp_no"`
+//	}
+//
+//	conn.Query(ctx, "select first_name from employee where emp_no=@emp_no", fbx.StructArgs(EmployeeFilter{EmpNo: 2}))
+func StructArgs(structArg any) QueryRewriter {
+	return structArgs{
+		arg: structArg,
+	}
+}
+
+// StrictStructArgs returns a QueryRewriter that builds named arguments from structArg and requires them to match the
+// SQL query exactly.
+//
+// It uses the same field mapping rules as StructArgs. The rewrite fails if the SQL query contains a named argument
+// that is not present in structArg, or if structArg contains a named argument that is not used by the SQL query.
+//
+// For example, this query returns an error because LastName is not used by the SQL query:
+//
+//	type EmployeeFilter struct {
+//		EmpNo    int32  `db:"emp_no"`
+//		LastName string `db:"last_name"`
+//	}
+//
+//	conn.Query(ctx, "select first_name from employee where emp_no=@emp_no", fbx.StrictStructArgs(EmployeeFilter{EmpNo: 2}))
+func StrictStructArgs(structArg any) QueryRewriter {
+	return structArgs{
+		arg:    structArg,
+		strict: true,
+	}
+}
+
+type structArgs struct {
+	arg    any
+	strict bool
+}
+
+// RewriteQuery implements the QueryRewriter interface.
+func (sa structArgs) RewriteQuery(ctx context.Context, conn *Conn, sql string, args []any) (newSQL string, newArgs []any, err error) {
+	na, err := structToNamedArgs(sa.arg)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return rewriteQuery(na, sql, sa.strict)
+}
+
+func structToNamedArgs(arg any) (map[string]any, error) {
+	v := reflect.ValueOf(arg)
+	if !v.IsValid() {
+		return nil, fmt.Errorf("expected struct or pointer to struct, got nil")
+	}
+
+	for v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			return nil, fmt.Errorf("expected struct or pointer to struct, got nil")
+		}
+		v = v.Elem()
+	}
+
+	if v.Kind() != reflect.Struct {
+		return nil, fmt.Errorf("expected struct or pointer to struct, got %T", arg)
+	}
+
+	na := make(map[string]any, v.NumField())
+	if err := appendStructNamedArgs(na, v); err != nil {
+		return nil, err
+	}
+	return na, nil
+}
+
+func appendStructNamedArgs(na map[string]any, v reflect.Value) error {
+	t := v.Type()
+	for i := 0; i < t.NumField(); i++ {
+		sf := t.Field(i)
+		fv := v.Field(i)
+
+		if sf.Anonymous && sf.Type.Kind() == reflect.Struct {
+			if err := appendStructNamedArgs(na, fv); err != nil {
+				return err
+			}
+			continue
+		}
+		if sf.PkgPath != "" {
+			continue
+		}
+
+		name, tagPresent := sf.Tag.Lookup(structTagKey)
+		if tagPresent {
+			name, _, _ = strings.Cut(name, ",")
+		}
+		if name == "-" {
+			continue
+		}
+		if !tagPresent {
+			name = sf.Name
+		}
+
+		if _, exists := na[name]; exists {
+			return fmt.Errorf("struct field %s maps to duplicate named argument %s", sf.Name, name)
+		}
+		na[name] = fv.Interface()
+	}
+
+	return nil
 }
 
 type namedArg string
@@ -168,7 +287,7 @@ func namedArgState(l *sqlLexer) stateFn {
 			if _, found := l.namedArgs[na]; !found {
 				l.namedArgs[na] = struct{}{}
 			}
-			l.parts = append(l.parts, namedArg(na))
+			l.parts = append(l.parts, na)
 			l.start = l.pos
 			return rawState
 		}

@@ -968,7 +968,7 @@ func TestConnBatchInsertBoundaryAndVariableLength(t *testing.T) {
 		if !reflect.DeepEqual(r, want) {
 			t.Errorf("row for b=%d mismatch (corruption!):\n got  %#v\n want %#v", b, r, want)
 		}
-		
+
 		for _, idx := range []int{0, 5} {
 			if _, ok := r[idx].(int16); !ok {
 				t.Errorf("column idx %d expected int16, got %T (%v)", idx, r[idx], r[idx])

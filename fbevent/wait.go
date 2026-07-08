@@ -16,13 +16,13 @@ import (
 // nil error.
 func (m *Manager) WaitForEvent(ctx context.Context, eventName string, timeout time.Duration) (int, error) {
 	listener := newOneTimeEventListener()
-	handle, err := m.AddEventListener(eventName, listener)
+	listenerCloser, err := m.AddEventListener(eventName, listener)
 	if err != nil {
 		return -1, err
 	}
 
 	count, awaitErr := listener.awaitWithAsyncError(ctx, timeout, m.asyncErrorSignal(), m.LastError)
-	removeErr := m.RemoveEventListener(handle)
+	removeErr := listenerCloser.Close()
 
 	if awaitErr != nil {
 		if removeErr != nil {

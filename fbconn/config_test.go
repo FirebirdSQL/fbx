@@ -452,6 +452,14 @@ func TestParseConfigKVWithTrailingEmptyEqualDoesNotPanic(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestParseConfigKVTrailingWhitespace(t *testing.T) {
+	config, err := fbconn.ParseConfig("host=localhost port=3050 database=testdb   \t\n")
+	require.NoError(t, err)
+	require.Equal(t, "localhost", config.Host)
+	require.Equal(t, uint16(3050), config.Port)
+	require.Equal(t, "testdb", config.Database)
+}
+
 func TestParseConfigKVLeadingEqual(t *testing.T) {
 	_, err := fbconn.ParseConfig("= user=ivan")
 	require.Error(t, err)
@@ -469,6 +477,34 @@ func TestParseConfigInvalidFetchBatchSize(t *testing.T) {
 	_, err := fbconn.ParseConfig("fetch_batch_size=0")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid fetch_batch_size")
+}
+
+func TestParseConfigConnStringAllowedKeys(t *testing.T) {
+	config, err := fbconn.ParseConfigWithOptions(
+		"host=localhost dbname=testdb createdb=true",
+		fbconn.ParseConfigOptions{ConnStringAllowedKeys: []string{"host", "database", "create_database"}},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "localhost", config.Host)
+	require.Equal(t, "testdb", config.Database)
+	require.True(t, config.CreateDatabase)
+
+	_, err = fbconn.ParseConfigWithOptions(
+		"host=localhost password=secret",
+		fbconn.ParseConfigOptions{ConnStringAllowedKeys: []string{"host"}},
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), `connection string key "password" is not in ConnStringAllowedKeys`)
+}
+
+func TestParseConfigConnStringAllowedKeysURLAliases(t *testing.T) {
+	config, err := fbconn.ParseConfigWithOptions(
+		"firebird://localhost/?dbname=testdb&createdb=true",
+		fbconn.ParseConfigOptions{ConnStringAllowedKeys: []string{"host", "dbname", "createdb"}},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "testdb", config.Database)
+	require.True(t, config.CreateDatabase)
 }
 
 func TestConfigCopyReturnsEqualConfig(t *testing.T) {

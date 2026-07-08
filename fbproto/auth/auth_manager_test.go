@@ -65,12 +65,14 @@ func TestSetCurrentPluginNotFound(t *testing.T) {
 func TestAuthManagerHandleServerChallenge(t *testing.T) {
 	m, err := NewAuthManager("user", "secret", nil)
 	require.NoError(t, err)
-	step, err := m.HandleServerChallenge("legacy_auth", nil)
+	legacyName := "Legacy_Auth"
+	m.SetCurrentPlugin(legacyName)
+	step, err := m.HandleServerChallenge(legacyName, nil)
 	require.NoError(t, err)
 	require.NotNil(t, step)
 	require.Equal(t, step.AuthSpecific, m.AuthSpecificData())
 	require.Empty(t, m.SessionKey())
-	require.Equal(t, "Legacy_Auth", m.GetCurrentPlugin().Name())
+	require.Equal(t, legacyName, m.GetCurrentPlugin().Name())
 	require.NoError(t, m.HandleAuthResponse(nil))
 
 	step, err = m.HandleServerChallenge("srp", nil)
@@ -164,4 +166,34 @@ func mustAuthManagerSrpServerData(t *testing.T, salt []byte, serverPublic *big.I
 	data = binary.LittleEndian.AppendUint16(data, uint16(len(serverHex)))
 	data = append(data, serverHex...)
 	return data
+}
+
+func TestHandleServerChallengeProcessesGssDataWhenPluginChanges(t *testing.T) {
+	m, err := NewAuthManager("sysdba", "masterkey", []string{"Srp256", "Gss"})
+	require.NoError(t, err)
+	require.Equal(t, "Srp256", m.GetCurrentPlugin().Name())
+
+	plugin := m.plugins[0].(*SrpAuthPlugin)
+	salt := []byte(testSaltHex)
+	serverPrivate := mustBigIntFromHex(testServerPrivateHex)
+	verifier := plugin.engine.Verifier("SYSDBA", "masterkey", salt)
+	serverPublic := plugin.engine.PublicServerKey(verifier, serverPrivate)
+	serverData := mustAuthManagerSrpServerData(t, salt, serverPublic)
+
+	data := []byte{9, 0}
+	data = append(data, []byte("localhost")...)
+	data = append(data, 6, 0)
+	data = append(data, []byte("red_db")...)
+
+	prev := getGssTokenProvider()
+	mock := &mockGssProvider{token: []byte{1, 2, 3, 4}}
+	SetGssTokenProvider(mock)
+	t.Cleanup(func() { SetGssTokenProvider(prev) })
+
+	step, err := m.HandleServerChallenge("Gss", serverData)
+	require.NoError(t, err)
+	require.Equal(t, "Gss", m.GetCurrentPlugin().Name())
+	require.NotNil(t, step)
+	require.NotEmpty(t, step.AuthSpecific)
+	require.Equal(t, step.Reply, m.AuthSpecificData())
 }
