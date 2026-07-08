@@ -748,6 +748,8 @@ func checkSessionAttrIsPrimary(ctx context.Context, fbConn *FbConn) (bool, error
 	return false, errors.New("Replication is not configured")
 }
 
+// ValidateConnectTargetSessionAttrsReplica is a [ValidateConnectFunc] that implements
+// target_session_attrs=replica.
 func ValidateConnectTargetSessionAttrsReplica(ctx context.Context, fbConn *FbConn) error {
 	isPrimary, err := checkSessionAttrIsPrimary(ctx, fbConn)
 
@@ -762,6 +764,8 @@ func ValidateConnectTargetSessionAttrsReplica(ctx context.Context, fbConn *FbCon
 	return nil
 }
 
+// ValidateConnectTargetSessionAttrsPrimary is a [ValidateConnectFunc] that implements
+// target_session_attrs=primary.
 func ValidateConnectTargetSessionAttrsPrimary(ctx context.Context, fbConn *FbConn) error {
 	isPrimary, err := checkSessionAttrIsPrimary(ctx, fbConn)
 
@@ -776,6 +780,8 @@ func ValidateConnectTargetSessionAttrsPrimary(ctx context.Context, fbConn *FbCon
 	return nil
 }
 
+// ValidateConnectTargetSessionAttrsPreferReplica is a [ValidateConnectFunc] that implements
+// target_session_attrs=prefer-replica.
 func ValidateConnectTargetSessionAttrsPreferReplica(ctx context.Context, fbConn *FbConn) error {
 	isPrimary, err := checkSessionAttrIsPrimary(ctx, fbConn)
 
@@ -789,52 +795,6 @@ func ValidateConnectTargetSessionAttrsPreferReplica(ctx context.Context, fbConn 
 
 	return nil
 }
-
-//FIXME: fbx, possible to implement it by scanning MON$REPLICATION or obtaining status from context variables https://tracker.red-soft.ru/issues/261350
-// ValidateConnectTargetSessionAttrsStandby is a ValidateConnectFunc that implements libpq compatible
-// target_session_attrs=standby.
-//func ValidateConnectTargetSessionAttrsStandby(ctx context.Context, fbConn *FbConn) error {
-//	result, err := fbConn.Exec(ctx, "select fb_is_in_recovery()").ReadAll()
-//	if err != nil {
-//		return err
-//	}
-//
-//	if string(result[0].Rows[0][0]) != "t" {
-//		return errors.New("server is not in hot standby mode")
-//	}
-//
-//	return nil
-//}
-
-// ValidateConnectTargetSessionAttrsPrimary is a ValidateConnectFunc that implements libpq compatible
-// target_session_attrs=primary.
-//func ValidateConnectTargetSessionAttrsPrimary(ctx context.Context, fbConn *FbConn) error {
-//	result, err := fbConn.Exec(ctx, "select fb_is_in_recovery()").ReadAll()
-//	if err != nil {
-//		return err
-//	}
-//
-//	if string(result[0].Rows[0][0]) == "t" {
-//		return errors.New("server is in standby mode")
-//	}
-//
-//	return nil
-//}
-
-// ValidateConnectTargetSessionAttrsPreferStandby is a ValidateConnectFunc that implements libpq compatible
-// target_session_attrs=prefer-standby.
-//func ValidateConnectTargetSessionAttrsPreferStandby(ctx context.Context, fbConn *FbConn) error {
-//	result, err := fbConn.Exec(ctx, "select fb_is_in_recovery()").ReadAll()
-//	if err != nil {
-//		return err
-//	}
-//
-//	if string(result[0].Rows[0][0]) != "t" {
-//		return &NotPreferredError{err: errors.New("server is not in hot standby mode")}
-//	}
-//
-//	return nil
-//}
 
 func convertToBool(s string, defaultValue bool) bool {
 	v, err := strconv.ParseBool(s)
