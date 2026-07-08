@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand"
 	"os"
 	"reflect"
@@ -887,4 +888,93 @@ func ExampleBatchInsertSlice() {
 
 	// Output:
 	// Batch count: 3
+}
+
+func TestConnBatchInsertBoundaryAndVariableLength(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
+	defer closeConn(t, conn)
+	skipIfBatchUnsupported(ctx, t, conn)
+
+	mustExec(t, conn, `recreate table foo(
+		a smallint,
+		s varchar(20),
+		b int,
+		c varchar(5),
+		d bigint,
+		e smallint
+	)`)
+
+	inputRows := [][]any{
+		{int16(0x1234), "x", int32(0x7eadbeef), "ab", int64(0x0102030405060708), int16(math.MaxInt16)},
+		{int16(math.MinInt16), "abcdefghijklmnopqrst", int32(math.MinInt32), "abcde", int64(math.MinInt64), int16(-12345)},
+		{int16(-1), "", int32(-1), "", int64(-1), int16(0x5a5a)},
+		{int16(0x00ff), "hello", int32(0x00ff00ff), "z", int64(0x00ff00ff00ff00ff), int16(0x7fff)},
+		{nil, nil, nil, nil, nil, nil},
+	}
+
+	count, err := conn.BatchInsert(ctx, fbx.Identifier{"FOO"},
+		[]string{"A", "S", "B", "C", "D", "E"}, fbx.BatchInsertRows(inputRows))
+	if err != nil {
+		t.Fatalf("BatchInsert error: %v", err)
+	}
+	if int(count) != len(inputRows) {
+		t.Fatalf("expected %d inserted, got %d", len(inputRows), count)
+	}
+
+	rows, err := conn.Query(ctx, "select a, s, b, c, d, e from foo")
+	if err != nil {
+		t.Fatalf("Query error: %v", err)
+	}
+	var outputRows [][]any
+	for rows.Next() {
+		row, err := rows.Values()
+		if err != nil {
+			t.Fatalf("rows.Values error: %v", err)
+		}
+		outputRows = append(outputRows, row)
+	}
+	if rows.Err() != nil {
+		t.Fatalf("rows.Err: %v", rows.Err())
+	}
+	if len(outputRows) != len(inputRows) {
+		t.Fatalf("row count mismatch: in=%d out=%d", len(inputRows), len(outputRows))
+	}
+
+	expectByB := map[int32][]any{}
+	var expectNull []any
+	for _, r := range inputRows {
+		if r[2] == nil {
+			expectNull = r
+			continue
+		}
+		expectByB[r[2].(int32)] = r
+	}
+
+	for _, r := range outputRows {
+		if r[2] == nil {
+			if !reflect.DeepEqual(r, expectNull) {
+				t.Errorf("NULL row mismatch:\n got  %#v\n want %#v", r, expectNull)
+			}
+			continue
+		}
+		b, ok := r[2].(int32)
+		if !ok {
+			t.Fatalf("column b is %T not int32", r[2])
+		}
+		want := expectByB[b]
+		if !reflect.DeepEqual(r, want) {
+			t.Errorf("row for b=%d mismatch (corruption!):\n got  %#v\n want %#v", b, r, want)
+		}
+
+		for _, idx := range []int{0, 5} {
+			if _, ok := r[idx].(int16); !ok {
+				t.Errorf("column idx %d expected int16, got %T (%v)", idx, r[idx], r[idx])
+			}
+		}
+	}
+
+	ensureConnValid(t, conn)
 }

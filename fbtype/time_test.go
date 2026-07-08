@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
 )
@@ -98,6 +99,26 @@ func TestTimeTextScanner(t *testing.T) {
 	assert.Error(t, fbTime.Scan("12-34:56"))
 	assert.Equal(t, false, fbTime.Valid)
 	assert.Equal(t, int64(0), fbTime.Microseconds)
+}
+
+func TestTimeCodecDecodeDatabaseSQLValueReturnsString(t *testing.T) {
+	codec := fbtype.TimeCodec{}
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TIME, 0, 4, 0)
+	input := fbtype.Time{
+		Microseconds: int64((14*time.Hour + 30*time.Minute + 45*time.Second + 123400*time.Microsecond) / time.Microsecond),
+		Valid:        true,
+	}
+
+	buf, err := codec.PlanEncode(nil, typeMetadata, input).Encode(input, nil)
+	assert.NoError(t, err)
+
+	value, err := codec.DecodeDatabaseSQLValue(fbtype.NewMap(), typeMetadata, buf)
+	assert.NoError(t, err)
+	assert.Equal(t, "14:30:45.123400", value)
+
+	value, err = codec.DecodeDatabaseSQLValue(fbtype.NewMap(), typeMetadata, nil)
+	assert.NoError(t, err)
+	assert.Nil(t, value)
 }
 
 func TestTimeGoTimeRoundTrip(t *testing.T) {

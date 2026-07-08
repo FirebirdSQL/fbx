@@ -117,427 +117,6 @@ func (dst *Int2) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-type Int2Codec struct{}
-
-func (Int2Codec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
-	switch value.(type) {
-	case int16:
-		return encodePlanInt2CodecBinaryInt16{}
-	case Int64Valuer:
-		return encodePlanInt2CodecBinaryInt64Valuer{}
-	case string:
-		return encodePlanInt2CodecBinaryFromString{}
-	}
-	return nil
-}
-
-type encodePlanInt2CodecBinaryInt16 struct{}
-
-func (encodePlanInt2CodecBinaryInt16) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	n := value.(int16)
-	return fbio.AppendInt16BE(buf, int16(n)), nil
-}
-
-type encodePlanInt2CodecBinaryInt64Valuer struct{}
-
-func (encodePlanInt2CodecBinaryInt64Valuer) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	n, err := value.(Int64Valuer).Int64Value()
-	if err != nil {
-		return nil, err
-	}
-
-	if !n.Valid {
-		return nil, nil
-	}
-
-	if n.Int64 > math.MaxInt16 {
-		return nil, fmt.Errorf("%d is greater than maximum value for int2", n.Int64)
-	}
-	if n.Int64 < math.MinInt16 {
-		return nil, fmt.Errorf("%d is less than minimum value for int2", n.Int64)
-	}
-
-	return fbio.AppendInt16BE(buf, int16(n.Int64)), nil
-}
-
-type encodePlanInt2CodecBinaryFromString struct{}
-
-func (encodePlanInt2CodecBinaryFromString) Encode(value any, buf []byte) ([]byte, error) {
-	s := value.(string)
-
-	n, err := strconv.ParseInt(s, 10, 16)
-	if err != nil {
-		return nil, fmt.Errorf("cannot parse %q as smallint: %w", s, err)
-	}
-
-	return fbio.AppendInt16BE(buf, int16(n)), nil
-}
-
-func (Int2Codec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
-	switch target.(type) {
-	case *int8:
-		return scanPlanBinaryInt2ToInt8{}
-	case *int16:
-		return scanPlanBinaryInt2ToInt16{}
-	case *int32:
-		return scanPlanBinaryInt2ToInt32{}
-	case *int64:
-		return scanPlanBinaryInt2ToInt64{}
-	case *int:
-		return scanPlanBinaryInt2ToInt{}
-	case *uint8:
-		return scanPlanBinaryInt2ToUint8{}
-	case *uint16:
-		return scanPlanBinaryInt2ToUint16{}
-	case *uint32:
-		return scanPlanBinaryInt2ToUint32{}
-	case *uint64:
-		return scanPlanBinaryInt2ToUint64{}
-	case *uint:
-		return scanPlanBinaryInt2ToUint{}
-	case Int64Scanner:
-		return scanPlanBinaryInt2ToInt64Scanner{}
-	case *string:
-		return scanPlanBinaryInt2ToString{}
-	case TextScanner:
-		return scanPlanBinaryInt2ToTextScanner{}
-	}
-
-	return nil
-}
-
-func (c Int2Codec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
-	if src == nil {
-		return nil, nil
-	}
-
-	var n int64
-	err := codecScan(c, m, typeMetadata, src, &n)
-	if err != nil {
-		return nil, err
-	}
-	return n, nil
-}
-
-func (c Int2Codec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
-	if src == nil {
-		return nil, nil
-	}
-
-	var n int16
-	err := codecScan(c, m, typeMetadata, src, &n)
-	if err != nil {
-		return nil, err
-	}
-	return n, nil
-}
-
-type scanPlanBinaryInt2ToInt8 struct{}
-
-func (scanPlanBinaryInt2ToInt8) Scan(src []byte, dst any) error {
-	if src == nil {
-		return fmt.Errorf("cannot scan NULL into %T", dst)
-	}
-
-	if len(src) != 2 {
-		return fmt.Errorf("invalid length for int2: %v", len(src))
-	}
-
-	p, ok := (dst).(*int8)
-	if !ok {
-		return ErrScanTargetTypeChanged
-	}
-
-	n := int16(binary.BigEndian.Uint16(src))
-	if n < math.MinInt8 {
-		return fmt.Errorf("%d is less than minimum value for int8", n)
-	} else if n > math.MaxInt8 {
-		return fmt.Errorf("%d is greater than maximum value for int8", n)
-	}
-
-	*p = int8(n)
-
-	return nil
-}
-
-type scanPlanBinaryInt2ToUint8 struct{}
-
-func (scanPlanBinaryInt2ToUint8) Scan(src []byte, dst any) error {
-	if src == nil {
-		return fmt.Errorf("cannot scan NULL into %T", dst)
-	}
-
-	if len(src) != 2 {
-		return fmt.Errorf("invalid length for uint2: %v", len(src))
-	}
-
-	p, ok := (dst).(*uint8)
-	if !ok {
-		return ErrScanTargetTypeChanged
-	}
-
-	n := int16(binary.BigEndian.Uint16(src))
-	if n < 0 {
-		return fmt.Errorf("%d is less than minimum value for uint8", n)
-	}
-
-	if n > math.MaxUint8 {
-		return fmt.Errorf("%d is greater than maximum value for uint8", n)
-	}
-
-	*p = uint8(n)
-
-	return nil
-}
-
-type scanPlanBinaryInt2ToInt16 struct{}
-
-func (scanPlanBinaryInt2ToInt16) Scan(src []byte, dst any) error {
-	if src == nil {
-		return fmt.Errorf("cannot scan NULL into %T", dst)
-	}
-
-	if len(src) != 2 {
-		return fmt.Errorf("invalid length for int2: %v", len(src))
-	}
-
-	p, ok := (dst).(*int16)
-	if !ok {
-		return ErrScanTargetTypeChanged
-	}
-
-	*p = int16(binary.BigEndian.Uint16(src))
-
-	return nil
-}
-
-type scanPlanBinaryInt2ToUint16 struct{}
-
-func (scanPlanBinaryInt2ToUint16) Scan(src []byte, dst any) error {
-	if src == nil {
-		return fmt.Errorf("cannot scan NULL into %T", dst)
-	}
-
-	if len(src) != 2 {
-		return fmt.Errorf("invalid length for uint2: %v", len(src))
-	}
-
-	p, ok := (dst).(*uint16)
-	if !ok {
-		return ErrScanTargetTypeChanged
-	}
-
-	n := int16(binary.BigEndian.Uint16(src))
-	if n < 0 {
-		return fmt.Errorf("%d is less than minimum value for uint16", n)
-	}
-
-	*p = uint16(n)
-
-	return nil
-}
-
-type scanPlanBinaryInt2ToInt32 struct{}
-
-func (scanPlanBinaryInt2ToInt32) Scan(src []byte, dst any) error {
-	if src == nil {
-		return fmt.Errorf("cannot scan NULL into %T", dst)
-	}
-
-	if len(src) != 2 {
-		return fmt.Errorf("invalid length for int2: %v", len(src))
-	}
-
-	p, ok := (dst).(*int32)
-	if !ok {
-		return ErrScanTargetTypeChanged
-	}
-
-	*p = int32(int16(binary.BigEndian.Uint16(src)))
-
-	return nil
-}
-
-type scanPlanBinaryInt2ToUint32 struct{}
-
-func (scanPlanBinaryInt2ToUint32) Scan(src []byte, dst any) error {
-	if src == nil {
-		return fmt.Errorf("cannot scan NULL into %T", dst)
-	}
-
-	if len(src) != 2 {
-		return fmt.Errorf("invalid length for uint2: %v", len(src))
-	}
-
-	p, ok := (dst).(*uint32)
-	if !ok {
-		return ErrScanTargetTypeChanged
-	}
-
-	n := int16(binary.BigEndian.Uint16(src))
-	if n < 0 {
-		return fmt.Errorf("%d is less than minimum value for uint32", n)
-	}
-
-	*p = uint32(n)
-
-	return nil
-}
-
-type scanPlanBinaryInt2ToInt64 struct{}
-
-func (scanPlanBinaryInt2ToInt64) Scan(src []byte, dst any) error {
-	if src == nil {
-		return fmt.Errorf("cannot scan NULL into %T", dst)
-	}
-
-	if len(src) != 2 {
-		return fmt.Errorf("invalid length for int2: %v", len(src))
-	}
-
-	p, ok := (dst).(*int64)
-	if !ok {
-		return ErrScanTargetTypeChanged
-	}
-
-	*p = int64(int16(binary.BigEndian.Uint16(src)))
-
-	return nil
-}
-
-type scanPlanBinaryInt2ToUint64 struct{}
-
-func (scanPlanBinaryInt2ToUint64) Scan(src []byte, dst any) error {
-	if src == nil {
-		return fmt.Errorf("cannot scan NULL into %T", dst)
-	}
-
-	if len(src) != 2 {
-		return fmt.Errorf("invalid length for uint2: %v", len(src))
-	}
-
-	p, ok := (dst).(*uint64)
-	if !ok {
-		return ErrScanTargetTypeChanged
-	}
-
-	n := int16(binary.BigEndian.Uint16(src))
-	if n < 0 {
-		return fmt.Errorf("%d is less than minimum value for uint64", n)
-	}
-
-	*p = uint64(n)
-
-	return nil
-}
-
-type scanPlanBinaryInt2ToInt struct{}
-
-func (scanPlanBinaryInt2ToInt) Scan(src []byte, dst any) error {
-	if src == nil {
-		return fmt.Errorf("cannot scan NULL into %T", dst)
-	}
-
-	if len(src) != 2 {
-		return fmt.Errorf("invalid length for int2: %v", len(src))
-	}
-
-	p, ok := (dst).(*int)
-	if !ok {
-		return ErrScanTargetTypeChanged
-	}
-
-	*p = int(int16(binary.BigEndian.Uint16(src)))
-
-	return nil
-}
-
-type scanPlanBinaryInt2ToUint struct{}
-
-func (scanPlanBinaryInt2ToUint) Scan(src []byte, dst any) error {
-	if src == nil {
-		return fmt.Errorf("cannot scan NULL into %T", dst)
-	}
-
-	if len(src) != 2 {
-		return fmt.Errorf("invalid length for uint2: %v", len(src))
-	}
-
-	p, ok := (dst).(*uint)
-	if !ok {
-		return ErrScanTargetTypeChanged
-	}
-
-	n := int64(int16(binary.BigEndian.Uint16(src)))
-	if n < 0 {
-		return fmt.Errorf("%d is less than minimum value for uint", n)
-	}
-
-	*p = uint(n)
-
-	return nil
-}
-
-type scanPlanBinaryInt2ToInt64Scanner struct{}
-
-func (scanPlanBinaryInt2ToInt64Scanner) Scan(src []byte, dst any) error {
-	s, ok := (dst).(Int64Scanner)
-	if !ok {
-		return ErrScanTargetTypeChanged
-	}
-
-	if src == nil {
-		return s.ScanInt64(Int8{})
-	}
-
-	if len(src) != 2 {
-		return fmt.Errorf("invalid length for int2: %v", len(src))
-	}
-
-	n := int64(int16(binary.BigEndian.Uint16(src)))
-
-	return s.ScanInt64(Int8{Int64: n, Valid: true})
-}
-
-type scanPlanBinaryInt2ToString struct{}
-
-func (scanPlanBinaryInt2ToString) Scan(src []byte, dst any) error {
-	target := dst.(*string)
-
-	if src == nil {
-		return fmt.Errorf("cannot scan NULL into *string")
-	}
-
-	if len(src) != 2 {
-		return fmt.Errorf("invalid length for int2: %v", len(src))
-	}
-
-	n := int16(binary.BigEndian.Uint16(src))
-	*target = strconv.FormatInt(int64(n), 10)
-	return nil
-}
-
-type scanPlanBinaryInt2ToTextScanner struct{}
-
-func (scanPlanBinaryInt2ToTextScanner) Scan(src []byte, dst any) error {
-	s, ok := (dst).(TextScanner)
-	if !ok {
-		return ErrScanTargetTypeChanged
-	}
-
-	if src == nil {
-		return s.ScanText(Text{})
-	}
-
-	if len(src) != 2 {
-		return fmt.Errorf("invalid length for int2: %v", len(src))
-	}
-
-	n := int64(int16(binary.BigEndian.Uint16(src)))
-
-	return s.ScanText(Text{String: strconv.FormatInt(n, 10), Valid: true})
-}
-
 type Int4 struct {
 	Int32 int32
 	Valid bool
@@ -638,27 +217,36 @@ func (dst *Int4) UnmarshalJSON(b []byte) error {
 type Int4Codec struct{}
 
 func (Int4Codec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
+	small := typeMetadata.TypeID == fbproto.SQL_TYPE_SHORT
 	switch value.(type) {
 	case int32:
-		return encodePlanInt4CodecBinaryInt32{}
+		return encodePlanInt4CodecBinaryInt32{small: small}
 	case Int64Valuer:
-		return encodePlanInt4CodecBinaryInt64Valuer{}
+		return encodePlanInt4CodecBinaryInt64Valuer{small: small}
 	case string:
-		return encodePlanInt4CodecBinaryFromString{}
+		return encodePlanInt4CodecBinaryFromString{small: small}
 	}
 	return nil
 }
 
-type encodePlanInt4CodecBinaryInt32 struct{}
+type encodePlanInt4CodecBinaryInt32 struct{ small bool }
 
-func (encodePlanInt4CodecBinaryInt32) Encode(value any, buf []byte) (newBuf []byte, err error) {
+func (p encodePlanInt4CodecBinaryInt32) Encode(value any, buf []byte) (newBuf []byte, err error) {
 	n := value.(int32)
-	return fbio.AppendInt32BE(buf, int32(n)), nil
+	if p.small {
+		if n > math.MaxInt16 {
+			return nil, fmt.Errorf("%d is greater than maximum value for smallint", n)
+		}
+		if n < math.MinInt16 {
+			return nil, fmt.Errorf("%d is less than minimum value for smallint", n)
+		}
+	}
+	return fbio.AppendInt32BE(buf, n), nil
 }
 
-type encodePlanInt4CodecBinaryInt64Valuer struct{}
+type encodePlanInt4CodecBinaryInt64Valuer struct{ small bool }
 
-func (encodePlanInt4CodecBinaryInt64Valuer) Encode(value any, buf []byte) (newBuf []byte, err error) {
+func (p encodePlanInt4CodecBinaryInt64Valuer) Encode(value any, buf []byte) (newBuf []byte, err error) {
 	n, err := value.(Int64Valuer).Int64Value()
 	if err != nil {
 		return nil, err
@@ -668,23 +256,31 @@ func (encodePlanInt4CodecBinaryInt64Valuer) Encode(value any, buf []byte) (newBu
 		return nil, nil
 	}
 
-	if n.Int64 > math.MaxInt32 {
-		return nil, fmt.Errorf("%d is greater than maximum value for int4", n.Int64)
+	maxv, minv, typeName := int64(math.MaxInt32), int64(math.MinInt32), "int4"
+	if p.small {
+		maxv, minv, typeName = math.MaxInt16, math.MinInt16, "smallint"
 	}
-	if n.Int64 < math.MinInt32 {
-		return nil, fmt.Errorf("%d is less than minimum value for int4", n.Int64)
+	if n.Int64 > maxv {
+		return nil, fmt.Errorf("%d is greater than maximum value for %s", n.Int64, typeName)
+	}
+	if n.Int64 < minv {
+		return nil, fmt.Errorf("%d is less than minimum value for %s", n.Int64, typeName)
 	}
 
 	return fbio.AppendInt32BE(buf, int32(n.Int64)), nil
 }
 
-type encodePlanInt4CodecBinaryFromString struct{}
+type encodePlanInt4CodecBinaryFromString struct{ small bool }
 
-func (encodePlanInt4CodecBinaryFromString) Encode(value any, buf []byte) ([]byte, error) {
+func (p encodePlanInt4CodecBinaryFromString) Encode(value any, buf []byte) ([]byte, error) {
 	s := value.(string)
-	n, err := strconv.ParseInt(s, 10, 32)
+	bitSize, typeName := 32, "int"
+	if p.small {
+		bitSize, typeName = 16, "smallint"
+	}
+	n, err := strconv.ParseInt(s, 10, bitSize)
 	if err != nil {
-		return nil, fmt.Errorf("cannot parse %q as int: %w", s, err)
+		return nil, fmt.Errorf("cannot parse %q as %s: %w", s, typeName, err)
 	}
 	return fbio.AppendInt32BE(buf, int32(n)), nil
 }

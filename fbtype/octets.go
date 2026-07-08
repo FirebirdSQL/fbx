@@ -4,19 +4,23 @@ import (
 	"database/sql/driver"
 )
 
+// BytesScanner scans Firebird OCTETS data from raw bytes.
 type BytesScanner interface {
-	// ScanBytes receives a byte slice of driver memory that is only valid until the next database method call.
+	// ScanBytes receives a byte slice of driver memory that is only valid until
+	// the next database method call.
 	ScanBytes(v []byte) error
 }
 
+// BytesValuer provides raw bytes for Firebird OCTETS encoding.
 type BytesValuer interface {
-	// BytesValue returns a byte slice of the byte data. The caller must not change the returned slice.
+	// BytesValue returns raw bytes. The caller must not change the returned
+	// slice.
 	BytesValue() ([]byte, error)
 }
 
-// DriverBytes is a byte slice that holds a reference to memory owned by the driver. It is only valid from the time it
-// is scanned until Rows.Next or Rows.Close is called. It is never safe to use DriverBytes with QueryRow as Row.Scan
-// internally calls Rows.Close before returning.
+// DriverBytes implements [BytesScanner] by holding a reference to driver-owned
+// memory. It is only valid until the next rows operation, and must not be used
+// with QueryRow because Row.Scan closes rows before returning.
 type DriverBytes []byte
 
 func (b *DriverBytes) ScanBytes(v []byte) error {
@@ -24,8 +28,8 @@ func (b *DriverBytes) ScanBytes(v []byte) error {
 	return nil
 }
 
-// PreallocBytes is a byte slice of preallocated memory that scanned bytes will be copied to. If it is too small a new
-// slice will be allocated.
+// PreallocBytes implements [BytesScanner] by copying scanned bytes into
+// preallocated memory. If it is too small a new slice will be allocated.
 type PreallocBytes []byte
 
 func (b *PreallocBytes) ScanBytes(v []byte) error {
@@ -43,25 +47,15 @@ func (b *PreallocBytes) ScanBytes(v []byte) error {
 	return nil
 }
 
+// UndecodedBytes receives a copy of the raw Firebird bytes for any scanned
+// value without codec decoding.
 type UndecodedBytes []byte
 
-type scanPlanAnyToUndecodedBytes struct{}
+// OctetsCodec implements [Codec] for Firebird text values with CHARACTER SET
+// OCTETS.
+type OctetsCodec struct{}
 
-func (scanPlanAnyToUndecodedBytes) Scan(src []byte, dst any) error {
-	dstBuf := dst.(*UndecodedBytes)
-	if src == nil {
-		*dstBuf = nil
-		return nil
-	}
-
-	*dstBuf = make([]byte, len(src))
-	copy(*dstBuf, src)
-	return nil
-}
-
-type ByteaCodec struct{}
-
-func (ByteaCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
+func (OctetsCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 
 	switch value.(type) {
 	case []byte:
@@ -107,7 +101,7 @@ func (encodePlanBytesCodecBinaryString) Encode(value any, buf []byte) ([]byte, e
 	return append(buf, s...), nil
 }
 
-func (ByteaCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
+func (OctetsCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
 
 	switch target.(type) {
 	case *[]byte:
@@ -140,11 +134,11 @@ func (scanPlanBinaryBytesToBytesScanner) Scan(src []byte, dst any) error {
 	return scanner.ScanBytes(src)
 }
 
-func (c ByteaCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
+func (c OctetsCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
 	return c.DecodeValue(m, typeMetadata, src)
 }
 
-func (c ByteaCodec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
+func (c OctetsCodec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
 	}
