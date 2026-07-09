@@ -18,7 +18,12 @@ const (
 	microsecondsPerMonth  = 30 * microsecondsPerDay
 )
 
-var timeAnchorDate = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+var (
+	timeAnchorDate = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Firebird uses this date to resolve named time zones for TIME WITH TIME ZONE.
+	timetzBaseDate = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+)
 
 func timeOfDayMicroseconds(t time.Time) int64 {
 	return int64(t.Hour())*microsecondsPerHour +

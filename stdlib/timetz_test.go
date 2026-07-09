@@ -45,12 +45,12 @@ func TestStdlibTimetzRoundTrip(t *testing.T) {
 			{
 				id:    1,
 				param: fbtype.Timetz{Time: time.Date(2025, 12, 17, 10, 16, 43, 123400000, locMoscow), Valid: true},
-				want:  time.Date(2000, 1, 1, 10, 16, 43, 123400000, locMoscow),
+				want:  time.Date(2020, 1, 1, 10, 16, 43, 123400000, locMoscow),
 			},
 			{
 				id:    2,
 				param: "18:00:00.1234 +03:30",
-				want:  time.Date(2000, 1, 1, 18, 0, 0, 123400000, offsetPlus330),
+				want:  time.Date(2020, 1, 1, 18, 0, 0, 123400000, offsetPlus330),
 			},
 		}
 

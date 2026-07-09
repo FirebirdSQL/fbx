@@ -50,17 +50,17 @@ func TestTimetzTranscode(t *testing.T) {
 		{
 			Param:  fbtype.Timetz{Time: time.Date(2025, 12, 17, 10, 16, 43, 123400000, locMoscow), Valid: true},
 			Result: new(fbtype.Timetz),
-			Test:   sameFbtypeTimetzClockAndOffset(time.Date(2000, 1, 1, 10, 16, 43, 123400000, locMoscow)),
+			Test:   sameFbtypeTimetzClockAndOffset(time.Date(2020, 1, 1, 10, 16, 43, 123400000, locMoscow)),
 		},
 		{
 			Param:  time.Date(2025, 12, 10, 18, 0, 0, 123400000, offsetPlus330),
 			Result: new(time.Time),
-			Test:   sameTimetzClockAndOffset(time.Date(2000, 1, 1, 18, 0, 0, 123400000, offsetPlus330)),
+			Test:   sameTimetzClockAndOffset(time.Date(2020, 1, 1, 18, 0, 0, 123400000, offsetPlus330)),
 		},
 		{
 			Param:  "11:31:12.1234 +03:30",
 			Result: new(fbtype.Timetz),
-			Test:   sameFbtypeTimetzClockAndOffset(time.Date(2000, 1, 1, 11, 31, 12, 123400000, offsetPlus330)),
+			Test:   sameFbtypeTimetzClockAndOffset(time.Date(2020, 1, 1, 11, 31, 12, 123400000, offsetPlus330)),
 		},
 		{
 			Param:  nil,

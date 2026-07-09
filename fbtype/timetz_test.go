@@ -64,7 +64,7 @@ func TestTimetzCodecRoundTripOffsetLocation(t *testing.T) {
 		t.Fatalf("Scan failed: %v", err)
 	}
 
-	want := time.Date(2000, 1, 1, 18, 0, 0, 123400000, time.FixedZone("+03:30", (3*60+30)*60))
+	want := time.Date(2020, 1, 1, 18, 0, 0, 123400000, time.FixedZone("+03:30", (3*60+30)*60))
 	assertSameTimetzClockAndOffset(t, got, want)
 	if got.Location().String() != "+03:30" {
 		t.Fatalf("location = %q, want +03:30", got.Location().String())
@@ -171,6 +171,46 @@ func TestTimetzCodecNamedLocationIgnoresInputDateForWallClock(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTimetzCodecNamedLocationUsesFirebirdBaseDate(t *testing.T) {
+	var c TimetzCodec
+	typeMetadata := NewTypeMetadata(fbproto.SQL_TYPE_TIME_TZ, 0, 0, 0)
+
+	locSaoPaulo := mustLoadLocation(t, "America/Sao_Paulo")
+	tzRaw, ok := fbproto.ResolveTzRawByLocationName("America/Sao_Paulo")
+	if !ok {
+		t.Fatalf("America/Sao_Paulo timezone ID is not registered")
+	}
+
+	in := time.Date(2025, 1, 1, 10, 0, 0, 123400000, locSaoPaulo)
+	buf, err := c.PlanEncode(nil, typeMetadata, in).Encode(in, nil)
+	if err != nil {
+		t.Fatalf("Encode failed: %v", err)
+	}
+
+	wantUTCUsec := int64(13)*microsecondsPerHour + 123400
+	if gotTicks := binary.BigEndian.Uint32(buf[0:4]); gotTicks != uint32(wantUTCUsec/100) {
+		t.Fatalf("encoded ticks = %d, want %d", gotTicks, wantUTCUsec/100)
+	}
+	if gotTzRaw := binary.BigEndian.Uint32(buf[4:8]); gotTzRaw != uint32(tzRaw) {
+		t.Fatalf("encoded tz raw = %d, want %d", gotTzRaw, tzRaw)
+	}
+
+	serverBytes := make([]byte, 8)
+	binary.BigEndian.PutUint32(serverBytes[0:4], uint32(wantUTCUsec/100))
+	binary.BigEndian.PutUint32(serverBytes[4:8], uint32(tzRaw))
+
+	var got Timetz
+	if err := c.PlanScan(nil, typeMetadata, &got).Scan(serverBytes, &got); err != nil {
+		t.Fatalf("Scan failed: %v", err)
+	}
+	if !got.Valid {
+		t.Fatalf("got.Valid = false, want true")
+	}
+
+	want := time.Date(2020, 1, 1, 10, 0, 0, 123400000, locSaoPaulo)
+	assertSameTimetzClockAndOffset(t, got.Time, want)
 }
 
 func TestTimetzCodecRoundTripString(t *testing.T) {
@@ -297,6 +337,21 @@ func TestTimetzCodecEncodeNullStruct(t *testing.T) {
 	}
 	if buf != nil {
 		t.Fatalf("Encode for invalid Timetz must return nil buf, got %v", buf)
+	}
+}
+
+func TestTimetzCodecScanNullToTimeReturnsError(t *testing.T) {
+	var c TimetzCodec
+	typeMetadata := NewTypeMetadata(fbproto.SQL_TYPE_TIME_TZ, 0, 0, 0)
+
+	var got time.Time
+	planScan := c.PlanScan(nil, typeMetadata, &got)
+	if planScan == nil {
+		t.Fatalf("PlanScan returned nil for *time.Time")
+	}
+
+	if err := planScan.Scan(nil, &got); err == nil {
+		t.Fatalf("Scan expected error for NULL into *time.Time, got nil")
 	}
 }
 

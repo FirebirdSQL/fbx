@@ -13,10 +13,12 @@ import (
 	"rdb.red-soft.ru/fbx/internal/fbio"
 )
 
+// TimetzScanner scans a Firebird TIME WITH TIME ZONE value.
 type TimetzScanner interface {
 	ScanTimetz(v Timetz) error
 }
 
+// TimetzValuer returns a Firebird TIME WITH TIME ZONE value.
 type TimetzValuer interface {
 	TimetzValue() (Timetz, error)
 }
@@ -100,6 +102,7 @@ func (ttz *Timetz) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// TimetzCodec encodes and decodes Firebird TIME WITH TIME ZONE values.
 type TimetzCodec struct{}
 
 func (*TimetzCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
@@ -206,8 +209,7 @@ func (plan *scanPlanBinaryTimetzToTimeScanner) Scan(src []byte, dst any) error {
 	}
 
 	if src == nil {
-		*ptr = time.Time{}
-		return nil
+		return fmt.Errorf("cannot scan NULL into *time.Time")
 	}
 
 	ttz, err := decodeTimetzBinary(src)
@@ -215,8 +217,7 @@ func (plan *scanPlanBinaryTimetzToTimeScanner) Scan(src []byte, dst any) error {
 		return err
 	}
 	if !ttz.Valid {
-		*ptr = time.Time{}
-		return nil
+		return fmt.Errorf("cannot scan NULL into *time.Time")
 	}
 
 	*ptr = ttz.Time
@@ -303,7 +304,7 @@ func encodeTimetzBinary(buf []byte, ttz Timetz) ([]byte, error) {
 	}
 
 	loc := fbproto.ResolveLocationByTzRaw(ttz.tzRaw)
-	local := timeWithDate(ttz.Time.In(loc), timeAnchorDate)
+	local := timeWithDate(ttz.Time.In(loc), timetzBaseDate)
 	utc := local.In(time.UTC)
 	usec := timeOfDayMicroseconds(utc)
 	if usec < 0 || usec >= microsecondsPerDay {
@@ -337,8 +338,8 @@ func decodeTimetzBinary(src []byte) (Timetz, error) {
 	tzRaw := uint16(tzVal & 0xFFFF)
 	loc := fbproto.ResolveLocationByTzRaw(tzRaw)
 
-	utcTime := timeFromMicroseconds(usec, timeAnchorDate, time.UTC)
-	local := timeWithDate(utcTime.In(loc), timeAnchorDate)
+	utcTime := timeFromMicroseconds(usec, timetzBaseDate, time.UTC)
+	local := timeWithDate(utcTime.In(loc), timetzBaseDate)
 
 	return Timetz{
 		Time:  local,
@@ -363,7 +364,7 @@ func parseTimetzString(s string) (Timetz, error) {
 		return Timetz{}, err
 	}
 
-	t := timeFromMicroseconds(usec, timeAnchorDate, loc)
+	t := timeFromMicroseconds(usec, timetzBaseDate, loc)
 
 	return Timetz{Time: t, tzRaw: tzRaw, Valid: true}, nil
 }
