@@ -358,6 +358,9 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		if _, present := notRuntimeParams[k]; present {
 			continue
 		}
+		if k == "timezone" {
+			v = strings.ReplaceAll(v, " ", "+")
+		}
 		config.RuntimeParams[k] = v
 	}
 

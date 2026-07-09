@@ -1228,3 +1228,37 @@ func TestConnDeallocateAllAfterSetSearch_path(t *testing.T) {
 		assert.Equal(t, test2Input, output2)
 	})
 }
+
+func TestConnectWithTimezone(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	config, err := fbx.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+
+	timezoneList := []string{
+		"GMT",
+		"Africa/Banjul",
+		"Canada/Atlantic",
+		"Etc/GMT+12",
+		"+03:00",
+		"-04:00",
+	}
+
+	for i, tzExpected := range timezoneList {
+		config.RuntimeParams["timezone"] = tzExpected
+		conn, err := fbx.ConnectConfig(ctx, config)
+		require.NoError(t, err, i)
+		require.NotNil(t, conn, i)
+		defer conn.Close(ctx)
+		if getServerMajorVersionForConn(ctx, t, conn) < 4 {
+			t.Skip("timezone is supported only in Firebird 4+/RedDatabase 5+")
+		}
+
+		var tzActual string
+		err = conn.QueryRow(ctx, "SELECT RDB$GET_CONTEXT('SYSTEM', 'SESSION_TIMEZONE') FROM RDB$DATABASE").Scan(&tzActual)
+		require.NoError(t, err, i)
+		require.Equal(t, tzExpected, tzActual, i)
+	}
+
+}
