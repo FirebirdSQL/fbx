@@ -871,8 +871,9 @@ connectLoop:
 	if searchPath, ok := config.RuntimeParams["search_path"]; ok {
 		dpb.PutString(fbproto.Isc_dpb_search_path, searchPath)
 	}
-	//FIXME: fbx is timezone need? where get timezone?
-	//dpb.AppendTag(fbproto.Isc_dpb_session_time_zone)
+	if timezone, ok := config.RuntimeParams["timezone"]; ok {
+		dpb.PutString(fbproto.Isc_dpb_session_time_zone, timezone)
+	}
 	dpb.PutString(fbproto.Isc_dpb_auth_plugin_list, authManager.BuildList())
 	if plugin := authManager.GetCurrentPlugin(); plugin != nil {
 		dpb.PutString(fbproto.Isc_dpb_auth_plugin_name, plugin.Name())
