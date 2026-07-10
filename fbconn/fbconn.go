@@ -1152,15 +1152,15 @@ func (fbConn *FbConn) Close(ctx context.Context) error {
 		defer fbConn.contextWatcher.Unwatch()
 	}
 
-	// Ignore any errors sending Terminate message and waiting for server to close connection.
+	// Ignore any errors sending close messages; the underlying connection is closed below.
 	_ = fbConn.withWriteLockAndFlush(func() error {
 		if err := fbConn.client.WriteMessage(&fbproto.OpDetach{}); err != nil {
 			return err
 		}
 		return fbConn.client.WriteMessage(&fbproto.OpDisconnect{})
 	})
-	//FIXME: should we wait or not response from server?
-	//fbConn.receiveMessage()
+	// Firebird replies to op_detach, but op_disconnect is terminal and has no response.
+	// Close is best-effort, so it closes the socket instead of waiting for detach acknowledgement.
 	return fbConn.conn.Close()
 }
 
