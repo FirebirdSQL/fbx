@@ -66,6 +66,7 @@ type FbConn struct {
 	bgReaderStarted chan struct{}
 	writeInProgress atomic.Bool
 	dbHandle        int
+	attachmentID    uint64
 
 	customData map[string]any
 
@@ -920,46 +921,18 @@ connectLoop:
 		fbConn.contextWatcher.Unwatch()
 		err = config.ValidateConnect(ctx, fbConn)
 		if err != nil {
-			if _, ok := err.(*NotPreferredError); ignoreNotPreferredErr && ok {
-				return fbConn, nil
+			if _, ok := err.(*NotPreferredError); !ignoreNotPreferredErr || !ok {
+				fbConn.conn.Close()
+				return nil, newPerDialConnectError("ValidateConnect failed", err)
 			}
-			fbConn.conn.Close()
-			return nil, newPerDialConnectError("ValidateConnect failed", err)
 		}
 	}
 
-	err = fbConn.getDatabaseInfo([]byte{fbproto.Isc_info_firebird_version, fbproto.Isc_info_end}, func(buf []byte) error {
-		r := NewServerInfoBufferReader(buf)
-		var item byte
-		var err error
-		for {
-			if item, err = r.ReadByte(); err != nil {
-				return err
-			}
-			switch item {
-			case fbproto.Isc_info_end:
-				return nil
-			case fbproto.Isc_info_firebird_version:
-				v, err := r.ReadStringValue()
-				if err != nil {
-					return err
-				}
-				re := regexp.MustCompile(`-V[0-9]+`)
-				versionString := re.FindString(v)
-				if len(versionString) < 3 {
-					return fmt.Errorf("server version string parsing error")
-				}
-				fbConn.serverMajorVersion, err = strconv.Atoi(versionString[2:])
-				if err != nil {
-					return err
-				}
-			case fbproto.Isc_info_truncated:
-				return InfoTruncationError{0}
-			default:
-				return fmt.Errorf("unknown database info item: %d", item)
-			}
-		}
-	})
+	err = fbConn.getDatabaseInfo([]byte{
+		fbproto.Isc_info_firebird_version,
+		fbproto.Isc_info_attachment_id,
+		fbproto.Isc_info_end,
+	}, fbConn.parseDatabaseInfo)
 
 	if err != nil {
 		fbConn.conn.Close()
@@ -967,6 +940,45 @@ connectLoop:
 	}
 
 	return fbConn, nil
+}
+
+func (fbConn *FbConn) parseDatabaseInfo(buf []byte) error {
+	r := NewServerInfoBufferReader(buf)
+	for {
+		item, err := r.ReadByte()
+		if err != nil {
+			return err
+		}
+
+		switch item {
+		case fbproto.Isc_info_end:
+			return nil
+		case fbproto.Isc_info_firebird_version:
+			v, err := r.ReadStringValue()
+			if err != nil {
+				return err
+			}
+			re := regexp.MustCompile(`-V[0-9]+`)
+			versionString := re.FindString(v)
+			if len(versionString) < 3 {
+				return fmt.Errorf("server version string parsing error")
+			}
+			fbConn.serverMajorVersion, err = strconv.Atoi(versionString[2:])
+			if err != nil {
+				return err
+			}
+		case fbproto.Isc_info_attachment_id:
+			attachmentID, err := r.ReadInt64Value()
+			if err != nil {
+				return err
+			}
+			fbConn.attachmentID = uint64(attachmentID)
+		case fbproto.Isc_info_truncated:
+			return InfoTruncationError{0}
+		default:
+			return fmt.Errorf("unknown database info item: %d", item)
+		}
+	}
 }
 
 // ReceiveMessage receives one wire protocol message from the server. It must only be used when the
@@ -1108,6 +1120,12 @@ func (fbConn *FbConn) receiveMessage() (fbproto.ServerMessage, error) {
 // writing then SyncConn should usually be called before Conn.
 func (fbConn *FbConn) Conn() net.Conn {
 	return fbConn.conn
+}
+
+// AttachmentID returns the server-side attachment identifier for this connection.
+// It is the same value exposed by MON$ATTACHMENT_ID and CURRENT_CONNECTION.
+func (fbConn *FbConn) AttachmentID() uint64 {
+	return fbConn.attachmentID
 }
 
 // ActiveTx returns true if connection have active transactions
@@ -2779,6 +2797,7 @@ func (fbConn *FbConn) CustomData() map[string]any {
 type HijackedConn struct {
 	Conn               net.Conn
 	DBHandle           int // server-side attachment handle
+	AttachmentID       uint64
 	TxStatus           byte
 	Client             *fbproto.Client    // reused as-is by Construct: holds active wire-crypt codec, lazyCounter and Encoding state
 	WireCrypt          *wirecrypt.Manager // wire-crypt plugin factory; not the active cipher (cipher lives inside Client)
@@ -2817,6 +2836,7 @@ func (fbConn *FbConn) Hijack() (*HijackedConn, error) {
 	return &HijackedConn{
 		Conn:               fbConn.conn,
 		DBHandle:           fbConn.dbHandle,
+		AttachmentID:       fbConn.attachmentID,
 		TxStatus:           fbConn.txStatus,
 		Client:             fbConn.client,
 		WireCrypt:          fbConn.wireCrypt,
@@ -2838,6 +2858,7 @@ func Construct(hc *HijackedConn) (*FbConn, error) {
 	fbConn := &FbConn{
 		conn:               hc.Conn,
 		dbHandle:           hc.DBHandle,
+		attachmentID:       hc.AttachmentID,
 		txStatus:           hc.TxStatus,
 		client:             hc.Client,
 		wireCrypt:          hc.WireCrypt,
