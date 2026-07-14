@@ -155,16 +155,13 @@ func (p *StatementInfo) GetParametersBlr(values [][]byte) []byte {
 }
 
 func (p *StatementInfo) CalculateBlr(descriptors []fbproto.FieldDescriptor, values [][]byte) []byte {
-	ln := len(descriptors) * 2
-	blr := make([]byte, (ln*4)+8)
-	// FIXME: fbx remove magic numbers and use blr codes
-	blr[0] = 5
-	blr[1] = 2
-	blr[2] = 4
-	blr[3] = 0
-	blr[4] = byte(ln & 255)
-	blr[5] = byte(ln >> 8)
-	n := 6
+	parametrsNumber := len(descriptors) * 2
+
+	blr := fbproto.NewBLRWriterV5()
+	blr.PutTag(fbproto.Isc_blr_begin)
+	blr.PutTag(fbproto.Isc_blr_message)
+	blr.PutByte(0) // message number
+	blr.PutInt16(int16(parametrsNumber))
 
 	for i, x := range descriptors {
 		sqlscale := x.Scale
@@ -183,105 +180,70 @@ func (p *StatementInfo) CalculateBlr(descriptors []fbproto.FieldDescriptor, valu
 		case fbproto.SQL_TYPE_VARYING:
 			charsetID := byte(x.Subtype & 0xFF)
 			collationID := byte((x.Subtype >> 8) & 0xFF)
-			blr[n] = 38 // blr_varying2
-			blr[n+1] = charsetID
-			blr[n+2] = collationID
-			blr[n+3] = byte(dataLength & 255)
-			blr[n+4] = byte(dataLength >> 8)
-			n += 5
+
+			blr.PutTag(fbproto.Isc_blr_varying2)
+			blr.PutByte(charsetID)
+			blr.PutByte(collationID)
+			blr.PutInt16(int16(dataLength))
 		case fbproto.SQL_TYPE_TEXT:
 			charsetID := byte(x.Subtype & 0xFF)
 			collationID := byte((x.Subtype >> 8) & 0xFF)
-			blr[n] = 15 // blr_text2
-			blr[n+1] = charsetID
-			blr[n+2] = collationID
-			blr[n+3] = byte(dataLength & 255)
-			blr[n+4] = byte(dataLength >> 8)
-			n += 5
+
+			blr.PutTag(fbproto.Isc_blr_text2)
+			blr.PutByte(charsetID)
+			blr.PutByte(collationID)
+			blr.PutInt16(int16(dataLength))
 		case fbproto.SQL_TYPE_LONG:
-			blr[n] = 8
-			blr[n+1] = byte(sqlscale)
-			n += 2
+			blr.PutTypeWithScale(fbproto.Isc_blr_long, byte(sqlscale))
 		case fbproto.SQL_TYPE_SHORT:
-			blr[n] = 7
-			blr[n+1] = byte(sqlscale)
-			n += 2
+			blr.PutTypeWithScale(fbproto.Isc_blr_short, byte(sqlscale))
 		case fbproto.SQL_TYPE_INT64:
-			blr[n] = 16
-			blr[n+1] = byte(sqlscale)
-			n += 2
+			blr.PutTypeWithScale(fbproto.Isc_blr_int64, byte(sqlscale))
 		case fbproto.SQL_TYPE_INT128:
-			blr[n] = 26
-			blr[n+1] = byte(sqlscale)
-			n += 2
+			blr.PutTypeWithScale(fbproto.Isc_blr_int128, byte(sqlscale))
 		case fbproto.SQL_TYPE_QUAD:
-			blr[n] = 9
-			blr[n+1] = byte(sqlscale)
-			n += 2
+			blr.PutTypeWithScale(fbproto.Isc_blr_quad, byte(sqlscale))
 		case fbproto.SQL_TYPE_DEC_FIXED: // OBSOLETED
-			blr[n] = 26
-			blr[n+1] = byte(sqlscale)
-			n += 2
+			blr.PutTypeWithScale(fbproto.Isc_blr_int128, byte(sqlscale))
 		case fbproto.SQL_TYPE_DOUBLE:
-			blr[n] = 27
-			n++
+			blr.PutTag(fbproto.Isc_blr_double)
 		case fbproto.SQL_TYPE_FLOAT:
-			blr[n] = 10
-			n++
+			blr.PutTag(fbproto.Isc_blr_float)
 		case fbproto.SQL_TYPE_D_FLOAT:
-			blr[n] = 11
-			n++
+			blr.PutTag(fbproto.Isc_blr_d_float)
 		case fbproto.SQL_TYPE_DATE:
-			blr[n] = 12
-			n++
+			blr.PutTag(fbproto.Isc_blr_sql_date)
 		case fbproto.SQL_TYPE_TIME:
-			blr[n] = 13
-			n++
+			blr.PutTag(fbproto.Isc_blr_sql_time)
 		case fbproto.SQL_TYPE_TIMESTAMP:
-			blr[n] = 35
-			n++
+			blr.PutTag(fbproto.Isc_blr_timestamp)
 		case fbproto.SQL_TYPE_BLOB:
-			blr[n] = 9
-			blr[n+1] = 0
-			n += 2
+			blr.PutTypeWithScale(fbproto.Isc_blr_quad, 0)
 		case fbproto.SQL_TYPE_ARRAY:
-			blr[n] = 9
-			blr[n+1] = 0
-			n += 2
+			blr.PutTypeWithScale(fbproto.Isc_blr_quad, 0)
 		case fbproto.SQL_TYPE_BOOLEAN:
-			blr[n] = 23
-			n++
+			blr.PutTag(fbproto.Isc_blr_bool)
 		case fbproto.SQL_TYPE_DEC64:
-			blr[n] = 24
-			n++
+			blr.PutTag(fbproto.Isc_blr_dec64)
 		case fbproto.SQL_TYPE_DEC128:
-			blr[n] = 25
-			n++
+			blr.PutTag(fbproto.Isc_blr_dec128)
 		case fbproto.SQL_TYPE_TIME_TZ:
-			blr[n] = 28
-			n++
+			blr.PutTag(fbproto.Isc_blr_sql_time_tz)
 		case fbproto.SQL_TYPE_TIMESTAMP_TZ:
-			blr[n] = 29
-			n++
+			blr.PutTag(fbproto.Isc_blr_timestamp_tz)
 		case fbproto.SQL_TYPE_NULL:
-			blr[n] = 14
-			blr[n+1] = 0
-			blr[n+2] = 0
-			n += 3
+			blr.PutTag(fbproto.Isc_blr_text)
+			blr.PutByte(0)
+			blr.PutByte(0)
 		default:
 			panic(fmt.Sprintf("unknown SQL type %d", x.Type))
 		}
-		// [blr_short, 0]
-		blr[n] = 7
-		blr[n+1] = 0
-		n += 2
+		blr.PutTypeWithScale(fbproto.Isc_blr_short, 0)
 	}
-	// [blr_end, blr_eoc]
-	blr[n] = 255
-	blr[n+1] = 76
-	n += 2
+	blr.PutTag(fbproto.Isc_blr_end)
+	blr.PutTag(fbproto.Isc_blr_eoc)
 
-	return blr[:n]
+	return blr.Bytes()
 }
 
 func (p *SQLCounts) parseInfo(buf []byte) error {

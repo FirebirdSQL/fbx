@@ -246,3 +246,57 @@ func (pb *BatchPBWriter) PutBuffer(tag byte, bytes []byte) {
 func (pb *BatchPBWriter) Bytes() []byte {
 	return pb.w.buf
 }
+
+type BLRWriterV5 struct {
+	w *XPBWriter
+}
+
+func NewBLRWriterV5() *BLRWriterV5 {
+	return &BLRWriterV5{w: NewXPBWriterFromTag(Isc_blr_version5)}
+}
+
+func (pb *BLRWriterV5) PutTag(tag byte) {
+	pb.w.AppendTag(tag)
+}
+
+func (pb *BLRWriterV5) PutByte(val byte) {
+	pb.w.AppendByte(val)
+}
+
+func (pb *BLRWriterV5) PutInt16(val int16) {
+	pb.w.AppendInt16(val)
+}
+
+func (pb *BLRWriterV5) PutInt32(val int32) {
+	pb.w.AppendInt32(val)
+}
+
+func (pb *BLRWriterV5) PutInt64(tag byte, val int64) {
+	pb.w.PutInt64(val)
+}
+
+func (pb *BLRWriterV5) PutBuffer(bytes []byte) {
+	pb.w.AppendInt32(int32(len(bytes)))
+	pb.w.AppendBytes(bytes)
+}
+
+func (pb *BLRWriterV5) PutNullString(val string) {
+	strBytes := []byte(val)
+	pb.w.AppendByte(byte(len(strBytes)))
+	pb.w.AppendBytes(strBytes)
+}
+
+func (pb *BLRWriterV5) PutString(val string) {
+	strBytes := []byte(val)
+	pb.w.AppendByte(byte(len(strBytes)))
+	pb.w.AppendBytes(strBytes)
+}
+
+func (pb *BLRWriterV5) PutTypeWithScale(tag byte, len byte) {
+	pb.w.AppendByte(tag)
+	pb.w.AppendByte(len)
+}
+
+func (pb *BLRWriterV5) Bytes() []byte {
+	return pb.w.buf
+}
