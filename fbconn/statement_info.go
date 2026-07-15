@@ -146,104 +146,14 @@ func (p *StatementInfo) feedDescriptors(r *ServerInfoBufferReader) error {
 	}
 }
 
+// GetRowBlr generates a BLR buffer from FieldDescriptors
 func (p *StatementInfo) GetRowBlr() []byte {
-	return p.CalculateBlr(p.FieldDescriptors, nil)
+	return fbproto.CalculateBLR(p.FieldDescriptors, nil)
 }
 
+// GetParametersBlr generates a BLR buffer from ParametersDescriptors and a set of values
 func (p *StatementInfo) GetParametersBlr(values [][]byte) []byte {
-	return p.CalculateBlr(p.ParametersDescriptors, values)
-}
-
-func (p *StatementInfo) CalculateBlr(descriptors []fbproto.FieldDescriptor, values [][]byte) []byte {
-	parametrsNumber := len(descriptors) * 2
-
-	blr := fbproto.NewBLRWriterV5()
-	blr.PutTag(fbproto.Isc_blr_begin)
-	blr.PutTag(fbproto.Isc_blr_message)
-	blr.PutByte(0) // message number
-	blr.PutInt16(int16(parametrsNumber))
-
-	for i, x := range descriptors {
-		sqlscale := x.Scale
-		if sqlscale < 0 {
-			sqlscale += 256
-		}
-		dataLength := x.Length
-		if values != nil {
-			if values[i] != nil {
-				dataLength = len(values[i])
-			} else {
-				dataLength = 0
-			}
-		}
-		switch x.Type {
-		case fbproto.SQL_TYPE_VARYING:
-			charsetID := byte(x.Subtype & 0xFF)
-			collationID := byte((x.Subtype >> 8) & 0xFF)
-
-			blr.PutTag(fbproto.Isc_blr_varying2)
-			blr.PutByte(charsetID)
-			blr.PutByte(collationID)
-			blr.PutInt16(int16(dataLength))
-		case fbproto.SQL_TYPE_TEXT:
-			charsetID := byte(x.Subtype & 0xFF)
-			collationID := byte((x.Subtype >> 8) & 0xFF)
-
-			blr.PutTag(fbproto.Isc_blr_text2)
-			blr.PutByte(charsetID)
-			blr.PutByte(collationID)
-			blr.PutInt16(int16(dataLength))
-		case fbproto.SQL_TYPE_LONG:
-			blr.PutTypeWithScale(fbproto.Isc_blr_long, byte(sqlscale))
-		case fbproto.SQL_TYPE_SHORT:
-			blr.PutTypeWithScale(fbproto.Isc_blr_short, byte(sqlscale))
-		case fbproto.SQL_TYPE_INT64:
-			blr.PutTypeWithScale(fbproto.Isc_blr_int64, byte(sqlscale))
-		case fbproto.SQL_TYPE_INT128:
-			blr.PutTypeWithScale(fbproto.Isc_blr_int128, byte(sqlscale))
-		case fbproto.SQL_TYPE_QUAD:
-			blr.PutTypeWithScale(fbproto.Isc_blr_quad, byte(sqlscale))
-		case fbproto.SQL_TYPE_DEC_FIXED: // OBSOLETED
-			blr.PutTypeWithScale(fbproto.Isc_blr_int128, byte(sqlscale))
-		case fbproto.SQL_TYPE_DOUBLE:
-			blr.PutTag(fbproto.Isc_blr_double)
-		case fbproto.SQL_TYPE_FLOAT:
-			blr.PutTag(fbproto.Isc_blr_float)
-		case fbproto.SQL_TYPE_D_FLOAT:
-			blr.PutTag(fbproto.Isc_blr_d_float)
-		case fbproto.SQL_TYPE_DATE:
-			blr.PutTag(fbproto.Isc_blr_sql_date)
-		case fbproto.SQL_TYPE_TIME:
-			blr.PutTag(fbproto.Isc_blr_sql_time)
-		case fbproto.SQL_TYPE_TIMESTAMP:
-			blr.PutTag(fbproto.Isc_blr_timestamp)
-		case fbproto.SQL_TYPE_BLOB:
-			blr.PutTypeWithScale(fbproto.Isc_blr_quad, 0)
-		case fbproto.SQL_TYPE_ARRAY:
-			blr.PutTypeWithScale(fbproto.Isc_blr_quad, 0)
-		case fbproto.SQL_TYPE_BOOLEAN:
-			blr.PutTag(fbproto.Isc_blr_bool)
-		case fbproto.SQL_TYPE_DEC64:
-			blr.PutTag(fbproto.Isc_blr_dec64)
-		case fbproto.SQL_TYPE_DEC128:
-			blr.PutTag(fbproto.Isc_blr_dec128)
-		case fbproto.SQL_TYPE_TIME_TZ:
-			blr.PutTag(fbproto.Isc_blr_sql_time_tz)
-		case fbproto.SQL_TYPE_TIMESTAMP_TZ:
-			blr.PutTag(fbproto.Isc_blr_timestamp_tz)
-		case fbproto.SQL_TYPE_NULL:
-			blr.PutTag(fbproto.Isc_blr_text)
-			blr.PutByte(0)
-			blr.PutByte(0)
-		default:
-			panic(fmt.Sprintf("unknown SQL type %d", x.Type))
-		}
-		blr.PutTypeWithScale(fbproto.Isc_blr_short, 0)
-	}
-	blr.PutTag(fbproto.Isc_blr_end)
-	blr.PutTag(fbproto.Isc_blr_eoc)
-
-	return blr.Bytes()
+	return fbproto.CalculateBLR(p.ParametersDescriptors, values)
 }
 
 func (p *SQLCounts) parseInfo(buf []byte) error {

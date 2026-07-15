@@ -420,7 +420,6 @@ const (
 
 	Isc_blr_version4 = 4
 	Isc_blr_version5 = 5
-	Isc_blr_version6 = 6
 
 	Isc_blr_eoc = 76
 	Isc_blr_end = 255
@@ -430,7 +429,6 @@ const (
 	Isc_blr_dcl_variable = 3
 	Isc_blr_message      = 4
 	Isc_blr_erase        = 5
-	Isc_blr_fetch        = 6
 	Isc_blr_for          = 7
 	Isc_blr_if           = 8
 	Isc_blr_loop         = 9
@@ -507,12 +505,6 @@ const (
 	Isc_blr_agg_min     = 85
 	Isc_blr_agg_total   = 86
 	Isc_blr_agg_average = 87
-	Isc_blr_parameter3  = 88
-
-	Isc_blr_run_max     = 89
-	Isc_blr_run_min     = 90
-	Isc_blr_run_total   = 91
-	Isc_blr_run_average = 92
 
 	Isc_blr_agg_count2           = 93
 	Isc_blr_agg_count_distinct   = 94
@@ -521,16 +513,13 @@ const (
 
 	Isc_blr_function   = 100
 	Isc_blr_gen_id     = 101
-	Isc_blr_prot_mask  = 102
 	Isc_blr_upcase     = 103
-	Isc_blr_lock_state = 104
 	Isc_blr_value_if   = 105
 	Isc_blr_matching2  = 106
 	Isc_blr_index      = 107
 	Isc_blr_ansi_like  = 108
 	Isc_blr_scrollable = 109
 
-	Isc_blr_run_count = 118
 	Isc_blr_rs_stream = 119
 	Isc_blr_exec_proc = 120
 
@@ -583,7 +572,6 @@ const (
 
 	Isc_blr_post_arg           = 163
 	Isc_blr_exec_into          = 164
-	Isc_blr_user_savepoint     = 165
 	Isc_blr_dcl_cursor         = 166
 	Isc_blr_cursor_stmt        = 167
 	Isc_blr_current_timestamp2 = 168
@@ -615,11 +603,6 @@ const (
 
 	Isc_blr_trim_spaces     = 0
 	Isc_blr_trim_characters = 1
-
-	Isc_blr_savepoint_set            = 0
-	Isc_blr_savepoint_release        = 1
-	Isc_blr_savepoint_undo           = 2
-	Isc_blr_savepoint_release_single = 3
 
 	Isc_blr_cursor_open         = 0
 	Isc_blr_cursor_close        = 1
