@@ -47,14 +47,15 @@ func (blr *BLRWriter) PutBytes(bytes []byte) {
 }
 
 // PutString appends length of string and string to BLRWriter
-func (blr *BLRWriter) PutString(val string) {
+func (blr *BLRWriter) PutString(val string) error {
 	strBytes := []byte(val)
 	strLen := len(strBytes)
 	if strLen >= 256 {
-		panic("buffer more then expected")
+		return fmt.Errorf("buffer more then expected")
 	}
 	blr.PutByte(byte(strLen))
 	blr.PutBytes(strBytes)
+	return nil
 }
 
 // PutTagWithByte appends tag and 1 byte after it to BLRWriter
@@ -69,7 +70,7 @@ func (blr *BLRWriter) Bytes() []byte {
 }
 
 // PutType appends type information to BLRWriter
-func (blr *BLRWriter) PutType(sqltype, subtype, scale, length int) {
+func (blr *BLRWriter) PutType(sqltype, subtype, scale, length int) error {
 	switch sqltype {
 	case SQL_TYPE_VARYING:
 		charsetID := byte(subtype & 0xFF)
@@ -130,12 +131,21 @@ func (blr *BLRWriter) PutType(sqltype, subtype, scale, length int) {
 		blr.PutByte(0)
 		blr.PutByte(0)
 	default:
-		panic(fmt.Sprintf("unknown SQL type %d", sqltype))
+		return fmt.Errorf("unknown SQL type %d", sqltype)
 	}
+	return nil
 }
 
 // CalculateBLR generates a BLR buffer from []FieldDescriptor and a set of values
-func CalculateBLR(descriptors []FieldDescriptor, values [][]byte) []byte {
+func CalculateBLR(descriptors []FieldDescriptor, values [][]byte) ([]byte, error) {
+	if values != nil && len(values) != len(descriptors) {
+		return nil, fmt.Errorf(
+			"BLR values count mismatch: got %d, want %d",
+			len(values),
+			len(descriptors),
+		)
+	}
+
 	parametrsNumber := len(descriptors) * 2
 	bufferCapacity := (parametrsNumber * 4) + 8
 
@@ -159,11 +169,14 @@ func CalculateBLR(descriptors []FieldDescriptor, values [][]byte) []byte {
 				dataLength = 0
 			}
 		}
-		blr.PutType(x.Type, x.Subtype, sqlscale, dataLength)
+		err := blr.PutType(x.Type, x.Subtype, sqlscale, dataLength)
+		if err != nil {
+			return nil, err
+		}
 		blr.PutTagWithByte(Isc_blr_short, 0)
 	}
 	blr.PutTag(Isc_blr_end)
 	blr.PutTag(Isc_blr_eoc)
 
-	return blr.Bytes()
+	return blr.Bytes(), nil
 }

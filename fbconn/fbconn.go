@@ -2273,7 +2273,12 @@ func (rr *ResultReader) NextRow() bool {
 
 		var rowBlr []byte
 		if !rr.fetchExecuted {
-			rowBlr = rr.statementDescription.StatementInfo.GetRowBlr()
+			rowBlr, err = rr.statementDescription.StatementInfo.GetRowBlr()
+			if err != nil {
+				rr.fbConn.asyncClose()
+				rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(rr.ctx, normalizeConnClosedError(err)))
+				return false
+			}
 		}
 		fetchBatchSize := DefaultFetchBatchSize
 		if rr.fbConn != nil && rr.fbConn.config != nil && rr.fbConn.config.FetchBatchSize > 0 {

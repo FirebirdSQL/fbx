@@ -124,9 +124,15 @@ func (b *Batch) checkCreate() error {
 
 func (b *Batch) createOnWire(ctx context.Context, parameterBuffer []byte) error {
 	return b.withConn(ctx, func() error {
+		batchBLR, err := b.st.Description.StatementInfo.GetParametersBlr(nil)
+		if err != nil {
+			b.st.conn.asyncClose()
+			return err
+		}
+
 		if err := b.st.conn.client.WriteMessage(&fbproto.OpBatchCreate{
 			StatementHandle: b.st.Description.StatementHandle,
-			BatchBLR:        b.st.Description.StatementInfo.GetParametersBlr(nil),
+			BatchBLR:        batchBLR,
 			MessageLength:   fbproto.CalculateBatchMessageLength(b.st.Description.StatementInfo.ParametersDescriptors),
 			ParameterBuffer: parameterBuffer,
 		}); err != nil {

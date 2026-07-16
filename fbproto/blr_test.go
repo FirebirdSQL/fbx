@@ -77,7 +77,8 @@ func TestBLRWriterPutString(t *testing.T) {
 			"empty",
 			func(t *testing.T) {
 				blr := NewBLRWriter(0)
-				blr.PutString("")
+				err := blr.PutString("")
+				require.NoError(t, err)
 				assert.Equal(t, []byte{0}, blr.Bytes())
 			},
 		},
@@ -85,7 +86,8 @@ func TestBLRWriterPutString(t *testing.T) {
 			"data",
 			func(t *testing.T) {
 				blr := NewBLRWriter(5)
-				blr.PutString("test")
+				err := blr.PutString("test")
+				require.NoError(t, err)
 				assert.Equal(t, []byte{4, 't', 'e', 's', 't'}, blr.Bytes())
 			},
 		},
@@ -94,7 +96,8 @@ func TestBLRWriterPutString(t *testing.T) {
 			func(t *testing.T) {
 				blr := NewBLRWriter(256)
 				s := strings.Repeat("a", 255)
-				blr.PutString(s)
+				err := blr.PutString(s)
+				require.NoError(t, err)
 				got := blr.Bytes()
 				require.Len(t, got, 256)
 				assert.Equal(t, byte(255), got[0])
@@ -102,12 +105,11 @@ func TestBLRWriterPutString(t *testing.T) {
 			},
 		},
 		{
-			"panic_on_256",
+			"error_on_256",
 			func(t *testing.T) {
 				blr := NewBLRWriter(0)
-				assert.PanicsWithValue(t, "buffer more then expected", func() {
-					blr.PutString(strings.Repeat("a", 256))
-				})
+				err := blr.PutString(strings.Repeat("a", 256))
+				require.ErrorContains(t, err, "buffer more then expected")
 			},
 		},
 	}
@@ -265,21 +267,22 @@ func TestBLRWriterPutType(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			blr := NewBLRWriter(0)
-			blr.PutType(tt.sqltype, tt.subtype, tt.scale, tt.length)
+			err := blr.PutType(tt.sqltype, tt.subtype, tt.scale, tt.length)
+			require.NoError(t, err)
 			assert.Equal(t, tt.want, blr.Bytes())
 		})
 	}
 }
 
-func TestBLRWriterPutTypeUnknownPanics(t *testing.T) {
+func TestBLRWriterPutTypeUnknownError(t *testing.T) {
 	blr := NewBLRWriter(0)
-	assert.Panics(t, func() {
-		blr.PutType(99999, 0, 0, 0)
-	})
+	err := blr.PutType(99999, 0, 0, 0)
+	require.ErrorContains(t, err, "unknown SQL type")
 }
 
 func TestCalculateBLREmptyDescriptors(t *testing.T) {
-	got := CalculateBLR(nil, nil)
+	got, err := CalculateBLR(nil, nil)
+	require.NoError(t, err)
 	want := []byte{
 		Isc_blr_version5,
 		Isc_blr_begin,
@@ -298,7 +301,8 @@ func TestCalculateBLRMultipleTypes(t *testing.T) {
 		{Type: SQL_TYPE_BOOLEAN},
 		{Type: SQL_TYPE_DOUBLE},
 	}
-	got := CalculateBLR(descriptors, nil)
+	got, err := CalculateBLR(descriptors, nil)
+	require.NoError(t, err)
 	want := []byte{
 		Isc_blr_version5,
 		Isc_blr_begin,
@@ -322,7 +326,8 @@ func TestCalculateBLRNegativeScale(t *testing.T) {
 		Type:  SQL_TYPE_INT64,
 		Scale: -2, // becomes 254 after += 256
 	}}
-	got := CalculateBLR(descriptors, nil)
+	got, err := CalculateBLR(descriptors, nil)
+	require.NoError(t, err)
 
 	assert.Equal(t, byte(Isc_blr_int64), got[6])
 	assert.Equal(t, byte(254), got[7])
@@ -334,7 +339,9 @@ func TestCalculateBLRVarying(t *testing.T) {
 		Subtype: 0x0001,
 		Length:  50,
 	}}
-	got := CalculateBLR(descriptors, nil)
+	got, err := CalculateBLR(descriptors, nil)
+	require.NoError(t, err)
+
 	want := []byte{
 		Isc_blr_version5,
 		Isc_blr_begin,
@@ -349,11 +356,32 @@ func TestCalculateBLRVarying(t *testing.T) {
 	assert.Equal(t, want, got)
 }
 
-func TestCalculateBLREmptyValuesSlice(t *testing.T) {
-	descriptors := []FieldDescriptor{{Type: SQL_TYPE_LONG}}
-	assert.Panics(t, func() {
-		CalculateBLR(descriptors, [][]byte{})
-	})
+func TestCalculateBLRMismatchValuesCountValuesSlice(t *testing.T) {
+	tests := []struct {
+		name          string
+		descriptors   []FieldDescriptor
+		values        [][]byte
+		expectedError string
+	}{
+		{
+			name:          "less values then expected",
+			descriptors:   []FieldDescriptor{{Type: SQL_TYPE_LONG}},
+			values:        [][]byte{},
+			expectedError: "BLR values count mismatch: got 0, want 1",
+		},
+		{
+			name:          "more values then expected",
+			descriptors:   []FieldDescriptor{{Type: SQL_TYPE_LONG}},
+			values:        [][]byte{{1}, {2}},
+			expectedError: "BLR values count mismatch: got 2, want 1",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := CalculateBLR(test.descriptors, test.values)
+			require.ErrorContains(t, err, test.expectedError)
+		})
+	}
 }
 
 func TestCalculateBLRBlobAndArray(t *testing.T) {
@@ -361,7 +389,9 @@ func TestCalculateBLRBlobAndArray(t *testing.T) {
 		{Type: SQL_TYPE_BLOB},
 		{Type: SQL_TYPE_ARRAY},
 	}
-	got := CalculateBLR(descriptors, nil)
+	got, err := CalculateBLR(descriptors, nil)
+	require.NoError(t, err)
+
 	want := []byte{
 		Isc_blr_version5,
 		Isc_blr_begin,
@@ -378,9 +408,8 @@ func TestCalculateBLRBlobAndArray(t *testing.T) {
 	assert.Equal(t, want, got)
 }
 
-func TestCalculateBLRUnknownTypePanics(t *testing.T) {
+func TestCalculateBLRUnknownTypeError(t *testing.T) {
 	descriptors := []FieldDescriptor{{Type: 12345}}
-	assert.Panics(t, func() {
-		CalculateBLR(descriptors, nil)
-	})
+	_, err := CalculateBLR(descriptors, nil)
+	require.ErrorContains(t, err, "unknown SQL type")
 }
