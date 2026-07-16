@@ -146,12 +146,12 @@ func (p *StatementInfo) feedDescriptors(r *ServerInfoBufferReader) error {
 	}
 }
 
-// GetRowBlr generates a BLR buffer from FieldDescriptors
+// GetRowBlr generates a BLR buffer from FieldDescriptors.
 func (p *StatementInfo) GetRowBlr() ([]byte, error) {
 	return fbproto.CalculateBLR(p.FieldDescriptors, nil)
 }
 
-// GetParametersBlr generates a BLR buffer from ParametersDescriptors and a set of values
+// GetParametersBlr generates a BLR buffer from ParametersDescriptors and a set of values.
 func (p *StatementInfo) GetParametersBlr(values [][]byte) ([]byte, error) {
 	return fbproto.CalculateBLR(p.ParametersDescriptors, values)
 }

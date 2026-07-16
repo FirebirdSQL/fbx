@@ -6,47 +6,49 @@ import (
 	"rdb.red-soft.ru/fbx/internal/fbio"
 )
 
-// BLRWriter builds BLR buffer
+// BLRWriter builds BLR buffer.
 type BLRWriter struct {
 	buf []byte
 }
 
-// NewBLRWriter creates a new BLRWriter
+// NewBLRWriter creates a new BLRWriter.
 func NewBLRWriter(capacity int) *BLRWriter {
 	return &BLRWriter{buf: make([]byte, 0, capacity)}
 }
 
-// PutByte appends 1 byte to BLRWriter
+// PutByte appends 1 byte to BLRWriter.
 func (blr *BLRWriter) PutByte(val byte) {
 	blr.buf = append(blr.buf, val)
 }
 
-// PutTag appends 1 byte to BLRWriter
+// PutTag appends 1 byte to BLRWriter.
 func (blr *BLRWriter) PutTag(tag byte) {
 	blr.PutByte(tag)
 }
 
-// PutInt16 appends int16 to BLRWriter in little-endian format
+// PutInt16 appends int16 to BLRWriter in little-endian format.
 func (blr *BLRWriter) PutInt16(val int16) {
 	blr.buf = fbio.AppendInt16LE(blr.buf, val)
 }
 
-// PutInt32 appends int32 to BLRWriter in little-endian format
+// PutInt32 appends int32 to BLRWriter in little-endian format.
 func (blr *BLRWriter) PutInt32(val int32) {
 	blr.buf = fbio.AppendInt32LE(blr.buf, val)
 }
 
-// PutInt64 appends int64 to BLRWriter in little-endian format
+// PutInt64 appends int64 to BLRWriter in little-endian format.
 func (blr *BLRWriter) PutInt64(val int64) {
 	blr.buf = fbio.AppendInt64LE(blr.buf, val)
 }
 
-// PutBytes appends []byte to BLRWriter
+// PutBytes appends []byte buffer to BLRWriter.
 func (blr *BLRWriter) PutBytes(bytes []byte) {
 	blr.buf = append(blr.buf, bytes...)
 }
 
-// PutString appends length of string and string to BLRWriter
+// PutString appends length of string and string to BLRWriter.
+// The string length is stored in 1 byte, which is why it cannot
+// be greater than 255, otherwise an error will be returned.
 func (blr *BLRWriter) PutString(val string) error {
 	strBytes := []byte(val)
 	strLen := len(strBytes)
@@ -58,18 +60,20 @@ func (blr *BLRWriter) PutString(val string) error {
 	return nil
 }
 
-// PutTagWithByte appends tag and 1 byte after it to BLRWriter
+// PutTagWithByte appends tag and 1 byte after it to BLRWriter.
 func (blr *BLRWriter) PutTagWithByte(tag byte, b byte) {
 	blr.PutByte(tag)
 	blr.PutByte(b)
 }
 
-// Bytes returns BLR buffer
+// Bytes returns BLR buffer.
 func (blr *BLRWriter) Bytes() []byte {
 	return blr.buf
 }
 
-// PutType appends type information to BLRWriter
+// PutType adds type information to the BLRWriter, taking
+// the metadata of the specified type as input. Returns
+// an error if the specified type is not defined.
 func (blr *BLRWriter) PutType(sqltype, subtype, scale, length int) error {
 	switch sqltype {
 	case SQL_TYPE_VARYING:
@@ -140,7 +144,9 @@ func (blr *BLRWriter) PutType(sqltype, subtype, scale, length int) error {
 	return nil
 }
 
-// CalculateBLR generates a BLR buffer from []FieldDescriptor and a set of values
+// CalculateBLR generates a BLR buffer from []FieldDescriptor and a set of values.
+// If values is not nil, then its length and the length of descriptors must be equal,
+// otherwise the method will return an error.
 func CalculateBLR(descriptors []FieldDescriptor, values [][]byte) ([]byte, error) {
 	if values != nil && len(values) != len(descriptors) {
 		return nil, fmt.Errorf(
