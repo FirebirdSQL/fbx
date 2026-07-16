@@ -258,6 +258,16 @@ func TestBLRWriterPutType(t *testing.T) {
 			want:    []byte{Isc_blr_timestamp_tz},
 		},
 		{
+			name:    "time_tz_ex",
+			sqltype: SQL_TIME_TZ_EX,
+			want:    []byte{Isc_blr_ex_time_tz},
+		},
+		{
+			name:    "timestamp_tz_ex",
+			sqltype: SQL_TIMESTAMP_TZ_EX,
+			want:    []byte{Isc_blr_ex_timestamp_tz},
+		},
+		{
 			name:    "null",
 			sqltype: SQL_TYPE_NULL,
 			want:    []byte{Isc_blr_text, 0, 0},

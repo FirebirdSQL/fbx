@@ -126,6 +126,10 @@ func (blr *BLRWriter) PutType(sqltype, subtype, scale, length int) error {
 		blr.PutTag(Isc_blr_sql_time_tz)
 	case SQL_TYPE_TIMESTAMP_TZ:
 		blr.PutTag(Isc_blr_timestamp_tz)
+	case SQL_TIME_TZ_EX:
+		blr.PutTag(Isc_blr_ex_time_tz)
+	case SQL_TIMESTAMP_TZ_EX:
+		blr.PutTag(Isc_blr_ex_timestamp_tz)
 	case SQL_TYPE_NULL:
 		blr.PutTag(Isc_blr_text)
 		blr.PutByte(0)
