@@ -1103,11 +1103,6 @@ func (c *Conn) QueryRow(ctx context.Context, sql string, args ...any) Row {
 }
 
 func (c *Conn) deallocateInvalidatedCachedStatements(ctx context.Context) error {
-	//FIXME: fbx need to check state of transaction bound to statement?
-	//	if txStatus := c.fbConn.TxStatus(); txStatus != 'I' && txStatus != 'T' {
-	//		return nil
-	//	}
-
 	var invalidatedStatements []*fbconn.Statement
 	if c.statementCache != nil {
 		invalidatedStatements = c.statementCache.GetInvalidated()
