@@ -394,6 +394,36 @@ func TestCalculateBLRMismatchValuesCountValuesSlice(t *testing.T) {
 	}
 }
 
+func TestCalculateBLRValuesLength(t *testing.T) {
+	tests := []struct {
+		name           string
+		descriptors    []FieldDescriptor
+		values         [][]byte
+		expectedLength byte
+	}{
+		{
+			name:           "nil value sets zero length",
+			descriptors:    []FieldDescriptor{{Type: SQL_TYPE_TEXT}},
+			values:         nil,
+			expectedLength: 0,
+		},
+		{
+			name:           "string test",
+			descriptors:    []FieldDescriptor{{Type: SQL_TYPE_TEXT}},
+			values:         [][]byte{[]byte("abc")},
+			expectedLength: 3,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			blr, err := CalculateBLR(test.descriptors, test.values)
+			require.NoError(t, err)
+			require.Equal(t, 15, len(blr))
+			require.Equal(t, blr[9], test.expectedLength)
+		})
+	}
+}
+
 func TestCalculateBLRBlobAndArray(t *testing.T) {
 	descriptors := []FieldDescriptor{
 		{Type: SQL_TYPE_BLOB},
