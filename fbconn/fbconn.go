@@ -2610,17 +2610,9 @@ func (rr *ResultReader) concludeCommand(queryStatus QueryStatus, err error) {
 	rr.commandConcluded = true
 }
 
-// EscapeString escapes a string such that it can safely be interpolated into a SQL command string. It does not include
-// the surrounding single quotes.
-//
-// The current implementation requires that standard_conforming_strings=on and client_encoding="UTF8". If these
-// conditions are not met an error will be returned. It is possible these restrictions will be lifted in the future.
+// EscapeString returns s with each single quote doubled for use inside a
+// Firebird string literal. It does not add the surrounding single quotes.
 func (fbConn *FbConn) EscapeString(s string) (string, error) {
-	//FIXME: need to check anything for RDB?
-	//if fbConn.ParameterStatus("client_encoding") != "UTF8" {
-	//	return "", errors.New("EscapeString must be run with client_encoding=UTF8")
-	//}
-
 	return strings.Replace(s, "'", "''", -1), nil
 }
 

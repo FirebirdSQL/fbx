@@ -1493,8 +1493,11 @@ func TestConnEscapeString(t *testing.T) {
 		{in: "", out: ""},
 		{in: "42", out: "42"},
 		{in: "'", out: "''"},
+		{in: "''", out: "''''"},
 		{in: "hi'there", out: "hi''there"},
 		{in: "'hi there'", out: "''hi there''"},
+		{in: "Hi, world! 👋", out: "Hi, world! 👋"},
+		{in: "Na'vi", out: "Na''vi"},
 	}
 
 	for i, tt := range tests {
