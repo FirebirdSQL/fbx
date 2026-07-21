@@ -11,8 +11,8 @@ import (
 )
 
 func TestAuthManagerBuildListAndCurrent(t *testing.T) {
-	connConf := ConnConf{User: "user", Password: "secret"}
-	m, err := NewAuthManager(connConf, nil)
+	userConfig := UserConfig{User: "user", Password: "secret"}
+	m, err := NewAuthManager(userConfig, nil)
 	require.NoError(t, err)
 	require.NotNil(t, m)
 	require.Equal(t, "Srp256,Srp,Gss,Srp224,Srp384,Srp512,Legacy_Auth", m.BuildList())
@@ -48,8 +48,8 @@ func TestAuthManagerEmptyAndBounds(t *testing.T) {
 	var empty AuthManager
 	require.Nil(t, empty.GetCurrentPlugin())
 
-	connConf := ConnConf{User: "user", Password: "secret"}
-	m, err := NewAuthManager(connConf, nil)
+	userConfig := UserConfig{User: "user", Password: "secret"}
+	m, err := NewAuthManager(userConfig, nil)
 	require.NoError(t, err)
 	m.current = 999
 	first := m.GetCurrentPlugin()
@@ -57,8 +57,8 @@ func TestAuthManagerEmptyAndBounds(t *testing.T) {
 }
 
 func TestSetCurrentPluginNotFound(t *testing.T) {
-	connConf := ConnConf{User: "user", Password: "secret"}
-	m, err := NewAuthManager(connConf, nil)
+	userConfig := UserConfig{User: "user", Password: "secret"}
+	m, err := NewAuthManager(userConfig, nil)
 	require.NoError(t, err)
 	p, ok := m.SetCurrentPlugin("unknown_plugin")
 	require.False(t, ok)
@@ -66,8 +66,8 @@ func TestSetCurrentPluginNotFound(t *testing.T) {
 }
 
 func TestAuthManagerHandleServerChallenge(t *testing.T) {
-	connConf := ConnConf{User: "user", Password: "secret"}
-	m, err := NewAuthManager(connConf, nil)
+	userConfig := UserConfig{User: "user", Password: "secret"}
+	m, err := NewAuthManager(userConfig, nil)
 	require.NoError(t, err)
 	legacyName := "Legacy_Auth"
 	m.SetCurrentPlugin(legacyName)
@@ -89,8 +89,8 @@ func TestAuthManagerHandleServerChallenge(t *testing.T) {
 }
 
 func TestAuthManagerStoresWireReplyForAuthSpecificData(t *testing.T) {
-	connConf := ConnConf{User: "user", Password: "secret"}
-	m, err := NewAuthManager(connConf, []string{"Srp"})
+	userConfig := UserConfig{User: "user", Password: "secret"}
+	m, err := NewAuthManager(userConfig, []string{"Srp"})
 	require.NoError(t, err)
 
 	plugin := m.GetCurrentPlugin().(*SrpAuthPlugin)
@@ -108,16 +108,16 @@ func TestAuthManagerStoresWireReplyForAuthSpecificData(t *testing.T) {
 }
 
 func TestHandleServerChallengeUnsupportedPlugin(t *testing.T) {
-	connConf := ConnConf{User: "user", Password: "secret"}
-	m, err := NewAuthManager(connConf, nil)
+	userConfig := UserConfig{User: "user", Password: "secret"}
+	m, err := NewAuthManager(userConfig, nil)
 	require.NoError(t, err)
 	_, err = m.HandleServerChallenge("unknown", nil)
 	require.Error(t, err)
 }
 
 func TestAuthManagerRestrictsToServerKnownPlugins(t *testing.T) {
-	connConf := ConnConf{User: "user", Password: "secret"}
-	m, err := NewAuthManager(connConf, nil)
+	userConfig := UserConfig{User: "user", Password: "secret"}
+	m, err := NewAuthManager(userConfig, nil)
 	require.NoError(t, err)
 
 	require.NoError(t, m.RestrictToServerPlugins([]byte{2, 3, 'S', 'r', 'p'}))
@@ -131,8 +131,8 @@ func TestAuthManagerRestrictsToServerKnownPlugins(t *testing.T) {
 }
 
 func TestAuthManagerRestrictToServerKnownPluginsNoMatch(t *testing.T) {
-	connConf := ConnConf{User: "user", Password: "secret"}
-	m, err := NewAuthManager(connConf, []string{"Srp"})
+	userConfig := UserConfig{User: "user", Password: "secret"}
+	m, err := NewAuthManager(userConfig, []string{"Srp"})
 	require.NoError(t, err)
 
 	err = m.RestrictToServerPlugins([]byte{2, 11, 'L', 'e', 'g', 'a', 'c', 'y', '_', 'A', 'u', 't', 'h'})
@@ -151,8 +151,8 @@ func TestLegacyAuthPluginInitialClientData(t *testing.T) {
 }
 
 func TestNewAuthManagerCustomList(t *testing.T) {
-	connConf := ConnConf{User: "user", Password: "secret"}
-	m, err := NewAuthManager(connConf, []string{"Legacy_Auth", "Srp", "Legacy_Auth"})
+	userConfig := UserConfig{User: "user", Password: "secret"}
+	m, err := NewAuthManager(userConfig, []string{"Legacy_Auth", "Srp", "Legacy_Auth"})
 	require.NoError(t, err)
 	require.Equal(t, "Legacy_Auth,Srp", m.BuildList())
 	cur := m.GetCurrentPlugin()
@@ -161,8 +161,8 @@ func TestNewAuthManagerCustomList(t *testing.T) {
 }
 
 func TestNewAuthManagerUnknownPlugin(t *testing.T) {
-	connConf := ConnConf{User: "user", Password: "secret"}
-	_, err := NewAuthManager(connConf, []string{"unknown"})
+	userConfig := UserConfig{User: "user", Password: "secret"}
+	_, err := NewAuthManager(userConfig, []string{"unknown"})
 	require.Error(t, err)
 }
 
@@ -179,8 +179,8 @@ func mustAuthManagerSrpServerData(t *testing.T, salt []byte, serverPublic *big.I
 }
 
 func TestHandleServerChallengeProcessesGssDataWhenPluginChanges(t *testing.T) {
-	connConf := ConnConf{User: "user", Password: "masterkey"}
-	m, err := NewAuthManager(connConf, []string{"Srp256", "Gss"})
+	userConfig := UserConfig{User: "user", Password: "masterkey"}
+	m, err := NewAuthManager(userConfig, []string{"Srp256", "Gss"})
 	require.NoError(t, err)
 	require.Equal(t, "Srp256", m.GetCurrentPlugin().Name())
 

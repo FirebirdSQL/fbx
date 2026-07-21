@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-type ConnConf struct {
+type UserConfig struct {
 	User           string
 	Password       string
 	Certificate    []byte
@@ -56,14 +56,14 @@ var defaultPluginSequence = []string{
 	"Legacy_Auth",
 }
 
-var pluginConstructors = map[string]func(conf ConnConf) AuthPlugin{
-	"srp":    func(ConnConf) AuthPlugin { return NewSrpAuthPlugin() },
-	"srp256": func(ConnConf) AuthPlugin { return NewSrp256AuthPlugin() },
-	"srp224": func(ConnConf) AuthPlugin { return NewSrp224AuthPlugin() },
-	"srp384": func(ConnConf) AuthPlugin { return NewSrp384AuthPlugin() },
-	"srp512": func(ConnConf) AuthPlugin { return NewSrp512AuthPlugin() },
-	"gss":    func(ConnConf) AuthPlugin { return NewGssAuthPlugin() },
-	"legacy_auth": func(conf ConnConf) AuthPlugin {
+var pluginConstructors = map[string]func(conf UserConfig) AuthPlugin{
+	"srp":    func(UserConfig) AuthPlugin { return NewSrpAuthPlugin() },
+	"srp256": func(UserConfig) AuthPlugin { return NewSrp256AuthPlugin() },
+	"srp224": func(UserConfig) AuthPlugin { return NewSrp224AuthPlugin() },
+	"srp384": func(UserConfig) AuthPlugin { return NewSrp384AuthPlugin() },
+	"srp512": func(UserConfig) AuthPlugin { return NewSrp512AuthPlugin() },
+	"gss":    func(UserConfig) AuthPlugin { return NewGssAuthPlugin() },
+	"legacy_auth": func(conf UserConfig) AuthPlugin {
 		return NewLegacyAuthPlugin(conf.Password)
 	},
 }
@@ -81,7 +81,7 @@ func DefaultPluginListString() string {
 // AuthManager coordinates plugin selection and state across the wire protocol
 // authentication exchange. An AuthManager is not safe for concurrent use.
 type AuthManager struct {
-	connConf         ConnConf
+	connConf         UserConfig
 	plugins          []AuthPlugin
 	current          int
 	lastAuthSpecific []byte
@@ -99,7 +99,7 @@ type SpecificDataChunk struct {
 // RegisterAuthPlugin allows to register custom authentication plugins.
 // To register it, you need to pass the name of the plugin and its constructor.
 // Constructor must be like in pluginConstructors map.
-func RegisterAuthPlugin(name string, constructor func(ConnConf) AuthPlugin) error {
+func RegisterAuthPlugin(name string, constructor func(UserConfig) AuthPlugin) error {
 	lowerName := strings.ToLower(name)
 	if _, ok := pluginConstructors[lowerName]; !ok {
 		defaultPluginSequence = append(defaultPluginSequence, strings.TrimSpace(name))
@@ -112,7 +112,7 @@ func RegisterAuthPlugin(name string, constructor func(ConnConf) AuthPlugin) erro
 // NewAuthManager creates an authentication manager for user and password.
 // pluginNames defines client preference order; an empty list uses
 // [DefaultPluginSequence]. Duplicate names are ignored.
-func NewAuthManager(conf ConnConf, pluginNames []string) (*AuthManager, error) {
+func NewAuthManager(conf UserConfig, pluginNames []string) (*AuthManager, error) {
 	order := pluginNames
 	if len(order) == 0 {
 		order = DefaultPluginSequence()
@@ -342,7 +342,7 @@ func (m *AuthManager) pluginNames() []string {
 	return names
 }
 
-func createAuthPlugin(name string, conf ConnConf) (AuthPlugin, bool) {
+func createAuthPlugin(name string, conf UserConfig) (AuthPlugin, bool) {
 	constructor, ok := pluginConstructors[strings.ToLower(strings.TrimSpace(name))]
 	if !ok {
 		return nil, false
