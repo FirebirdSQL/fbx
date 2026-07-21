@@ -54,6 +54,9 @@ type Config struct {
 	MaxBlobCacheSize           int
 	FetchBatchSize             int
 
+	Certificate    []byte
+	CertificatePin string
+
 	// BuildContextWatcherHandler is called to create a ContextWatcherHandler for a connection. The handler is called
 	// when a context passed to a FbConn method is canceled.
 	BuildContextWatcherHandler func(*FbConn) ctxwatch.Handler

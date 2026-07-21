@@ -708,7 +708,8 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 	fbConn.client.ConfigureInlineBlobCache(config.MaxInlineBlobSize, config.MaxBlobCacheSize)
 	fbConn.wireCrypt = wirecrypt.NewDefaultManager()
 
-	authManager, err := auth.NewAuthManager(config.User, config.Password, config.AuthPluginList)
+	connConf := auth.ConnConf{User: config.User, Password: config.Password, Certificate: config.Certificate, CertificatePin: config.CertificatePin}
+	authManager, err := auth.NewAuthManager(connConf, config.AuthPluginList)
 	if err != nil {
 		fbConn.conn.Close()
 		return nil, newPerDialConnectError("authentication setup failed", err)

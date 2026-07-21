@@ -6,8 +6,10 @@ import (
 )
 
 type ConnConf struct {
-	User     string
-	Password string
+	User           string
+	Password       string
+	Certificate    []byte
+	CertificatePin string
 }
 
 // AuthPluginStep describes the client output produced by one authentication
@@ -79,8 +81,7 @@ func DefaultPluginListString() string {
 // AuthManager coordinates plugin selection and state across the wire protocol
 // authentication exchange. An AuthManager is not safe for concurrent use.
 type AuthManager struct {
-	user             string
-	password         string
+	connConf         ConnConf
 	plugins          []AuthPlugin
 	current          int
 	lastAuthSpecific []byte
@@ -111,7 +112,7 @@ func RegisterAuthPlugin(name string, constructor func(ConnConf) AuthPlugin) erro
 // NewAuthManager creates an authentication manager for user and password.
 // pluginNames defines client preference order; an empty list uses
 // [DefaultPluginSequence]. Duplicate names are ignored.
-func NewAuthManager(user string, password string, pluginNames []string) (*AuthManager, error) {
+func NewAuthManager(conf ConnConf, pluginNames []string) (*AuthManager, error) {
 	order := pluginNames
 	if len(order) == 0 {
 		order = DefaultPluginSequence()
@@ -131,7 +132,6 @@ func NewAuthManager(user string, password string, pluginNames []string) (*AuthMa
 			continue
 		}
 
-		conf := ConnConf{User: user, Password: password}
 		plugin, ok := createAuthPlugin(trimmed, conf)
 		if !ok {
 			return nil, fmt.Errorf("auth: unknown authentication plugin %q", name)
@@ -146,8 +146,7 @@ func NewAuthManager(user string, password string, pluginNames []string) (*AuthMa
 	}
 
 	return &AuthManager{
-		user:     user,
-		password: password,
+		connConf: conf,
 		plugins:  plugins,
 		current:  0,
 	}, nil
@@ -189,8 +188,7 @@ func (m *AuthManager) SetCurrentPlugin(name string) (AuthPlugin, bool) {
 	for idx, plugin := range m.plugins {
 		for _, advertised := range plugin.Advertise() {
 			if strings.EqualFold(advertised, name) {
-				conf := ConnConf{User: m.user, Password: m.password}
-				if fresh, ok := createAuthPlugin(plugin.Name(), conf); ok {
+				if fresh, ok := createAuthPlugin(plugin.Name(), m.connConf); ok {
 					plugin = fresh
 					m.plugins[idx] = fresh
 				}
@@ -280,7 +278,7 @@ func (m *AuthManager) HandleServerChallenge(pluginName string, data []byte) (*Au
 		authData := plugin.InitialClientData()
 		step = &AuthPluginStep{Reply: cloneBytes(authData)}
 	} else {
-		step, err = plugin.HandleServerData(m.user, m.password, pluginName, data)
+		step, err = plugin.HandleServerData(m.connConf.User, m.connConf.Password, pluginName, data)
 		if err != nil {
 			return nil, err
 		}
