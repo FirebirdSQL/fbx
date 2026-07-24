@@ -708,7 +708,7 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 	fbConn.client.ConfigureInlineBlobCache(config.MaxInlineBlobSize, config.MaxBlobCacheSize)
 	fbConn.wireCrypt = wirecrypt.NewDefaultManager()
 
-	userConfig := auth.UserConfig{User: config.User, Password: config.Password, Certificate: config.Certificate, CertificatePin: config.CertificatePin}
+	userConfig := auth.UserConfig{User: config.User, Password: config.Password, Certificate: config.Certificate, CertificatePIN: config.CertificatePIN}
 	authManager, err := auth.NewAuthManager(userConfig, config.AuthPluginList)
 	if err != nil {
 		fbConn.conn.Close()

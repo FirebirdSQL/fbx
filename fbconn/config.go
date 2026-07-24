@@ -55,7 +55,7 @@ type Config struct {
 	FetchBatchSize             int
 
 	Certificate    []byte
-	CertificatePin string
+	CertificatePIN string
 
 	// BuildContextWatcherHandler is called to create a ContextWatcherHandler for a connection. The handler is called
 	// when a context passed to a FbConn method is canceled.

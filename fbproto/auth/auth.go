@@ -9,7 +9,7 @@ type UserConfig struct {
 	User           string
 	Password       string
 	Certificate    []byte
-	CertificatePin string
+	CertificatePIN string
 }
 
 // AuthPluginStep describes the client output produced by one authentication
