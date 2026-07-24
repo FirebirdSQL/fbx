@@ -2,32 +2,50 @@ package fbproto
 
 import (
 	"bytes"
+	"compress/zlib"
 	"fmt"
 	"io"
 )
 
 type Client struct {
-	Encoding          *Encoding
-	reader            io.Reader
-	writer            io.Writer
-	plugin            string
-	codec             StreamCodec
-	xdrReader         *XDRReader
-	xdrWriter         *XDRWriter
-	rowScratch        rowScratch
-	tracer            *tracer
-	lazyCounter       int
-	reusable          reusableServerMessages
-	inlineBlobHandler func(*OpInlineBlob)
-	inlineBlobAlloc   func(int) []byte
-	inlineBlobCache   *inlineBlobCache
-	inlineBlobPool    *inlineBlobPool
+	Encoding           *Encoding
+	reader             io.Reader
+	writer             io.Writer
+	plugin             string
+	codec              StreamCodec
+	compressionEnabled bool
+	compressionDirty   bool
+	compressor         *zlib.Writer
+	decompressor       io.ReadCloser
+	xdrReader          *XDRReader
+	xdrWriter          *XDRWriter
+	rowScratch         rowScratch
+	tracer             *tracer
+	lazyCounter        int
+	reusable           reusableServerMessages
+	inlineBlobHandler  func(*OpInlineBlob)
+	inlineBlobAlloc    func(int) []byte
+	inlineBlobCache    *inlineBlobCache
+	inlineBlobPool     *inlineBlobPool
 
 	writeScratch []byte
 }
 
+type readerFunc func([]byte) (int, error)
+
+func (f readerFunc) Read(buf []byte) (int, error) {
+	return f(buf)
+}
+
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(buf []byte) (int, error) {
+	return f(buf)
+}
+
 type reusableServerMessages struct {
 	dummy         OpDummy
+	accept        OpAccept
 	condAccept    OpCondAccept
 	dataAccept    OpDataAccept
 	response      OpResponse
@@ -71,6 +89,75 @@ func (c *Client) LazyCounter() int {
 func (c *Client) Rebind(r io.Reader, w io.Writer) {
 	c.reader = r
 	c.writer = w
+}
+
+// EnableCompression enables streaming zlib compression for subsequent wire data.
+func (c *Client) EnableCompression() error {
+	if c.compressionEnabled {
+		return nil
+	}
+
+	c.compressor = zlib.NewWriter(writerFunc(c.writeTransport))
+	c.compressionEnabled = true
+	return nil
+}
+
+// CompressionEnabled reports whether wire compression is enabled.
+func (c *Client) CompressionEnabled() bool {
+	return c.compressionEnabled
+}
+
+func (c *Client) flushCompression() error {
+	if c.compressor == nil || !c.compressionDirty {
+		return nil
+	}
+	if err := c.compressor.Flush(); err != nil {
+		return err
+	}
+	c.compressionDirty = false
+	return nil
+}
+
+// Flush emits all compressed data and then flushes the underlying writer, if it supports flushing.
+func (c *Client) Flush() error {
+	if err := c.flushCompression(); err != nil {
+		return err
+	}
+	if flusher, ok := c.writer.(interface{ Flush() error }); ok {
+		return flusher.Flush()
+	}
+	return nil
+}
+
+// CloseCompression finalizes the compressed stream and releases its resources.
+// It flushes the underlying writer but does not close the underlying transport.
+func (c *Client) CloseCompression() error {
+	if c == nil || !c.compressionEnabled {
+		return nil
+	}
+
+	compressor := c.compressor
+	decompressor := c.decompressor
+	c.compressor = nil
+	c.decompressor = nil
+	c.compressionEnabled = false
+	c.compressionDirty = false
+
+	var resultErr error
+	if compressor != nil {
+		resultErr = compressor.Close()
+	}
+	if flusher, ok := c.writer.(interface{ Flush() error }); ok {
+		if err := flusher.Flush(); resultErr == nil {
+			resultErr = err
+		}
+	}
+	if decompressor != nil {
+		if err := decompressor.Close(); resultErr == nil {
+			resultErr = err
+		}
+	}
+	return resultErr
 }
 
 // SetCodec sets the active wire encryption codec.
@@ -172,6 +259,21 @@ func (c *Client) ReleaseInlineBlobData(data []byte) {
 }
 
 func (c *Client) Read(buf []byte) (n int, err error) {
+	if c.compressionEnabled {
+		if c.decompressor == nil {
+			// zlib.NewReader consumes the stream header, so delay it until the
+			// server is expected to have sent compressed data.
+			c.decompressor, err = zlib.NewReader(readerFunc(c.readTransport))
+			if err != nil {
+				return 0, err
+			}
+		}
+		return c.decompressor.Read(buf)
+	}
+	return c.readTransport(buf)
+}
+
+func (c *Client) readTransport(buf []byte) (n int, err error) {
 	if c.codec != nil {
 		n, err = c.reader.Read(buf)
 		if n > 0 {
@@ -184,6 +286,17 @@ func (c *Client) Read(buf []byte) (n int, err error) {
 }
 
 func (c *Client) Write(buf []byte) (n int, err error) {
+	if c.compressor != nil {
+		n, err = c.compressor.Write(buf)
+		if n > 0 {
+			c.compressionDirty = true
+		}
+		return n, err
+	}
+	return c.writeTransport(buf)
+}
+
+func (c *Client) writeTransport(buf []byte) (n int, err error) {
 	if c.codec != nil {
 		if cap(c.writeScratch) < cryptoChunkSize {
 			c.writeScratch = make([]byte, cryptoChunkSize)
@@ -263,6 +376,8 @@ func (c *Client) ReadMessage() (ServerMessage, error) {
 	switch opcode {
 	case Op_dummy:
 		return &c.reusable.dummy, nil
+	case Op_accept:
+		msg = &c.reusable.accept
 	case Op_cond_accept:
 		c.reusable.condAccept.Encoding = c.Encoding
 		msg = &c.reusable.condAccept

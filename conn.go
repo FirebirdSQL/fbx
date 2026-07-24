@@ -651,6 +651,11 @@ func (c *Conn) Ping(ctx context.Context) error {
 	return c.fbConn.Ping(ctx)
 }
 
+// WireCompressionEnabled reports whether wire compression was negotiated with the server.
+func (c *Conn) WireCompressionEnabled() bool {
+	return c != nil && c.fbConn != nil && c.fbConn.WireCompressionEnabled()
+}
+
 // FbConn returns the underlying *fbconn.FbConn. This is an escape hatch method that allows lower level access to the
 // Firebird connection than fbx exposes.
 //

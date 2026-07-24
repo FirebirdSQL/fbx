@@ -17,6 +17,7 @@ func defaultSettings() map[string]string {
 	settings["port"] = "3050"
 	settings["auth_plugin_list"] = auth.DefaultPluginListString()
 	settings["wire_crypt"] = "true"
+	settings["wire_compression"] = "false"
 	settings["encoding"] = "UTF8"
 	settings["blob_buffer_size"] = "16384"
 	settings["use_stream_blobs"] = "true"

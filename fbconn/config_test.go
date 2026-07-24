@@ -452,6 +452,24 @@ func TestParseConfigKVWithTrailingEmptyEqualDoesNotPanic(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestParseConfigWireCompression(t *testing.T) {
+	tests := []string{
+		"firebird://ivan:secret@localhost:3050/mydb?wire_compression=true",
+		"firebird://ivan:secret@localhost:3050/mydb?wire_compress=true",
+		"firebird://ivan:secret@localhost:3050/mydb?wireCompression=true",
+		"user=ivan password=secret host=localhost port=3050 database=mydb wire_compression=true",
+		"user=ivan password=secret host=localhost port=3050 database=mydb wire_compress=true",
+	}
+
+	for _, connString := range tests {
+		config, err := fbconn.ParseConfig(connString)
+		require.NoError(t, err)
+		require.True(t, config.WireCompression)
+		require.NotContains(t, config.RuntimeParams, "wire_compression")
+		require.NotContains(t, config.RuntimeParams, "wire_compress")
+	}
+}
+
 func TestParseConfigKVTrailingWhitespace(t *testing.T) {
 	config, err := fbconn.ParseConfig("host=localhost port=3050 database=testdb   \t\n")
 	require.NoError(t, err)
@@ -587,6 +605,7 @@ func assertConfigsEqual(t *testing.T, expected, actual *fbconn.Config, testName 
 	assert.Equalf(t, expected.User, actual.User, "%s - User", testName)
 	assert.Equalf(t, expected.Password, actual.Password, "%s - Password", testName)
 	assert.Equalf(t, expected.ConnectTimeout, actual.ConnectTimeout, "%s - ConnectTimeout", testName)
+	assert.Equalf(t, expected.WireCompression, actual.WireCompression, "%s - WireCompression", testName)
 	assert.Equalf(t, expected.RuntimeParams, actual.RuntimeParams, "%s - RuntimeParams", testName)
 	expectedFetchBatchSize := expected.FetchBatchSize
 	if expectedFetchBatchSize == 0 {
@@ -624,7 +643,7 @@ func TestParseConfigEnv(t *testing.T) {
 		}
 	}
 
-	fbEnvvars := []string{"FBHOST", "FBPORT", "FBDATABASE", "FBUSER", "FBPASSWORD", "FBAPPNAME", "FBCONNECT_TIMEOUT", "FBTZ", "FBFETCH_BATCH_SIZE"}
+	fbEnvvars := []string{"FBHOST", "FBPORT", "FBDATABASE", "FBUSER", "FBPASSWORD", "FBAPPNAME", "FBCONNECT_TIMEOUT", "FBTZ", "FBFETCH_BATCH_SIZE", "FBWIRECOMPRESSION"}
 
 	tests := []struct {
 		name    string
@@ -654,17 +673,19 @@ func TestParseConfigEnv(t *testing.T) {
 				"FBCONNECT_TIMEOUT":  "10",
 				"FBAPPNAME":          "fbxtest",
 				"FBFETCH_BATCH_SIZE": "64",
+				"FBWIRECOMPRESSION":  "true",
 				"FBTZ":               "America/New_York",
 			},
 			config: &fbconn.Config{
-				Host:           "123.123.123.123",
-				Port:           7777,
-				Database:       "foo",
-				User:           "bar",
-				Password:       "baz",
-				ConnectTimeout: 10 * time.Second,
-				FetchBatchSize: 64,
-				RuntimeParams:  map[string]string{"application_name": "fbxtest", "timezone": "America/New_York"},
+				Host:            "123.123.123.123",
+				Port:            7777,
+				Database:        "foo",
+				User:            "bar",
+				Password:        "baz",
+				ConnectTimeout:  10 * time.Second,
+				FetchBatchSize:  64,
+				WireCompression: true,
+				RuntimeParams:   map[string]string{"application_name": "fbxtest", "timezone": "America/New_York"},
 			},
 		},
 	}

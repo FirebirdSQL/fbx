@@ -3,6 +3,7 @@ package fbproto
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -31,6 +32,50 @@ func TestOpConnectCanAdvertiseCreateOperation(t *testing.T) {
 	operation, _ := writeTestOpConnect(t, true, Op_create)
 
 	require.Equal(t, Op_create, operation)
+}
+
+func TestOpConnectAdvertisesWireCompression(t *testing.T) {
+	for _, compress := range []bool{false, true} {
+		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+			encoding, err := NewEncoding("UTF8")
+			require.NoError(t, err)
+
+			var buf bytes.Buffer
+			err = (&OpConnect{
+				Database:        "employee",
+				User:            "sysdba",
+				AuthPluginName:  "Srp",
+				AuthPluginsList: []string{"Srp"},
+				Compress:        compress,
+				Encoding:        encoding,
+			}).Write(NewXDRWriter(&buf))
+			require.NoError(t, err)
+
+			r := NewXDRReader(&buf)
+			for range 4 {
+				_, err = r.ReadInt32()
+				require.NoError(t, err)
+			}
+			_, err = r.ReadBuffer()
+			require.NoError(t, err)
+			protocolCount, err := r.ReadInt32()
+			require.NoError(t, err)
+			_, err = r.ReadBuffer()
+			require.NoError(t, err)
+
+			for range protocolCount {
+				for range 3 {
+					_, err = r.ReadInt32()
+					require.NoError(t, err)
+				}
+				maxType, err := r.ReadInt32()
+				require.NoError(t, err)
+				require.Equal(t, compress, maxType&Pflag_compress != 0)
+				_, err = r.ReadInt32()
+				require.NoError(t, err)
+			}
+		})
+	}
 }
 
 func writeTestOpConnect(t *testing.T, wireCrypt bool, operation int) (int, []byte) {

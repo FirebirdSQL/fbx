@@ -1,6 +1,7 @@
 package fbconn
 
 import (
+	"compress/zlib"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -97,10 +98,56 @@ func TestCondAcceptChallengeWithoutKeysSendsContAuth(t *testing.T) {
 	require.False(t, result.hasSpecificAuthData)
 }
 
+func TestAcceptSendsAttachWithInitialSpecificAuthData(t *testing.T) {
+	result := runAuthNegotiationProbe(t, fbproto.Op_accept)
+
+	require.Equal(t, fbproto.Op_attach, result.opcode)
+	require.True(t, result.hasSpecificAuthData)
+}
+
+func TestCompressionNegotiationControlsFollowingRequestEncoding(t *testing.T) {
+	for _, compressionAccepted := range []bool{false, true} {
+		t.Run(fmt.Sprintf("accepted=%t", compressionAccepted), func(t *testing.T) {
+			clientConn, serverConn := net.Pipe()
+			resultCh := make(chan authNegotiationProbeResult, 1)
+			go func() {
+				defer func() { _ = serverConn.Close() }()
+				resultCh <- runCompressionNegotiationProbeServer(serverConn, compressionAccepted)
+			}()
+
+			config, err := ParseConfig("firebird://sysdba:masterkey@mock/employee?wire_compression=true")
+			require.NoError(t, err)
+			config.LookupFunc = func(context.Context, string) ([]string, error) {
+				return []string{"127.0.0.1"}, nil
+			}
+			config.DialFunc = func(context.Context, string, string) (net.Conn, error) {
+				return clientConn, nil
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			conn, _ := ConnectConfig(ctx, config)
+			if conn != nil {
+				require.NoError(t, conn.Close(context.Background()))
+			}
+
+			select {
+			case result := <-resultCh:
+				require.NoError(t, result.err)
+				require.True(t, result.compressionAdvertised)
+				require.Equal(t, fbproto.Op_cont_auth, result.opcode)
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			}
+		})
+	}
+}
+
 type authNegotiationProbeResult struct {
-	opcode              int
-	hasSpecificAuthData bool
-	err                 error
+	opcode                int
+	hasSpecificAuthData   bool
+	compressionAdvertised bool
+	err                   error
 }
 
 func runAuthNegotiationProbe(t *testing.T, acceptOpcode int) authNegotiationProbeResult {
@@ -109,7 +156,7 @@ func runAuthNegotiationProbe(t *testing.T, acceptOpcode int) authNegotiationProb
 	clientConn, serverConn := net.Pipe()
 	resultCh := make(chan authNegotiationProbeResult, 1)
 	go func() {
-		defer serverConn.Close()
+		defer func() { _ = serverConn.Close() }()
 		resultCh <- runAuthNegotiationProbeServer(serverConn, acceptOpcode)
 	}()
 
@@ -151,7 +198,7 @@ func runAuthNegotiationProbeServer(conn net.Conn, acceptOpcode int) authNegotiat
 	if err := readProbeConnect(r); err != nil {
 		return authNegotiationProbeResult{err: err}
 	}
-	if err := writeProbeAccept(w, encoding, acceptOpcode); err != nil {
+	if err := writeProbeAccept(w, encoding, acceptOpcode, false); err != nil {
 		return authNegotiationProbeResult{err: err}
 	}
 
@@ -170,39 +217,91 @@ func runAuthNegotiationProbeServer(conn net.Conn, acceptOpcode int) authNegotiat
 	return result
 }
 
+func runCompressionNegotiationProbeServer(conn net.Conn, compressionAccepted bool) authNegotiationProbeResult {
+	encoding, err := fbproto.NewEncoding("UTF8")
+	if err != nil {
+		return authNegotiationProbeResult{err: err}
+	}
+
+	r := fbproto.NewXDRReader(conn)
+	w := fbproto.NewXDRWriter(conn)
+	compressionAdvertised, err := readProbeConnectCompression(r)
+	if err != nil {
+		return authNegotiationProbeResult{err: err}
+	}
+	if err := writeProbeAccept(w, encoding, fbproto.Op_cond_accept, compressionAccepted); err != nil {
+		return authNegotiationProbeResult{err: err}
+	}
+
+	var opcode int
+	if compressionAccepted {
+		zr, zlibErr := zlib.NewReader(conn)
+		if zlibErr != nil {
+			return authNegotiationProbeResult{err: zlibErr}
+		}
+		opcode, err = fbproto.NewXDRReader(zr).ReadInt32()
+		if closeErr := zr.Close(); err == nil {
+			err = closeErr
+		}
+	} else {
+		opcode, err = r.ReadInt32()
+	}
+	return authNegotiationProbeResult{
+		opcode:                opcode,
+		compressionAdvertised: compressionAdvertised,
+		err:                   err,
+	}
+}
+
 func readProbeConnect(r *fbproto.XDRReader) error {
+	_, err := readProbeConnectCompression(r)
+	return err
+}
+
+func readProbeConnectCompression(r *fbproto.XDRReader) (bool, error) {
 	opcode, err := r.ReadInt32()
 	if err != nil {
-		return err
+		return false, err
 	}
 	if opcode != fbproto.Op_connect {
-		return fmt.Errorf("expected op_connect, got %d", opcode)
+		return false, fmt.Errorf("expected op_connect, got %d", opcode)
 	}
 
 	for range 3 {
 		if _, err := r.ReadInt32(); err != nil {
-			return err
+			return false, err
 		}
 	}
 	if _, err := r.ReadBuffer(); err != nil {
-		return err
+		return false, err
 	}
 	protocolCount, err := r.ReadInt32()
 	if err != nil {
-		return err
+		return false, err
 	}
 	if _, err := r.ReadBuffer(); err != nil {
-		return err
+		return false, err
 	}
-	for range protocolCount * 5 {
+	compressionAdvertised := false
+	for range protocolCount {
+		for range 3 {
+			if _, err := r.ReadInt32(); err != nil {
+				return false, err
+			}
+		}
+		maxType, err := r.ReadInt32()
+		if err != nil {
+			return false, err
+		}
+		compressionAdvertised = compressionAdvertised || maxType&fbproto.Pflag_compress != 0
 		if _, err := r.ReadInt32(); err != nil {
-			return err
+			return false, err
 		}
 	}
-	return nil
+	return compressionAdvertised, nil
 }
 
-func writeProbeAccept(w *fbproto.XDRWriter, encoding *fbproto.Encoding, opcode int) error {
+func writeProbeAccept(w *fbproto.XDRWriter, encoding *fbproto.Encoding, opcode int, compress bool) error {
 	if err := w.WriteInt32(opcode); err != nil {
 		return err
 	}
@@ -212,8 +311,15 @@ func writeProbeAccept(w *fbproto.XDRWriter, encoding *fbproto.Encoding, opcode i
 	if err := w.WriteInt32(fbproto.GenericArchitectureClient); err != nil {
 		return err
 	}
-	if err := w.WriteInt32(fbproto.Ptype_lazy_send); err != nil {
+	acceptType := fbproto.Ptype_lazy_send
+	if compress {
+		acceptType |= fbproto.Pflag_compress
+	}
+	if err := w.WriteInt32(acceptType); err != nil {
 		return err
+	}
+	if opcode == fbproto.Op_accept {
+		return nil
 	}
 	if err := w.WriteBuffer(probeSrpServerData()); err != nil {
 		return err

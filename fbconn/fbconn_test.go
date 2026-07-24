@@ -220,6 +220,28 @@ func TestConnectCustomDialer(t *testing.T) {
 	closeConn(t, conn)
 }
 
+func TestWireCompression(t *testing.T) {
+	t.Parallel()
+
+	for _, wireCrypt := range []bool{false, true} {
+		t.Run(fmt.Sprintf("wire_crypt=%t", wireCrypt), func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+			defer cancel()
+
+			config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
+			require.NoError(t, err)
+			config.WireCompression = true
+			config.WireCrypt = wireCrypt
+
+			conn, err := fbconn.ConnectConfig(ctx, config)
+			require.NoError(t, err)
+			defer closeConn(t, conn)
+			require.True(t, conn.WireCompressionEnabled())
+			ensureConnValid(t, conn)
+		})
+	}
+}
+
 func TestConnectCustomLookup(t *testing.T) {
 	t.Parallel()
 
