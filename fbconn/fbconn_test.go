@@ -165,8 +165,6 @@ type fbmockWaitStep time.Duration
 //}
 
 func TestConnectInvalidUser(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
