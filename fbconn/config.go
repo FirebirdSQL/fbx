@@ -153,6 +153,11 @@ func (c *Config) Copy() *Config {
 		}
 		newConf.Fallbacks = fbs
 	}
+	if len(newConf.Certificate) > 0 {
+		newCertificate := make([]byte, len(c.Certificate))
+		copy(newCertificate, c.Certificate)
+		newConf.Certificate = newCertificate
+	}
 	return newConf
 }
 
