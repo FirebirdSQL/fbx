@@ -81,7 +81,7 @@ func DefaultPluginListString() string {
 // AuthManager coordinates plugin selection and state across the wire protocol
 // authentication exchange. An AuthManager is not safe for concurrent use.
 type AuthManager struct {
-	connConf         UserConfig
+	userConfig       UserConfig
 	plugins          []AuthPlugin
 	current          int
 	lastAuthSpecific []byte
@@ -146,9 +146,9 @@ func NewAuthManager(conf UserConfig, pluginNames []string) (*AuthManager, error)
 	}
 
 	return &AuthManager{
-		connConf: conf,
-		plugins:  plugins,
-		current:  0,
+		userConfig: conf,
+		plugins:    plugins,
+		current:    0,
 	}, nil
 }
 
@@ -188,7 +188,7 @@ func (m *AuthManager) SetCurrentPlugin(name string) (AuthPlugin, bool) {
 	for idx, plugin := range m.plugins {
 		for _, advertised := range plugin.Advertise() {
 			if strings.EqualFold(advertised, name) {
-				if fresh, ok := createAuthPlugin(plugin.Name(), m.connConf); ok {
+				if fresh, ok := createAuthPlugin(plugin.Name(), m.userConfig); ok {
 					plugin = fresh
 					m.plugins[idx] = fresh
 				}
@@ -278,7 +278,7 @@ func (m *AuthManager) HandleServerChallenge(pluginName string, data []byte) (*Au
 		authData := plugin.InitialClientData()
 		step = &AuthPluginStep{Reply: cloneBytes(authData)}
 	} else {
-		step, err = plugin.HandleServerData(m.connConf.User, m.connConf.Password, pluginName, data)
+		step, err = plugin.HandleServerData(m.userConfig.User, m.userConfig.Password, pluginName, data)
 		if err != nil {
 			return nil, err
 		}
