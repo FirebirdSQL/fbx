@@ -89,7 +89,7 @@ func TestAuthManagerHandleServerChallenge(t *testing.T) {
 }
 
 func TestAuthManagerStoresWireReplyForAuthSpecificData(t *testing.T) {
-	userConfig := UserConfig{User: "user", Password: "secret"}
+	userConfig := UserConfig{User: "sysdba", Password: "masterkey"}
 	m, err := NewAuthManager(userConfig, []string{"Srp"})
 	require.NoError(t, err)
 
@@ -179,7 +179,7 @@ func mustAuthManagerSrpServerData(t *testing.T, salt []byte, serverPublic *big.I
 }
 
 func TestHandleServerChallengeProcessesGssDataWhenPluginChanges(t *testing.T) {
-	userConfig := UserConfig{User: "user", Password: "masterkey"}
+	userConfig := UserConfig{User: "sysdba", Password: "masterkey"}
 	m, err := NewAuthManager(userConfig, []string{"Srp256", "Gss"})
 	require.NoError(t, err)
 	require.Equal(t, "Srp256", m.GetCurrentPlugin().Name())
