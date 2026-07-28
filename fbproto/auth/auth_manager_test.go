@@ -15,7 +15,7 @@ func TestAuthManagerBuildListAndCurrent(t *testing.T) {
 	m, err := NewAuthManager(userConfig, nil)
 	require.NoError(t, err)
 	require.NotNil(t, m)
-	require.Equal(t, "Srp256,Srp,Gss,Srp224,Srp384,Srp512,Legacy_Auth", m.BuildList())
+	require.Equal(t, "Srp256,Srp,Srp224,Srp384,Srp512,Legacy_Auth", m.BuildList())
 
 	cur := m.GetCurrentPlugin()
 	require.NotNil(t, cur)
@@ -24,7 +24,7 @@ func TestAuthManagerBuildListAndCurrent(t *testing.T) {
 	initial := m.BeginHandshake()
 	require.NotNil(t, initial)
 	require.Equal(t, cur.Name(), initial.PluginName)
-	require.Equal(t, []string{"Srp256", "Srp", "Gss", "Srp224", "Srp384", "Srp512", "Legacy_Auth"}, initial.PluginList)
+	require.Equal(t, []string{"Srp256", "Srp", "Srp224", "Srp384", "Srp512", "Legacy_Auth"}, initial.PluginList)
 	require.NotEmpty(t, initial.SpecificData)
 	assembled := make([]byte, 0)
 	for idx, chunk := range initial.SpecificData {
@@ -176,35 +176,4 @@ func mustAuthManagerSrpServerData(t *testing.T, salt []byte, serverPublic *big.I
 	data = binary.LittleEndian.AppendUint16(data, uint16(len(serverHex)))
 	data = append(data, serverHex...)
 	return data
-}
-
-func TestHandleServerChallengeProcessesGssDataWhenPluginChanges(t *testing.T) {
-	userConfig := UserConfig{User: "sysdba", Password: "masterkey"}
-	m, err := NewAuthManager(userConfig, []string{"Srp256", "Gss"})
-	require.NoError(t, err)
-	require.Equal(t, "Srp256", m.GetCurrentPlugin().Name())
-
-	plugin := m.plugins[0].(*SrpAuthPlugin)
-	salt := []byte(testSaltHex)
-	serverPrivate := mustBigIntFromHex(testServerPrivateHex)
-	verifier := plugin.engine.Verifier("SYSDBA", "masterkey", salt)
-	serverPublic := plugin.engine.PublicServerKey(verifier, serverPrivate)
-	serverData := mustAuthManagerSrpServerData(t, salt, serverPublic)
-
-	data := []byte{9, 0}
-	data = append(data, []byte("localhost")...)
-	data = append(data, 6, 0)
-	data = append(data, []byte("red_db")...)
-
-	prev := getGssTokenProvider()
-	mock := &mockGssProvider{token: []byte{1, 2, 3, 4}}
-	SetGssTokenProvider(mock)
-	t.Cleanup(func() { SetGssTokenProvider(prev) })
-
-	step, err := m.HandleServerChallenge("Gss", serverData)
-	require.NoError(t, err)
-	require.Equal(t, "Gss", m.GetCurrentPlugin().Name())
-	require.NotNil(t, step)
-	require.NotEmpty(t, step.AuthSpecific)
-	require.Equal(t, step.Reply, m.AuthSpecificData())
 }
