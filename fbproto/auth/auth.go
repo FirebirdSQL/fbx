@@ -49,7 +49,6 @@ type AuthPlugin interface {
 var defaultPluginSequence = []string{
 	"Srp256",
 	"Srp",
-	"Gss",
 	"Srp224",
 	"Srp384",
 	"Srp512",
@@ -62,7 +61,6 @@ var pluginConstructors = map[string]func(conf UserConfig) AuthPlugin{
 	"srp224": func(UserConfig) AuthPlugin { return NewSrp224AuthPlugin() },
 	"srp384": func(UserConfig) AuthPlugin { return NewSrp384AuthPlugin() },
 	"srp512": func(UserConfig) AuthPlugin { return NewSrp512AuthPlugin() },
-	"gss":    func(UserConfig) AuthPlugin { return NewGssAuthPlugin() },
 	"legacy_auth": func(conf UserConfig) AuthPlugin {
 		return NewLegacyAuthPlugin(conf.Password)
 	},
