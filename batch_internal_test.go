@@ -16,9 +16,9 @@ import (
 
 func skipIfBatchUnsupported(ctx context.Context, t testing.TB, conn *Conn) {
 	t.Helper()
-	engineVersion := fetchEngineVersion(ctx, t, conn)
-	if parseEngineVersionNumber(engineVersion) < 40000 {
-		t.Skipf("batch is not supported by server engine version %q", engineVersion)
+	version := conn.ServerVersion()
+	if !version.AtLeast(4, 0, 0) {
+		t.Skipf("batch is not supported by server engine version %q", version)
 	}
 }
 

@@ -10,7 +10,6 @@ import (
 	"math"
 	"net"
 	"os"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -75,6 +74,7 @@ type FbConn struct {
 	status           byte // One of connStatus* constants
 	protocolFeatures ProtocolFeatures
 
+	serverVersion      ServerVersion
 	serverMajorVersion int
 
 	protocolVersion int
@@ -922,11 +922,10 @@ connectLoop:
 		fbConn.contextWatcher.Unwatch()
 		err = config.ValidateConnect(ctx, fbConn)
 		if err != nil {
-			if _, ok := err.(*NotPreferredError); ignoreNotPreferredErr && ok {
-				return fbConn, nil
+			if _, ok := err.(*NotPreferredError); !ignoreNotPreferredErr || !ok {
+				fbConn.conn.Close()
+				return nil, newPerDialConnectError("ValidateConnect failed", err)
 			}
-			fbConn.conn.Close()
-			return nil, newPerDialConnectError("ValidateConnect failed", err)
 		}
 	}
 
@@ -946,15 +945,11 @@ connectLoop:
 				if err != nil {
 					return err
 				}
-				re := regexp.MustCompile(`-V[0-9]+`)
-				versionString := re.FindString(v)
-				if len(versionString) < 3 {
-					return fmt.Errorf("server version string parsing error")
-				}
-				fbConn.serverMajorVersion, err = strconv.Atoi(versionString[2:])
+				fbConn.serverVersion, err = parseServerVersion(v)
 				if err != nil {
 					return err
 				}
+				fbConn.serverMajorVersion = fbConn.serverVersion.Major
 			case fbproto.Isc_info_truncated:
 				return InfoTruncationError{0}
 			default:
@@ -1110,6 +1105,12 @@ func (fbConn *FbConn) receiveMessage() (fbproto.ServerMessage, error) {
 // writing then SyncConn should usually be called before Conn.
 func (fbConn *FbConn) Conn() net.Conn {
 	return fbConn.conn
+}
+
+// ServerVersion returns the server version discovered while establishing the
+// connection. It does not perform a request to the server.
+func (fbConn *FbConn) ServerVersion() ServerVersion {
+	return fbConn.serverVersion
 }
 
 // ActiveTx returns true if connection have active transactions
@@ -2778,6 +2779,7 @@ type HijackedConn struct {
 	WireCrypt          *wirecrypt.Manager // wire-crypt plugin factory; not the active cipher (cipher lives inside Client)
 	ProtocolVersion    int
 	ProtocolFeatures   ProtocolFeatures
+	ServerVersion      ServerVersion
 	ServerMajorVersion int
 	InlineBlobSize     int
 	Config             *Config
@@ -2816,6 +2818,7 @@ func (fbConn *FbConn) Hijack() (*HijackedConn, error) {
 		WireCrypt:          fbConn.wireCrypt,
 		ProtocolVersion:    fbConn.protocolVersion,
 		ProtocolFeatures:   fbConn.protocolFeatures,
+		ServerVersion:      fbConn.serverVersion,
 		ServerMajorVersion: fbConn.serverMajorVersion,
 		InlineBlobSize:     fbConn.inlineBlobSize,
 		Config:             fbConn.config,
@@ -2829,6 +2832,11 @@ func (fbConn *FbConn) Hijack() (*HijackedConn, error) {
 // Due to the necessary exposure of internal implementation details, it is not covered by the semantic versioning
 // compatibility.
 func Construct(hc *HijackedConn) (*FbConn, error) {
+	serverVersion := hc.ServerVersion
+	if serverVersion.Major == 0 {
+		serverVersion.Major = hc.ServerMajorVersion
+	}
+
 	fbConn := &FbConn{
 		conn:               hc.Conn,
 		dbHandle:           hc.DBHandle,
@@ -2837,7 +2845,8 @@ func Construct(hc *HijackedConn) (*FbConn, error) {
 		wireCrypt:          hc.WireCrypt,
 		protocolVersion:    hc.ProtocolVersion,
 		protocolFeatures:   hc.ProtocolFeatures,
-		serverMajorVersion: hc.ServerMajorVersion,
+		serverVersion:      serverVersion,
+		serverMajorVersion: serverVersion.Major,
 		inlineBlobSize:     hc.InlineBlobSize,
 		config:             hc.Config,
 		customData:         hc.CustomData,

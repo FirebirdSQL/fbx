@@ -34,6 +34,8 @@ func TestConnect(t *testing.T) {
 	}
 
 	assertConfigsEqual(t, config, conn.Config(), "Conn.Config() returns original config")
+	require.Equal(t, conn.FbConn().ServerVersion(), conn.ServerVersion())
+	require.Positive(t, conn.ServerVersion().Major)
 
 	var currentDB string
 	err = conn.QueryRow(context.Background(), "select mon$attachment_name from mon$attachments where mon$attachment_id = current_connection").Scan(&currentDB)

@@ -83,6 +83,9 @@ type Conn struct {
 	eqb  ExtendedQueryBuilder
 }
 
+// ServerVersion identifies the Firebird or RedDatabase server version.
+type ServerVersion = fbconn.ServerVersion
+
 // Identifier a Firebird identifier or name. Identifiers can be composed of
 // multiple parts such as ["schema", "table"] or ["table", "column"].
 type Identifier []string
@@ -658,6 +661,12 @@ func (c *Conn) Ping(ctx context.Context) error {
 // is used and the connection must be returned to the same state before any *fbx.Conn methods are again used.
 func (c *Conn) FbConn() *fbconn.FbConn {
 	return c.fbConn
+}
+
+// ServerVersion returns the server version discovered while establishing the
+// connection. It does not perform a request to the server.
+func (c *Conn) ServerVersion() ServerVersion {
+	return c.fbConn.ServerVersion()
 }
 
 // TypeMap returns the connection info used for this connection.
