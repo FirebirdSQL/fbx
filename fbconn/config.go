@@ -76,7 +76,10 @@ type Config struct {
 	// or prepare statements). If this returns an error the connection attempt fails.
 	AfterConnect AfterConnectFunc
 
-	// OnFbError is a callback function called when a Firebird error happened on server
+	// OnFbError is called when the server returns a Firebird error. Returning true keeps the connection open, and
+	// returning false closes it. [ParseConfig] sets a handler that closes the connection when [IsConnectionFatal]
+	// reports true. Replacing the handler overrides this policy; setting OnFbError to nil keeps the connection open
+	// for all server errors. The callback must not query the supplied [FbConn].
 	OnFbError FbErrorHandler
 
 	// OnFbWarning is a callback function called when a Firebird warning obtained by client with success response
@@ -303,14 +306,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		BuildContextWatcherHandler: func(fbConn *FbConn) ctxwatch.Handler {
 			return &CancelRequestContextWatcherHandler{Conn: fbConn}
 		},
-		OnFbError: func(_ *FbConn, fbErr *FbError) bool {
-			// we want to automatically close any fatal errors
-			// FIXME: fbx how to check if server error is fatal?
-			//if strings.EqualFold(fbErr.Severity, "FATAL") {
-			//	return false
-			//}
-			return true
-		},
+		OnFbError:                  defaultOnFbError,
 		AuthPluginList:             pluginList,
 		WireCrypt:                  convertToBool(settings["wire_crypt"], true),
 		SystemUser:                 settings["system_user"],
