@@ -9,6 +9,11 @@ import (
 	"rdb.red-soft.ru/fbx/fbconn"
 )
 
+const (
+	maxBackupOptionStringLength = 1<<16 - 1
+	maxBackupOptionInt32        = 1<<31 - 1
+)
+
 // BackupOptions controls a logical backup created by [Manager.Backup].
 //
 // The zero value selects the server backup defaults and discards service
@@ -75,10 +80,11 @@ type BackupOptions struct {
 // The Firebird server interprets both database and backupFile. They can be
 // server-side paths or aliases supported by the server. Backup opens a service
 // connection, waits for the operation to finish, and closes the connection
-// before returning. Context cancellation cannot interrupt an [io.Writer.Write]
-// call that has already started. Backup accepts at most one [BackupOptions]
-// value. Backup does not silently ignore unsupported options or retry without
-// them; it returns the server error.
+// before returning. Backup validates its request before opening a service
+// connection. Context cancellation cannot interrupt an [io.Writer.Write] call
+// that has already started. Backup accepts at most one [BackupOptions] value.
+// Backup does not silently ignore unsupported options or retry without them;
+// it returns the server error.
 func (m *Manager) Backup(
 	ctx context.Context,
 	database string,
@@ -87,6 +93,9 @@ func (m *Manager) Backup(
 ) (err error) {
 	option, err := getBackupOptions(options)
 	if err != nil {
+		return err
+	}
+	if err := validateBackupRequest(database, backupFile, option); err != nil {
 		return err
 	}
 
@@ -127,4 +136,41 @@ func getBackupOptions(options []BackupOptions) (BackupOptions, error) {
 	default:
 		return BackupOptions{}, errors.New("backup accepts at most one BackupOptions value")
 	}
+}
+
+func validateBackupRequest(database string, backupFile string, options BackupOptions) error {
+	if database == "" {
+		return errors.New("backup database must not be empty")
+	}
+	if backupFile == "" {
+		return errors.New("backup file must not be empty")
+	}
+	if err := validateBackupOptionString("database", database); err != nil {
+		return err
+	}
+	if err := validateBackupOptionString("file", backupFile); err != nil {
+		return err
+	}
+	if err := validateBackupOptionString("compressor", options.Compressor); err != nil {
+		return err
+	}
+	if options.Factor < 0 || options.Factor > maxBackupOptionInt32 {
+		return fmt.Errorf("backup factor must be between 0 and %d", maxBackupOptionInt32)
+	}
+	if options.ParallelWorkers < 0 || options.ParallelWorkers > maxBackupOptionInt32 {
+		return fmt.Errorf("backup parallel workers must be between 0 and %d", maxBackupOptionInt32)
+	}
+	return nil
+}
+
+func validateBackupOptionString(name string, value string) error {
+	if len(value) > maxBackupOptionStringLength {
+		return fmt.Errorf(
+			"backup %s is %d bytes; maximum is %d",
+			name,
+			len(value),
+			maxBackupOptionStringLength,
+		)
+	}
+	return nil
 }

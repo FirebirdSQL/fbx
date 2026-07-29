@@ -56,6 +56,9 @@ type Config struct {
 //
 // A database specified by connString is not used as the target of a service
 // operation. Each operation receives its target database as a method argument.
+// Database attach settings, such as "create_database" and
+// "target_session_attrs", are ignored because service manager connections do
+// not attach to a database.
 func ParseConfig(connString string) (*Config, error) {
 	connectionConfig, err := fbconn.ParseConfig(connString)
 	if err != nil {
@@ -78,6 +81,9 @@ func (c *Config) Copy() *Config {
 }
 
 func configFromConnectionConfig(connectionConfig *fbconn.Config) *Config {
+	serviceConfig := connectionConfig.Copy()
+	scrubDatabaseConnectionSettings(serviceConfig)
+
 	return &Config{
 		Host:             connectionConfig.Host,
 		Port:             connectionConfig.Port,
@@ -91,7 +97,7 @@ func configFromConnectionConfig(connectionConfig *fbconn.Config) *Config {
 		AuthPlugins:      append([]string(nil), connectionConfig.AuthPluginList...),
 		WireCrypt:        connectionConfig.WireCrypt,
 		ConnectTimeout:   connectionConfig.ConnectTimeout,
-		connectionConfig: connectionConfig.Copy(),
+		connectionConfig: serviceConfig,
 	}
 }
 
@@ -116,5 +122,22 @@ func (c *Config) toConnectionConfig() (*fbconn.Config, error) {
 	connectionConfig.AuthPluginList = append([]string(nil), c.AuthPlugins...)
 	connectionConfig.WireCrypt = c.WireCrypt
 	connectionConfig.ConnectTimeout = c.ConnectTimeout
+	scrubDatabaseConnectionSettings(connectionConfig)
 	return connectionConfig, nil
+}
+
+func scrubDatabaseConnectionSettings(config *fbconn.Config) {
+	config.Database = ""
+	config.CreateDatabase = false
+	config.DefaultTransactionReadOnly = false
+	config.Autocommit = false
+	config.BlobBufferSize = 0
+	config.UseStreamBlobs = false
+	config.MaxInlineBlobSize = 0
+	config.MaxBlobCacheSize = 0
+	config.FetchBatchSize = 0
+	config.DPB = nil
+	config.RuntimeParams = nil
+	config.ValidateConnect = nil
+	config.AfterConnect = nil
 }
