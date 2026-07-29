@@ -123,13 +123,15 @@ func TestOpServiceTrace(t *testing.T) {
 		ServiceName: "service_mgr",
 	}))
 	require.NoError(t, client.WriteMessage(&OpServiceStart{ServiceHandle: 42}))
-	require.NoError(t, client.WriteMessage(&OpServiceInfo{ServiceHandle: 42, BufferLength: 1024}))
+	require.NoError(t, client.WriteMessage(&OpServiceInfo{ServiceHandle: 42}))
+	require.NoError(t, client.WriteMessage(&OpServiceInfo{ServiceHandle: 42, BufferLength: 2048}))
 	require.NoError(t, client.WriteMessage(&OpServiceDetach{ServiceHandle: 42}))
 
 	require.Equal(t, ""+
 		"C\tServiceAttach service=\"service_mgr\" spbLen=0\n"+
 		"C\tServiceStart handle=42 actionLen=0\n"+
-		"C\tServiceInfo handle=42 sendLen=0 recvLen=0 bufSize=1024\n"+
+		"C\tServiceInfo handle=42 sendLen=0 recvLen=0 requestedBufSize=0 bufSize=1024\n"+
+		"C\tServiceInfo handle=42 sendLen=0 recvLen=0 requestedBufSize=2048 bufSize=2048\n"+
 		"C\tServiceDetach handle=42\n",
 		trace.String())
 }

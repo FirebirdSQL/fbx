@@ -190,8 +190,12 @@ func (t *tracer) traceServiceStartMessage(sender byte, msg *OpServiceStart) {
 
 func (t *tracer) traceServiceInfoMessage(sender byte, msg *OpServiceInfo) {
 	t.writeTrace(sender, "ServiceInfo", func() {
-		fmt.Fprintf(t.buf, " handle=%d sendLen=%d recvLen=%d bufSize=%d",
-			msg.ServiceHandle, len(msg.SendItems), len(msg.ReceiveItems), msg.BufferLength)
+		fmt.Fprintf(t.buf, " handle=%d sendLen=%d recvLen=%d requestedBufSize=%d bufSize=%d",
+			msg.ServiceHandle,
+			len(msg.SendItems),
+			len(msg.ReceiveItems),
+			msg.BufferLength,
+			msg.effectiveBufferLength())
 		if t.FullLogMode && len(msg.SendItems) > 0 {
 			fmt.Fprintf(t.buf, " send=%s", traceSingleQuotedString(msg.SendItems))
 		}

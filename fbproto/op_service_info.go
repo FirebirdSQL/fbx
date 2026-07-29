@@ -37,9 +37,12 @@ func (op *OpServiceInfo) Write(x *XDRWriter) error {
 		return err
 	}
 
-	bufferLength := op.BufferLength
-	if bufferLength == 0 {
-		bufferLength = defaultServiceInfoBufferLength
+	return x.WriteInt32(op.effectiveBufferLength())
+}
+
+func (op *OpServiceInfo) effectiveBufferLength() int {
+	if op.BufferLength == 0 {
+		return defaultServiceInfoBufferLength
 	}
-	return x.WriteInt32(bufferLength)
+	return op.BufferLength
 }
