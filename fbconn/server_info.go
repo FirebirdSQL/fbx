@@ -148,6 +148,7 @@ func (fbConn *FbConn) getServerInfo(msgBuilder func() fbproto.ClientMessage, tru
 		if err = fbConn.withWriteLockAndFlush(func() error {
 			return fbConn.client.WriteMessage(msgBuilder())
 		}); err != nil {
+			fbConn.asyncClose()
 			return err
 		}
 

@@ -41,6 +41,65 @@ type FbError struct {
 	Position int
 }
 
+// IsConnectionFatal reports whether a server error makes the connection unsafe for further use.
+// Transport and protocol errors are handled separately and do not produce an [FbError].
+func IsConnectionFatal(err *FbError) bool {
+	if err == nil {
+		return false
+	}
+
+	// readStatusVector supplies a fallback SQLSTATE when the server omits it. A non-empty malformed value therefore
+	// indicates an unexpected server or protocol condition.
+	if err.Code != "" && len(err.Code) != 5 {
+		return true
+	}
+
+	if len(err.Code) == 5 && err.Code[:2] == "08" {
+		return true
+	}
+
+	switch err.Code {
+	case "2E000", // Invalid connection name.
+		"HY001", // Memory allocation error.
+		"HYT00", // Timeout expired.
+		"HYT01": // Connection timeout expired.
+		return true
+	}
+
+	for _, code := range err.GdsCodes {
+		if isConnectionFatalGDSCode(code) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isConnectionFatalGDSCode(code int) bool {
+	switch code {
+	case fbproto.Isc_bad_db_handle,
+		fbproto.Isc_network_error,
+		fbproto.Isc_net_read_err,
+		fbproto.Isc_net_write_err,
+		fbproto.Isc_lost_db_connection,
+		fbproto.Isc_io_error,
+		fbproto.Isc_req_sync,
+		fbproto.Isc_unavailable,
+		fbproto.Isc_shutdown,
+		fbproto.Isc_att_shutdown,
+		fbproto.Isc_net_server_shutdown,
+		fbproto.Isc_att_shut_killed,
+		fbproto.Isc_att_shut_idle,
+		fbproto.Isc_att_shut_db_down,
+		fbproto.Isc_att_shut_engine,
+		fbproto.Isc_ses_reset_failed,
+		fbproto.Isc_exception_stack_overflow:
+		return true
+	default:
+		return false
+	}
+}
+
 func (e *FbError) SQLState() string {
 	return e.Code
 }
