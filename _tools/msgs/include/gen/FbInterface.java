@@ -660,6 +660,20 @@ public interface FbInterface extends com.sun.jna.Library
 		public void execute(IStatus status, IExternalContext context, com.sun.jna.Pointer inMsg, com.sun.jna.Pointer outMsg) throws FbInterfaceException;
 	}
 
+	public static interface IExternalAggregateInstanceIntf extends IDisposableIntf
+	{
+		public void start(IStatus status, IExternalContext context) throws FbInterfaceException;
+		public void accumulate(IStatus status, IExternalContext context, com.sun.jna.Pointer inMsg) throws FbInterfaceException;
+		public void group(IStatus status, IExternalContext context, com.sun.jna.Pointer outMsg) throws FbInterfaceException;
+		public void finish(IStatus status, IExternalContext context) throws FbInterfaceException;
+	}
+
+	public static interface IExternalAggregateFunctionIntf extends IDisposableIntf
+	{
+		public void getCharSet(IStatus status, IExternalContext context, com.sun.jna.Pointer name, int nameSize) throws FbInterfaceException;
+		public IExternalAggregateInstance newInstance(IStatus status, IExternalContext context) throws FbInterfaceException;
+	}
+
 	public static interface IExternalProcedureIntf extends IDisposableIntf
 	{
 		public void getCharSet(IStatus status, IExternalContext context, com.sun.jna.Pointer name, int nameSize) throws FbInterfaceException;
@@ -708,6 +722,7 @@ public interface FbInterface extends com.sun.jna.Library
 		public IExternalFunction makeFunction(IStatus status, IExternalContext context, IRoutineMetadata metadata, IMetadataBuilder inBuilder, IMetadataBuilder outBuilder) throws FbInterfaceException;
 		public IExternalProcedure makeProcedure(IStatus status, IExternalContext context, IRoutineMetadata metadata, IMetadataBuilder inBuilder, IMetadataBuilder outBuilder) throws FbInterfaceException;
 		public IExternalTrigger makeTrigger(IStatus status, IExternalContext context, IRoutineMetadata metadata, IMetadataBuilder fieldsBuilder) throws FbInterfaceException;
+		public IExternalAggregateFunction makeAggregateFunction(IStatus status, IExternalContext context, IRoutineMetadata metadata, IMetadataBuilder inBuilder, IMetadataBuilder outBuilder) throws FbInterfaceException;
 	}
 
 	public static interface ITimerIntf extends IReferenceCountedIntf
@@ -750,8 +765,8 @@ public interface FbInterface extends com.sun.jna.Library
 		public IInt128 getInt128(IStatus status) throws FbInterfaceException;
 		public void decodeTimeTzEx(IStatus status, ISC_TIME_TZ_EX[] timeTz, int[] hours, int[] minutes, int[] seconds, int[] fractions, int timeZoneBufferLength, com.sun.jna.Pointer timeZoneBuffer) throws FbInterfaceException;
 		public void decodeTimeStampTzEx(IStatus status, ISC_TIMESTAMP_TZ_EX[] timeStampTz, int[] year, int[] month, int[] day, int[] hours, int[] minutes, int[] seconds, int[] fractions, int timeZoneBufferLength, com.sun.jna.Pointer timeZoneBuffer) throws FbInterfaceException;
-		public IAttachment executeCreateDatabase2(IStatus status, int stmtLength, String creatDBstatement, int dialect, int dpbLength, byte[] dpb, boolean[] stmtIsCreateDb) throws FbInterfaceException;
 		public void convert(IStatus status, int sourceType, int sourceScale, int sourceLength, com.sun.jna.Pointer source, int targetType, int targetScale, int targetLength, com.sun.jna.Pointer target) throws FbInterfaceException;
+		public IAttachment executeCreateDatabase2(IStatus status, int stmtLength, String creatDBstatement, int dialect, int dpbLength, byte[] dpb, boolean[] stmtIsCreateDb) throws FbInterfaceException;
 	}
 
 	public static interface IOffsetsCallbackIntf extends IVersionedIntf
@@ -833,6 +848,7 @@ public interface FbInterface extends com.sun.jna.Library
 		public com.sun.jna.Pointer getPerf();
 		public long getInitialID();
 		public long getPreviousID();
+		public IPerformanceStats getPerfStats();
 	}
 
 	public static interface ITraceParamsIntf extends IVersionedIntf
@@ -856,6 +872,7 @@ public interface FbInterface extends com.sun.jna.Library
 		public String getTextUTF8();
 		public String getExplainedPlan();
 		public int getSecurityAction();
+		public IPerformanceStats getPerfStats();
 	}
 
 	public static interface ITraceBLRStatementIntf extends ITraceStatementIntf
@@ -863,6 +880,7 @@ public interface FbInterface extends com.sun.jna.Library
 		public com.sun.jna.Pointer getData();
 		public int getDataLength();
 		public String getText();
+		public IPerformanceStats getPerfStats();
 	}
 
 	public static interface ITraceDYNRequestIntf extends IVersionedIntf
@@ -887,6 +905,7 @@ public interface FbInterface extends com.sun.jna.Library
 		public long getStmtID();
 		public String getPlan();
 		public String getExplainedPlan();
+		public IPerformanceStats getPerfStats();
 	}
 
 	public static interface ITraceFunctionIntf extends IVersionedIntf
@@ -898,6 +917,7 @@ public interface FbInterface extends com.sun.jna.Library
 		public long getStmtID();
 		public String getPlan();
 		public String getExplainedPlan();
+		public IPerformanceStats getPerfStats();
 	}
 
 	public static interface ITraceTriggerIntf extends IVersionedIntf
@@ -914,6 +934,7 @@ public interface FbInterface extends com.sun.jna.Library
 		public long getStmtID();
 		public String getPlan();
 		public String getExplainedPlan();
+		public IPerformanceStats getPerfStats();
 	}
 
 	public static interface ITraceServiceConnectionIntf extends ITraceConnectionIntf
@@ -938,6 +959,7 @@ public interface FbInterface extends com.sun.jna.Library
 		public long getOAT();
 		public long getNext();
 		public com.sun.jna.Pointer getPerf();
+		public IPerformanceStats getPerfStats();
 	}
 
 	public static interface ITraceLogWriterIntf extends IReferenceCountedIntf
@@ -1040,6 +1062,12 @@ public interface FbInterface extends com.sun.jna.Library
 		public IExternalFunction newItem(IStatus status, IExternalContext context, IRoutineMetadata metadata) throws FbInterfaceException;
 	}
 
+	public static interface IUdrAggregateFactoryIntf extends IDisposableIntf
+	{
+		public void setup(IStatus status, IExternalContext context, IRoutineMetadata metadata, IMetadataBuilder inBuilder, IMetadataBuilder outBuilder) throws FbInterfaceException;
+		public IExternalAggregateFunction newItem(IStatus status, IExternalContext context, IRoutineMetadata metadata) throws FbInterfaceException;
+	}
+
 	public static interface IUdrProcedureFactoryIntf extends IDisposableIntf
 	{
 		public void setup(IStatus status, IExternalContext context, IRoutineMetadata metadata, IMetadataBuilder inBuilder, IMetadataBuilder outBuilder) throws FbInterfaceException;
@@ -1058,6 +1086,7 @@ public interface FbInterface extends com.sun.jna.Library
 		public void registerFunction(IStatus status, String name, IUdrFunctionFactory factory) throws FbInterfaceException;
 		public void registerProcedure(IStatus status, String name, IUdrProcedureFactory factory) throws FbInterfaceException;
 		public void registerTrigger(IStatus status, String name, IUdrTriggerFactory factory) throws FbInterfaceException;
+		public void registerAggregateFunction(IStatus status, String name, IUdrAggregateFactory factory) throws FbInterfaceException;
 	}
 
 	public static interface IDecFloat16Intf extends IVersionedIntf
@@ -1170,6 +1199,46 @@ public interface FbInterface extends com.sun.jna.Library
 	public static interface IProfilerStatsIntf extends IVersionedIntf
 	{
 		public long getElapsedTicks();
+	}
+
+	public static interface IPerformanceCountersIntf extends IVersionedIntf
+	{
+		public static int PAGE_FETCHES = 0;
+		public static int PAGE_READS = 1;
+		public static int PAGE_MARKS = 2;
+		public static int PAGE_WRITES = 3;
+		public static int RECORD_SEQ_READS = 0;
+		public static int RECORD_IDX_READS = 1;
+		public static int RECORD_UPDATES = 2;
+		public static int RECORD_INSERTS = 3;
+		public static int RECORD_DELETES = 4;
+		public static int RECORD_BACKOUTS = 5;
+		public static int RECORD_PURGES = 6;
+		public static int RECORD_EXPUNGES = 7;
+		public static int RECORD_LOCKS = 8;
+		public static int RECORD_WAITS = 9;
+		public static int RECORD_CONFLICTS = 10;
+		public static int RECORD_BACK_READS = 11;
+		public static int RECORD_FRAGMENT_READS = 12;
+		public static int RECORD_RPT_READS = 13;
+		public static int RECORD_IMGC = 14;
+
+		public int getObjectCount();
+		public int getMaxCounterIndex();
+		public int getObjectId(int index);
+		public String getObjectName(int index);
+		public com.sun.jna.Pointer getObjectCounters(int index);
+	}
+
+	public static interface IPerformanceStatsIntf extends IVersionedIntf
+	{
+		public static int COUNTER_GROUP_PAGES = 0;
+		public static int COUNTER_GROUP_TABLES = 1;
+
+		public long getElapsedTime();
+		public long getFetchedRecords();
+		public long getSortStats(int counter);
+		public IPerformanceCounters getCounters(int group);
 	}
 
 	public static interface ICryptoKeyIntf extends IVersionedIntf
@@ -9434,6 +9503,172 @@ public interface FbInterface extends com.sun.jna.Library
 		}
 	}
 
+	public static class IExternalAggregateInstance extends IDisposable implements IExternalAggregateInstanceIntf
+	{
+		public static class ByReference extends IExternalAggregateInstance implements com.sun.jna.Structure.ByReference
+		{
+		}
+
+		public static class ByValue extends IExternalAggregateInstance implements com.sun.jna.Structure.ByValue
+		{
+		}
+
+		public void dispose()
+		{
+			try
+			{
+				vTable.dispose.invoke(this);
+			}
+			finally
+			{
+			}
+		}
+		public void start(IStatus status, IExternalContext context) throws FbInterfaceException
+		{
+			try
+			{
+				vTable.start.invoke(this, status, context);
+				StatusType::checkException(status);
+			}
+			finally
+			{
+				StatusType::clearException(status);
+			}
+		}
+		public void accumulate(IStatus status, IExternalContext context, com.sun.jna.Pointer inMsg) throws FbInterfaceException
+		{
+			try
+			{
+				vTable.accumulate.invoke(this, status, context, inMsg);
+				StatusType::checkException(status);
+			}
+			finally
+			{
+				StatusType::clearException(status);
+			}
+		}
+		public void group(IStatus status, IExternalContext context, com.sun.jna.Pointer outMsg) throws FbInterfaceException
+		{
+			try
+			{
+				vTable.group.invoke(this, status, context, outMsg);
+				StatusType::checkException(status);
+			}
+			finally
+			{
+				StatusType::clearException(status);
+			}
+		}
+		public void finish(IStatus status, IExternalContext context) throws FbInterfaceException
+		{
+			try
+			{
+				vTable.finish.invoke(this, status, context);
+				StatusType::checkException(status);
+			}
+			finally
+			{
+				StatusType::clearException(status);
+			}
+		}
+
+		public static class VTable extends com.sun.jna.Structure
+		{
+			public int version;
+
+			public static interface start extends com.sun.jna.Callback
+			{
+				void invoke(FbInterface.ExternalAggregateInstance self, IStatus status, IExternalContext context);
+			}
+
+			public start start;
+			public static interface accumulate extends com.sun.jna.Callback
+			{
+				void invoke(FbInterface.ExternalAggregateInstance self, IStatus status, IExternalContext context, com.sun.jna.Pointer inMsg);
+			}
+
+			public accumulate accumulate;
+			public static interface group extends com.sun.jna.Callback
+			{
+				void invoke(FbInterface.ExternalAggregateInstance self, IStatus status, IExternalContext context, com.sun.jna.Pointer outMsg);
+			}
+
+			public group group;
+			public static interface finish extends com.sun.jna.Callback
+			{
+				void invoke(FbInterface.ExternalAggregateInstance self, IStatus status, IExternalContext context);
+			}
+
+			public finish finish;
+		}
+	}
+
+	public static class IExternalAggregateFunction extends IDisposable implements IExternalAggregateFunctionIntf
+	{
+		public static class ByReference extends IExternalAggregateFunction implements com.sun.jna.Structure.ByReference
+		{
+		}
+
+		public static class ByValue extends IExternalAggregateFunction implements com.sun.jna.Structure.ByValue
+		{
+		}
+
+		public void dispose()
+		{
+			try
+			{
+				vTable.dispose.invoke(this);
+			}
+			finally
+			{
+			}
+		}
+		public void getCharSet(IStatus status, IExternalContext context, com.sun.jna.Pointer name, int nameSize) throws FbInterfaceException
+		{
+			try
+			{
+				vTable.getCharSet.invoke(this, status, context, name, nameSize);
+				StatusType::checkException(status);
+			}
+			finally
+			{
+				StatusType::clearException(status);
+			}
+		}
+		public IExternalAggregateInstance newInstance(IStatus status, IExternalContext context) throws FbInterfaceException
+		{
+			IExternalAggregateInstance result;
+			try
+			{
+				result = 				vTable.newInstance.invoke(this, status, context);
+				StatusType::checkException(status);
+			}
+			finally
+			{
+				StatusType::clearException(status);
+			}
+			return result;
+		}
+
+		public static class VTable extends com.sun.jna.Structure
+		{
+			public int version;
+
+			public static interface getCharSet extends com.sun.jna.Callback
+			{
+				void invoke(FbInterface.ExternalAggregateFunction self, IStatus status, IExternalContext context, com.sun.jna.Pointer name, int nameSize);
+			}
+
+			public getCharSet getCharSet;
+			public static interface newInstance extends com.sun.jna.Callback
+			{
+				IExternalAggregateInstance invoke(FbInterface.ExternalAggregateFunction self, IStatus status, IExternalContext context);
+			}
+
+			public newInstance newInstance;
+		}
+	}
+
 	public static class IExternalProcedure extends IDisposable implements IExternalProcedureIntf
 	{
 		public static class ByReference extends IExternalProcedure implements com.sun.jna.Structure.ByReference
@@ -9934,6 +10169,20 @@ public interface FbInterface extends com.sun.jna.Library
 			}
 			return result;
 		}
+		public IExternalAggregateFunction makeAggregateFunction(IStatus status, IExternalContext context, IRoutineMetadata metadata, IMetadataBuilder inBuilder, IMetadataBuilder outBuilder) throws FbInterfaceException
+		{
+			IExternalAggregateFunction result;
+			try
+			{
+				result = 				vTable.makeAggregateFunction.invoke(this, status, context, metadata, inBuilder, outBuilder);
+				StatusType::checkException(status);
+			}
+			finally
+			{
+				StatusType::clearException(status);
+			}
+			return result;
+		}
 
 		public static class VTable extends com.sun.jna.Structure
 		{
@@ -9975,6 +10224,12 @@ public interface FbInterface extends com.sun.jna.Library
 			}
 
 			public makeTrigger makeTrigger;
+			public static interface makeAggregateFunction extends com.sun.jna.Callback
+			{
+				IExternalAggregateFunction invoke(FbInterface.ExternalEngine self, IStatus status, IExternalContext context, IRoutineMetadata metadata, IMetadataBuilder inBuilder, IMetadataBuilder outBuilder);
+			}
+
+			public makeAggregateFunction makeAggregateFunction;
 		}
 	}
 
@@ -10406,6 +10661,18 @@ public interface FbInterface extends com.sun.jna.Library
 				StatusType::clearException(status);
 			}
 		}
+		public void convert(IStatus status, int sourceType, int sourceScale, int sourceLength, com.sun.jna.Pointer source, int targetType, int targetScale, int targetLength, com.sun.jna.Pointer target) throws FbInterfaceException
+		{
+			try
+			{
+				vTable.convert.invoke(this, status, sourceType, sourceScale, sourceLength, source, targetType, targetScale, targetLength, target);
+				StatusType::checkException(status);
+			}
+			finally
+			{
+				StatusType::clearException(status);
+			}
+		}
 		public IAttachment executeCreateDatabase2(IStatus status, int stmtLength, String creatDBstatement, int dialect, int dpbLength, byte[] dpb, boolean[] stmtIsCreateDb) throws FbInterfaceException
 		{
 			IAttachment result;
@@ -10419,18 +10686,6 @@ public interface FbInterface extends com.sun.jna.Library
 				StatusType::clearException(status);
 			}
 			return result;
-		}
-		public void convert(IStatus status, int sourceType, int sourceScale, int sourceLength, com.sun.jna.Pointer source, int targetType, int targetScale, int targetLength, com.sun.jna.Pointer target) throws FbInterfaceException
-		{
-			try
-			{
-				vTable.convert.invoke(this, status, sourceType, sourceScale, sourceLength, source, targetType, targetScale, targetLength, target);
-				StatusType::checkException(status);
-			}
-			finally
-			{
-				StatusType::clearException(status);
-			}
 		}
 
 		public static class VTable extends com.sun.jna.Structure
@@ -10569,18 +10824,18 @@ public interface FbInterface extends com.sun.jna.Library
 			}
 
 			public decodeTimeStampTzEx decodeTimeStampTzEx;
-			public static interface executeCreateDatabase2 extends com.sun.jna.Callback
-			{
-				IAttachment invoke(FbInterface.Util self, IStatus status, int stmtLength, String creatDBstatement, int dialect, int dpbLength, byte[] dpb, boolean[] stmtIsCreateDb);
-			}
-
-			public executeCreateDatabase2 executeCreateDatabase2;
 			public static interface convert extends com.sun.jna.Callback
 			{
 				void invoke(FbInterface.Util self, IStatus status, int sourceType, int sourceScale, int sourceLength, com.sun.jna.Pointer source, int targetType, int targetScale, int targetLength, com.sun.jna.Pointer target);
 			}
 
 			public convert convert;
+			public static interface executeCreateDatabase2 extends com.sun.jna.Callback
+			{
+				IAttachment invoke(FbInterface.Util self, IStatus status, int stmtLength, String creatDBstatement, int dialect, int dpbLength, byte[] dpb, boolean[] stmtIsCreateDb);
+			}
+
+			public executeCreateDatabase2 executeCreateDatabase2;
 		}
 	}
 
@@ -11496,6 +11751,18 @@ public interface FbInterface extends com.sun.jna.Library
 			}
 			return result;
 		}
+		public IPerformanceStats getPerfStats()
+		{
+			IPerformanceStats result;
+			try
+			{
+				result = 				vTable.getPerfStats.invoke(this);
+			}
+			finally
+			{
+			}
+			return result;
+		}
 
 		public static class VTable extends com.sun.jna.Structure
 		{
@@ -11543,6 +11810,12 @@ public interface FbInterface extends com.sun.jna.Library
 			}
 
 			public getPreviousID getPreviousID;
+			public static interface getPerfStats extends com.sun.jna.Callback
+			{
+				IPerformanceStats invoke(FbInterface.TraceTransaction self);
+			}
+
+			public getPerfStats getPerfStats;
 		}
 	}
 
@@ -11780,6 +12053,18 @@ public interface FbInterface extends com.sun.jna.Library
 			}
 			return result;
 		}
+		public IPerformanceStats getPerfStats()
+		{
+			IPerformanceStats result;
+			try
+			{
+				result = 				vTable.getPerfStats.invoke(this);
+			}
+			finally
+			{
+			}
+			return result;
+		}
 
 		public static class VTable extends com.sun.jna.Structure
 		{
@@ -11821,6 +12106,12 @@ public interface FbInterface extends com.sun.jna.Library
 			}
 
 			public getSecurityAction getSecurityAction;
+			public static interface getPerfStats extends com.sun.jna.Callback
+			{
+				IPerformanceStats invoke(FbInterface.TraceSQLStatement self);
+			}
+
+			public getPerfStats getPerfStats;
 		}
 	}
 
@@ -11894,6 +12185,18 @@ public interface FbInterface extends com.sun.jna.Library
 			}
 			return result;
 		}
+		public IPerformanceStats getPerfStats()
+		{
+			IPerformanceStats result;
+			try
+			{
+				result = 				vTable.getPerfStats.invoke(this);
+			}
+			finally
+			{
+			}
+			return result;
+		}
 
 		public static class VTable extends com.sun.jna.Structure
 		{
@@ -11917,6 +12220,12 @@ public interface FbInterface extends com.sun.jna.Library
 			}
 
 			public getText getText;
+			public static interface getPerfStats extends com.sun.jna.Callback
+			{
+				IPerformanceStats invoke(FbInterface.TraceBLRStatement self);
+			}
+
+			public getPerfStats getPerfStats;
 		}
 	}
 
@@ -12146,6 +12455,18 @@ public interface FbInterface extends com.sun.jna.Library
 			}
 			return result;
 		}
+		public IPerformanceStats getPerfStats()
+		{
+			IPerformanceStats result;
+			try
+			{
+				result = 				vTable.getPerfStats.invoke(this);
+			}
+			finally
+			{
+			}
+			return result;
+		}
 
 		public static class VTable extends com.sun.jna.Structure
 		{
@@ -12187,6 +12508,12 @@ public interface FbInterface extends com.sun.jna.Library
 			}
 
 			public getExplainedPlan getExplainedPlan;
+			public static interface getPerfStats extends com.sun.jna.Callback
+			{
+				IPerformanceStats invoke(FbInterface.TraceProcedure self);
+			}
+
+			public getPerfStats getPerfStats;
 		}
 	}
 
@@ -12284,6 +12611,18 @@ public interface FbInterface extends com.sun.jna.Library
 			}
 			return result;
 		}
+		public IPerformanceStats getPerfStats()
+		{
+			IPerformanceStats result;
+			try
+			{
+				result = 				vTable.getPerfStats.invoke(this);
+			}
+			finally
+			{
+			}
+			return result;
+		}
 
 		public static class VTable extends com.sun.jna.Structure
 		{
@@ -12331,6 +12670,12 @@ public interface FbInterface extends com.sun.jna.Library
 			}
 
 			public getExplainedPlan getExplainedPlan;
+			public static interface getPerfStats extends com.sun.jna.Callback
+			{
+				IPerformanceStats invoke(FbInterface.TraceFunction self);
+			}
+
+			public getPerfStats getPerfStats;
 		}
 	}
 
@@ -12440,6 +12785,18 @@ public interface FbInterface extends com.sun.jna.Library
 			}
 			return result;
 		}
+		public IPerformanceStats getPerfStats()
+		{
+			IPerformanceStats result;
+			try
+			{
+				result = 				vTable.getPerfStats.invoke(this);
+			}
+			finally
+			{
+			}
+			return result;
+		}
 
 		public static class VTable extends com.sun.jna.Structure
 		{
@@ -12493,6 +12850,12 @@ public interface FbInterface extends com.sun.jna.Library
 			}
 
 			public getExplainedPlan getExplainedPlan;
+			public static interface getPerfStats extends com.sun.jna.Callback
+			{
+				IPerformanceStats invoke(FbInterface.TraceTrigger self);
+			}
+
+			public getPerfStats getPerfStats;
 		}
 	}
 
@@ -12848,6 +13211,18 @@ public interface FbInterface extends com.sun.jna.Library
 			}
 			return result;
 		}
+		public IPerformanceStats getPerfStats()
+		{
+			IPerformanceStats result;
+			try
+			{
+				result = 				vTable.getPerfStats.invoke(this);
+			}
+			finally
+			{
+			}
+			return result;
+		}
 
 		public static class VTable extends com.sun.jna.Structure
 		{
@@ -12883,6 +13258,12 @@ public interface FbInterface extends com.sun.jna.Library
 			}
 
 			public getPerf getPerf;
+			public static interface getPerfStats extends com.sun.jna.Callback
+			{
+				IPerformanceStats invoke(FbInterface.TraceSweepInfo self);
+			}
+
+			public getPerfStats getPerfStats;
 		}
 	}
 
@@ -13872,6 +14253,72 @@ public interface FbInterface extends com.sun.jna.Library
 		}
 	}
 
+	public static class IUdrAggregateFactory extends IDisposable implements IUdrAggregateFactoryIntf
+	{
+		public static class ByReference extends IUdrAggregateFactory implements com.sun.jna.Structure.ByReference
+		{
+		}
+
+		public static class ByValue extends IUdrAggregateFactory implements com.sun.jna.Structure.ByValue
+		{
+		}
+
+		public void dispose()
+		{
+			try
+			{
+				vTable.dispose.invoke(this);
+			}
+			finally
+			{
+			}
+		}
+		public void setup(IStatus status, IExternalContext context, IRoutineMetadata metadata, IMetadataBuilder inBuilder, IMetadataBuilder outBuilder) throws FbInterfaceException
+		{
+			try
+			{
+				vTable.setup.invoke(this, status, context, metadata, inBuilder, outBuilder);
+				StatusType::checkException(status);
+			}
+			finally
+			{
+				StatusType::clearException(status);
+			}
+		}
+		public IExternalAggregateFunction newItem(IStatus status, IExternalContext context, IRoutineMetadata metadata) throws FbInterfaceException
+		{
+			IExternalAggregateFunction result;
+			try
+			{
+				result = 				vTable.newItem.invoke(this, status, context, metadata);
+				StatusType::checkException(status);
+			}
+			finally
+			{
+				StatusType::clearException(status);
+			}
+			return result;
+		}
+
+		public static class VTable extends com.sun.jna.Structure
+		{
+			public int version;
+
+			public static interface setup extends com.sun.jna.Callback
+			{
+				void invoke(FbInterface.UdrAggregateFactory self, IStatus status, IExternalContext context, IRoutineMetadata metadata, IMetadataBuilder inBuilder, IMetadataBuilder outBuilder);
+			}
+
+			public setup setup;
+			public static interface newItem extends com.sun.jna.Callback
+			{
+				IExternalAggregateFunction invoke(FbInterface.UdrAggregateFactory self, IStatus status, IExternalContext context, IRoutineMetadata metadata);
+			}
+
+			public newItem newItem;
+		}
+	}
+
 	public static class IUdrProcedureFactory extends IDisposable implements IUdrProcedureFactoryIntf
 	{
 		public static class ByReference extends IUdrProcedureFactory implements com.sun.jna.Structure.ByReference
@@ -14062,6 +14509,18 @@ public interface FbInterface extends com.sun.jna.Library
 				StatusType::clearException(status);
 			}
 		}
+		public void registerAggregateFunction(IStatus status, String name, IUdrAggregateFactory factory) throws FbInterfaceException
+		{
+			try
+			{
+				vTable.registerAggregateFunction.invoke(this, status, name, factory);
+				StatusType::checkException(status);
+			}
+			finally
+			{
+				StatusType::clearException(status);
+			}
+		}
 
 		public static class VTable extends com.sun.jna.Structure
 		{
@@ -14091,6 +14550,12 @@ public interface FbInterface extends com.sun.jna.Library
 			}
 
 			public registerTrigger registerTrigger;
+			public static interface registerAggregateFunction extends com.sun.jna.Callback
+			{
+				void invoke(FbInterface.UdrPlugin self, IStatus status, String name, IUdrAggregateFactory factory);
+			}
+
+			public registerAggregateFunction registerAggregateFunction;
 		}
 	}
 
@@ -15459,6 +15924,204 @@ public interface FbInterface extends com.sun.jna.Library
 			}
 
 			public getElapsedTicks getElapsedTicks;
+		}
+	}
+
+	public static class IPerformanceCounters extends IVersioned implements IPerformanceCountersIntf
+	{
+		public static class ByReference extends IPerformanceCounters implements com.sun.jna.Structure.ByReference
+		{
+		}
+
+		public static class ByValue extends IPerformanceCounters implements com.sun.jna.Structure.ByValue
+		{
+		}
+
+		public int getObjectCount()
+		{
+			int result;
+			try
+			{
+				result = 				vTable.getObjectCount.invoke(this);
+			}
+			finally
+			{
+			}
+			return result;
+		}
+		public int getMaxCounterIndex()
+		{
+			int result;
+			try
+			{
+				result = 				vTable.getMaxCounterIndex.invoke(this);
+			}
+			finally
+			{
+			}
+			return result;
+		}
+		public int getObjectId(int index)
+		{
+			int result;
+			try
+			{
+				result = 				vTable.getObjectId.invoke(this, index);
+			}
+			finally
+			{
+			}
+			return result;
+		}
+		public String getObjectName(int index)
+		{
+			String result;
+			try
+			{
+				result = 				vTable.getObjectName.invoke(this, index);
+			}
+			finally
+			{
+			}
+			return result;
+		}
+		public com.sun.jna.Pointer getObjectCounters(int index)
+		{
+			com.sun.jna.Pointer result;
+			try
+			{
+				result = 				vTable.getObjectCounters.invoke(this, index);
+			}
+			finally
+			{
+			}
+			return result;
+		}
+
+		public static class VTable extends com.sun.jna.Structure
+		{
+			public int version;
+
+			public static interface getObjectCount extends com.sun.jna.Callback
+			{
+				int invoke(FbInterface.PerformanceCounters self);
+			}
+
+			public getObjectCount getObjectCount;
+			public static interface getMaxCounterIndex extends com.sun.jna.Callback
+			{
+				int invoke(FbInterface.PerformanceCounters self);
+			}
+
+			public getMaxCounterIndex getMaxCounterIndex;
+			public static interface getObjectId extends com.sun.jna.Callback
+			{
+				int invoke(FbInterface.PerformanceCounters self, int index);
+			}
+
+			public getObjectId getObjectId;
+			public static interface getObjectName extends com.sun.jna.Callback
+			{
+				String invoke(FbInterface.PerformanceCounters self, int index);
+			}
+
+			public getObjectName getObjectName;
+			public static interface getObjectCounters extends com.sun.jna.Callback
+			{
+				com.sun.jna.Pointer invoke(FbInterface.PerformanceCounters self, int index);
+			}
+
+			public getObjectCounters getObjectCounters;
+		}
+	}
+
+	public static class IPerformanceStats extends IVersioned implements IPerformanceStatsIntf
+	{
+		public static class ByReference extends IPerformanceStats implements com.sun.jna.Structure.ByReference
+		{
+		}
+
+		public static class ByValue extends IPerformanceStats implements com.sun.jna.Structure.ByValue
+		{
+		}
+
+		public long getElapsedTime()
+		{
+			long result;
+			try
+			{
+				result = 				vTable.getElapsedTime.invoke(this);
+			}
+			finally
+			{
+			}
+			return result;
+		}
+		public long getFetchedRecords()
+		{
+			long result;
+			try
+			{
+				result = 				vTable.getFetchedRecords.invoke(this);
+			}
+			finally
+			{
+			}
+			return result;
+		}
+		public long getSortStats(int counter)
+		{
+			long result;
+			try
+			{
+				result = 				vTable.getSortStats.invoke(this, counter);
+			}
+			finally
+			{
+			}
+			return result;
+		}
+		public IPerformanceCounters getCounters(int group)
+		{
+			IPerformanceCounters result;
+			try
+			{
+				result = 				vTable.getCounters.invoke(this, group);
+			}
+			finally
+			{
+			}
+			return result;
+		}
+
+		public static class VTable extends com.sun.jna.Structure
+		{
+			public int version;
+
+			public static interface getElapsedTime extends com.sun.jna.Callback
+			{
+				long invoke(FbInterface.PerformanceStats self);
+			}
+
+			public getElapsedTime getElapsedTime;
+			public static interface getFetchedRecords extends com.sun.jna.Callback
+			{
+				long invoke(FbInterface.PerformanceStats self);
+			}
+
+			public getFetchedRecords getFetchedRecords;
+			public static interface getSortStats extends com.sun.jna.Callback
+			{
+				long invoke(FbInterface.PerformanceStats self, int counter);
+			}
+
+			public getSortStats getSortStats;
+			public static interface getCounters extends com.sun.jna.Callback
+			{
+				IPerformanceCounters invoke(FbInterface.PerformanceStats self, int group);
+			}
+
+			public getCounters getCounters;
 		}
 	}
 

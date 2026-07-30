@@ -54,6 +54,9 @@ type Config struct {
 	MaxBlobCacheSize           int
 	FetchBatchSize             int
 
+	Certificate    []byte
+	CertificatePIN string
+
 	// BuildContextWatcherHandler is called to create a ContextWatcherHandler for a connection. The handler is called
 	// when a context passed to a FbConn method is canceled.
 	BuildContextWatcherHandler func(*FbConn) ctxwatch.Handler
@@ -73,7 +76,10 @@ type Config struct {
 	// or prepare statements). If this returns an error the connection attempt fails.
 	AfterConnect AfterConnectFunc
 
-	// OnFbError is a callback function called when a Firebird error happened on server
+	// OnFbError is called when the server returns a Firebird error. Returning true keeps the connection open, and
+	// returning false closes it. [ParseConfig] sets a handler that closes the connection when [IsConnectionFatal]
+	// reports true. Replacing the handler overrides this policy; setting OnFbError to nil keeps the connection open
+	// for all server errors. The callback must not query the supplied [FbConn].
 	OnFbError FbErrorHandler
 
 	// OnFbWarning is a callback function called when a Firebird warning obtained by client with success response
@@ -87,6 +93,38 @@ type ParseConfigOptions struct {
 	// GetSSLPassword returns the password to decrypt a client private key / certificate,
 	// when encrypted transport is used (if supported).
 	GetSSLPassword GetSSLPasswordFunc
+
+	// ConnStringAllowedKeys restricts which parameter keys may appear in connString when the slice is non-nil.
+	//
+	// This is useful when accepting a connection string from an untrusted source and only a known subset of parameters
+	// should be allowed.
+	//
+	// A nil slice means no restriction. An empty non-nil slice rejects every key in connString. Only keys explicitly
+	// present in connString are checked; environment variables and built-in defaults are not checked.
+	//
+	// Keys are compared after applying the same aliases that ParseConfig applies to connString keys, so aliases and
+	// canonical names are both accepted. For example, "dbname" and "database" both allow the database parameter.
+	ConnStringAllowedKeys []string
+}
+
+var connStringKeyAliases = map[string]string{
+	"dbname":                       "database",
+	"createdb":                     "create_database",
+	"create_db":                    "create_database",
+	"blob_buffer_size":             "blob_buffer_size",
+	"use_stream_blobs":             "use_stream_blobs",
+	"useStreamBlobs":               "use_stream_blobs",
+	"max_inline_blob_size":         "max_inline_blob_size",
+	"max_blob_cache_size":          "max_blob_cache_size",
+	"isc_dpb_max_inline_blob_size": "max_inline_blob_size",
+	"isc_dpb_max_blob_cache_size":  "max_blob_cache_size",
+}
+
+func canonicalConnStringKey(k string) string {
+	if c, ok := connStringKeyAliases[k]; ok {
+		return c
+	}
+	return k
 }
 
 // Copy returns a copy of the config that is safe to use and modify.
@@ -117,6 +155,11 @@ func (c *Config) Copy() *Config {
 			fbs[i] = &cp
 		}
 		newConf.Fallbacks = fbs
+	}
+	if len(newConf.Certificate) > 0 {
+		newCertificate := make([]byte, len(c.Certificate))
+		copy(newCertificate, c.Certificate)
+		newConf.Certificate = newCertificate
 	}
 	return newConf
 }
@@ -192,9 +235,7 @@ func NetworkAddress(host string, port uint16) (network, address string) {
 //
 //	FBHOST, FBPORT, FBDATABASE, FBUSER, FBPASSWORD
 //	FBAPPNAME, FBTZ, FBCONNECT_TIMEOUT, FBFETCH_BATCH_SIZE
-//	FBTARGETSESSIONATTRS
-//	FBSSLMODE, FBSSLKEY, FBSSLCERT, FBSSLROOTCERT, FBSSLPASSWORD, FBSSLSNI, FBSSLNEGOTIATION
-//	FBPASSFILE, FBSERVICE, FBSERVICEFILE, FBOPTIONS
+//	FBTARGETSESSIONATTRS, FBOPTIONS
 //
 // Any unrecognized options are preserved in Config.RuntimeParams.
 //
@@ -227,6 +268,18 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		}
 	}
 
+	if options.ConnStringAllowedKeys != nil {
+		allowed := make(map[string]struct{}, len(options.ConnStringAllowedKeys))
+		for _, k := range options.ConnStringAllowedKeys {
+			allowed[canonicalConnStringKey(k)] = struct{}{}
+		}
+		for k := range connStringSettings {
+			if _, ok := allowed[k]; !ok {
+				return nil, &ParseConfigError{ConnString: connString, msg: fmt.Sprintf("connection string key %q is not in ConnStringAllowedKeys", k)}
+			}
+		}
+	}
+
 	settings := mergeSettings(defaultSettings, envSettings, connStringSettings)
 	encoding, err := fbproto.NewEncoding(settings["encoding"])
 	if err != nil {
@@ -253,14 +306,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		BuildContextWatcherHandler: func(fbConn *FbConn) ctxwatch.Handler {
 			return &CancelRequestContextWatcherHandler{Conn: fbConn}
 		},
-		OnFbError: func(_ *FbConn, fbErr *FbError) bool {
-			// we want to automatically close any fatal errors
-			// FIXME: fbx how to check if server error is fatal?
-			//if strings.EqualFold(fbErr.Severity, "FATAL") {
-			//	return false
-			//}
-			return true
-		},
+		OnFbError:                  defaultOnFbError,
 		AuthPluginList:             pluginList,
 		WireCrypt:                  convertToBool(settings["wire_crypt"], true),
 		SystemUser:                 settings["system_user"],
@@ -360,6 +406,9 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		if _, present := notRuntimeParams[k]; present {
 			continue
 		}
+		if k == "timezone" {
+			v = strings.ReplaceAll(v, " ", "+")
+		}
 		config.RuntimeParams[k] = v
 	}
 
@@ -432,20 +481,10 @@ func parseEnvSettings() map[string]string {
 		"FBDATABASE":           "database",
 		"FBUSER":               "user",
 		"FBPASSWORD":           "password",
-		"FBPASSFILE":           "passfile",
 		"FBAPPNAME":            "application_name",
 		"FBCONNECT_TIMEOUT":    "connect_timeout",
-		"FBSSLMODE":            "sslmode",
-		"FBSSLKEY":             "sslkey",
-		"FBSSLCERT":            "sslcert",
-		"FBSSLSNI":             "sslsni",
-		"FBSSLROOTCERT":        "sslrootcert",
-		"FBSSLPASSWORD":        "sslpassword",
-		"FBSSLNEGOTIATION":     "sslnegotiation",
 		"FBTARGETSESSIONATTRS": "target_session_attrs",
 		"FBFETCH_BATCH_SIZE":   "fetch_batch_size",
-		"FBSERVICE":            "service",
-		"FBSERVICEFILE":        "servicefile",
 		"FBTZ":                 "timezone",
 		"FBOPTIONS":            "options",
 		"FBSEARCHPATH":         "search_path",
@@ -547,25 +586,8 @@ func parseURLSettings(connString string) (map[string]string, error) {
 		settings["database"] = database
 	}
 
-	nameMap := map[string]string{
-		"dbname":                       "database",
-		"createdb":                     "create_database",
-		"create_db":                    "create_database",
-		"blob_buffer_size":             "blob_buffer_size",
-		"use_stream_blobs":             "use_stream_blobs",
-		"useStreamBlobs":               "use_stream_blobs",
-		"max_inline_blob_size":         "max_inline_blob_size",
-		"max_blob_cache_size":          "max_blob_cache_size",
-		"isc_dpb_max_inline_blob_size": "max_inline_blob_size",
-		"isc_dpb_max_blob_cache_size":  "max_blob_cache_size",
-	}
-
 	for k, v := range parsedURL.Query() {
-		if k2, present := nameMap[k]; present {
-			k = k2
-		}
-
-		settings[k] = v[0]
+		settings[canonicalConnStringKey(k)] = v[0]
 	}
 
 	return settings, nil
@@ -580,19 +602,7 @@ var asciiSpace = [256]uint8{'\t': 1, '\n': 1, '\v': 1, '\f': 1, '\r': 1, ' ': 1}
 func parseKeywordValueSettings(s string) (map[string]string, error) {
 	settings := make(map[string]string)
 
-	nameMap := map[string]string{
-		"dbname":                       "database",
-		"createdb":                     "create_database",
-		"create_db":                    "create_database",
-		"blob_buffer_size":             "blob_buffer_size",
-		"use_stream_blobs":             "use_stream_blobs",
-		"useStreamBlobs":               "use_stream_blobs",
-		"max_inline_blob_size":         "max_inline_blob_size",
-		"max_blob_cache_size":          "max_blob_cache_size",
-		"isc_dpb_max_inline_blob_size": "max_inline_blob_size",
-		"isc_dpb_max_blob_cache_size":  "max_blob_cache_size",
-	}
-
+	s = strings.TrimLeft(s, " \t\n\r\v\f")
 	for len(s) > 0 {
 		var key, val string
 		eqIdx := strings.IndexRune(s, '=')
@@ -602,8 +612,9 @@ func parseKeywordValueSettings(s string) (map[string]string, error) {
 
 		key = strings.Trim(s[:eqIdx], " \t\n\r\v\f")
 		s = strings.TrimLeft(s[eqIdx+1:], " \t\n\r\v\f")
-		if len(s) == 0 {
-		} else if s[0] != '\'' {
+		switch {
+		case len(s) == 0:
+		case s[0] != '\'':
 			end := 0
 			for ; end < len(s); end++ {
 				if asciiSpace[s[end]] == 1 {
@@ -616,13 +627,9 @@ func parseKeywordValueSettings(s string) (map[string]string, error) {
 					}
 				}
 			}
-			val = strings.Replace(strings.Replace(s[:end], "\\\\", "\\", -1), "\\'", "'", -1)
-			if end == len(s) {
-				s = ""
-			} else {
-				s = s[end+1:]
-			}
-		} else { // quoted string
+			val = strings.ReplaceAll(strings.ReplaceAll(s[:end], "\\\\", "\\"), "\\'", "'")
+			s = strings.TrimLeft(s[end:], " \t\n\r\v\f")
+		default: // quoted string
 			s = s[1:]
 			end := 0
 			for ; end < len(s); end++ {
@@ -636,17 +643,11 @@ func parseKeywordValueSettings(s string) (map[string]string, error) {
 			if end == len(s) {
 				return nil, errors.New("unterminated quoted string in connection info string")
 			}
-			val = strings.Replace(strings.Replace(s[:end], "\\\\", "\\", -1), "\\'", "'", -1)
-			if end == len(s) {
-				s = ""
-			} else {
-				s = s[end+1:]
-			}
+			val = strings.ReplaceAll(strings.ReplaceAll(s[:end], "\\\\", "\\"), "\\'", "'")
+			s = strings.TrimLeft(s[end+1:], " \t\n\r\v\f")
 		}
 
-		if k, ok := nameMap[key]; ok {
-			key = k
-		}
+		key = canonicalConnStringKey(key)
 
 		if key == "" {
 			return nil, errors.New("invalid keyword/value")
@@ -656,33 +657,6 @@ func parseKeywordValueSettings(s string) (map[string]string, error) {
 	}
 
 	return settings, nil
-}
-
-func parseServiceSettings(servicefilePath, serviceName string) (map[string]string, error) {
-	//servicefile, err := fbservicefile.ReadServicefile(servicefilePath)
-	//if err != nil {
-	//	return nil, fmt.Errorf("failed to read service file: %v", servicefilePath)
-	//}
-	//
-	//service, err := servicefile.GetService(serviceName)
-	//if err != nil {
-	//	return nil, fmt.Errorf("unable to find service: %v", serviceName)
-	//}
-	//
-	//nameMap := map[string]string{
-	//	"dbname": "database",
-	//}
-	//
-	//settings := make(map[string]string, len(service.Settings))
-	//for k, v := range service.Settings {
-	//	if k2, present := nameMap[k]; present {
-	//		k = k2
-	//	}
-	//	settings[k] = v
-	//}
-	//
-	//return settings, nil
-	panic("implement me")
 }
 
 func parsePort(s string) (uint16, error) {
@@ -781,6 +755,8 @@ func checkSessionAttrIsPrimary(ctx context.Context, fbConn *FbConn) (bool, error
 	return false, errors.New("Replication is not configured")
 }
 
+// ValidateConnectTargetSessionAttrsReplica is a [ValidateConnectFunc] that implements
+// target_session_attrs=replica.
 func ValidateConnectTargetSessionAttrsReplica(ctx context.Context, fbConn *FbConn) error {
 	isPrimary, err := checkSessionAttrIsPrimary(ctx, fbConn)
 
@@ -795,6 +771,8 @@ func ValidateConnectTargetSessionAttrsReplica(ctx context.Context, fbConn *FbCon
 	return nil
 }
 
+// ValidateConnectTargetSessionAttrsPrimary is a [ValidateConnectFunc] that implements
+// target_session_attrs=primary.
 func ValidateConnectTargetSessionAttrsPrimary(ctx context.Context, fbConn *FbConn) error {
 	isPrimary, err := checkSessionAttrIsPrimary(ctx, fbConn)
 
@@ -809,6 +787,8 @@ func ValidateConnectTargetSessionAttrsPrimary(ctx context.Context, fbConn *FbCon
 	return nil
 }
 
+// ValidateConnectTargetSessionAttrsPreferReplica is a [ValidateConnectFunc] that implements
+// target_session_attrs=prefer-replica.
 func ValidateConnectTargetSessionAttrsPreferReplica(ctx context.Context, fbConn *FbConn) error {
 	isPrimary, err := checkSessionAttrIsPrimary(ctx, fbConn)
 
@@ -822,52 +802,6 @@ func ValidateConnectTargetSessionAttrsPreferReplica(ctx context.Context, fbConn 
 
 	return nil
 }
-
-//FIXME: fbx, possible to implement it by scanning MON$REPLICATION or obtaining status from context variables https://tracker.red-soft.ru/issues/261350
-// ValidateConnectTargetSessionAttrsStandby is a ValidateConnectFunc that implements libpq compatible
-// target_session_attrs=standby.
-//func ValidateConnectTargetSessionAttrsStandby(ctx context.Context, fbConn *FbConn) error {
-//	result, err := fbConn.Exec(ctx, "select fb_is_in_recovery()").ReadAll()
-//	if err != nil {
-//		return err
-//	}
-//
-//	if string(result[0].Rows[0][0]) != "t" {
-//		return errors.New("server is not in hot standby mode")
-//	}
-//
-//	return nil
-//}
-
-// ValidateConnectTargetSessionAttrsPrimary is a ValidateConnectFunc that implements libpq compatible
-// target_session_attrs=primary.
-//func ValidateConnectTargetSessionAttrsPrimary(ctx context.Context, fbConn *FbConn) error {
-//	result, err := fbConn.Exec(ctx, "select fb_is_in_recovery()").ReadAll()
-//	if err != nil {
-//		return err
-//	}
-//
-//	if string(result[0].Rows[0][0]) == "t" {
-//		return errors.New("server is in standby mode")
-//	}
-//
-//	return nil
-//}
-
-// ValidateConnectTargetSessionAttrsPreferStandby is a ValidateConnectFunc that implements libpq compatible
-// target_session_attrs=prefer-standby.
-//func ValidateConnectTargetSessionAttrsPreferStandby(ctx context.Context, fbConn *FbConn) error {
-//	result, err := fbConn.Exec(ctx, "select fb_is_in_recovery()").ReadAll()
-//	if err != nil {
-//		return err
-//	}
-//
-//	if string(result[0].Rows[0][0]) != "t" {
-//		return &NotPreferredError{err: errors.New("server is not in hot standby mode")}
-//	}
-//
-//	return nil
-//}
 
 func convertToBool(s string, defaultValue bool) bool {
 	v, err := strconv.ParseBool(s)

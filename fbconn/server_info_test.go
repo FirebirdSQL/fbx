@@ -10,9 +10,9 @@ import (
 
 func tagLengthValue(tag byte, value int) []byte {
 	data := fbio.AppendInt32LE(nil, int32(value))
-	buf := []byte{tag}                                           // tag
+	buf := []byte{tag}                              // tag
 	buf = fbio.AppendInt16LE(buf, int16(len(data))) // data length
-	return append(buf, data...)                                  // data
+	return append(buf, data...)                     // data
 }
 
 func createDescriptorBlock(index int) []byte {

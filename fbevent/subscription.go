@@ -13,9 +13,8 @@ type EventSubscription struct {
 	// handle with [Manager.RemoveEventListener], or by disconnecting the manager.
 	C <-chan DatabaseEvent
 
-	manager *Manager
-	handle  ListenerHandle
-	events  *channelEventListener
+	listenerCloser *ListenerCloser
+	events         *channelEventListener
 
 	closeOnce sync.Once
 	closeErr  error
@@ -35,17 +34,16 @@ func (m *Manager) Subscribe(eventName string, buffer int) (*EventSubscription, e
 	}
 
 	listener := newChannelEventListener(buffer)
-	handle, err := m.AddEventListener(eventName, listener)
+	listenerCloser, err := m.AddEventListener(eventName, listener)
 	if err != nil {
 		listener.close()
 		return nil, err
 	}
 
 	return &EventSubscription{
-		C:       listener.events,
-		manager: m,
-		handle:  handle,
-		events:  listener,
+		C:              listener.events,
+		listenerCloser: listenerCloser,
+		events:         listener,
 	}, nil
 }
 
@@ -66,7 +64,7 @@ func (s *EventSubscription) Handle() ListenerHandle {
 	if s == nil {
 		return InvalidListenerHandle
 	}
-	return s.handle
+	return s.listenerCloser.Handle()
 }
 
 // Close removes the subscription's listener registration and closes the event
@@ -79,13 +77,13 @@ func (s *EventSubscription) Close() error {
 		return nil
 	}
 	s.closeOnce.Do(func() {
-		if s.manager == nil || s.handle == InvalidListenerHandle {
+		if s.listenerCloser == nil || s.listenerCloser.Handle() == InvalidListenerHandle {
 			if s.events != nil {
 				s.events.close()
 			}
 			return
 		}
-		s.closeErr = s.manager.RemoveEventListener(s.handle)
+		s.closeErr = s.listenerCloser.Close()
 		if s.closeErr == nil && s.events != nil {
 			s.events.close()
 		}

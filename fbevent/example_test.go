@@ -20,11 +20,8 @@ func ExampleManager_WaitForEvent() {
 	ctx := context.Background()
 	dsn := "firebird://sysdba:masterkey@localhost:3050/employee"
 
-	manager, err := fbevent.NewManager(dsn)
+	manager, err := fbevent.Connect(ctx, dsn)
 	if err != nil {
-		return
-	}
-	if err := manager.Connect(ctx); err != nil {
 		return
 	}
 	defer manager.Close(context.Background())
@@ -65,11 +62,8 @@ func ExampleManager_Subscribe() {
 	ctx := context.Background()
 	dsn := "firebird://sysdba:masterkey@localhost:3050/employee"
 
-	manager, err := fbevent.NewManager(dsn)
+	manager, err := fbevent.Connect(ctx, dsn)
 	if err != nil {
-		return
-	}
-	if err := manager.Connect(ctx); err != nil {
 		return
 	}
 	defer manager.Close(context.Background())
@@ -110,11 +104,8 @@ func ExampleManager_WaitForNotification() {
 	defer cancel()
 	dsn := "firebird://sysdba:masterkey@localhost:3050/employee"
 
-	manager, err := fbevent.NewManager(dsn)
+	manager, err := fbevent.Connect(ctx, dsn)
 	if err != nil {
-		return
-	}
-	if err := manager.Connect(ctx); err != nil {
 		return
 	}
 	defer manager.Close(context.Background())
@@ -153,11 +144,8 @@ func ExampleManager_AddEventListener() {
 	ctx := context.Background()
 	dsn := "firebird://sysdba:masterkey@localhost:3050/employee"
 
-	manager, err := fbevent.NewManager(dsn)
+	manager, err := fbevent.Connect(ctx, dsn)
 	if err != nil {
-		return
-	}
-	if err := manager.Connect(ctx); err != nil {
 		return
 	}
 	defer manager.Close(context.Background())
@@ -175,12 +163,12 @@ func ExampleManager_AddEventListener() {
 	})
 
 	eventName := "FBX_EXAMPLE_LISTENER"
-	handle, err := manager.AddEventListener(eventName, listener)
+	listenerCloser, err := manager.AddEventListener(eventName, listener)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	defer manager.RemoveEventListener(handle)
+	defer listenerCloser.Close()
 
 	if err := postEvent(ctx, notifier, eventName); err != nil {
 		fmt.Println(err)

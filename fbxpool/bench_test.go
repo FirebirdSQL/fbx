@@ -5,9 +5,9 @@ import (
 	"os"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbxpool"
-	"github.com/stretchr/testify/require"
 )
 
 func BenchmarkAcquireAndRelease(b *testing.B) {

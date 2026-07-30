@@ -138,9 +138,7 @@
 #define blr_minimum		(unsigned char)30
 #define blr_total		(unsigned char)31
 #define blr_receive_batch	(unsigned char)32
-
-// unused code: 33
-
+#define blr_bulk_insert	(unsigned char)33
 #define blr_add			(unsigned char)34
 #define blr_subtract		(unsigned char)35
 #define blr_multiply		(unsigned char)36
@@ -417,7 +415,12 @@
 #define blr_exec_subproc			(unsigned char) 204
 #define blr_subproc_decl			(unsigned char) 205
 #define blr_subproc					(unsigned char) 206
+
 #define blr_subfunc_decl			(unsigned char) 207
+
+#define blr_subfunc_decl_flag_deterministic	(unsigned char) 1
+#define blr_subfunc_decl_flag_aggregate		(unsigned char) 2
+
 #define blr_subfunc					(unsigned char) 208
 #define blr_record_version2			(unsigned char) 209
 #define blr_gen_id2					(unsigned char) 210 // NEXT VALUE FOR generator
@@ -557,10 +560,12 @@
 
 // Table value function
 #define blr_table_value_fun				(unsigned char) 229
+// subcodes of blr_table_value_fun
 #define blr_table_value_fun_unlist		(unsigned char) 1
 #define blr_table_value_fun_gen_series	(unsigned char) 2
 
 #define blr_for_range								(unsigned char) 230
+// subcodes of blr_for_range
 #define blr_for_range_variable						(unsigned char) 1
 #define blr_for_range_initial_value					(unsigned char) 2
 #define blr_for_range_final_value					(unsigned char) 3
@@ -573,9 +578,27 @@
 #define blr_gen_id3					(unsigned char) 231
 #define blr_default2				(unsigned char) 232
 #define blr_current_schema			(unsigned char) 233
-#define blr_flags					(unsigned char) 234
 
+#define blr_flags						(unsigned char) 234
 // subcodes of blr_flags
 #define blr_flags_search_system_schema	(unsigned char) 1
+
+#define blr_within_group_order		(unsigned char) 235
+
+// Package const
+#define blr_package_reference			(unsigned char) 236
+
+// Subcodes of blr_package_reference
+#define blr_pkg_reference_to_constant			(unsigned char) 1
+
+#define blr_invoke_agg_function		(unsigned char) 237
+#define blr_invoke_agg_function_id					(unsigned char) 1
+#define blr_invoke_agg_function_id_schema			(unsigned char) 1
+#define blr_invoke_agg_function_id_package			(unsigned char) 2
+#define blr_invoke_agg_function_id_name				(unsigned char) 3
+#define blr_invoke_agg_function_id_sub				(unsigned char) 4
+#define blr_invoke_agg_function_arg_names			(unsigned char) 2
+#define blr_invoke_agg_function_args					(unsigned char) 3
+#define blr_invoke_agg_function_filter				(unsigned char) 4
 
 #endif // FIREBIRD_IMPL_BLR_H

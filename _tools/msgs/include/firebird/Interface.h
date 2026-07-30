@@ -83,6 +83,13 @@ struct PerformanceInfo
 		MARKS,
 		WRITES
 	};
+	
+	enum SortCounters
+	{
+		SMU_TOTAL = 0,
+		SMU_CACHE,
+		SMU_DISK
+	};
 
 	ISC_INT64 pin_time;				// Total operation time in nanoseconds
 	ISC_INT64* pin_counters;		// Pointer to allow easy addition of new counters

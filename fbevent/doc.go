@@ -7,34 +7,30 @@ and own its database connection or listen through an existing [fbx.Conn].
 
 # Creating a Manager
 
-Use [NewManager] when the event manager should own its connection:
+Use [Connect], [ConnectWithOptions], or [ConnectConfig] when the event manager
+should own its connection:
 
-	manager, err := fbevent.NewManager(os.Getenv("DATABASE_URL"))
+	manager, err := fbevent.Connect(context.Background(), os.Getenv("DATABASE_URL"))
 	if err != nil {
 		return err
 	}
 	defer manager.Close(context.Background())
 
-	if err := manager.Connect(context.Background()); err != nil {
-		return err
-	}
-
-Use [CreateFor] to listen through an existing connection. Closing a manager
-created by CreateFor does not close the underlying connection.
+Use [ConnectFor] to listen through an existing [fbx.Conn]. Closing a manager
+created by [ConnectFor] does not close the underlying connection.
 
 # Listening with Callbacks
 
 [Manager.AddEventListener] registers an [EventListener] for an event name on a
-connected manager. The returned [ListenerHandle] identifies that registration
-and can be passed to [Manager.RemoveEventListener].
+connected manager. The returned [ListenerCloser] removes that registration.
 
-	handle, err := manager.AddEventListener("orders_changed", fbevent.EventListenerFunc(func(event fbevent.DatabaseEvent) {
+	listenerCloser, err := manager.AddEventListener("orders_changed", fbevent.EventListenerFunc(func(event fbevent.DatabaseEvent) {
 		fmt.Printf("%s: %d\n", event.EventName, event.EventCount)
 	}))
 	if err != nil {
 		return err
 	}
-	defer manager.RemoveEventListener(handle)
+	defer listenerCloser.Close()
 
 # Channel Subscriptions
 

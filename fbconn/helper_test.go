@@ -33,7 +33,7 @@ func subjectAttachmentID(t testing.TB, subject *fbconn.FbConn) int64 {
 }
 
 // activeTxCountOnServer counts active transactions on the server for the given
-// subject attachment using a SEPARATE observer connection. 
+// subject attachment using a SEPARATE observer connection.
 func activeTxCountOnServer(t testing.TB, subjectAttachmentID int64) int {
 	t.Helper()
 	observer, err := fbconn.Connect(context.Background(), os.Getenv("FBX_TEST_DATABASE"))

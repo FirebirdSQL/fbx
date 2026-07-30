@@ -50,6 +50,8 @@ type BatchError struct {
 	Err error
 }
 
+var errBatchExecutionFailed = errors.New("batch execution failed")
+
 type BatchCompletion struct {
 	TotalRecords uint32
 	UpdateCounts []int64
@@ -227,7 +229,11 @@ func (b *Batch) Execute(ctx context.Context, tx *FBTransaction) (*BatchCompletio
 	}
 
 	if execTx == b.st.conn.internalTransaction && b.st.conn.config.Autocommit && !b.st.conn.explicitTransaction {
-		if err := execTx.Commit(context.Background()); err != nil {
+		if completion.HasErrors() {
+			if err := b.st.conn.rollbackInternalTxIfAutocommitOnError(ctx, execTx, errBatchExecutionFailed); err != nil {
+				return completion, errors.Join(errBatchExecutionFailed, fmt.Errorf("rollback internal tx: %w", err))
+			}
+		} else if err := execTx.Commit(context.Background()); err != nil {
 			return completion, err
 		}
 	}
@@ -235,10 +241,10 @@ func (b *Batch) Execute(ctx context.Context, tx *FBTransaction) (*BatchCompletio
 	return completion, nil
 }
 
-// Cancel sends Op_batch_cancel to the server. Per the Firebird protocol
+// Cancel sends [fbproto.Op_batch_cancel] to the server. Per the Firebird protocol
 // this discards every message that the server has accumulated for this
-// batch but keeps the server-side batch context alive, so the same Batch
-// object can be reused for new Send/Execute calls.
+// batch but keeps the server-side batch context alive, so the same [Batch]
+// object can be reused for new [Batch.Send] and [Batch.Execute] calls.
 func (b *Batch) Cancel(ctx context.Context) error {
 	if b == nil || b.state == batchStateClosed {
 		return nil
@@ -250,8 +256,9 @@ func (b *Batch) Cancel(ctx context.Context) error {
 	return b.sendReleaseOp(ctx, fbproto.Op_batch_cancel)
 }
 
-// Close sends Op_batch_rls to the server, releasing the server-side batch
-// context entirely. The Batch must not be used after Close returns.
+// Close sends [fbproto.Op_batch_rls] to the server, releasing the server-side
+// batch context entirely. The [Batch] must not be used after [Batch.Close]
+// returns.
 func (b *Batch) Close(ctx context.Context) error {
 	if b == nil || b.state == batchStateClosed {
 		return nil

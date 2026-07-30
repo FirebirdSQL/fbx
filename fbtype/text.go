@@ -99,10 +99,13 @@ func (TextCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) Encode
 		return encodePlanTextCodecString{encoding: encoding, length: typeMetadata.Length}
 	case []byte:
 		return encodePlanTextCodecByteSlice{encoding: encoding, length: typeMetadata.Length}
-	case fmt.Stringer:
-		return encodePlanTextCodecStringer{encoding: encoding, length: typeMetadata.Length}
 	case TextValuer:
 		return encodePlanTextCodecTextValuer{encoding: encoding, length: typeMetadata.Length}
+	case fmt.Stringer:
+		if _, ok := value.(driver.Valuer); ok {
+			return nil
+		}
+		return encodePlanTextCodecStringer{encoding: encoding, length: typeMetadata.Length}
 	}
 
 	return nil

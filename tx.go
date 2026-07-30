@@ -11,7 +11,7 @@ import (
 	"rdb.red-soft.ru/fbx/fbproto"
 )
 
-// TxIsoLevel is the transaction isolation level (serializable, repeatable read, read committed or read uncommitted)
+// TxIsoLevel is the transaction isolation level ([fbx.Serializable], [fbx.RepeatableRead], [fbx.ReadCommitted])
 type TxIsoLevel string
 
 // Transaction isolation levels
@@ -21,7 +21,7 @@ const (
 	ReadCommitted  TxIsoLevel = "read committed"
 )
 
-// TxAccessMode is the transaction access mode (read write or read only)
+// TxAccessMode is the transaction access mode ([fbx.ReadWrite], [fbx.ReadOnly])
 type TxAccessMode string
 
 // Transaction access modes
@@ -74,9 +74,6 @@ func (c *Conn) BeginTxTPB(ctx context.Context, tpb []byte) (Tx, error) {
 func (c *Conn) beginTxTPB(ctx context.Context, tpb []byte) (Tx, error) {
 	fbTx, err := c.fbConn.StartTransactionTPB(ctx, tpb)
 	if err != nil {
-		// begin should never fail unless there is an underlying connection issue or
-		// a context timeout. In either case, the connection is possibly broken.
-		c.die()
 		return nil, err
 	}
 
@@ -185,12 +182,20 @@ type Tx interface {
 
 	Prepare(ctx context.Context, name, sql string) (*fbconn.StatementDescription, error)
 	// PrepareBatch creates a batch object inside the transaction.
+	//
+	// Executing the batch does not commit or roll back the transaction.
 	PrepareBatch(ctx context.Context, sql string) (*PreparedBatch, error)
-	// PrepareBatchWithOptions creates a batch object inside the transaction with additional batch options.
+	// PrepareBatchWithOptions creates a batch object inside the transaction with
+	// additional batch options.
+	//
+	// Executing the batch does not commit or roll back the transaction.
 	PrepareBatchWithOptions(ctx context.Context, sql string, opts BatchOptions) (*PreparedBatch, error)
 	// Flush sends queued rows for a named batch without executing it.
 	Flush(ctx context.Context, name string) error
-	// ExecBatch flushes queued rows for a named batch, executes it, and returns the result.
+	// ExecBatch flushes queued rows for a named batch, executes it, and returns
+	// the result.
+	//
+	// ExecBatch does not commit or roll back the transaction.
 	ExecBatch(ctx context.Context, name string) (BatchResult, error)
 	// CancelBatch discards every row queued for a named batch — both the local
 	// buffer and any rows already flushed to the server. The prepared batch
@@ -288,11 +293,16 @@ func (tx *dbTx) Prepare(ctx context.Context, name, sql string) (*fbconn.Statemen
 }
 
 // PrepareBatch creates a batch object inside the transaction.
+//
+// Executing the batch does not commit or roll back the transaction.
 func (tx *dbTx) PrepareBatch(ctx context.Context, sql string) (*PreparedBatch, error) {
 	return tx.PrepareBatchWithOptions(ctx, sql, BatchOptions{})
 }
 
-// PrepareBatchWithOptions creates a batch object inside the transaction with additional batch options.
+// PrepareBatchWithOptions creates a batch object inside the transaction with
+// additional batch options.
+//
+// Executing the batch does not commit or roll back the transaction.
 func (tx *dbTx) PrepareBatchWithOptions(ctx context.Context, sql string, opts BatchOptions) (*PreparedBatch, error) {
 	if tx.closed {
 		return nil, ErrTxClosed
@@ -331,6 +341,8 @@ func (tx *dbTx) Flush(ctx context.Context, name string) error {
 }
 
 // ExecBatch flushes queued rows for a named batch, executes it, and returns the result.
+//
+// ExecBatch does not commit or roll back the transaction.
 func (tx *dbTx) ExecBatch(ctx context.Context, name string) (BatchResult, error) {
 	if tx.closed {
 		return BatchResult{}, ErrTxClosed
@@ -407,11 +419,16 @@ func (sp *dbSimulatedNestedTx) Prepare(ctx context.Context, name, sql string) (*
 }
 
 // PrepareBatch creates a batch object inside the transaction.
+//
+// Executing the batch does not commit or roll back the transaction.
 func (sp *dbSimulatedNestedTx) PrepareBatch(ctx context.Context, sql string) (*PreparedBatch, error) {
 	return sp.PrepareBatchWithOptions(ctx, sql, BatchOptions{})
 }
 
-// PrepareBatchWithOptions creates a batch object inside the transaction with additional batch options.
+// PrepareBatchWithOptions creates a batch object inside the transaction with
+// additional batch options.
+//
+// Executing the batch does not commit or roll back the transaction.
 func (sp *dbSimulatedNestedTx) PrepareBatchWithOptions(ctx context.Context, sql string, opts BatchOptions) (*PreparedBatch, error) {
 	if sp.closed {
 		return nil, ErrTxClosed
@@ -429,6 +446,8 @@ func (sp *dbSimulatedNestedTx) Flush(ctx context.Context, name string) error {
 }
 
 // ExecBatch flushes queued rows for a named batch, executes it, and returns the result.
+//
+// ExecBatch does not commit or roll back the transaction.
 func (sp *dbSimulatedNestedTx) ExecBatch(ctx context.Context, name string) (BatchResult, error) {
 	if sp.closed {
 		return BatchResult{}, ErrTxClosed

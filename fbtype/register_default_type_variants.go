@@ -1,5 +1,3 @@
-//go:build !nofbxregisterdefaulttypes
-
 package fbtype
 
 func registerDefaultFbTypeVariants[T any](m *Map, name string) {

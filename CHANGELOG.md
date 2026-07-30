@@ -1,13 +1,17 @@
 # Change Log
 
-# [0.5.0] - TBD
+# [0.5.0] - 26.06.2026
 
 ### Added
 - RS-258538. Firebird events support.
 - RS-304087. Database dropping.
 - RS-304075. Low-level raw connection hijacking and construction.
+- RS-310141. Ability to implement authentication plugins.
+- RS-307958. BatchInsert wrapper for handy inserting many rows.
 
 ### Improved
+- RS-307577. smallint now scanned into int16 when target type is any.
+- RS-305333. By default isc_dpb_search_path set to process name and can be overriden with application_name=.
 - RS-303965. Port pgx v5.9.2. Optimized statement cache LRU implementation.
 - RS-303965. Port pgx v5.9.2. Optimized internal pgio append/set helpers.
 
@@ -15,6 +19,11 @@
 - RS-299490. Non-regular array metadata object identifiers handling.
 - RS-297906. Handling schema changing for prepared statements.
 - RS-307947. Statement handle leak in Conn.Query using mode QueryExecModeExec.
+- RS-311367. Fbconn fetch closed connection.
+- RS-309277. Failed authentication if WireCrypt disabled on server side.
+- RS-308524. Internal transaction leaking on connection errors.
+- RS-307598. Error during batch insert will produce partial insert.
+- RS-307533. Timezone location not resolved properly.
 - RS-303965. Port pgx v5.9.2. database/sql session reset now ignores internal driver transactions.
 - RS-303965. Port pgx v5.9.2. Stringer values are encoded as text and array cardinality overflow is guarded.
 - RS-303965. Port pgx v5.9.2. Numeric and integer scan edge cases.

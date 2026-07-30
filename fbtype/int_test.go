@@ -5,7 +5,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/stretchr/testify/require"
+	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
 )
@@ -45,6 +45,7 @@ func TestInt2Codec(t *testing.T) {
 		{Param: 1, Result: new(int16), Test: isExpectedEq(int16(1))},
 		{Param: math.MaxInt16, Result: new(int16), Test: isExpectedEq(int16(math.MaxInt16))},
 		{Param: 1, Result: new(fbtype.Int2), Test: isExpectedEq(fbtype.Int2{Int16: 1, Valid: true})},
+		{Param: 1, Result: new(any), Test: isExpectedEq(int16(1))},
 		{Param: fbtype.Int2{}, Result: new(fbtype.Int2), Test: isExpectedEq(fbtype.Int2{})},
 		{Param: nil, Result: new(*int16), Test: isExpectedEq((*int16)(nil))},
 		{Param: "11", Result: new(int16), Test: isExpectedEq(int16(11))},
@@ -268,26 +269,33 @@ func TestInt8UnmarshalJSON(t *testing.T) {
 	}
 }
 
-func TestInt2CodecStringErrors(t *testing.T) {
-	tests := []struct {
-		name  string
-		value string
-	}{
-		{"non-numeric", "abc"},
-		{"too large", "99999"},
-		{"too small", "-99999"},
-		{"float", "123.45"},
-		{"empty", ""},
+func TestSmallintEncodeRangeCheck(t *testing.T) {
+	m := fbtype.NewMap()
+	smallint := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 0, 2, 0)
+	int4 := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 0, 4, 0)
+
+	for _, v := range []any{
+		int32(99999), int(99999), int64(99999), "99999",
+		int32(-99999), int64(-99999), "-99999",
+		int32(math.MaxInt32),
+	} {
+		if _, err := m.Encode(smallint, v, nil); err == nil {
+			t.Errorf("smallint encode of %#v (out of int16 range): expected error, got nil", v)
+		}
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			typeMetadata := fbtype.NewTypeMetadata(0, 0, 0, 0)
-			plan := fbtype.Int2Codec{}.PlanEncode(nil, typeMetadata, tt.value)
-			require.NotNil(t, plan)
+	for _, v := range []any{
+		int16(math.MaxInt16), int16(math.MinInt16),
+		int32(32767), int(-32768), int64(100), "32767", "-32768", "0",
+	} {
+		if _, err := m.Encode(smallint, v, nil); err != nil {
+			t.Errorf("smallint encode of %#v (in int16 range): expected success, got %v", v, err)
+		}
+	}
 
-			_, err := plan.Encode(tt.value, nil)
-			require.Error(t, err, "expected error for value: %s", tt.value)
-		})
+	for _, v := range []any{int32(99999), int(99999), int64(99999), "99999"} {
+		if _, err := m.Encode(int4, v, nil); err != nil {
+			t.Errorf("int encode of %#v (in int32 range): expected success, got %v", v, err)
+		}
 	}
 }

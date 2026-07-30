@@ -62,7 +62,7 @@ func (m *Manager) Listen(ctx context.Context, eventName string) error {
 		})
 	})
 
-	handle, err := m.AddEventListener(eventName, listener)
+	listenerCloser, err := m.AddEventListener(eventName, listener)
 	if err != nil {
 		return err
 	}
@@ -71,7 +71,7 @@ func (m *Manager) Listen(ctx context.Context, eventName string) error {
 	if m.notificationNames == nil {
 		m.notificationNames = make(map[string]ListenerHandle)
 	}
-	m.notificationNames[eventName] = handle
+	m.notificationNames[eventName] = listenerCloser.Handle()
 	m.mu.Unlock()
 
 	return nil

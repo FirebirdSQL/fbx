@@ -61,10 +61,10 @@ func parseServerEngineInfo(t testing.TB, version string) serverEngineInfo {
 	patch := mustAtoi(t, "patch", matches[3], version)
 
 	return serverEngineInfo{
-		version:       version,
-		major:         major,
-		minor:         minor,
-		patch:         patch,
+		version: version,
+		major:   major,
+		minor:   minor,
+		patch:   patch,
 	}
 }
 

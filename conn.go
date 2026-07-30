@@ -35,13 +35,14 @@ type ConnConfig struct {
 	// may cache statement/description metadata to reduce round trips and parsing overhead.
 	DefaultQueryExecMode QueryExecMode
 
-	// BatchInsertPendingSize is maximum size of pending data in batch before Conn.BatchInsert will flush it to server
+	// BatchInsertPendingSize is maximum size of pending data in batch before
+	// [Conn.BatchInsert] will flush it to server.
 	BatchInsertPendingSize int
 
 	createdByParseConfig bool // Used to enforce created by ParseConfig rule.
 }
 
-// ParseConfigOptions contains options that control how a config is built such as getsslpassword.
+// ParseConfigOptions contains options that control how a config is built.
 type ParseConfigOptions struct {
 	fbconn.ParseConfigOptions
 }
@@ -134,7 +135,7 @@ func cleanupContext(parent context.Context) (context.Context, context.CancelFunc
 }
 
 // Connect establishes a connection with a Firebird server with a connection string. See
-// fbconn.Connect for details.
+// [fbconn.Connect], [fbx.ParseConfig], [fbconn.ParseConfig] for details.
 func Connect(ctx context.Context, connString string) (*Conn, error) {
 	connConfig, err := ParseConfig(connString)
 	if err != nil {
@@ -173,8 +174,7 @@ func DropDatabase(ctx context.Context, connString string) error {
 	return err
 }
 
-// ConnectWithOptions behaves exactly like Connect with the addition of options. At the present options is only used to
-// provide a GetSSLPassword function.
+// ConnectWithOptions behaves exactly like Connect with the addition of ParseConfigOptions.
 func ConnectWithOptions(ctx context.Context, connString string, options ParseConfigOptions) (*Conn, error) {
 	connConfig, err := ParseConfigWithOptions(connString, options)
 	if err != nil {
@@ -247,8 +247,7 @@ func DropDatabaseConfig(ctx context.Context, connConfig *ConnConfig) error {
 	return err
 }
 
-// ParseConfigWithOptions behaves exactly as ParseConfig does with the addition of options. At the present options is
-// only used to provide a GetSSLPassword function.
+// ParseConfigWithOptions behaves exactly as ParseConfig does with the addition of ParseConfigOptions.
 func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*ConnConfig, error) {
 	config, err := fbconn.ParseConfigWithOptions(connString, options.ParseConfigOptions)
 	if err != nil {
@@ -312,7 +311,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 //     Default: 512.
 //
 //   - batch_insert_pending_size
-//     The maximum size of pending data in batch before Conn.BatchInsert will flush it to server
+//     The maximum size of pending data in batch before [Conn.BatchInsert] will flush it to server.
 //     Default: 128*1024.
 func ParseConfig(connString string) (*ConnConfig, error) {
 	return ParseConfigWithOptions(connString, ParseConfigOptions{})
@@ -382,17 +381,18 @@ func (c *Conn) DropDatabase(ctx context.Context) error {
 }
 
 // Prepare creates a prepared statement with name and sql. sql can contain placeholders for bound parameters. These
-// placeholders are referenced positionally as ?. name can be used instead of sql with Query, QueryRow, and
-// Exec to execute the statement.
+// placeholders are referenced positionally as ?. name can be used instead of sql with [Conn.Query], [Conn.QueryRow], and
+// [Conn.Exec] to execute the statement.
 //
 // If sql starts with "batch ", Prepare creates a named batch.
-// Use Exec to add rows, Flush to send queued rows, and ExecBatch to execute the batch.
+// Use [Conn.Exec] to add rows, [Conn.Flush] to send queued rows, and
+// [Conn.ExecBatch] to execute the batch.
 //
 // The underlying Firebird identifier for the prepared statement will be name if name != sql or a digest of sql if
 // name == sql.
 //
 // Prepare is idempotent; i.e. it is safe to call Prepare multiple times with the same name and sql arguments. This
-// allows a code path to Prepare and Query/Exec without concern for if the statement has already been prepared.
+// allows a code path to Prepare and [Conn.Query]/[Conn.Exec] without concern for if the statement has already been prepared.
 func (c *Conn) Prepare(ctx context.Context, name, sql string) (sd *fbconn.StatementDescription, err error) {
 	return c.prepareTx(ctx, nil, name, sql)
 }
@@ -409,12 +409,20 @@ func (c *Conn) prepareTx(ctx context.Context, tx *dbTx, name string, sql string)
 	return st.Description, nil
 }
 
-// PrepareBatch creates a batch object for INSERT, UPDATE, or DELETE without result sets.
+// PrepareBatch creates a connection-scoped batch for INSERT, UPDATE, or DELETE
+// without result sets.
+//
+// The returned [PreparedBatch] uses the connection's internal transaction.
+// Always call [PreparedBatch.Close] when the batch is no longer needed.
 func (c *Conn) PrepareBatch(ctx context.Context, sql string) (*PreparedBatch, error) {
 	return c.prepareBatchTx(ctx, nil, sql, BatchOptions{})
 }
 
-// PrepareBatchWithOptions creates a batch object with additional batch options.
+// PrepareBatchWithOptions creates a connection-scoped batch with additional
+// batch options.
+//
+// The returned [PreparedBatch] uses the connection's internal transaction.
+// Always call [PreparedBatch.Close] when the batch is no longer needed.
 func (c *Conn) PrepareBatchWithOptions(ctx context.Context, sql string, opts BatchOptions) (*PreparedBatch, error) {
 	return c.prepareBatchTx(ctx, nil, sql, opts)
 }
@@ -456,18 +464,29 @@ func (c *Conn) prepareBatchTx(ctx context.Context, tx *dbTx, sql string, opts Ba
 }
 
 // Flush sends queued rows for a named batch without executing it.
+//
+// Rows are queued for a named batch by calling [Conn.Exec] with the prepared
+// batch name. Flush is a no-op when the named batch has no locally queued rows.
 func (c *Conn) Flush(ctx context.Context, name string) error {
 	return c.flushTx(ctx, nil, name)
 }
 
 // ExecBatch flushes queued rows for a named batch, executes it, and returns the result.
+//
+// Like [PreparedBatch.Exec], ExecBatch is atomic in autocommit mode: any
+// per-row error rolls the whole batch back (no rows applied), in both
+// stop-on-first and BatchOptions.ContinueOnError modes.
 func (c *Conn) ExecBatch(ctx context.Context, name string) (BatchResult, error) {
 	return c.execBatchTx(ctx, nil, name)
 }
 
 // CancelBatch discards every row queued for a named batch — both the local
 // buffer and any rows already flushed to the server. The prepared batch
-// statement is kept and can be reused via Exec/Flush/ExecBatch.
+// statement is kept and can be reused via [Conn.Exec], [Conn.Flush], and
+// [Conn.ExecBatch].
+//
+// CancelBatch does not deallocate the named batch. Use [Conn.Deallocate] when
+// the named batch is no longer needed.
 func (c *Conn) CancelBatch(ctx context.Context, name string) error {
 	return c.cancelBatchTx(ctx, nil, name)
 }

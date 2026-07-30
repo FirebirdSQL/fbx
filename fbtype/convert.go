@@ -1,8 +1,17 @@
 package fbtype
 
 import (
+	"fmt"
 	"reflect"
 )
+
+type nullAssignmentError struct {
+	dst any
+}
+
+func (e *nullAssignmentError) Error() string {
+	return fmt.Sprintf("cannot assign NULL to %T", e.dst)
+}
 
 func NullAssignTo(dst any) error {
 	dstPtr := reflect.ValueOf(dst)
