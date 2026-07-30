@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	maxBackupOptionStringLength = 1<<16 - 1
-	maxBackupOptionInt32        = 1<<31 - 1
+	maxServiceActionStringLength = 1<<16 - 1
+	maxServiceActionInt32        = 1<<31 - 1
 )
 
 // BackupOptions controls a logical backup created by [Manager.Backup].
@@ -21,6 +21,7 @@ const (
 type BackupOptions struct {
 	// Output receives service output. A nil value discards the output. Calls to
 	// [io.Writer.Write] are synchronous, so Output must not block indefinitely.
+	// A writer shared by concurrent operations must be safe for concurrent use.
 	Output io.Writer
 
 	// Verbose requests progress output from the backup service.
@@ -154,22 +155,22 @@ func validateBackupRequest(database string, backupFile string, options BackupOpt
 	if err := validateBackupOptionString("compressor", options.Compressor); err != nil {
 		return err
 	}
-	if options.Factor < 0 || options.Factor > maxBackupOptionInt32 {
-		return fmt.Errorf("backup factor must be between 0 and %d", maxBackupOptionInt32)
+	if options.Factor < 0 || options.Factor > maxServiceActionInt32 {
+		return fmt.Errorf("backup factor must be between 0 and %d", maxServiceActionInt32)
 	}
-	if options.ParallelWorkers < 0 || options.ParallelWorkers > maxBackupOptionInt32 {
-		return fmt.Errorf("backup parallel workers must be between 0 and %d", maxBackupOptionInt32)
+	if options.ParallelWorkers < 0 || options.ParallelWorkers > maxServiceActionInt32 {
+		return fmt.Errorf("backup parallel workers must be between 0 and %d", maxServiceActionInt32)
 	}
 	return nil
 }
 
 func validateBackupOptionString(name string, value string) error {
-	if len(value) > maxBackupOptionStringLength {
+	if len(value) > maxServiceActionStringLength {
 		return fmt.Errorf(
 			"backup %s is %d bytes; maximum is %d",
 			name,
 			len(value),
-			maxBackupOptionStringLength,
+			maxServiceActionStringLength,
 		)
 	}
 	return nil
