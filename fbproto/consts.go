@@ -180,6 +180,10 @@ const (
 	Isc_spb_version1          = 1
 	Isc_spb_current_version   = 2
 	Isc_spb_version           = Isc_spb_current_version
+
+	// Isc_spb_version3 identifies a wide service attachment parameter buffer.
+	Isc_spb_version3          = 3
+
 	Isc_spb_user_name         = 28 // Isc_dpb_user_name
 	Isc_spb_sys_user_name     = 19 // isc_dpb_sys_user_name
 	Isc_spb_sys_user_name_enc = 31 // isc_dpb_sys_user_name_enc
@@ -192,19 +196,23 @@ const (
 	Isc_spb_address_path      = 109
 	Isc_spb_process_id        = 110
 	Isc_spb_trusted_auth      = 111
-	Isc_spb_process_name      = 112
-	Isc_spb_trusted_role      = 113
-	Isc_spb_verbint           = 114
-	Isc_spb_auth_block        = 115
-	Isc_spb_auth_plugin_name  = 116
-	Isc_spb_auth_plugin_list  = 117
-	Isc_spb_utf8_filename     = 118
-	Isc_spb_client_version    = 119
-	Isc_spb_remote_protocol   = 120
-	Isc_spb_host_name         = 121
-	Isc_spb_os_user           = 122
-	Isc_spb_config            = 123
-	Isc_spb_expected_db       = 124
+
+	// Isc_spb_specific_auth_data carries plugin-specific authentication data.
+	Isc_spb_specific_auth_data = Isc_spb_trusted_auth
+
+	Isc_spb_process_name       = 112
+	Isc_spb_trusted_role       = 113
+	Isc_spb_verbint            = 114
+	Isc_spb_auth_block         = 115
+	Isc_spb_auth_plugin_name   = 116
+	Isc_spb_auth_plugin_list   = 117
+	Isc_spb_utf8_filename      = 118
+	Isc_spb_client_version     = 119
+	Isc_spb_remote_protocol    = 120
+	Isc_spb_host_name          = 121
+	Isc_spb_os_user            = 122
+	Isc_spb_config             = 123
+	Isc_spb_expected_db        = 124
 
 	Isc_spb_connect_timeout       = 57 // isc_dpb_connect_timeout
 	Isc_spb_dummy_packet_interval = 58 // isc_dpb_dummy_packet_interval
@@ -263,6 +271,7 @@ const (
 	Isc_spb_bkp_file               = 5
 	Isc_spb_bkp_factor             = 6
 	Isc_spb_bkp_length             = 7
+	Isc_spb_bkp_parallel_workers   = 21
 	Isc_spb_bkp_ignore_checksums   = 0x01
 	Isc_spb_bkp_ignore_limbo       = 0x02
 	Isc_spb_bkp_metadata_only      = 0x04
@@ -270,7 +279,11 @@ const (
 	Isc_spb_bkp_old_descriptions   = 0x10
 	Isc_spb_bkp_non_transportable  = 0x20
 	Isc_spb_bkp_convert            = 0x40
-	Isc_spb_bkp_expand             = 0x8
+	Isc_spb_bkp_expand             = 0x80
+	Isc_spb_bkp_no_triggers        = 0x8000
+	Isc_spb_bkp_zip                = 0x010000
+	Isc_spb_bkp_compression        = 102
+	Isc_spb_bkp_replace            = 103
 
 	// restore
 	Isc_spb_res_buffers        = 9
