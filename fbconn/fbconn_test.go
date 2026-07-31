@@ -390,12 +390,7 @@ func TestConnDeallocate(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = st.Exec(ctx, nil).Close()
-	var fbErr *fbconn.FbError
-	if errors.As(err, &fbErr) {
-		assert.Equal(t, "26000", fbErr.Code)
-	} else {
-		assert.EqualError(t, err, "statement is closed")
-	}
+	assert.EqualError(t, err, "statement is closed")
 
 	ensureConnValid(t, fbConn)
 }
