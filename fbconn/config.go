@@ -68,7 +68,8 @@ type Config struct {
 
 	Fallbacks []*FallbackConfig
 
-	// ValidateConnect is called during a connection attempt after a successful authentication, before the connection is returned.
+	// ValidateConnect is called during a connection attempt after a successful authentication and server version discovery,
+	// before the connection is returned.
 	// If this returns an error the connection is closed and the next fallback config is tried.
 	ValidateConnect ValidateConnectFunc
 

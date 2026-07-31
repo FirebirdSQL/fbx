@@ -49,6 +49,24 @@ func TestConnect(t *testing.T) {
 	}
 }
 
+func TestServerVersion(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	connString := os.Getenv("FBX_TEST_DATABASE")
+	if connString == "" {
+		t.Skip("Skipping due to missing environment variable FBX_TEST_DATABASE")
+	}
+
+	conn, err := fbconn.Connect(ctx, connString)
+	require.NoError(t, err)
+	defer closeConn(t, conn)
+
+	version := conn.ServerVersion()
+	require.Positive(t, version.Major)
+	require.NotEmpty(t, version.String())
+}
+
 func TestConnectWithOptions(t *testing.T) {
 	tests := []struct {
 		name string
@@ -339,8 +357,10 @@ func TestConnectWithValidateConnect(t *testing.T) {
 	}
 
 	acceptConnCount := 0
+	var validatedVersions []fbconn.ServerVersion
 	config.ValidateConnect = func(ctx context.Context, conn *fbconn.FbConn) error {
 		acceptConnCount++
+		validatedVersions = append(validatedVersions, conn.ServerVersion())
 		if acceptConnCount < 2 {
 			return errors.New("reject first conn")
 		}
@@ -362,6 +382,10 @@ func TestConnectWithValidateConnect(t *testing.T) {
 
 	assert.True(t, dialCount > 1)
 	assert.True(t, acceptConnCount > 1)
+	require.Len(t, validatedVersions, acceptConnCount)
+	for _, version := range validatedVersions {
+		assert.Positive(t, version.Major)
+	}
 }
 
 func TestConnectWithValidateConnectTargetSessionAttrsReadWrite(t *testing.T) {
@@ -1633,18 +1657,21 @@ func TestHijackAndConstruct(t *testing.T) {
 
 	origConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
+	origServerVersion := origConn.ServerVersion()
 
 	err = origConn.SyncConn(ctx)
 	require.NoError(t, err)
 
 	hc, err := origConn.Hijack()
 	require.NoError(t, err)
+	require.Equal(t, origServerVersion, hc.ServerVersion)
 
 	res := origConn.Exec(ctx, "select cast('Hello, world' as varchar(12)) from rdb$database").Read()
 	require.Error(t, res.Err)
 
 	newConn, err := fbconn.Construct(hc)
 	require.NoError(t, err)
+	require.Equal(t, origServerVersion, newConn.ServerVersion())
 
 	defer closeConn(t, newConn)
 

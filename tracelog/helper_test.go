@@ -3,8 +3,6 @@ package tracelog_test
 import (
 	"context"
 	"os"
-	"regexp"
-	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -14,17 +12,15 @@ import (
 )
 
 type serverEngineInfo struct {
-	version       string
-	major         int
-	minor         int
-	patch         int
-	isRedDatabase bool
+	version string
+	major   int
+	minor   int
+	patch   int
 }
 
 var (
 	serverEngineInfoOnce  sync.Once
 	serverEngineInfoValue serverEngineInfo
-	engineVersionRegexp   = regexp.MustCompile(`^\s*(\d+)\.(\d+)\.(\d+)`)
 )
 
 func getServerEngineInfo(t testing.TB) serverEngineInfo {
@@ -40,39 +36,16 @@ func getServerEngineInfo(t testing.TB) serverEngineInfo {
 		require.NoError(t, err)
 		defer conn.Close(ctx)
 
-		var version string
-		err = conn.QueryRow(ctx, "select rdb$get_context('SYSTEM','ENGINE_VERSION') from rdb$database").Scan(&version)
-		require.NoError(t, err)
-
-		serverEngineInfoValue = parseServerEngineInfo(t, version)
+		version := conn.ServerVersion()
+		serverEngineInfoValue = serverEngineInfo{
+			version: version.String(),
+			major:   version.Major,
+			minor:   version.Minor,
+			patch:   version.Patch,
+		}
 	})
 
 	return serverEngineInfoValue
-}
-
-func parseServerEngineInfo(t testing.TB, version string) serverEngineInfo {
-	t.Helper()
-
-	matches := engineVersionRegexp.FindStringSubmatch(version)
-	require.Lenf(t, matches, 4, "failed to parse server engine version %q: expected semantic version major.minor.patch", version)
-
-	major := mustAtoi(t, "major", matches[1], version)
-	minor := mustAtoi(t, "minor", matches[2], version)
-	patch := mustAtoi(t, "patch", matches[3], version)
-
-	return serverEngineInfo{
-		version: version,
-		major:   major,
-		minor:   minor,
-		patch:   patch,
-	}
-}
-
-func mustAtoi(t testing.TB, partName, value, version string) int {
-	t.Helper()
-	n, err := strconv.Atoi(value)
-	require.NoErrorf(t, err, "failed to parse %s version part %q from engine version %q", partName, value, version)
-	return n
 }
 
 func isRedDatabase50(t testing.TB) bool {
