@@ -918,17 +918,6 @@ connectLoop:
 
 	fbConn.status = connStatusIdle
 
-	if config.ValidateConnect != nil {
-		fbConn.contextWatcher.Unwatch()
-		err = config.ValidateConnect(ctx, fbConn)
-		if err != nil {
-			if _, ok := err.(*NotPreferredError); !ignoreNotPreferredErr || !ok {
-				fbConn.conn.Close()
-				return nil, newPerDialConnectError("ValidateConnect failed", err)
-			}
-		}
-	}
-
 	err = fbConn.getDatabaseInfo([]byte{fbproto.Isc_info_firebird_version, fbproto.Isc_info_end}, func(buf []byte) error {
 		r := NewServerInfoBufferReader(buf)
 		var item byte
@@ -961,6 +950,17 @@ connectLoop:
 	if err != nil {
 		fbConn.conn.Close()
 		return nil, newPerDialConnectError("error while trying to get database info", err)
+	}
+
+	if config.ValidateConnect != nil {
+		fbConn.contextWatcher.Unwatch()
+		err = config.ValidateConnect(ctx, fbConn)
+		if err != nil {
+			if _, ok := err.(*NotPreferredError); !ignoreNotPreferredErr || !ok {
+				fbConn.conn.Close()
+				return nil, newPerDialConnectError("ValidateConnect failed", err)
+			}
+		}
 	}
 
 	return fbConn, nil

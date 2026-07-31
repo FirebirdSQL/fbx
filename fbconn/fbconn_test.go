@@ -357,8 +357,10 @@ func TestConnectWithValidateConnect(t *testing.T) {
 	}
 
 	acceptConnCount := 0
+	var validatedVersions []fbconn.ServerVersion
 	config.ValidateConnect = func(ctx context.Context, conn *fbconn.FbConn) error {
 		acceptConnCount++
+		validatedVersions = append(validatedVersions, conn.ServerVersion())
 		if acceptConnCount < 2 {
 			return errors.New("reject first conn")
 		}
@@ -380,6 +382,10 @@ func TestConnectWithValidateConnect(t *testing.T) {
 
 	assert.True(t, dialCount > 1)
 	assert.True(t, acceptConnCount > 1)
+	require.Len(t, validatedVersions, acceptConnCount)
+	for _, version := range validatedVersions {
+		assert.Positive(t, version.Major)
+	}
 }
 
 func TestConnectWithValidateConnectTargetSessionAttrsReadWrite(t *testing.T) {
