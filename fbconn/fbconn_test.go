@@ -95,93 +95,6 @@ func TestConnectWithOptions(t *testing.T) {
 	}
 }
 
-type fbmockWaitStep time.Duration
-
-//func (s fbmockWaitStep) Step(*fbproto3.Backend) error {
-//	time.Sleep(time.Duration(s))
-//	return nil
-//}
-
-//FIXME: fbx
-//func TestConnectTimeout(t *testing.T) {
-//	t.Parallel()
-//	tests := []struct {
-//		name    string
-//		connect func(connStr string) error
-//	}{
-//		{
-//			name: "via context that times out",
-//			connect: func(connStr string) error {
-//				ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*50)
-//				defer cancel()
-//				_, err := fbconn.Connect(ctx, connStr)
-//				return err
-//			},
-//		},
-//		{
-//			name: "via config ConnectTimeout",
-//			connect: func(connStr string) error {
-//				conf, err := fbconn.ParseConfig(connStr)
-//				require.NoError(t, err)
-//				conf.ConnectTimeout = time.Microsecond * 50
-//				_, err = fbconn.ConnectConfig(context.Background(), conf)
-//				return err
-//			},
-//		},
-//	}
-//	for _, tt := range tests {
-//		tt := tt
-//		t.Run(tt.name, func(t *testing.T) {
-//			t.Parallel()
-//			script := &fbmock.Script{
-//				Steps: []fbmock.Step{
-//					fbmock.ExpectAnyMessage(&fbproto3.StartupMessage{ProtocolVersion: fbproto3.ProtocolVersionNumber, Parameters: map[string]string{}}),
-//					fbmock.SendMessage(&fbproto3.AuthenticationOk{}),
-//					fbmockWaitStep(time.Millisecond * 500),
-//					fbmock.SendMessage(&fbproto3.BackendKeyData{ProcessID: 0, SecretKey: 0}),
-//					fbmock.SendMessage(&fbproto3.ReadyForQuery{TxStatus: 'I'}),
-//				},
-//			}
-//
-//			ln, err := net.Listen("tcp", "127.0.0.1:")
-//			require.NoError(t, err)
-//			defer ln.Close()
-//
-//			serverErrChan := make(chan error, 1)
-//			go func() {
-//				defer close(serverErrChan)
-//
-//				conn, err := ln.Accept()
-//				if err != nil {
-//					serverErrChan <- err
-//					return
-//				}
-//				defer conn.Close()
-//
-//				err = conn.SetDeadline(time.Now().Add(time.Millisecond * 450))
-//				if err != nil {
-//					serverErrChan <- err
-//					return
-//				}
-//
-//				err = script.Run(fbproto3.NewBackend(conn, conn))
-//				if err != nil {
-//					serverErrChan <- err
-//					return
-//				}
-//			}()
-//
-//			host, port, _ := strings.Cut(ln.Addr().String(), ":")
-//			connStr := fmt.Sprintf("sslmode=disable host=%s port=%s", host, port)
-//			tooLate := time.Now().Add(time.Millisecond * 500)
-//
-//			err = tt.connect(connStr)
-//			require.True(t, fbconn.Timeout(err), err)
-//			require.True(t, time.Now().Before(tooLate))
-//		})
-//	}
-//}
-
 func TestConnectInvalidUser(t *testing.T) {
 	t.Parallel()
 
@@ -501,15 +414,7 @@ func TestConnDeallocate(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = st.Exec(ctx, nil).Close()
-	// TODO: Once the driver propagates server-side "invalid statement handle" consistently,
-	// narrow this assertion to FbError 26000. For now Exec short-circuits with a local
-	// "statement is closed" error.
-	var fbErr *fbconn.FbError
-	if errors.As(err, &fbErr) {
-		assert.Equal(t, "26000", fbErr.Code)
-	} else {
-		assert.EqualError(t, err, "statement is closed")
-	}
+	assert.EqualError(t, err, "statement is closed")
 
 	ensureConnValid(t, fbConn)
 }
