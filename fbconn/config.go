@@ -197,12 +197,11 @@ func isAbsolutePath(path string) bool {
 }
 
 // NetworkAddress converts host and port into network and address suitable for use with net.Dial.
-// If host is an absolute path, it currently falls back to a local TCP connection to localhost:3050.
+// If host is an absolute path, it falls back to a local TCP connection using the provided port.
 func NetworkAddress(host string, port uint16) (network, address string) {
 	if isAbsolutePath(host) {
 		network = "tcp"
-		//TODO: fbx allow override default port
-		address = net.JoinHostPort("localhost", "3050")
+		address = net.JoinHostPort("localhost", strconv.Itoa(int(port)))
 	} else {
 		network = "tcp"
 		address = net.JoinHostPort(host, strconv.Itoa(int(port)))
