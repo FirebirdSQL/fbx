@@ -11,30 +11,39 @@ import (
 	"rdb.red-soft.ru/fbx/internal/fbio"
 )
 
+// TimestamptzScanner scans a Firebird TIMESTAMP WITH TIME ZONE value.
 type TimestamptzScanner interface {
+	// ScanTimestamptz scans v into the receiver.
 	ScanTimestamptz(v Timestamptz) error
 }
 
+// TimestamptzValuer returns a Firebird TIMESTAMP WITH TIME ZONE value.
 type TimestamptzValuer interface {
+	// TimestamptzValue returns the Firebird TIMESTAMP WITH TIME ZONE value to encode.
 	TimestamptzValue() (Timestamptz, error)
 }
 
+// Timestamptz represents the Firebird TIMESTAMP WITH TIME ZONE type.
+//
+// Time contains the timestamp adjusted to the stored Firebird time zone. Valid is false when the value represents SQL NULL.
 type Timestamptz struct {
-	Time  time.Time
-	Valid bool
+	Time  time.Time // Time contains the timestamp adjusted to the stored Firebird time zone.
+	Valid bool      // Valid is false when the value represents SQL NULL.
 	tzRaw uint16
 }
 
+// ScanTimestamptz implements [TimestamptzScanner].
 func (tstz *Timestamptz) ScanTimestamptz(v Timestamptz) error {
 	*tstz = v
 	return nil
 }
 
+// TimestamptzValue implements [TimestamptzValuer].
 func (tstz Timestamptz) TimestamptzValue() (Timestamptz, error) {
 	return tstz, nil
 }
 
-// Scan implements the database/sql Scanner interface.
+// Scan implements the [database/sql.Scanner] interface.
 func (tstz *Timestamptz) Scan(src any) error {
 	if src == nil {
 		*tstz = Timestamptz{}
@@ -50,7 +59,7 @@ func (tstz *Timestamptz) Scan(src any) error {
 	return fmt.Errorf("cannot scan %T into Timestamptz", src)
 }
 
-// Value implements the database/sql/driver Valuer interface.
+// Value implements the [database/sql/driver.Valuer] interface.
 func (tstz Timestamptz) Value() (driver.Value, error) {
 	if !tstz.Valid {
 		return nil, nil
@@ -59,6 +68,7 @@ func (tstz Timestamptz) Value() (driver.Value, error) {
 	return tstz.Time, nil
 }
 
+// MarshalJSON encodes tstz as a JSON RFC3339 timestamp string or null.
 func (tstz Timestamptz) MarshalJSON() ([]byte, error) {
 	if !tstz.Valid {
 		return []byte("null"), nil
@@ -69,6 +79,7 @@ func (tstz Timestamptz) MarshalJSON() ([]byte, error) {
 	return json.Marshal(s)
 }
 
+// UnmarshalJSON decodes a JSON RFC3339 timestamp string or null into tstz.
 func (tstz *Timestamptz) UnmarshalJSON(b []byte) error {
 	var s *string
 	err := json.Unmarshal(b, &s)
@@ -91,8 +102,10 @@ func (tstz *Timestamptz) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// TimestamptzCodec encodes and decodes Firebird TIMESTAMP WITH TIME ZONE values.
 type TimestamptzCodec struct{}
 
+// PlanEncode returns an encode plan for supported Firebird TIMESTAMP WITH TIME ZONE input values.
 func (*TimestamptzCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	switch value.(type) {
 	case TimestamptzValuer:
@@ -180,6 +193,7 @@ func (encodePlanTimestamptzCodecBinaryString) Encode(value any, buf []byte) ([]b
 	return encodeTimestamptzBinary(buf, ts)
 }
 
+// PlanScan returns a scan plan for supported Firebird TIMESTAMP WITH TIME ZONE target values.
 func (c *TimestamptzCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
 	switch target.(type) {
 	case TimestamptzScanner:
@@ -270,6 +284,7 @@ func (plan *scanPlanBinaryTimestamptzToStringScanner) Scan(src []byte, dst any) 
 	return nil
 }
 
+// DecodeDatabaseSQLValue decodes src into a database/sql driver value.
 func (c *TimestamptzCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
@@ -284,6 +299,7 @@ func (c *TimestamptzCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetad
 	return tstz.Time, nil
 }
 
+// DecodeValue decodes src into the default Go value for Firebird TIMESTAMP WITH TIME ZONE.
 func (c *TimestamptzCodec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
@@ -360,10 +376,14 @@ func tzRawFromTime(t time.Time) (uint16, error) {
 	}
 
 	_, offsetSeconds := t.Zone()
+	if offsetSeconds%60 != 0 {
+		return 0, fmt.Errorf("UTC offset %d seconds is not representable by Firebird time zone", offsetSeconds)
+	}
+
 	offsetMinutes := offsetSeconds / 60
 
-	if offsetMinutes < -1439 || offsetMinutes > 1438 {
-		return 0, fmt.Errorf("timestamptz: UTC offset %d minutes out of range", offsetMinutes)
+	if offsetMinutes < -1439 || offsetMinutes > 1439 {
+		return 0, fmt.Errorf("UTC offset %d minutes out of range", offsetMinutes)
 	}
 
 	return uint16(offsetMinutes + 1439), nil

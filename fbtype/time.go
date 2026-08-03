@@ -55,33 +55,39 @@ func timeWithDate(t time.Time, date time.Time) time.Time {
 	)
 }
 
+// TimeScanner scans a Firebird TIME value.
 type TimeScanner interface {
+	// ScanTime scans v into the receiver.
 	ScanTime(v Time) error
 }
 
+// TimeValuer returns a Firebird TIME value.
 type TimeValuer interface {
+	// TimeValue returns the Firebird TIME value to encode.
 	TimeValue() (Time, error)
 }
 
-// Time represents the Firebird time type. The Firebird time is a time of day without time zone.
+// Time represents the Firebird TIME type. Firebird TIME is a time of day without time zone.
 //
-// Time is represented as the number of 100 microseconds since midnight in the same way that Firebird does. Other time and
-// date types in fbtype can use time.Time as the underlying representation.
+// Time is represented as microseconds since midnight. Firebird stores TIME on the wire as the number of
+// 100-microsecond ticks since midnight. Valid is false when the value represents SQL NULL.
 type Time struct {
-	Microseconds int64 // Number of 100 microseconds since midnight
-	Valid        bool
+	Microseconds int64 // Microseconds since midnight.
+	Valid        bool  // Valid is false when the value represents SQL NULL.
 }
 
+// ScanTime implements [TimeScanner].
 func (t *Time) ScanTime(v Time) error {
 	*t = v
 	return nil
 }
 
+// TimeValue implements [TimeValuer].
 func (t Time) TimeValue() (Time, error) {
 	return t, nil
 }
 
-// Scan implements the database/sql Scanner interface.
+// Scan implements the [database/sql.Scanner] interface.
 func (t *Time) Scan(src any) error {
 	if src == nil {
 		*t = Time{}
@@ -108,7 +114,7 @@ func (t *Time) Scan(src any) error {
 	return fmt.Errorf("cannot scan %T", src)
 }
 
-// Value implements the database/sql/driver Valuer interface.
+// Value implements the [database/sql/driver.Valuer] interface.
 func (t Time) Value() (driver.Value, error) {
 	if !t.Valid {
 		return nil, nil
@@ -122,8 +128,10 @@ func (t Time) Value() (driver.Value, error) {
 	return string(buf), err
 }
 
+// TimeCodec encodes and decodes Firebird TIME values.
 type TimeCodec struct{}
 
+// PlanEncode returns an encode plan for supported Firebird TIME input values.
 func (TimeCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	switch value.(type) {
 	case TimeValuer:
@@ -266,6 +274,7 @@ func (encodePlanTimeCodecBinaryTime) Encode(value any, buf []byte) ([]byte, erro
 	return buf, nil
 }
 
+// PlanScan returns a scan plan for supported Firebird TIME target values.
 func (TimeCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
 	switch target.(type) {
 	case TimeScanner:
@@ -363,10 +372,12 @@ func (scanPlanBinaryTimeToString) Scan(src []byte, dst any) error {
 	return nil
 }
 
+// DecodeDatabaseSQLValue decodes src into a database/sql driver value.
 func (c TimeCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
 	return codecDecodeToTextFormat(c, m, typeMetadata, src)
 }
 
+// DecodeValue decodes src into the default Go value for Firebird TIME.
 func (c TimeCodec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil

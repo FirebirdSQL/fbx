@@ -15,31 +15,39 @@ import (
 
 // TimetzScanner scans a Firebird TIME WITH TIME ZONE value.
 type TimetzScanner interface {
+	// ScanTimetz scans v into the receiver.
 	ScanTimetz(v Timetz) error
 }
 
 // TimetzValuer returns a Firebird TIME WITH TIME ZONE value.
 type TimetzValuer interface {
+	// TimetzValue returns the Firebird TIME WITH TIME ZONE value to encode.
 	TimetzValue() (Timetz, error)
 }
 
 // Timetz represents the Firebird TIME WITH TIME ZONE type.
+//
+// Time contains the decoded time of day and time zone on Firebird's TIME WITH TIME ZONE base date,
+// 2020-01-01. The date is fixed only so Go can represent the value as time.Time; Firebird TIME WITH
+// TIME ZONE itself does not store a date. Valid is false when the value represents SQL NULL.
 type Timetz struct {
-	Time  time.Time
-	Valid bool
+	Time  time.Time // Time contains the decoded time of day and time zone on Firebird's 2020-01-01 base date.
+	Valid bool      // Valid is false when the value represents SQL NULL.
 	tzRaw uint16
 }
 
+// ScanTimetz implements [TimetzScanner].
 func (ttz *Timetz) ScanTimetz(v Timetz) error {
 	*ttz = v
 	return nil
 }
 
+// TimetzValue implements [TimetzValuer].
 func (ttz Timetz) TimetzValue() (Timetz, error) {
 	return ttz, nil
 }
 
-// Scan implements the database/sql Scanner interface.
+// Scan implements the [database/sql.Scanner] interface.
 func (ttz *Timetz) Scan(src any) error {
 	if src == nil {
 		*ttz = Timetz{}
@@ -64,7 +72,7 @@ func (ttz *Timetz) Scan(src any) error {
 	return fmt.Errorf("cannot scan %T into Timetz", src)
 }
 
-// Value implements the database/sql/driver Valuer interface.
+// Value implements the [database/sql/driver.Valuer] interface.
 func (ttz Timetz) Value() (driver.Value, error) {
 	if !ttz.Valid {
 		return nil, nil
@@ -73,14 +81,21 @@ func (ttz Timetz) Value() (driver.Value, error) {
 	return ttz.Time, nil
 }
 
+// MarshalJSON encodes ttz as a JSON Firebird TIME WITH TIME ZONE string or null.
 func (ttz Timetz) MarshalJSON() ([]byte, error) {
 	if !ttz.Valid {
 		return []byte("null"), nil
 	}
 
-	return json.Marshal(formatTimetzString(ttz.Time))
+	s, err := formatTimetzString(ttz)
+	if err != nil {
+		return nil, err
+	}
+
+	return json.Marshal(s)
 }
 
+// UnmarshalJSON decodes a JSON time-with-time-zone string or null into ttz.
 func (ttz *Timetz) UnmarshalJSON(b []byte) error {
 	var s *string
 	err := json.Unmarshal(b, &s)
@@ -105,6 +120,7 @@ func (ttz *Timetz) UnmarshalJSON(b []byte) error {
 // TimetzCodec encodes and decodes Firebird TIME WITH TIME ZONE values.
 type TimetzCodec struct{}
 
+// PlanEncode returns an encode plan for supported Firebird TIME WITH TIME ZONE input values.
 func (*TimetzCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	switch value.(type) {
 	case TimetzValuer:
@@ -165,6 +181,7 @@ func (encodePlanTimetzCodecBinaryString) Encode(value any, buf []byte) ([]byte, 
 	return encodeTimetzBinary(buf, ttz)
 }
 
+// PlanScan returns a scan plan for supported Firebird TIME WITH TIME ZONE target values.
 func (c *TimetzCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
 	switch target.(type) {
 	case TimetzScanner:
@@ -233,8 +250,7 @@ func (plan *scanPlanBinaryTimetzToStringScanner) Scan(src []byte, dst any) error
 	}
 
 	if src == nil {
-		*ptr = ""
-		return nil
+		return fmt.Errorf("cannot scan NULL into *string")
 	}
 
 	ttz, err := decodeTimetzBinary(src)
@@ -242,11 +258,15 @@ func (plan *scanPlanBinaryTimetzToStringScanner) Scan(src []byte, dst any) error
 		return err
 	}
 	if !ttz.Valid {
-		*ptr = ""
-		return nil
+		return fmt.Errorf("cannot scan NULL into *string")
 	}
 
-	*ptr = formatTimetzString(ttz.Time)
+	s, err := formatTimetzString(ttz)
+	if err != nil {
+		return err
+	}
+
+	*ptr = s
 	return nil
 }
 
@@ -267,9 +287,15 @@ func (plan *scanPlanBinaryTimetzToTextScanner) Scan(src []byte, dst any) error {
 		return err
 	}
 
-	return scanner.ScanText(Text{String: formatTimetzString(ttz.Time), Valid: ttz.Valid})
+	s, err := formatTimetzString(ttz)
+	if err != nil {
+		return err
+	}
+
+	return scanner.ScanText(Text{String: s, Valid: ttz.Valid})
 }
 
+// DecodeDatabaseSQLValue decodes src into a database/sql driver value.
 func (c *TimetzCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
@@ -284,6 +310,7 @@ func (c *TimetzCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, 
 	return ttz.Time, nil
 }
 
+// DecodeValue decodes src into the default Go value for Firebird TIME WITH TIME ZONE.
 func (c *TimetzCodec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
@@ -543,16 +570,25 @@ func parseTimetzOffset(s string) (offsetMinutes int, ok bool, err error) {
 	return sign * total, true, nil
 }
 
-func formatTimetzString(t time.Time) string {
-	_, offsetSeconds := t.Zone()
-	offsetMinutes := offsetSeconds / 60
+func formatTimetzString(ttz Timetz) (string, error) {
+	tzRaw := ttz.tzRaw
+	if tzRaw == 0 {
+		var err error
+		tzRaw, err = tzRawFromTime(ttz.Time)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	loc := fbproto.ResolveLocationByTzRaw(tzRaw)
+	t := ttz.Time.In(loc)
 	return fmt.Sprintf("%02d:%02d:%02d.%06d %s",
 		t.Hour(),
 		t.Minute(),
 		t.Second(),
 		t.Nanosecond()/1000,
-		formatTimetzOffsetName(offsetMinutes),
-	)
+		loc.String(),
+	), nil
 }
 
 func formatTimetzOffsetName(offsetMinutes int) string {

@@ -71,6 +71,22 @@ func TestTimetzCodecRoundTripOffsetLocation(t *testing.T) {
 	}
 }
 
+func TestTimetzCodecRejectsSubMinuteOffset(t *testing.T) {
+	var c TimetzCodec
+
+	in := time.Date(2025, 12, 10, 12, 0, 0, 0, time.FixedZone("+00:00:30", 30))
+	typeMetadata := NewTypeMetadata(fbproto.SQL_TYPE_TIME_TZ, 0, 0, 0)
+
+	planEnc := c.PlanEncode(nil, typeMetadata, in)
+	if planEnc == nil {
+		t.Fatalf("PlanEncode returned nil for time.Time")
+	}
+
+	if _, err := planEnc.Encode(in, nil); err == nil {
+		t.Fatalf("Encode expected sub-minute offset error, got nil")
+	}
+}
+
 func TestTimetzCodecRoundTripNamedLocation(t *testing.T) {
 	var c TimetzCodec
 
@@ -297,27 +313,47 @@ func TestTimetzCodecRoundTripString(t *testing.T) {
 func TestTimetzCodecScansStringAndText(t *testing.T) {
 	var c TimetzCodec
 	typeMetadata := NewTypeMetadata(fbproto.SQL_TYPE_TIME_TZ, 0, 0, 0)
-	in := time.Date(2025, 12, 10, 18, 0, 0, 123400000, time.FixedZone("+03:00", 3*60*60))
 
-	buf, err := c.PlanEncode(nil, typeMetadata, in).Encode(in, nil)
-	if err != nil {
-		t.Fatalf("Encode failed: %v", err)
+	tests := []struct {
+		name  string
+		input any
+		want  string
+	}{
+		{
+			name:  "offset zone",
+			input: time.Date(2025, 12, 10, 18, 0, 0, 123400000, time.FixedZone("+03:00", 3*60*60)),
+			want:  "18:00:00.123400 +03:00",
+		},
+		{
+			name:  "named zone",
+			input: "11:31 Europe/Moscow",
+			want:  "11:31:00.000000 Europe/Moscow",
+		},
 	}
 
-	var gotString string
-	if err := c.PlanScan(nil, typeMetadata, &gotString).Scan(buf, &gotString); err != nil {
-		t.Fatalf("Scan string failed: %v", err)
-	}
-	if gotString != "18:00:00.123400 +03:00" {
-		t.Fatalf("string scan = %q, want %q", gotString, "18:00:00.123400 +03:00")
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf, err := c.PlanEncode(nil, typeMetadata, tt.input).Encode(tt.input, nil)
+			if err != nil {
+				t.Fatalf("Encode failed: %v", err)
+			}
 
-	var gotText Text
-	if err := c.PlanScan(nil, typeMetadata, &gotText).Scan(buf, &gotText); err != nil {
-		t.Fatalf("Scan Text failed: %v", err)
-	}
-	if !gotText.Valid || gotText.String != gotString {
-		t.Fatalf("Text scan = %#v, want valid %q", gotText, gotString)
+			var gotString string
+			if err := c.PlanScan(nil, typeMetadata, &gotString).Scan(buf, &gotString); err != nil {
+				t.Fatalf("Scan string failed: %v", err)
+			}
+			if gotString != tt.want {
+				t.Fatalf("string scan = %q, want %q", gotString, tt.want)
+			}
+
+			var gotText Text
+			if err := c.PlanScan(nil, typeMetadata, &gotText).Scan(buf, &gotText); err != nil {
+				t.Fatalf("Scan Text failed: %v", err)
+			}
+			if !gotText.Valid || gotText.String != gotString {
+				t.Fatalf("Text scan = %#v, want valid %q", gotText, gotString)
+			}
+		})
 	}
 }
 
@@ -352,6 +388,21 @@ func TestTimetzCodecScanNullToTimeReturnsError(t *testing.T) {
 
 	if err := planScan.Scan(nil, &got); err == nil {
 		t.Fatalf("Scan expected error for NULL into *time.Time, got nil")
+	}
+}
+
+func TestTimetzCodecScanNullToStringReturnsError(t *testing.T) {
+	var c TimetzCodec
+	typeMetadata := NewTypeMetadata(fbproto.SQL_TYPE_TIME_TZ, 0, 0, 0)
+
+	var got string
+	planScan := c.PlanScan(nil, typeMetadata, &got)
+	if planScan == nil {
+		t.Fatalf("PlanScan returned nil for *string")
+	}
+
+	if err := planScan.Scan(nil, &got); err == nil {
+		t.Fatalf("Scan expected error for NULL into *string, got nil")
 	}
 }
 
@@ -421,6 +472,57 @@ func TestTimetzScanValueAndJSON(t *testing.T) {
 	}
 	if ttz.Valid {
 		t.Fatalf("ttz.Valid = true, want false after Scan(nil)")
+	}
+}
+
+func TestTimetzMarshalJSONPreservesNamedZone(t *testing.T) {
+	var parsed Timetz
+	if err := parsed.Scan("11:31 Europe/Moscow"); err != nil {
+		t.Fatalf("Scan failed: %v", err)
+	}
+
+	b, err := json.Marshal(parsed)
+	if err != nil {
+		t.Fatalf("MarshalJSON failed: %v", err)
+	}
+	if string(b) != `"11:31:00.000000 Europe/Moscow"` {
+		t.Fatalf("JSON = %s, want %s", b, `"11:31:00.000000 Europe/Moscow"`)
+	}
+
+	locMoscow := mustLoadLocation(t, "Europe/Moscow")
+	constructed := Timetz{
+		Time:  time.Date(2025, 12, 17, 10, 16, 43, 123400000, locMoscow),
+		Valid: true,
+	}
+
+	b, err = json.Marshal(constructed)
+	if err != nil {
+		t.Fatalf("MarshalJSON failed: %v", err)
+	}
+	if string(b) != `"10:16:43.123400 Europe/Moscow"` {
+		t.Fatalf("JSON = %s, want %s", b, `"10:16:43.123400 Europe/Moscow"`)
+	}
+
+	var decoded Timetz
+	if err := json.Unmarshal(b, &decoded); err != nil {
+		t.Fatalf("UnmarshalJSON failed: %v", err)
+	}
+	if !decoded.Valid {
+		t.Fatalf("decoded.Valid = false, want true")
+	}
+	if decoded.Time.Location().String() != "Europe/Moscow" {
+		t.Fatalf("decoded location = %q, want Europe/Moscow", decoded.Time.Location().String())
+	}
+}
+
+func TestTimetzMarshalJSONRejectsSubMinuteOffset(t *testing.T) {
+	ttz := Timetz{
+		Time:  time.Date(2025, 12, 10, 12, 0, 0, 0, time.FixedZone("+00:00:30", 30)),
+		Valid: true,
+	}
+
+	if _, err := json.Marshal(ttz); err == nil {
+		t.Fatalf("MarshalJSON expected sub-minute offset error, got nil")
 	}
 }
 
