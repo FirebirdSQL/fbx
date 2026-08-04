@@ -38,7 +38,9 @@ type DateValuer interface {
 
 // Date represents the Firebird DATE type.
 //
-// Time contains the date normalized to midnight UTC. Valid is false when the value represents SQL NULL.
+// Time contains the date normalized to midnight UTC. Firebird DATE stores only
+// the calendar date, so time-of-day and location are discarded when values are
+// encoded or scanned. Valid is false when the value represents SQL NULL.
 type Date struct {
 	Time  time.Time // Time contains the date normalized to midnight UTC.
 	Valid bool      // Valid is false when the value represents SQL NULL.
@@ -89,7 +91,7 @@ func (src Date) Value() (driver.Value, error) {
 		return nil, nil
 	}
 
-	return src.Time, nil
+	return normalizeFirebirdDate(src.Time)
 }
 
 // MarshalJSON encodes src as a JSON string in YYYY-MM-DD format or null.
@@ -215,7 +217,10 @@ func (DateCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPla
 type scanPlanBinaryDateToDateScanner struct{}
 
 func (scanPlanBinaryDateToDateScanner) Scan(src []byte, dst any) error {
-	scanner := (dst).(DateScanner)
+	scanner, ok := dst.(DateScanner)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
 
 	if src == nil {
 		return scanner.ScanDate(Date{})
@@ -263,8 +268,7 @@ func (scanPlanBinaryDateToString) Scan(src []byte, dst any) error {
 	}
 
 	if src == nil {
-		*s = ""
-		return nil
+		return fmt.Errorf("cannot scan NULL into *string")
 	}
 
 	if len(src) != 4 {
@@ -286,7 +290,10 @@ func (scanPlanBinaryDateToString) Scan(src []byte, dst any) error {
 type scanPlanTextAnyToDateScanner struct{}
 
 func (scanPlanTextAnyToDateScanner) Scan(src []byte, dst any) error {
-	scanner := (dst).(DateScanner)
+	scanner, ok := dst.(DateScanner)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
 
 	if src == nil {
 		return scanner.ScanDate(Date{})
