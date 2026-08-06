@@ -265,6 +265,54 @@ func ExampleNamedArgs() {
 	// Robert
 }
 
+func ExampleStructArgs() {
+	type EmployeeFilter struct {
+		EmpNo int32 `db:"emp_no"`
+	}
+
+	sql, args, err := fbx.StructArgs(EmployeeFilter{EmpNo: 2}).RewriteQuery(
+		context.Background(),
+		nil,
+		"select first_name from employee where emp_no=@emp_no",
+		nil,
+	)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	fmt.Println(sql)
+	fmt.Println(args)
+
+	// Output:
+	// select first_name from employee where emp_no=?
+	// [2]
+}
+
+func ExampleStrictStructArgs() {
+	type EmployeeFilter struct {
+		EmpNo int32 `db:"emp_no"`
+	}
+
+	sql, args, err := fbx.StrictStructArgs(EmployeeFilter{EmpNo: 2}).RewriteQuery(
+		context.Background(),
+		nil,
+		"select first_name from employee where emp_no=@emp_no",
+		nil,
+	)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	fmt.Println(sql)
+	fmt.Println(args)
+
+	// Output:
+	// select first_name from employee where emp_no=?
+	// [2]
+}
+
 func ExampleConn_BeginTx() {
 	ctx := context.Background()
 	dsn := "firebird://sysdba:masterkey@localhost:3050/employee"

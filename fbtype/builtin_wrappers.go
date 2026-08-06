@@ -1,12 +1,9 @@
 package fbtype
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"math/big"
-	"net"
-	"net/netip"
 	"reflect"
 	"time"
 )
@@ -468,99 +465,6 @@ func (w timeWrapper) TimeValue() (Time, error) {
 	return Time{Microseconds: timeOfDayMicroseconds(t), Valid: true}, nil
 }
 
-type netIPNetWrapper net.IPNet
-
-func (w *netIPNetWrapper) ScanNetipPrefix(v netip.Prefix) error {
-	if !v.IsValid() {
-		return fmt.Errorf("cannot scan NULL into *net.IPNet")
-	}
-
-	*w = netIPNetWrapper{
-		IP:   v.Addr().AsSlice(),
-		Mask: net.CIDRMask(v.Bits(), v.Addr().BitLen()),
-	}
-
-	return nil
-}
-func (w netIPNetWrapper) NetipPrefixValue() (netip.Prefix, error) {
-	ip, ok := netip.AddrFromSlice(w.IP)
-	if !ok {
-		return netip.Prefix{}, errors.New("invalid net.IPNet")
-	}
-
-	ones, _ := w.Mask.Size()
-
-	return netip.PrefixFrom(ip, ones), nil
-}
-
-type netIPWrapper net.IP
-
-func (w netIPWrapper) SkipUnderlyingTypePlan() {}
-
-func (w *netIPWrapper) ScanNetipPrefix(v netip.Prefix) error {
-	if !v.IsValid() {
-		*w = nil
-		return nil
-	}
-
-	if v.Addr().BitLen() != v.Bits() {
-		return fmt.Errorf("cannot scan %v to *net.IP", v)
-	}
-
-	*w = netIPWrapper(v.Addr().AsSlice())
-	return nil
-}
-
-func (w netIPWrapper) NetipPrefixValue() (netip.Prefix, error) {
-	if w == nil {
-		return netip.Prefix{}, nil
-	}
-
-	addr, ok := netip.AddrFromSlice([]byte(w))
-	if !ok {
-		return netip.Prefix{}, errors.New("invalid net.IP")
-	}
-
-	return netip.PrefixFrom(addr, addr.BitLen()), nil
-}
-
-type netipPrefixWrapper netip.Prefix
-
-func (w *netipPrefixWrapper) ScanNetipPrefix(v netip.Prefix) error {
-	*w = netipPrefixWrapper(v)
-	return nil
-}
-
-func (w netipPrefixWrapper) NetipPrefixValue() (netip.Prefix, error) {
-	return netip.Prefix(w), nil
-}
-
-type netipAddrWrapper netip.Addr
-
-func (w *netipAddrWrapper) ScanNetipPrefix(v netip.Prefix) error {
-	if !v.IsValid() {
-		*w = netipAddrWrapper(netip.Addr{})
-		return nil
-	}
-
-	if v.Addr().BitLen() != v.Bits() {
-		return fmt.Errorf("cannot scan %v to netip.Addr", v)
-	}
-
-	*w = netipAddrWrapper(v.Addr())
-
-	return nil
-}
-
-func (w netipAddrWrapper) NetipPrefixValue() (netip.Prefix, error) {
-	addr := (netip.Addr)(w)
-	if !addr.IsValid() {
-		return netip.Prefix{}, nil
-	}
-
-	return netip.PrefixFrom(addr, addr.BitLen()), nil
-}
-
 type fmtStringerWrapper struct {
 	s fmt.Stringer
 }
@@ -591,42 +495,8 @@ func (w byteSliceWrapper) TextValue() (Text, error) {
 	return Text{String: string(w), Valid: true}, nil
 }
 
-// structWrapper implements CompositeIndexGetter for a struct.
-type structWrapper struct {
-	s              any
-	exportedFields []reflect.Value
-}
-
-func (w structWrapper) IsNull() bool {
-	return w.s == nil
-}
-
-func (w structWrapper) Index(i int) any {
-	if i >= len(w.exportedFields) {
-		return fmt.Errorf("%#v only has %d public fields - %d is out of bounds", w.s, len(w.exportedFields), i)
-	}
-
-	return w.exportedFields[i].Interface()
-}
-
-// ptrStructWrapper implements CompositeIndexScanner for a pointer to a struct.
-type ptrStructWrapper struct {
-	s              any
-	exportedFields []reflect.Value
-}
-
-func (w *ptrStructWrapper) ScanNull() error {
-	return fmt.Errorf("cannot scan NULL into %#v", w.s)
-}
-
-func (w *ptrStructWrapper) ScanIndex(i int) any {
-	if i >= len(w.exportedFields) {
-		return fmt.Errorf("%#v only has %d public fields - %d is out of bounds", w.s, len(w.exportedFields), i)
-	}
-
-	return w.exportedFields[i].Addr().Interface()
-}
-
+// anySliceArrayReflect exposes an arbitrary single-dimensional slice as an
+// ArrayGetter or ArraySetter when no specialized FlatArray[T] conversion exists.
 type anySliceArrayReflect struct {
 	slice reflect.Value
 }
@@ -661,6 +531,10 @@ func (a *anySliceArrayReflect) ScanIndex(i int) any {
 	return a.slice.Index(i).Addr().Interface()
 }
 
+// anyMultiDimSliceArray exposes a rectangular multi-dimensional slice as an
+// ArrayGetter or ArraySetter. During scanning SetDimensions rebuilds the nested
+// slices from source dimensions and then keeps a flat backing slice so ScanIndex
+// can address elements by linear index.
 type anyMultiDimSliceArray struct {
 	slice      reflect.Value
 	dimensions []ArrayDimension
@@ -792,6 +666,10 @@ func (a *anyMultiDimSliceArray) ScanIndex(i int) any {
 	return a.slice.Index(i).Addr().Interface()
 }
 
+// anyArrayArrayReflect exposes a fixed-length one-dimensional Go array as an
+// ArrayGetter or ArraySetter. SetDimensions validates that the source array
+// length matches the fixed Go array length because the destination cannot grow,
+// shrink, or represent SQL NULL.
 type anyArrayArrayReflect struct {
 	array reflect.Value
 }

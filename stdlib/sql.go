@@ -518,10 +518,10 @@ func (c *Conn) Ping(ctx context.Context) error {
 
 	err := c.conn.Ping(ctx)
 	if err != nil {
-		// A Ping failure implies some sort of fatal state. The connection is almost certainly already closed by the
-		// failure, but manually close it just to be sure.
-		c.Close()
-		return driver.ErrBadConn
+		if c.conn.IsClosed() {
+			return driver.ErrBadConn
+		}
+		return err
 	}
 
 	return nil

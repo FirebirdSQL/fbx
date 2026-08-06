@@ -27,10 +27,10 @@ func isExpectedEqBytes(a any) func(any) bool {
 	}
 }
 
-func TestByteaCodecPlanEncodeString(t *testing.T) {
+func TestOctetsCodecPlanEncodeString(t *testing.T) {
 	t.Parallel()
 
-	plan := fbtype.ByteaCodec{}.PlanEncode(nil, fbtype.TypeMetadata{}, "random_str")
+	plan := fbtype.OctetsCodec{}.PlanEncode(nil, fbtype.TypeMetadata{}, "random_str")
 	require.NotNil(t, plan)
 
 	buf, err := plan.Encode("random_str", nil)
@@ -58,10 +58,10 @@ func TestOctetsStringParamWithCryptHash(t *testing.T) {
 	})
 }
 
-func TestByteaCodecPlanEncodeEmptyString(t *testing.T) {
+func TestOctetsCodecPlanEncodeEmptyString(t *testing.T) {
 	t.Parallel()
 
-	plan := fbtype.ByteaCodec{}.PlanEncode(nil, fbtype.TypeMetadata{}, "")
+	plan := fbtype.OctetsCodec{}.PlanEncode(nil, fbtype.TypeMetadata{}, "")
 	require.NotNil(t, plan)
 
 	buf, err := plan.Encode("", nil)

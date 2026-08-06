@@ -374,7 +374,15 @@ func (scanPlanBinaryTimeToString) Scan(src []byte, dst any) error {
 
 // DecodeDatabaseSQLValue decodes src into a database/sql driver value.
 func (c TimeCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
-	return codecDecodeToTextFormat(c, m, typeMetadata, src)
+	if src == nil {
+		return nil, nil
+	}
+
+	_, formatted, err := decodeTimeBinary(src)
+	if err != nil {
+		return nil, err
+	}
+	return formatted, nil
 }
 
 // DecodeValue decodes src into the default Go value for Firebird TIME.

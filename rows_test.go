@@ -678,7 +678,6 @@ recreate table products (
 		return
 	}
 
-	//FIXME: fbx rewrite someday with batch insert?
 	conn.Exec(ctx, `insert into products (name, price) values ('Cheeseburger', 10)`)
 	conn.Exec(ctx, `insert into products (name, price) values ('Double Cheeseburger', 14)`)
 	conn.Exec(ctx, `insert into products (name, price) values ('Fries', 5)`)
@@ -855,7 +854,6 @@ recreate table products (
 		return
 	}
 
-	//FIXME: fbx rewrite someday with batch insert?
 	conn.Exec(ctx, `insert into products (name, price) values ('Cheeseburger', 10)`)
 	conn.Exec(ctx, `insert into products (name, price) values ('Double Cheeseburger', 14)`)
 	conn.Exec(ctx, `insert into products (name, price) values ('Fries', 5)`)
@@ -981,41 +979,6 @@ func TestRowToStructByNameLaxEmbeddedStruct(t *testing.T) {
 		rows, _ = conn.Query(ctx, `select 'Smith' as last_name, n as age, null as ignore from (`+generateSeriesQuery("0", "9", "n")+`)`)
 		_, err = fbx.CollectRows(rows, fbx.RowToAddrOfStructByNameLax[person])
 		assert.ErrorContains(t, err, "struct doesn't have corresponding row field IGNORE")
-	})
-}
-
-func TestRowToStructByNameLaxRowValue(t *testing.T) {
-	//FIXME: need row type support
-	t.Skip("need implementation in RDB")
-	type AnotherTable struct{}
-	type User struct {
-		UserID int    `json:"userId" db:"USER_ID"`
-		Name   string `json:"name" db:"NAME"`
-	}
-	type UserAPIKey struct {
-		UserAPIKeyID int `json:"userApiKeyId" db:"USER_API_KEY_ID"`
-		UserID       int `json:"userId" db:"USER_ID"`
-
-		User         *User         `json:"user" db:"USR"`
-		AnotherTable *AnotherTable `json:"anotherTable" db:"ANOTHER_TABLE"`
-	}
-
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		rows, _ := conn.Query(ctx, `
-		WITH user_api_keys AS (
-			SELECT 1 AS user_id, 101 AS user_api_key_id, 'abc123' AS api_key from rdb$database
-		), users AS (
-			SELECT 1 AS user_id, 'John Doe' AS name from rdb$database
-		)
-		SELECT user_api_keys.user_api_key_id, user_api_keys.user_id, row(users.*) as user
-		FROM user_api_keys
-		LEFT JOIN users ON users.user_id = user_api_keys.user_id
-		WHERE user_api_keys.api_key = 'abc123';
-		`)
-		slice, err := fbx.CollectRows(rows, fbx.RowToStructByNameLax[UserAPIKey])
-
-		assert.NoError(t, err)
-		assert.ElementsMatch(t, slice, []UserAPIKey{{UserAPIKeyID: 101, UserID: 1, User: &User{UserID: 1, Name: "John Doe"}, AnotherTable: nil}})
 	})
 }
 

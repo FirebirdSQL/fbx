@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"os"
 	"reflect"
-	"regexp"
 	"strconv"
 	"sync"
 	"testing"
@@ -27,12 +26,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var (
-	serverMajorVersionCheckOnce sync.Once
-	serverMajorVersionValue     int
-	engineMajorRegexp           = regexp.MustCompile(`\d+`)
-)
-
 func openDB(t testing.TB, opts ...stdlib.OptionOpenDB) *sql.DB {
 	t.Helper()
 	config, err := fbx.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
@@ -42,28 +35,17 @@ func openDB(t testing.TB, opts ...stdlib.OptionOpenDB) *sql.DB {
 
 func getServerMajorVersion(t testing.TB, db *sql.DB) int {
 	t.Helper()
-	serverMajorVersionCheckOnce.Do(func() {
-		var version string
-		err := db.QueryRow("select rdb$get_context('SYSTEM','ENGINE_VERSION') from rdb$database").Scan(&version)
-		require.NoError(t, err)
+	conn, err := db.Conn(context.Background())
+	require.NoError(t, err)
+	defer conn.Close()
 
-		major, ok := parseEngineMajorVersion(version)
-		require.Truef(t, ok, "failed to parse engine version: %q", version)
-		serverMajorVersionValue = major
+	var major int
+	err = conn.Raw(func(driverConn any) error {
+		major = driverConn.(*stdlib.Conn).Conn().ServerVersion().Major
+		return nil
 	})
-	return serverMajorVersionValue
-}
-
-func parseEngineMajorVersion(version string) (int, bool) {
-	match := engineMajorRegexp.FindString(version)
-	if match == "" {
-		return 0, false
-	}
-	major, err := strconv.Atoi(match)
-	if err != nil {
-		return 0, false
-	}
-	return major, true
+	require.NoError(t, err)
+	return major
 }
 
 func closeDB(t testing.TB, db *sql.DB) {
