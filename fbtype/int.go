@@ -12,20 +12,29 @@ import (
 	"rdb.red-soft.ru/fbx/internal/fbio"
 )
 
+// Int64Scanner scans a Firebird integer value represented as [Int8].
 type Int64Scanner interface {
+	// ScanInt64 scans n into the receiver.
 	ScanInt64(Int8) error
 }
 
+// Int64Valuer returns a Firebird integer value represented as [Int8].
 type Int64Valuer interface {
+	// Int64Value returns the Firebird integer value to encode.
 	Int64Value() (Int8, error)
 }
 
+// Int2 represents the Firebird SMALLINT type.
+//
+// Firebird sends SMALLINT values as 4-byte row values in DSQL, but Int2 keeps
+// the Go-side value at the natural 16-bit width. Valid is false when the value
+// represents SQL NULL.
 type Int2 struct {
 	Int16 int16
 	Valid bool
 }
 
-// ScanInt64 implements the Int64Scanner interface.
+// ScanInt64 implements [Int64Scanner].
 func (dst *Int2) ScanInt64(n Int8) error {
 	if !n.Valid {
 		*dst = Int2{}
@@ -33,9 +42,11 @@ func (dst *Int2) ScanInt64(n Int8) error {
 	}
 
 	if n.Int64 < math.MinInt16 {
+		*dst = Int2{}
 		return fmt.Errorf("%d is less than minimum value for Int2", n.Int64)
 	}
 	if n.Int64 > math.MaxInt16 {
+		*dst = Int2{}
 		return fmt.Errorf("%d is greater than maximum value for Int2", n.Int64)
 	}
 	*dst = Int2{Int16: int16(n.Int64), Valid: true}
@@ -43,11 +54,12 @@ func (dst *Int2) ScanInt64(n Int8) error {
 	return nil
 }
 
+// Int64Value implements [Int64Valuer].
 func (n Int2) Int64Value() (Int8, error) {
 	return Int8{Int64: int64(n.Int16), Valid: n.Valid}, nil
 }
 
-// Scan implements the database/sql Scanner interface.
+// Scan implements the [database/sql.Scanner] interface.
 func (dst *Int2) Scan(src any) error {
 	if src == nil {
 		*dst = Int2{}
@@ -63,22 +75,27 @@ func (dst *Int2) Scan(src any) error {
 		var err error
 		n, err = strconv.ParseInt(src, 10, 16)
 		if err != nil {
+			*dst = Int2{}
 			return err
 		}
 	case []byte:
 		var err error
 		n, err = strconv.ParseInt(string(src), 10, 16)
 		if err != nil {
+			*dst = Int2{}
 			return err
 		}
 	default:
+		*dst = Int2{}
 		return fmt.Errorf("cannot scan %T", src)
 	}
 
 	if n < math.MinInt16 {
+		*dst = Int2{}
 		return fmt.Errorf("%d is less than minimum value for Int2", n)
 	}
 	if n > math.MaxInt16 {
+		*dst = Int2{}
 		return fmt.Errorf("%d is greater than maximum value for Int2", n)
 	}
 	*dst = Int2{Int16: int16(n), Valid: true}
@@ -86,7 +103,7 @@ func (dst *Int2) Scan(src any) error {
 	return nil
 }
 
-// Value implements the database/sql/driver Valuer interface.
+// Value implements the [database/sql/driver.Valuer] interface.
 func (src Int2) Value() (driver.Value, error) {
 	if !src.Valid {
 		return nil, nil
@@ -94,6 +111,7 @@ func (src Int2) Value() (driver.Value, error) {
 	return int64(src.Int16), nil
 }
 
+// MarshalJSON encodes src as a JSON number or null.
 func (src Int2) MarshalJSON() ([]byte, error) {
 	if !src.Valid {
 		return []byte("null"), nil
@@ -101,6 +119,7 @@ func (src Int2) MarshalJSON() ([]byte, error) {
 	return []byte(strconv.FormatInt(int64(src.Int16), 10)), nil
 }
 
+// UnmarshalJSON decodes a JSON number or null into dst.
 func (dst *Int2) UnmarshalJSON(b []byte) error {
 	var n *int16
 	err := json.Unmarshal(b, &n)
@@ -117,12 +136,15 @@ func (dst *Int2) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// Int4 represents the Firebird INTEGER type.
+//
+// Valid is false when the value represents SQL NULL.
 type Int4 struct {
 	Int32 int32
 	Valid bool
 }
 
-// ScanInt64 implements the Int64Scanner interface.
+// ScanInt64 implements [Int64Scanner].
 func (dst *Int4) ScanInt64(n Int8) error {
 	if !n.Valid {
 		*dst = Int4{}
@@ -130,9 +152,11 @@ func (dst *Int4) ScanInt64(n Int8) error {
 	}
 
 	if n.Int64 < math.MinInt32 {
+		*dst = Int4{}
 		return fmt.Errorf("%d is less than minimum value for Int4", n.Int64)
 	}
 	if n.Int64 > math.MaxInt32 {
+		*dst = Int4{}
 		return fmt.Errorf("%d is greater than maximum value for Int4", n.Int64)
 	}
 	*dst = Int4{Int32: int32(n.Int64), Valid: true}
@@ -140,11 +164,12 @@ func (dst *Int4) ScanInt64(n Int8) error {
 	return nil
 }
 
+// Int64Value implements [Int64Valuer].
 func (n Int4) Int64Value() (Int8, error) {
 	return Int8{Int64: int64(n.Int32), Valid: n.Valid}, nil
 }
 
-// Scan implements the database/sql Scanner interface.
+// Scan implements the [database/sql.Scanner] interface.
 func (dst *Int4) Scan(src any) error {
 	if src == nil {
 		*dst = Int4{}
@@ -160,22 +185,27 @@ func (dst *Int4) Scan(src any) error {
 		var err error
 		n, err = strconv.ParseInt(src, 10, 32)
 		if err != nil {
+			*dst = Int4{}
 			return err
 		}
 	case []byte:
 		var err error
 		n, err = strconv.ParseInt(string(src), 10, 32)
 		if err != nil {
+			*dst = Int4{}
 			return err
 		}
 	default:
+		*dst = Int4{}
 		return fmt.Errorf("cannot scan %T", src)
 	}
 
 	if n < math.MinInt32 {
+		*dst = Int4{}
 		return fmt.Errorf("%d is less than minimum value for Int4", n)
 	}
 	if n > math.MaxInt32 {
+		*dst = Int4{}
 		return fmt.Errorf("%d is greater than maximum value for Int4", n)
 	}
 	*dst = Int4{Int32: int32(n), Valid: true}
@@ -183,7 +213,7 @@ func (dst *Int4) Scan(src any) error {
 	return nil
 }
 
-// Value implements the database/sql/driver Valuer interface.
+// Value implements the [database/sql/driver.Valuer] interface.
 func (src Int4) Value() (driver.Value, error) {
 	if !src.Valid {
 		return nil, nil
@@ -191,6 +221,7 @@ func (src Int4) Value() (driver.Value, error) {
 	return int64(src.Int32), nil
 }
 
+// MarshalJSON encodes src as a JSON number or null.
 func (src Int4) MarshalJSON() ([]byte, error) {
 	if !src.Valid {
 		return []byte("null"), nil
@@ -198,6 +229,7 @@ func (src Int4) MarshalJSON() ([]byte, error) {
 	return []byte(strconv.FormatInt(int64(src.Int32), 10)), nil
 }
 
+// UnmarshalJSON decodes a JSON number or null into dst.
 func (dst *Int4) UnmarshalJSON(b []byte) error {
 	var n *int32
 	err := json.Unmarshal(b, &n)
@@ -214,8 +246,13 @@ func (dst *Int4) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// Int4Codec encodes and decodes Firebird SMALLINT and INTEGER values.
+//
+// Firebird DSQL row data uses a 4-byte value for SMALLINT, so this codec also
+// handles SMALLINT while preserving int16 as the default Go value for DecodeValue.
 type Int4Codec struct{}
 
+// PlanEncode returns an encode plan for supported Firebird SMALLINT and INTEGER input values.
 func (Int4Codec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	small := typeMetadata.TypeID == fbproto.SQL_TYPE_SHORT
 	switch value.(type) {
@@ -285,6 +322,7 @@ func (p encodePlanInt4CodecBinaryFromString) Encode(value any, buf []byte) ([]by
 	return fbio.AppendInt32BE(buf, int32(n)), nil
 }
 
+// PlanScan returns a scan plan for supported Firebird SMALLINT and INTEGER target values.
 func (Int4Codec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
 	switch target.(type) {
 	case *int8:
@@ -318,6 +356,7 @@ func (Int4Codec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPla
 	return nil
 }
 
+// DecodeDatabaseSQLValue decodes src into a database/sql driver value.
 func (c Int4Codec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
@@ -331,6 +370,7 @@ func (c Int4Codec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src
 	return n, nil
 }
 
+// DecodeValue decodes src into the default Go value for Firebird SMALLINT or INTEGER.
 func (c Int4Codec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
@@ -389,7 +429,7 @@ func (scanPlanBinaryInt4ToUint8) Scan(src []byte, dst any) error {
 	}
 
 	if len(src) != 4 {
-		return fmt.Errorf("invalid length for uint4: %v", len(src))
+		return fmt.Errorf("invalid length for int4: %v", len(src))
 	}
 
 	p, ok := (dst).(*uint8)
@@ -447,7 +487,7 @@ func (scanPlanBinaryInt4ToUint16) Scan(src []byte, dst any) error {
 	}
 
 	if len(src) != 4 {
-		return fmt.Errorf("invalid length for uint4: %v", len(src))
+		return fmt.Errorf("invalid length for int4: %v", len(src))
 	}
 
 	p, ok := (dst).(*uint16)
@@ -498,7 +538,7 @@ func (scanPlanBinaryInt4ToUint32) Scan(src []byte, dst any) error {
 	}
 
 	if len(src) != 4 {
-		return fmt.Errorf("invalid length for uint4: %v", len(src))
+		return fmt.Errorf("invalid length for int4: %v", len(src))
 	}
 
 	p, ok := (dst).(*uint32)
@@ -545,7 +585,7 @@ func (scanPlanBinaryInt4ToUint64) Scan(src []byte, dst any) error {
 	}
 
 	if len(src) != 4 {
-		return fmt.Errorf("invalid length for uint4: %v", len(src))
+		return fmt.Errorf("invalid length for int4: %v", len(src))
 	}
 
 	p, ok := (dst).(*uint64)
@@ -592,7 +632,7 @@ func (scanPlanBinaryInt4ToUint) Scan(src []byte, dst any) error {
 	}
 
 	if len(src) != 4 {
-		return fmt.Errorf("invalid length for uint4: %v", len(src))
+		return fmt.Errorf("invalid length for int4: %v", len(src))
 	}
 
 	p, ok := (dst).(*uint)
@@ -634,7 +674,10 @@ func (scanPlanBinaryInt4ToInt64Scanner) Scan(src []byte, dst any) error {
 type scanPlanBinaryInt4ToString struct{}
 
 func (scanPlanBinaryInt4ToString) Scan(src []byte, dst any) error {
-	target := dst.(*string)
+	target, ok := dst.(*string)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
 
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into *string")
@@ -670,34 +713,32 @@ func (scanPlanBinaryInt4ToTextScanner) Scan(src []byte, dst any) error {
 	return s.ScanText(Text{String: strconv.FormatInt(n, 10), Valid: true})
 }
 
+// Int8 represents the Firebird BIGINT type.
+//
+// Valid is false when the value represents SQL NULL.
 type Int8 struct {
 	Int64 int64
 	Valid bool
 }
 
-// ScanInt64 implements the Int64Scanner interface.
+// ScanInt64 implements [Int64Scanner].
 func (dst *Int8) ScanInt64(n Int8) error {
 	if !n.Valid {
 		*dst = Int8{}
 		return nil
 	}
 
-	if n.Int64 < math.MinInt64 {
-		return fmt.Errorf("%d is less than minimum value for Int8", n.Int64)
-	}
-	if n.Int64 > math.MaxInt64 {
-		return fmt.Errorf("%d is greater than maximum value for Int8", n.Int64)
-	}
-	*dst = Int8{Int64: int64(n.Int64), Valid: true}
+	*dst = Int8{Int64: n.Int64, Valid: true}
 
 	return nil
 }
 
+// Int64Value implements [Int64Valuer].
 func (n Int8) Int64Value() (Int8, error) {
-	return Int8{Int64: int64(n.Int64), Valid: n.Valid}, nil
+	return Int8{Int64: n.Int64, Valid: n.Valid}, nil
 }
 
-// Scan implements the database/sql Scanner interface.
+// Scan implements the [database/sql.Scanner] interface.
 func (dst *Int8) Scan(src any) error {
 	if src == nil {
 		*dst = Int8{}
@@ -713,44 +754,43 @@ func (dst *Int8) Scan(src any) error {
 		var err error
 		n, err = strconv.ParseInt(src, 10, 64)
 		if err != nil {
+			*dst = Int8{}
 			return err
 		}
 	case []byte:
 		var err error
 		n, err = strconv.ParseInt(string(src), 10, 64)
 		if err != nil {
+			*dst = Int8{}
 			return err
 		}
 	default:
+		*dst = Int8{}
 		return fmt.Errorf("cannot scan %T", src)
 	}
 
-	if n < math.MinInt64 {
-		return fmt.Errorf("%d is greater than maximum value for Int8", n)
-	}
-	if n > math.MaxInt64 {
-		return fmt.Errorf("%d is greater than maximum value for Int8", n)
-	}
-	*dst = Int8{Int64: int64(n), Valid: true}
+	*dst = Int8{Int64: n, Valid: true}
 
 	return nil
 }
 
-// Value implements the database/sql/driver Valuer interface.
+// Value implements the [database/sql/driver.Valuer] interface.
 func (src Int8) Value() (driver.Value, error) {
 	if !src.Valid {
 		return nil, nil
 	}
-	return int64(src.Int64), nil
+	return src.Int64, nil
 }
 
+// MarshalJSON encodes src as a JSON number or null.
 func (src Int8) MarshalJSON() ([]byte, error) {
 	if !src.Valid {
 		return []byte("null"), nil
 	}
-	return []byte(strconv.FormatInt(int64(src.Int64), 10)), nil
+	return []byte(strconv.FormatInt(src.Int64, 10)), nil
 }
 
+// UnmarshalJSON decodes a JSON number or null into dst.
 func (dst *Int8) UnmarshalJSON(b []byte) error {
 	var n *int64
 	err := json.Unmarshal(b, &n)
@@ -767,8 +807,10 @@ func (dst *Int8) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// Int8Codec encodes and decodes Firebird BIGINT values.
 type Int8Codec struct{}
 
+// PlanEncode returns an encode plan for supported Firebird BIGINT input values.
 func (Int8Codec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	switch value.(type) {
 	case int64:
@@ -786,7 +828,7 @@ type encodePlanInt8CodecBinaryInt64 struct{}
 
 func (encodePlanInt8CodecBinaryInt64) Encode(value any, buf []byte) (newBuf []byte, err error) {
 	n := value.(int64)
-	return fbio.AppendInt64BE(buf, int64(n)), nil
+	return fbio.AppendInt64BE(buf, n), nil
 }
 
 type encodePlanInt8CodecBinaryInt64Valuer struct{}
@@ -801,14 +843,7 @@ func (encodePlanInt8CodecBinaryInt64Valuer) Encode(value any, buf []byte) (newBu
 		return nil, nil
 	}
 
-	if n.Int64 > math.MaxInt64 {
-		return nil, fmt.Errorf("%d is greater than maximum value for int8", n.Int64)
-	}
-	if n.Int64 < math.MinInt64 {
-		return nil, fmt.Errorf("%d is less than minimum value for int8", n.Int64)
-	}
-
-	return fbio.AppendInt64BE(buf, int64(n.Int64)), nil
+	return fbio.AppendInt64BE(buf, n.Int64), nil
 }
 
 type encodePlanInt8CodecBinaryFromString struct{}
@@ -822,8 +857,8 @@ func (encodePlanInt8CodecBinaryFromString) Encode(value any, buf []byte) ([]byte
 	return fbio.AppendInt64BE(buf, n), nil
 }
 
+// PlanScan returns a scan plan for supported Firebird BIGINT target values.
 func (Int8Codec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
-
 	switch target.(type) {
 	case *int8:
 		return scanPlanBinaryInt8ToInt8{}
@@ -856,6 +891,7 @@ func (Int8Codec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPla
 	return nil
 }
 
+// DecodeDatabaseSQLValue decodes src into a database/sql driver value.
 func (c Int8Codec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
@@ -869,6 +905,7 @@ func (c Int8Codec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src
 	return n, nil
 }
 
+// DecodeValue decodes src into the default Go value for Firebird BIGINT.
 func (c Int8Codec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
@@ -918,7 +955,7 @@ func (scanPlanBinaryInt8ToUint8) Scan(src []byte, dst any) error {
 	}
 
 	if len(src) != 8 {
-		return fmt.Errorf("invalid length for uint8: %v", len(src))
+		return fmt.Errorf("invalid length for int8: %v", len(src))
 	}
 
 	p, ok := (dst).(*uint8)
@@ -976,7 +1013,7 @@ func (scanPlanBinaryInt8ToUint16) Scan(src []byte, dst any) error {
 	}
 
 	if len(src) != 8 {
-		return fmt.Errorf("invalid length for uint8: %v", len(src))
+		return fmt.Errorf("invalid length for int8: %v", len(src))
 	}
 
 	p, ok := (dst).(*uint16)
@@ -1034,7 +1071,7 @@ func (scanPlanBinaryInt8ToUint32) Scan(src []byte, dst any) error {
 	}
 
 	if len(src) != 8 {
-		return fmt.Errorf("invalid length for uint8: %v", len(src))
+		return fmt.Errorf("invalid length for int8: %v", len(src))
 	}
 
 	p, ok := (dst).(*uint32)
@@ -1085,7 +1122,7 @@ func (scanPlanBinaryInt8ToUint64) Scan(src []byte, dst any) error {
 	}
 
 	if len(src) != 8 {
-		return fmt.Errorf("invalid length for uint8: %v", len(src))
+		return fmt.Errorf("invalid length for int8: %v", len(src))
 	}
 
 	p, ok := (dst).(*uint64)
@@ -1139,7 +1176,7 @@ func (scanPlanBinaryInt8ToUint) Scan(src []byte, dst any) error {
 	}
 
 	if len(src) != 8 {
-		return fmt.Errorf("invalid length for uint8: %v", len(src))
+		return fmt.Errorf("invalid length for int8: %v", len(src))
 	}
 
 	p, ok := (dst).(*uint)
@@ -1147,7 +1184,7 @@ func (scanPlanBinaryInt8ToUint) Scan(src []byte, dst any) error {
 		return ErrScanTargetTypeChanged
 	}
 
-	n := int64(int64(binary.BigEndian.Uint64(src)))
+	n := int64(binary.BigEndian.Uint64(src))
 	if n < 0 {
 		return fmt.Errorf("%d is less than minimum value for uint", n)
 	}
@@ -1177,7 +1214,7 @@ func (scanPlanBinaryInt8ToInt64Scanner) Scan(src []byte, dst any) error {
 		return fmt.Errorf("invalid length for int8: %v", len(src))
 	}
 
-	n := int64(int64(binary.BigEndian.Uint64(src)))
+	n := int64(binary.BigEndian.Uint64(src))
 
 	return s.ScanInt64(Int8{Int64: n, Valid: true})
 }
@@ -1185,7 +1222,10 @@ func (scanPlanBinaryInt8ToInt64Scanner) Scan(src []byte, dst any) error {
 type scanPlanBinaryInt8ToString struct{}
 
 func (scanPlanBinaryInt8ToString) Scan(src []byte, dst any) error {
-	target := dst.(*string)
+	target, ok := dst.(*string)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
 
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into *string")
@@ -1216,7 +1256,7 @@ func (scanPlanBinaryInt8ToTextScanner) Scan(src []byte, dst any) error {
 		return fmt.Errorf("invalid length for int8: %v", len(src))
 	}
 
-	n := int64(int64(binary.BigEndian.Uint64(src)))
+	n := int64(binary.BigEndian.Uint64(src))
 
 	return s.ScanText(Text{String: strconv.FormatInt(n, 10), Valid: true})
 }

@@ -2,7 +2,9 @@ package fbtype_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"math"
 	"math/big"
 	"reflect"
 	"strings"
@@ -65,12 +67,13 @@ func TestNumericBinaryScanToFloat64_Local(t *testing.T) {
 
 	var dst fbtype.Float8
 
-	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_D_FLOAT, 0, 4, -2)
-	plan := fbtype.NumericCodec{}.PlanScan(
-		nil,
-		typeMetadata,
-		&dst,
-	)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 1, 4, -2)
+	m := fbtype.NewMap()
+	dataType, ok := m.TypeForTypeID(typeMetadata.TypeID, typeMetadata.SubType)
+	require.True(t, ok)
+	require.IsType(t, &fbtype.NumericCodec{}, dataType.Codec)
+
+	plan := dataType.Codec.PlanScan(m, typeMetadata, &dst)
 	require.NotNil(t, plan)
 
 	err = plan.Scan(buf, &dst)
@@ -438,6 +441,160 @@ func TestNumericFloat64Valuer(t *testing.T) {
 		assert.NoErrorf(t, err, "%d", i)
 		assert.Equalf(t, tt.f, f, "%d", i)
 	}
+}
+
+func TestNumericScanScientificExact(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "large positive exponent",
+			src:  "1.234567890123456789e18",
+			want: "1234567890123456789",
+		},
+		{
+			name: "large negative exponent",
+			src:  "1.234567890123456789e-3",
+			want: "0.001234567890123456789",
+		},
+		{
+			name: "trailing zeros preserved",
+			src:  "1.2300e2",
+			want: "123.00",
+		},
+		{
+			name: "uppercase exponent",
+			src:  "-9.99E3",
+			want: "-9990",
+		},
+		{
+			name: "positive sign and exponent",
+			src:  "+1.20e+2",
+			want: "120",
+		},
+		{
+			name: "positive signed zero",
+			src:  "+000",
+			want: "0",
+		},
+		{
+			name: "negative signed zero",
+			src:  "-000",
+			want: "0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got fbtype.Numeric
+			require.NoError(t, got.ScanScientific(tt.src))
+			require.True(t, got.Valid)
+			assert.Equal(t, tt.want, got.String())
+		})
+	}
+}
+
+func TestNumericScanSupportsDatabaseSQLValuesAndClearsOnError(t *testing.T) {
+	var got fbtype.Numeric
+
+	require.NoError(t, got.Scan([]byte("12.34")))
+	assert.Equal(t, "12.34", got.String())
+
+	require.NoError(t, got.Scan(int64(-42)))
+	assert.Equal(t, "-42", got.String())
+
+	require.NoError(t, got.Scan(float64(12.5)))
+	assert.Equal(t, "12.5", got.String())
+
+	bigValue := big.NewInt(99)
+	require.NoError(t, got.Scan(bigValue))
+	bigValue.SetInt64(100)
+	assert.Equal(t, "99", got.String())
+
+	bigPtrValue := big.NewInt(123)
+	require.NoError(t, got.Scan(bigPtrValue))
+	bigPtrValue.SetInt64(321)
+	assert.Equal(t, "123", got.String())
+
+	stale := mustParseNumeric(t, "42")
+	require.Error(t, stale.Scan("not-a-number"))
+	assert.False(t, stale.Valid)
+
+	stale = mustParseNumeric(t, "42")
+	require.Error(t, stale.Scan(math.Inf(1)))
+	assert.False(t, stale.Valid)
+
+	stale = mustParseNumeric(t, "42")
+	require.Error(t, stale.Scan(struct{}{}))
+	assert.False(t, stale.Valid)
+}
+
+func TestNumericScanNumericAndValueCopyBigInt(t *testing.T) {
+	src := fbtype.Numeric{Int: big.NewInt(42), Exp: -1, Valid: true}
+
+	var dst fbtype.Numeric
+	require.NoError(t, dst.ScanNumeric(src))
+	src.Int.SetInt64(99)
+	assert.Equal(t, "4.2", dst.String())
+
+	value, err := dst.NumericValue()
+	require.NoError(t, err)
+	value.Int.SetInt64(77)
+	assert.Equal(t, "4.2", dst.String())
+}
+
+func TestNumericUnmarshalJSONWhitespaceNullQuotedScientificAndClears(t *testing.T) {
+	stale := mustParseNumeric(t, "42")
+	require.NoError(t, json.Unmarshal([]byte(" null "), &stale))
+	assert.False(t, stale.Valid)
+
+	var got fbtype.Numeric
+	require.NoError(t, json.Unmarshal([]byte(`"1.234567890123456789e18"`), &got))
+	assert.Equal(t, "1234567890123456789", got.String())
+
+	require.NoError(t, json.Unmarshal([]byte(`1e-3`), &got))
+	assert.Equal(t, "0.001", got.String())
+
+	stale = mustParseNumeric(t, "42")
+	require.Error(t, json.Unmarshal([]byte(`"bad"`), &stale))
+	assert.False(t, stale.Valid)
+}
+
+func TestNumericDecodeDatabaseSQLValueReturnsString(t *testing.T) {
+	n := mustParseNumeric(t, "12.34")
+	buf, err := fbtype.EncodeNumericBinaryFB(nil, n, -2, 4)
+	require.NoError(t, err)
+
+	codec := fbtype.NumericCodec{}
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 1, 4, -2)
+
+	value, err := codec.DecodeDatabaseSQLValue(fbtype.NewMap(), typeMetadata, buf)
+	require.NoError(t, err)
+	require.IsType(t, "", value)
+	assert.Equal(t, "12.34", value)
+
+	value, err = codec.DecodeDatabaseSQLValue(fbtype.NewMap(), typeMetadata, nil)
+	require.NoError(t, err)
+	assert.Nil(t, value)
+}
+
+func TestNumericPrimitiveScanNullErrors(t *testing.T) {
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 1, 4, -2)
+
+	var f float64
+	err := m.Scan(typeMetadata, nil, &f)
+	require.ErrorContains(t, err, "cannot scan NULL into *float64")
+
+	var i int64
+	err = m.Scan(typeMetadata, nil, &i)
+	require.ErrorContains(t, err, "cannot scan NULL into *int64")
+
+	var s string
+	err = m.Scan(typeMetadata, nil, &s)
+	require.ErrorContains(t, err, "cannot scan NULL into *string")
 }
 
 func TestNumericInt128_DB(t *testing.T) {

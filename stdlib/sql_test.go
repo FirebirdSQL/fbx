@@ -1059,7 +1059,7 @@ func TestRowsColumnTypes(t *testing.T) {
 					Scale:     2,
 					OK:        true,
 				},
-				ScanType: reflect.TypeOf(float64(0)),
+				ScanType: reflect.TypeOf(""),
 			}, {
 				Name:     "D",
 				TypeName: "TIMETZ",

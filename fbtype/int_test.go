@@ -2,7 +2,10 @@ package fbtype_test
 
 import (
 	"context"
+	"encoding/binary"
+	"errors"
 	"math"
+	"strings"
 	"testing"
 
 	"rdb.red-soft.ru/fbx/fbproto"
@@ -297,5 +300,164 @@ func TestSmallintEncodeRangeCheck(t *testing.T) {
 		if _, err := m.Encode(int4, v, nil); err != nil {
 			t.Errorf("int encode of %#v (in int32 range): expected success, got %v", v, err)
 		}
+	}
+}
+
+func TestIntegerScanClearsDestinationOnError(t *testing.T) {
+	t.Run("Int2 ScanInt64 range error", func(t *testing.T) {
+		got := fbtype.Int2{Int16: 1, Valid: true}
+		err := got.ScanInt64(fbtype.Int8{Int64: math.MaxInt16 + 1, Valid: true})
+		if err == nil {
+			t.Fatalf("expected error, got nil")
+		}
+		if got != (fbtype.Int2{}) {
+			t.Fatalf("got = %#v, want zero value", got)
+		}
+	})
+
+	t.Run("Int2 parse error", func(t *testing.T) {
+		got := fbtype.Int2{Int16: 1, Valid: true}
+		if err := got.Scan("bad"); err == nil {
+			t.Fatalf("expected error, got nil")
+		}
+		if got != (fbtype.Int2{}) {
+			t.Fatalf("got = %#v, want zero value", got)
+		}
+	})
+
+	t.Run("Int2 range error", func(t *testing.T) {
+		got := fbtype.Int2{Int16: 1, Valid: true}
+		if err := got.Scan(int64(math.MaxInt16 + 1)); err == nil {
+			t.Fatalf("expected error, got nil")
+		}
+		if got != (fbtype.Int2{}) {
+			t.Fatalf("got = %#v, want zero value", got)
+		}
+	})
+
+	t.Run("Int4 ScanInt64 range error", func(t *testing.T) {
+		got := fbtype.Int4{Int32: 1, Valid: true}
+		err := got.ScanInt64(fbtype.Int8{Int64: math.MaxInt32 + 1, Valid: true})
+		if err == nil {
+			t.Fatalf("expected error, got nil")
+		}
+		if got != (fbtype.Int4{}) {
+			t.Fatalf("got = %#v, want zero value", got)
+		}
+	})
+
+	t.Run("Int4 parse error", func(t *testing.T) {
+		got := fbtype.Int4{Int32: 1, Valid: true}
+		if err := got.Scan([]byte("bad")); err == nil {
+			t.Fatalf("expected error, got nil")
+		}
+		if got != (fbtype.Int4{}) {
+			t.Fatalf("got = %#v, want zero value", got)
+		}
+	})
+
+	t.Run("Int4 range error", func(t *testing.T) {
+		got := fbtype.Int4{Int32: 1, Valid: true}
+		if err := got.Scan(int64(math.MaxInt32 + 1)); err == nil {
+			t.Fatalf("expected error, got nil")
+		}
+		if got != (fbtype.Int4{}) {
+			t.Fatalf("got = %#v, want zero value", got)
+		}
+	})
+
+	t.Run("Int8 parse error", func(t *testing.T) {
+		got := fbtype.Int8{Int64: 1, Valid: true}
+		if err := got.Scan("bad"); err == nil {
+			t.Fatalf("expected error, got nil")
+		}
+		if got != (fbtype.Int8{}) {
+			t.Fatalf("got = %#v, want zero value", got)
+		}
+	})
+
+	t.Run("unsupported source type", func(t *testing.T) {
+		got := fbtype.Int8{Int64: 1, Valid: true}
+		if err := got.Scan(1); err == nil {
+			t.Fatalf("expected error, got nil")
+		}
+		if got != (fbtype.Int8{}) {
+			t.Fatalf("got = %#v, want zero value", got)
+		}
+	})
+}
+
+func TestIntegerStringScanPlansReportTargetTypeChanged(t *testing.T) {
+	m := fbtype.NewMap()
+
+	int4Buf := make([]byte, 4)
+	binary.BigEndian.PutUint32(int4Buf, 42)
+
+	int8Buf := make([]byte, 8)
+	binary.BigEndian.PutUint64(int8Buf, 42)
+
+	for _, tt := range []struct {
+		name         string
+		typeMetadata fbtype.TypeMetadata
+		src          []byte
+	}{
+		{
+			name:         "int4 to string",
+			typeMetadata: fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 0, 4, 0),
+			src:          int4Buf,
+		},
+		{
+			name:         "int8 to string",
+			typeMetadata: fbtype.NewTypeMetadata(fbproto.SQL_TYPE_INT64, 0, 8, 0),
+			src:          int8Buf,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var dst string
+			plan := m.PlanScan(tt.typeMetadata, &dst)
+			if plan == nil {
+				t.Fatalf("expected scan plan, got nil")
+			}
+
+			var wrongTarget int64
+			err := plan.Scan(tt.src, &wrongTarget)
+			if !errors.Is(err, fbtype.ErrScanTargetTypeChanged) {
+				t.Fatalf("error = %v, want ErrScanTargetTypeChanged", err)
+			}
+		})
+	}
+}
+
+func TestIntegerScanInvalidLengthErrorUsesFirebirdTypeName(t *testing.T) {
+	m := fbtype.NewMap()
+
+	for _, tt := range []struct {
+		name         string
+		typeMetadata fbtype.TypeMetadata
+		target       any
+		want         string
+	}{
+		{
+			name:         "int4 to uint8",
+			typeMetadata: fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 0, 4, 0),
+			target:       new(uint8),
+			want:         "invalid length for int4",
+		},
+		{
+			name:         "int8 to uint8",
+			typeMetadata: fbtype.NewTypeMetadata(fbproto.SQL_TYPE_INT64, 0, 8, 0),
+			target:       new(uint8),
+			want:         "invalid length for int8",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := m.Scan(tt.typeMetadata, []byte{1, 2, 3}, tt.target)
+			if err == nil {
+				t.Fatalf("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %q, want substring %q", err.Error(), tt.want)
+			}
+		})
 	}
 }

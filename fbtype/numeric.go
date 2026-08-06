@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql/driver"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"math"
 	"math/big"
@@ -13,29 +14,41 @@ import (
 
 var big10 *big.Int = big.NewInt(10)
 
+// NumericScanner scans a Firebird NUMERIC or DECIMAL value.
 type NumericScanner interface {
+	// ScanNumeric scans v into the receiver.
 	ScanNumeric(v Numeric) error
 }
 
+// NumericValuer returns a Firebird NUMERIC or DECIMAL value.
 type NumericValuer interface {
+	// NumericValue returns the Firebird NUMERIC or DECIMAL value to encode.
 	NumericValue() (Numeric, error)
 }
 
+// Numeric represents a Firebird NUMERIC or DECIMAL value.
+//
+// Int contains the unscaled integer value and Exp contains the decimal exponent.
+// For example, Int=1234 and Exp=-2 represents 12.34. Valid is false when the
+// value represents SQL NULL. A valid Numeric with nil Int is treated as zero.
 type Numeric struct {
 	Int   *big.Int
 	Exp   int32
 	Valid bool
 }
 
+// ScanNumeric implements [NumericScanner].
 func (n *Numeric) ScanNumeric(v Numeric) error {
-	*n = v
+	*n = cloneNumeric(v)
 	return nil
 }
 
+// NumericValue implements [NumericValuer].
 func (n Numeric) NumericValue() (Numeric, error) {
-	return n, nil
+	return cloneNumeric(n), nil
 }
 
+// Float64Value implements [Float64Valuer].
 func (n Numeric) Float64Value() (Float8, error) {
 	if !n.Valid {
 		return Float8{}, nil
@@ -59,6 +72,7 @@ func (n Numeric) Float64Value() (Float8, error) {
 	return Float8{Float64: f, Valid: true}, nil
 }
 
+// ScanInt64 implements [Int64Scanner].
 func (n *Numeric) ScanInt64(v Int8) error {
 	if !v.Valid {
 		*n = Numeric{}
@@ -69,6 +83,7 @@ func (n *Numeric) ScanInt64(v Int8) error {
 	return nil
 }
 
+// Int64Value implements [Int64Valuer].
 func (n Numeric) Int64Value() (Int8, error) {
 	if !n.Valid {
 		return Int8{}, nil
@@ -86,6 +101,7 @@ func (n Numeric) Int64Value() (Int8, error) {
 	return Int8{Int64: bi.Int64(), Valid: true}, nil
 }
 
+// String returns the decimal representation of n, or an empty string for SQL NULL.
 func (n Numeric) String() string {
 	if !n.Valid {
 		return ""
@@ -99,18 +115,11 @@ func (n Numeric) String() string {
 	return string(buf)
 }
 
+// ScanScientific parses src as a decimal number, including scientific notation.
 func (n *Numeric) ScanScientific(src string) error {
-	if strings.ContainsAny(src, "eE") {
-		bigF, ok := new(big.Float).SetString(src)
-		if !ok {
-			return fmt.Errorf("invalid scientific notation: %s", src)
-		}
-		smallF, _ := bigF.Float64()
-		src = strconv.FormatFloat(smallF, 'f', -1, 64)
-	}
-
-	parsed, err := ParseNumeric(src)
+	parsed, err := parseNumericText(src)
 	if err != nil {
+		*n = Numeric{}
 		return err
 	}
 	*n = parsed
@@ -149,7 +158,7 @@ func parseNumericString(str string) (n *big.Int, exp int32, err error) {
 	idx := strings.IndexByte(str, '.')
 
 	if idx == -1 {
-		for len(str) > 1 && str[len(str)-1] == '0' && str[len(str)-2] != '-' {
+		for len(str) > 1 && str[len(str)-1] == '0' && str[len(str)-2] != '-' && str[len(str)-2] != '+' {
 			str = str[:len(str)-1]
 			exp++
 		}
@@ -174,15 +183,52 @@ func (n *Numeric) Scan(src any) error {
 	}
 
 	switch src := src.(type) {
+	case Numeric:
+		return n.ScanNumeric(src)
 	case string:
-		parsed, err := ParseNumeric(src)
+		parsed, err := parseNumericText(src)
 		if err != nil {
+			*n = Numeric{}
 			return err
 		}
 		*n = parsed
 		return nil
+	case []byte:
+		parsed, err := parseNumericText(string(src))
+		if err != nil {
+			*n = Numeric{}
+			return err
+		}
+		*n = parsed
+		return nil
+	case int64:
+		*n = Numeric{Int: big.NewInt(src), Valid: true}
+		return nil
+	case float64:
+		parsed, err := float64ToNumeric(src)
+		if err != nil {
+			*n = Numeric{}
+			return err
+		}
+		*n = parsed
+		return nil
+	case big.Int:
+		var z big.Int
+		z.Set(&src)
+		*n = Numeric{Int: &z, Valid: true}
+		return nil
+	case *big.Int:
+		if src == nil {
+			*n = Numeric{}
+			return nil
+		}
+		var z big.Int
+		z.Set(src)
+		*n = Numeric{Int: &z, Valid: true}
+		return nil
 	}
 
+	*n = Numeric{}
 	return fmt.Errorf("cannot scan %T", src)
 }
 
@@ -196,9 +242,10 @@ func (n Numeric) Value() (driver.Value, error) {
 	if err != nil {
 		return nil, err
 	}
-	return string(buf), err
+	return string(buf), nil
 }
 
+// MarshalJSON encodes n as a JSON number or null.
 func (n Numeric) MarshalJSON() ([]byte, error) {
 	if !n.Valid {
 		return []byte("null"), nil
@@ -207,14 +254,32 @@ func (n Numeric) MarshalJSON() ([]byte, error) {
 	return n.numberTextBytes(), nil
 }
 
+// UnmarshalJSON decodes a JSON number, JSON string, or null into n.
 func (n *Numeric) UnmarshalJSON(src []byte) error {
+	src = bytes.TrimSpace(src)
 	if bytes.Equal(src, []byte(`null`)) {
 		*n = Numeric{}
 		return nil
 	}
 
-	parsed, err := ParseNumeric(string(src))
+	var numericText string
+	if len(src) > 0 && src[0] == '"' {
+		if err := json.Unmarshal(src, &numericText); err != nil {
+			*n = Numeric{}
+			return err
+		}
+	} else {
+		var num json.Number
+		if err := json.Unmarshal(src, &num); err != nil {
+			*n = Numeric{}
+			return err
+		}
+		numericText = num.String()
+	}
+
+	parsed, err := parseNumericText(numericText)
 	if err != nil {
+		*n = Numeric{}
 		return err
 	}
 	*n = parsed
@@ -224,6 +289,9 @@ func (n *Numeric) UnmarshalJSON(src []byte) error {
 
 func (n Numeric) numberTextBytes() []byte {
 	if n.Int == nil {
+		return []byte("0")
+	}
+	if n.Int.Sign() == 0 && n.Exp >= 0 {
 		return []byte("0")
 	}
 
@@ -263,8 +331,10 @@ func (n Numeric) numberTextBytes() []byte {
 	return buf.Bytes()
 }
 
+// NumericCodec encodes and decodes Firebird NUMERIC and DECIMAL values.
 type NumericCodec struct{}
 
+// PlanEncode returns an encode plan for supported Firebird NUMERIC and DECIMAL input values.
 func (NumericCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	switch value.(type) {
 	case NumericValuer:
@@ -367,6 +437,7 @@ func encodeNumericText(n Numeric, buf []byte) (newBuf []byte, err error) {
 	return buf, nil
 }
 
+// PlanScan returns a scan plan for supported Firebird NUMERIC and DECIMAL target values.
 func (NumericCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
 	switch target.(type) {
 	case *Numeric:
@@ -426,8 +497,7 @@ func (p scanPlanBinaryNumericToFloat64Ptr) Scan(src []byte, dst any) error {
 	}
 
 	if src == nil {
-		*fPtr = 0
-		return nil
+		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
 	var n Numeric
@@ -456,8 +526,7 @@ func (p scanPlanBinaryNumericToInt64Ptr) Scan(src []byte, dst any) error {
 	}
 
 	if src == nil {
-		*iPtr = 0
-		return nil
+		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
 	var n Numeric
@@ -494,7 +563,14 @@ func (p scanPlanBinaryNumericToNumeric) Scan(src []byte, dst any) error {
 		return nil
 	}
 
-	return DecodeNumericBinaryFB(nPtr, src, p.scale)
+	var n Numeric
+	if err := DecodeNumericBinaryFB(&n, src, p.scale); err != nil {
+		*nPtr = Numeric{}
+		return err
+	}
+
+	*nPtr = n
+	return nil
 }
 
 type scanPlanBinaryNumericToNumericScanner struct {
@@ -620,8 +696,7 @@ func (p scanPlanBinaryNumericToString) Scan(src []byte, dst any) error {
 	}
 
 	if src == nil {
-		*s = ""
-		return nil
+		return fmt.Errorf("cannot scan NULL into *string")
 	}
 
 	var n Numeric
@@ -633,6 +708,7 @@ func (p scanPlanBinaryNumericToString) Scan(src []byte, dst any) error {
 	return nil
 }
 
+// DecodeDatabaseSQLValue decodes src into a database/sql driver value.
 func (c NumericCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
@@ -648,20 +724,15 @@ func (c NumericCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, 
 		return nil, nil
 	}
 
-	f64, err := n.Float64Value()
+	buf, err := encodeNumericText(n, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	if !f64.Valid {
-		return nil, nil
-	}
-
-	fmt.Printf("DEBUG: Converting NUMERIC to float64: %v\n", f64.Float64)
-
-	return f64.Float64, nil
+	return string(buf), nil
 }
 
+// DecodeValue decodes src into the default Go value for Firebird NUMERIC and DECIMAL.
 func (c NumericCodec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
@@ -675,6 +746,7 @@ func (c NumericCodec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte)
 	return n, nil
 }
 
+// DecodeNumericBinaryFB decodes a Firebird binary NUMERIC or DECIMAL value into dst.
 func DecodeNumericBinaryFB(dst *Numeric, src []byte, scale int32) error {
 	if src == nil {
 		*dst = Numeric{}
@@ -706,12 +778,13 @@ func DecodeNumericBinaryFB(dst *Numeric, src []byte, scale int32) error {
 	return nil
 }
 
+// EncodeNumericBinaryFB appends the Firebird binary encoding of n to buf.
 func EncodeNumericBinaryFB(buf []byte, n Numeric, scale int32, length uint32) ([]byte, error) {
 	if !n.Valid {
 		return nil, nil
 	}
 
-	expDiff := int64(n.Exp - scale)
+	expDiff := int64(n.Exp) - int64(scale)
 
 	var scaled big.Int
 	if n.Int != nil {
@@ -750,6 +823,10 @@ func EncodeNumericBinaryFB(buf []byte, n Numeric, scale int32, length uint32) ([
 }
 
 func float64ToNumeric(f float64) (Numeric, error) {
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return Numeric{}, fmt.Errorf("cannot convert non-finite float %v to numeric", f)
+	}
+
 	if f == 0 {
 		return Numeric{
 			Int:   big.NewInt(0),
@@ -791,12 +868,14 @@ func float64ToNumeric(f float64) (Numeric, error) {
 	}, nil
 }
 
+// EncodeNumericBinaryFBRoundHalfAwayFromZero appends the Firebird binary
+// encoding of n to buf, rounding to scale when exact encoding is impossible.
 func EncodeNumericBinaryFBRoundHalfAwayFromZero(buf []byte, n Numeric, scale int32, length uint32) ([]byte, error) {
 	if !n.Valid {
 		return nil, nil
 	}
 
-	expDiff := int64(n.Exp - scale)
+	expDiff := int64(n.Exp) - int64(scale)
 
 	var scaled big.Int
 	if n.Int != nil {
@@ -879,10 +958,56 @@ func appendFBScaledIntByLength(buf []byte, val int64, length uint32) ([]byte, er
 	}
 }
 
+// ParseNumeric parses s as a Firebird NUMERIC or DECIMAL value.
 func ParseNumeric(s string) (Numeric, error) {
-	num, exp, err := parseNumericString(s)
+	return parseNumericText(s)
+}
+
+func parseNumericText(s string) (Numeric, error) {
+	s = strings.TrimSpace(s)
+	expIndex := strings.IndexAny(s, "eE")
+	if expIndex == -1 {
+		num, exp, err := parseNumericString(s)
+		if err != nil {
+			return Numeric{}, err
+		}
+		return Numeric{Int: num, Exp: exp, Valid: true}, nil
+	}
+
+	if expIndex != strings.LastIndexAny(s, "eE") {
+		return Numeric{}, fmt.Errorf("invalid scientific notation: %s", s)
+	}
+	if expIndex == 0 || expIndex == len(s)-1 {
+		return Numeric{}, fmt.Errorf("invalid scientific notation: %s", s)
+	}
+
+	num, exp, err := parseNumericString(s[:expIndex])
 	if err != nil {
 		return Numeric{}, err
 	}
-	return Numeric{Int: num, Exp: exp, Valid: true}, nil
+
+	scientificExp, err := strconv.ParseInt(s[expIndex+1:], 10, 32)
+	if err != nil {
+		return Numeric{}, fmt.Errorf("invalid scientific notation exponent %q: %w", s[expIndex+1:], err)
+	}
+
+	finalExp := int64(exp) + scientificExp
+	if finalExp < math.MinInt32 || finalExp > math.MaxInt32 {
+		return Numeric{}, fmt.Errorf("numeric exponent %d is out of int32 range", finalExp)
+	}
+
+	return Numeric{Int: num, Exp: int32(finalExp), Valid: true}, nil
+}
+
+func cloneNumeric(n Numeric) Numeric {
+	if !n.Valid {
+		return Numeric{}
+	}
+	if n.Int == nil {
+		return Numeric{Exp: n.Exp, Valid: true}
+	}
+
+	var z big.Int
+	z.Set(n.Int)
+	return Numeric{Int: &z, Exp: n.Exp, Valid: true}
 }

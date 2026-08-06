@@ -329,8 +329,8 @@ func TestMapScanRegisteredTypeIntoSQLScannerReceivesDatabaseSQLValue(t *testing.
 
 	err = m.Scan(typeMetadata, src, scanner)
 	require.NoError(t, err)
-	require.IsType(t, float64(0), got)
-	assert.Equal(t, 12.34, got)
+	require.IsType(t, "", got)
+	assert.Equal(t, "12.34", got)
 
 	got = "not nil"
 	err = m.Scan(typeMetadata, nil, scanner)
