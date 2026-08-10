@@ -1,68 +1,81 @@
-// Package stdlib is the compatibility layer from fbx to database/sql.
+// Package stdlib provides the [database/sql] adapter for fbx.
 //
-// A database/sql connection can be established through sql.Open.
+// Importing stdlib makes the "fbx" driver available to [sql.Open]. Both URL
+// and keyword/value connection strings are supported:
 //
+//	ctx := context.Background()
 //	db, err := sql.Open("fbx", "firebird://user:secret@localhost:3050/fbx_test")
 //	if err != nil {
-//	  return err
+//		return err
+//	}
+//	defer db.Close()
+//
+//	if err := db.PingContext(ctx); err != nil {
+//		return err
 //	}
 //
-// Or from a keyword/value string.
+// A keyword/value connection string can be used in the same way:
 //
 //	db, err := sql.Open("fbx", "user=user password=secret host=localhost port=3050 database=fbx_test")
-//	if err != nil {
-//	  return err
-//	}
 //
-// Or from a *fbxpool.Pool.
+// [sql.Open] may not establish a connection immediately. Use
+// [sql.DB.PingContext] or execute a query to verify the connection settings.
 //
-//	pool, err := fbxpool.New(context.Background(), os.Getenv("DATABASE_URL"))
+// An existing [fbxpool.Pool] can be exposed through [database/sql]:
+//
+//	pool, err := fbxpool.New(ctx, os.Getenv("DATABASE_URL"))
 //	if err != nil {
-//	  return err
+//		return err
 //	}
+//	defer pool.Close()
 //
 //	db := stdlib.OpenDBFromPool(pool)
+//	defer db.Close()
 //
-// Or a fbx.ConnConfig can be used to set configuration not accessible via connection string. In this case the
-// fbx.ConnConfig must first be registered with the driver. This registration returns a connection string which is used
-// with sql.Open.
+// Use [OpenDB] to open a database from a customized [fbx.ConnConfig]. Use
+// [RegisterConnConfig] only when the configuration must be passed to
+// [sql.Open].
 //
-//	connConfig, _ := fbx.ParseConfig(os.Getenv("DATABASE_URL"))
-//	connConfig.Tracer = &tracelog.TraceLog{Logger: myLogger, LogLevel: tracelog.LogLevelInfo}
-//	connStr := stdlib.RegisterConnConfig(connConfig)
-//	db, _ := sql.Open("fbx", connStr)
-//
-// fbx uses standard Firebird positional parameters in queries. e.g. ?, ?. It does not support named parameters.
-//
-//	db.QueryRow("select * from users where id=?", userID)
-//
-// (*sql.Conn) Raw() can be used to get a *fbx.Conn from the standard database/sql.DB connection pool. This allows
-// operations that use fbx specific functionality.
-//
-//	// Given db is a *sql.DB
-//	conn, err := db.Conn(context.Background())
+//	connConfig, err := fbx.ParseConfig(os.Getenv("DATABASE_URL"))
 //	if err != nil {
-//	  // handle error from acquiring connection from DB pool
+//		return err
 //	}
+//	db := stdlib.OpenDB(*connConfig)
 //
-//	err = conn.Raw(func(driverConn any) error {
-//	  conn := driverConn.(*stdlib.Conn).Conn() // conn is a *fbx.Conn
-//	  // Do fbx specific stuff with conn
-//	  conn.CopyFrom(...)
-//	  return nil
+// Firebird parameters are positional and use question mark placeholders:
+//
+//	db.QueryRowContext(ctx, "select * from users where id=?", userID)
+//
+// Direct query methods also support named placeholder rewriting through
+// [fbx.NamedArgs]. [sql.Named] names are not interpreted as Firebird
+// placeholder names.
+//
+//	db.QueryRowContext(ctx, "select * from users where id=@id", fbx.NamedArgs{"id": userID})
+//
+// [sql.Conn.Raw] exposes the underlying [fbx.Conn] for the duration of its
+// callback. The underlying connection must not be retained after the callback
+// returns.
+//
+//	sqlConn, err := db.Conn(ctx)
+//	if err != nil {
+//		return err
+//	}
+//	defer sqlConn.Close()
+//
+//	err = sqlConn.Raw(func(driverConn any) error {
+//		fbxConn := driverConn.(*stdlib.Conn).Conn()
+//		_ = fbxConn.ServerVersion()
+//		return nil
 //	})
-//	if err != nil {
-//	  // handle error that occurred while using *fbx.Conn
-//	}
 //
-// # Firebird Specific Data Types
+// # Firebird-specific data types
 //
-// The fbtype package provides support for Firebird specific types. *fbtype.Map.SQLScanner is an adapter that makes
-// these types usable as a sql.Scanner.
+// The [fbtype] package provides Firebird-specific types and codecs.
+// [fbtype.Map.SQLScanner] is primarily used to scan Firebird arrays through
+// [database/sql]:
 //
-//	_, err := db.Exec("recreate table array_example(bigint_array bigint[3])")
-//	input := []int64{1,2,3}
-//	_, err = db.Exec("insert into array_example(bigint_array) values(?)", input)
+//	input := []int64{1, 2, 3}
+//	_, err := db.Exec("insert into array_example(bigint_array) values(?)", input)
 //
 //	m := fbtype.NewMap()
 //	var output []int64
@@ -98,61 +111,71 @@ func init() {
 		configs: make(map[string]*fbx.ConnConfig),
 	}
 
-	// if fbx driver was already registered by different fbx major version then we
-	// skip registration under the default name.
+	// Keep the default registration owned by the first imported fbx major version.
 	if !slices.Contains(sql.Drivers(), "fbx") {
 		sql.Register("fbx", fbxDriver)
 	}
 }
 
-// OptionOpenDB options for configuring the driver when opening a new db pool.
+// OptionOpenDB configures a connector created by [GetConnector] or
+// [GetPoolConnector].
 type OptionOpenDB func(*connector)
 
-// ShouldPingParams are passed to OptionShouldPing to decide whether to ping before reusing a connection.
+// ShouldPingParams contains the values passed to the function configured by
+// [OptionShouldPing].
 type ShouldPingParams struct {
 	// Conn is the underlying fbx connection.
 	Conn *fbx.Conn
-	// IdleDuration is how long it has been since ResetSession last ran.
+
+	// IdleDuration is the elapsed time since this driver connection was created
+	// or ResetSession previously ran. It approximates, but does not exactly
+	// measure, the time spent idle in the database/sql pool.
 	IdleDuration time.Duration
 }
 
-// OptionShouldPing controls whether stdlib should issue a liveness ping before reusing a connection.
-// If the function returns true, stdlib will ping.
-// If it returns false, stdlib will skip the ping.
-// If not provided, default is ping only when IdleDuration > 1s.
+// OptionShouldPing sets the function that decides whether stdlib performs a
+// liveness ping before database/sql reuses a connection. Returning true enables
+// the ping. Without this option, connections are pinged when IdleDuration is
+// greater than one second.
 func OptionShouldPing(f func(context.Context, ShouldPingParams) bool) OptionOpenDB {
-	return func(dc *connector) { dc.ShouldPing = f }
+	return func(dc *connector) { dc.shouldPing = f }
 }
 
-// OptionBeforeConnect provides a callback for before connect. It is passed a shallow copy of the ConnConfig that will
-// be used to connect, so only its immediate members should be modified. Used only if db is opened with *fbx.ConnConfig.
+// OptionBeforeConnect sets a function called before each connection created by
+// [GetConnector] or [OpenDB]. The function receives a per-connection copy
+// produced by [fbx.ConnConfig.Copy]. Pool connectors ignore this option;
+// configure connection hooks on [fbxpool.Config] instead.
 func OptionBeforeConnect(bc func(context.Context, *fbx.ConnConfig) error) OptionOpenDB {
 	return func(dc *connector) {
-		dc.BeforeConnect = bc
+		dc.beforeConnect = bc
 	}
 }
 
-// OptionAfterConnect provides a callback for after connect. Used only if db is opened with *fbx.ConnConfig.
+// OptionAfterConnect sets a function called after each connection created by
+// [GetConnector] or [OpenDB]. Returning an error aborts that connection attempt.
+// Pool connectors ignore this option; configure connection hooks on
+// [fbxpool.Config] instead.
 func OptionAfterConnect(ac func(context.Context, *fbx.Conn) error) OptionOpenDB {
 	return func(dc *connector) {
-		dc.AfterConnect = ac
+		dc.afterConnect = ac
 	}
 }
 
-// OptionResetSession provides a callback that can be used to add custom logic prior to executing a query on the
-// connection if the connection has been used before.
-// If ResetSessionFunc returns ErrBadConn error the connection will be discarded.
+// OptionResetSession sets a function called before database/sql reuses a
+// connection. Returning [driver.ErrBadConn] tells database/sql not to reuse the
+// driver connection.
 func OptionResetSession(rs func(context.Context, *fbx.Conn) error) OptionOpenDB {
 	return func(dc *connector) {
-		dc.ResetSession = rs
+		dc.resetSession = rs
 	}
 }
 
-// RandomizeHostOrderFunc is a BeforeConnect hook that randomizes the host order in the provided connConfig, so that a
-// new host becomes primary each time. This is useful to distribute connections for multi-master databases like
-// CockroachDB. If you use this you likely should set https://golang.org/pkg/database/sql/#DB.SetConnMaxLifetime as well
-// to ensure that connections are periodically rebalanced across your nodes.
-func RandomizeHostOrderFunc(ctx context.Context, connConfig *fbx.ConnConfig) error {
+// RandomizeHostOrderFunc is an [OptionBeforeConnect] hook that randomly selects
+// the primary host from the configured primary and fallback hosts. It can
+// distribute new connections among equivalent servers. Use
+// [sql.DB.SetConnMaxLifetime] when existing connections should also be replaced
+// periodically.
+func RandomizeHostOrderFunc(_ context.Context, connConfig *fbx.ConnConfig) error {
 	if len(connConfig.Fallbacks) == 0 {
 		return nil
 	}
@@ -166,7 +189,7 @@ func RandomizeHostOrderFunc(ctx context.Context, connConfig *fbx.ConnConfig) err
 		newFallbacks[i], newFallbacks[j] = newFallbacks[j], newFallbacks[i]
 	})
 
-	// Use the one that sorted last as the primary and keep the rest as the fallbacks
+	// Use the last shuffled host as the primary and keep the rest as fallbacks.
 	newPrimary := newFallbacks[len(newFallbacks)-1]
 	connConfig.Host = newPrimary.Host
 	connConfig.Port = newPrimary.Port
@@ -174,12 +197,14 @@ func RandomizeHostOrderFunc(ctx context.Context, connConfig *fbx.ConnConfig) err
 	return nil
 }
 
+// GetConnector returns a [driver.Connector] that creates fbx connections using
+// a snapshot of config and the supplied opts. Pass the result to [sql.OpenDB].
 func GetConnector(config fbx.ConnConfig, opts ...OptionOpenDB) driver.Connector {
 	c := connector{
-		ConnConfig:    config,
-		BeforeConnect: func(context.Context, *fbx.ConnConfig) error { return nil }, // noop before connect by default
-		AfterConnect:  func(context.Context, *fbx.Conn) error { return nil },       // noop after connect by default
-		ResetSession:  func(context.Context, *fbx.Conn) error { return nil },       // noop reset session by default
+		config:        *config.Copy(),
+		beforeConnect: func(context.Context, *fbx.ConnConfig) error { return nil },
+		afterConnect:  func(context.Context, *fbx.Conn) error { return nil },
+		resetSession:  func(context.Context, *fbx.Conn) error { return nil },
 		driver:        fbxDriver,
 	}
 
@@ -189,14 +214,19 @@ func GetConnector(config fbx.ConnConfig, opts ...OptionOpenDB) driver.Connector 
 	return c
 }
 
-// GetPoolConnector creates a new driver.Connector from the given *fbxpool.Pool. By using this be sure to set the
-// maximum idle connections of the *sql.DB created with this connector to zero since they must be managed from the
-// *fbxpool.Pool. This is required to avoid acquiring all the connections from the fbxpool and starving any direct
-// users of the fbxpool.
+// GetPoolConnector returns a [driver.Connector] that acquires connections from
+// pool. A [sql.DB] created from this connector must have its maximum idle
+// connections set to zero so database/sql does not retain connections acquired
+// from the underlying pool. [OpenDBFromPool] applies this setting automatically.
+// GetPoolConnector panics if pool is nil.
 func GetPoolConnector(pool *fbxpool.Pool, opts ...OptionOpenDB) driver.Connector {
+	if pool == nil {
+		panic("stdlib: GetPoolConnector called with nil pool")
+	}
+
 	c := connector{
 		pool:         pool,
-		ResetSession: func(context.Context, *fbx.Conn) error { return nil }, // noop reset session by default
+		resetSession: func(context.Context, *fbx.Conn) error { return nil },
 		driver:       fbxDriver,
 	}
 
@@ -207,15 +237,17 @@ func GetPoolConnector(pool *fbxpool.Pool, opts ...OptionOpenDB) driver.Connector
 	return c
 }
 
+// OpenDB returns a [sql.DB] that creates connections using config and opts.
+// The first connection is established lazily when the database is used.
 func OpenDB(config fbx.ConnConfig, opts ...OptionOpenDB) *sql.DB {
 	c := GetConnector(config, opts...)
 	return sql.OpenDB(c)
 }
 
-// OpenDBFromPool creates a new *sql.DB from the given *fbxpool.Pool. Note that this method automatically sets the
-// maximum number of idle connections in *sql.DB to zero, since they must be managed from the *fbxpool.Pool. This is
-// required to avoid acquiring all the connections from the fbxpool and starving any direct users of the fbxpool. Note
-// that closing the returned *sql.DB will not close the *fbxpool.Pool.
+// OpenDBFromPool returns a [sql.DB] that acquires connections from pool. It sets
+// the maximum number of idle database/sql connections to zero so the underlying
+// pool retains ownership of idle connections. Closing the returned database
+// does not close pool. OpenDBFromPool panics if pool is nil.
 func OpenDBFromPool(pool *fbxpool.Pool, opts ...OptionOpenDB) *sql.DB {
 	c := GetPoolConnector(pool, opts...)
 	db := sql.OpenDB(c)
@@ -224,29 +256,29 @@ func OpenDBFromPool(pool *fbxpool.Pool, opts ...OptionOpenDB) *sql.DB {
 }
 
 type connector struct {
-	fbx.ConnConfig
+	config        fbx.ConnConfig
 	pool          *fbxpool.Pool
-	BeforeConnect func(context.Context, *fbx.ConnConfig) error // function to call before creation of every new connection
-	AfterConnect  func(context.Context, *fbx.Conn) error       // function to call after creation of every new connection
-	ResetSession  func(context.Context, *fbx.Conn) error       // function is called before a connection is reused
-	ShouldPing    func(context.Context, ShouldPingParams) bool // function to decide if stdlib should ping before reusing a connection
+	beforeConnect func(context.Context, *fbx.ConnConfig) error
+	afterConnect  func(context.Context, *fbx.Conn) error
+	resetSession  func(context.Context, *fbx.Conn) error
+	shouldPing    func(context.Context, ShouldPingParams) bool
 	driver        *Driver
 }
 
-// Connect implement driver.Connector interface
+// Connect implements [driver.Connector] by opening a native connection or
+// acquiring one from the configured pool.
 func (c connector) Connect(ctx context.Context) (driver.Conn, error) {
 	var (
 		connConfig fbx.ConnConfig
 		conn       *fbx.Conn
-		close      func(context.Context) error
+		closeConn  func(context.Context) error
 		err        error
 	)
 
 	if c.pool == nil {
-		// Create a shallow copy of the config, so that BeforeConnect can safely modify it
-		connConfig = c.ConnConfig
+		connConfig = *c.config.Copy()
 
-		if err = c.BeforeConnect(ctx, &connConfig); err != nil {
+		if err = c.beforeConnect(ctx, &connConfig); err != nil {
 			return nil, err
 		}
 
@@ -254,11 +286,17 @@ func (c connector) Connect(ctx context.Context) (driver.Conn, error) {
 			return nil, err
 		}
 
-		if err = c.AfterConnect(ctx, conn); err != nil {
+		if err = c.afterConnect(ctx, conn); err != nil {
+			closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			closeErr := conn.Close(closeCtx)
+			cancel()
+			if closeErr != nil {
+				return nil, errors.Join(err, fmt.Errorf("close connection after AfterConnect error: %w", closeErr))
+			}
 			return nil, err
 		}
 
-		close = conn.Close
+		closeConn = conn.Close
 	} else {
 		var pconn *fbxpool.Conn
 
@@ -269,42 +307,49 @@ func (c connector) Connect(ctx context.Context) (driver.Conn, error) {
 
 		conn = pconn.Conn()
 
-		close = func(_ context.Context) error {
+		closeConn = func(_ context.Context) error {
 			pconn.Release()
 			return nil
 		}
 	}
 
 	return &Conn{
-		conn:             conn,
-		close:            close,
-		driver:           c.driver,
-		connConfig:       connConfig,
-		resetSessionFunc: c.ResetSession,
-		shouldPing:       c.ShouldPing,
-		psRefCounts:      make(map[*fbconn.StatementDescription]int),
+		conn:                 conn,
+		close:                closeConn,
+		driver:               c.driver,
+		connConfig:           connConfig,
+		resetSessionFunc:     c.resetSession,
+		shouldPing:           c.shouldPing,
+		lastResetSessionTime: time.Now(),
+		psRefCounts:          make(map[*fbconn.StatementDescription]int),
 	}, nil
 }
 
-// Driver implement driver.Connector interface
+// Driver returns the driver associated with the connector.
 func (c connector) Driver() driver.Driver {
 	return c.driver
 }
 
-// GetDefaultDriver returns the driver initialized in the init function
-// and used when the fbx driver is registered.
+// GetDefaultDriver returns this package's default driver. Package initialization
+// registers it under the "fbx" name unless that name is already owned by
+// another imported driver. The returned driver can be registered manually under
+// another name.
 func GetDefaultDriver() driver.Driver {
 	return fbxDriver
 }
 
+// Driver implements [driver.Driver] and [driver.DriverContext] for Firebird
+// connections.
 type Driver struct {
-	configMutex sync.Mutex
-	configs     map[string]*fbx.ConnConfig
-	sequence    int
+	configMu sync.RWMutex
+	configs  map[string]*fbx.ConnConfig
+	sequence int
 }
 
+// Open implements [driver.Driver]. It bounds the connection attempt because
+// this legacy interface does not accept a context.
 func (d *Driver) Open(name string) (driver.Conn, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second) // Ensure eventual timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	connector, err := d.OpenConnector(name)
@@ -314,72 +359,87 @@ func (d *Driver) Open(name string) (driver.Conn, error) {
 	return connector.Connect(ctx)
 }
 
+// OpenConnector implements [driver.DriverContext]. It resolves name once and
+// returns a connector with a fixed connection configuration.
 func (d *Driver) OpenConnector(name string) (driver.Connector, error) {
-	return &driverConnector{driver: d, name: name}, nil
-}
-
-func (d *Driver) registerConnConfig(c *fbx.ConnConfig) string {
-	d.configMutex.Lock()
-	connStr := fmt.Sprintf("registeredConnConfig%d", d.sequence)
-	d.sequence++
-	d.configs[connStr] = c
-	d.configMutex.Unlock()
-	return connStr
-}
-
-func (d *Driver) unregisterConnConfig(connStr string) {
-	d.configMutex.Lock()
-	delete(d.configs, connStr)
-	d.configMutex.Unlock()
-}
-
-type driverConnector struct {
-	driver *Driver
-	name   string
-}
-
-func (dc *driverConnector) Connect(ctx context.Context) (driver.Conn, error) {
-	var connConfig *fbx.ConnConfig
-
-	dc.driver.configMutex.Lock()
-	connConfig = dc.driver.configs[dc.name]
-	dc.driver.configMutex.Unlock()
+	d.configMu.RLock()
+	connConfig := d.configs[name]
+	d.configMu.RUnlock()
 
 	if connConfig == nil {
 		var err error
-		connConfig, err = fbx.ParseConfig(dc.name)
+		connConfig, err = fbx.ParseConfig(name)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	conn, err := fbx.ConnectConfig(ctx, connConfig)
+	return &driverConnector{driver: d, config: connConfig.Copy()}, nil
+}
+
+func (d *Driver) registerConnConfig(c *fbx.ConnConfig) string {
+	connConfig := c.Copy()
+
+	d.configMu.Lock()
+	defer d.configMu.Unlock()
+
+	if d.configs == nil {
+		d.configs = make(map[string]*fbx.ConnConfig)
+	}
+	connStr := fmt.Sprintf("registeredConnConfig%d", d.sequence)
+	d.sequence++
+	d.configs[connStr] = connConfig
+	return connStr
+}
+
+func (d *Driver) unregisterConnConfig(connStr string) {
+	d.configMu.Lock()
+	defer d.configMu.Unlock()
+
+	delete(d.configs, connStr)
+}
+
+type driverConnector struct {
+	driver *Driver
+	config *fbx.ConnConfig
+}
+
+// Connect implements [driver.Connector] using its parsed configuration.
+func (dc *driverConnector) Connect(ctx context.Context) (driver.Conn, error) {
+	conn, err := fbx.ConnectConfig(ctx, dc.config)
 	if err != nil {
 		return nil, err
 	}
 
-	c := &Conn{
-		conn:             conn,
-		close:            conn.Close,
-		driver:           dc.driver,
-		connConfig:       *connConfig,
-		resetSessionFunc: func(context.Context, *fbx.Conn) error { return nil },
-		psRefCounts:      make(map[*fbconn.StatementDescription]int),
-	}
-
-	return c, nil
+	return &Conn{
+		conn:                 conn,
+		close:                conn.Close,
+		driver:               dc.driver,
+		connConfig:           *dc.config,
+		resetSessionFunc:     func(context.Context, *fbx.Conn) error { return nil },
+		lastResetSessionTime: time.Now(),
+		psRefCounts:          make(map[*fbconn.StatementDescription]int),
+	}, nil
 }
 
+// Driver returns the driver associated with the connector.
 func (dc *driverConnector) Driver() driver.Driver {
 	return dc.driver
 }
 
-// RegisterConnConfig registers a ConnConfig and returns the connection string to use with Open.
+// RegisterConnConfig stores a copy of c and returns an opaque connection string
+// for use with this package's default [Driver]. Once [sql.Open] returns
+// successfully, the registration may be removed because its connector retains
+// another copy. RegisterConnConfig panics if c is nil.
 func RegisterConnConfig(c *fbx.ConnConfig) string {
+	if c == nil {
+		panic("stdlib: RegisterConnConfig called with nil config")
+	}
 	return fbxDriver.registerConnConfig(c)
 }
 
-// UnregisterConnConfig removes the ConnConfig registration for connStr.
+// UnregisterConnConfig removes the configuration registered for connStr. It has
+// no effect if connStr is not registered.
 func UnregisterConnConfig(connStr string) {
 	fbxDriver.unregisterConnConfig(connStr)
 }

@@ -1444,3 +1444,45 @@ func TestOptionShouldPing_HookCalledOnReuse(t *testing.T) {
 
 	require.True(t, hookCalled, "hook should be called on reuse")
 }
+
+func TestOptionShouldPing_FirstReuseIdleDuration(t *testing.T) {
+	var idleDuration time.Duration
+	var hookCalled bool
+
+	db := openDB(t,
+		stdlib.OptionShouldPing(func(_ context.Context, params stdlib.ShouldPingParams) bool {
+			hookCalled = true
+			idleDuration = params.IdleDuration
+			return false
+		}),
+	)
+	defer closeDB(t, db)
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+
+	require.NoError(t, db.Ping())
+	_, err := db.Exec("select 1 from rdb$database")
+	require.NoError(t, err)
+
+	require.True(t, hookCalled)
+	require.Less(t, idleDuration, time.Minute)
+}
+
+func TestOptionAfterConnect_ErrorClosesConnection(t *testing.T) {
+	callbackErr := errors.New("after-connect error")
+	var connected *fbx.Conn
+
+	db := openDB(t,
+		stdlib.OptionAfterConnect(func(_ context.Context, conn *fbx.Conn) error {
+			connected = conn
+			return callbackErr
+		}),
+	)
+	defer closeDB(t, db)
+
+	err := db.Ping()
+	require.ErrorIs(t, err, callbackErr)
+	require.NotNil(t, connected)
+	defer connected.Close(context.Background())
+	require.True(t, connected.IsClosed())
+}
