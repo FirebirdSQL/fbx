@@ -619,6 +619,13 @@ func numericRowValueFunc(m *fbtype.Map, typeMetadata fbtype.TypeMetadata) rowVal
 	}
 }
 
+func rawBytesRowValueFunc(src []byte) (driver.Value, error) {
+	if src == nil {
+		return nil, nil
+	}
+	return slices.Clone(src), nil
+}
+
 type Rows struct {
 	conn         *Conn
 	rows         fbx.Rows
@@ -750,8 +757,10 @@ func numericPrecisionForField(fd fbconn.FieldDescription) (int64, bool) {
 
 // ColumnTypeScanType returns the value type that can be used to scan types into.
 func (r *Rows) ColumnTypeScanType(index int) reflect.Type {
-	fd := r.rows.FieldDescriptions()[index]
+	return columnTypeScanType(r.rows.FieldDescriptions()[index])
+}
 
+func columnTypeScanType(fd fbconn.FieldDescription) reflect.Type {
 	if isScaledNumericField(fd) {
 		return reflect.TypeOf("")
 	}
@@ -759,7 +768,7 @@ func (r *Rows) ColumnTypeScanType(index int) reflect.Type {
 	switch fd.Type {
 	case fbproto.SQL_TYPE_BLOB:
 		return reflect.TypeOf(Blob{})
-	case fbproto.SQL_TYPE_D_FLOAT:
+	case fbproto.SQL_TYPE_DOUBLE:
 		return reflect.TypeOf(float64(0))
 	case fbproto.SQL_TYPE_FLOAT:
 		return reflect.TypeOf(float32(0))
@@ -773,8 +782,17 @@ func (r *Rows) ColumnTypeScanType(index int) reflect.Type {
 		return reflect.TypeOf(false)
 	case fbproto.SQL_TYPE_DATE, fbproto.SQL_TYPE_TIMESTAMP, fbproto.SQL_TYPE_TIMESTAMP_TZ, fbproto.SQL_TYPE_TIME, fbproto.SQL_TYPE_TIME_TZ:
 		return reflect.TypeOf(time.Time{})
-	default:
+	case fbproto.SQL_TYPE_INT128, fbproto.SQL_TYPE_DEC64, fbproto.SQL_TYPE_DEC128:
 		return reflect.TypeOf("")
+	case fbproto.SQL_TYPE_TEXT, fbproto.SQL_TYPE_VARYING:
+		if fd.Subtype&0xFF == fbproto.CS_BINARY {
+			return reflect.TypeOf([]byte(nil))
+		}
+		return reflect.TypeOf("")
+	case fbproto.SQL_TYPE_ARRAY, fbproto.SQL_TYPE_NULL:
+		return reflect.TypeOf((*any)(nil)).Elem()
+	default:
+		return reflect.TypeOf((*any)(nil)).Elem()
 	}
 }
 
@@ -841,7 +859,6 @@ func (r *Rows) Next(dest []driver.Value) error {
 					err := scanPlan.Scan(src, &d)
 					return int64(d), err
 				}
-
 			case fbproto.SQL_TYPE_LONG:
 				var d int32
 				scanPlan := m.PlanScan(typeMetadata, &d)
@@ -849,7 +866,6 @@ func (r *Rows) Next(dest []driver.Value) error {
 					err := scanPlan.Scan(src, &d)
 					return int64(d), err
 				}
-
 			case fbproto.SQL_TYPE_INT64:
 				var d int64
 				scanPlan := m.PlanScan(typeMetadata, &d)
@@ -910,6 +926,10 @@ func (r *Rows) Next(dest []driver.Value) error {
 				}
 			case fbproto.SQL_TYPE_ARRAY:
 				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
+					if fd.ArrayData == nil {
+						return nil, errors.New("array field is missing element metadata")
+					}
+
 					var array fbtype.ArraySQLScanner
 					var err error
 					array.ArrayBuffer = src
@@ -920,22 +940,24 @@ func (r *Rows) Next(dest []driver.Value) error {
 						fd.ArrayData.Dimensions)
 					return array, err
 				}
-			default:
-				if (fd.Subtype & 0xFF) != fbproto.CS_BINARY {
-					var d string
-					scanPlan := m.PlanScan(typeMetadata, &d)
-					r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
-						err := scanPlan.Scan(src, &d)
-						return d, err
-					}
-				} else {
+			case fbproto.SQL_TYPE_TEXT, fbproto.SQL_TYPE_VARYING:
+				if fd.Subtype&0xFF == fbproto.CS_BINARY {
 					var d []byte
 					scanPlan := m.PlanScan(typeMetadata, &d)
 					r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
 						err := scanPlan.Scan(src, &d)
 						return d, err
 					}
+				} else {
+					var d string
+					scanPlan := m.PlanScan(typeMetadata, &d)
+					r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
+						err := scanPlan.Scan(src, &d)
+						return d, err
+					}
 				}
+			default:
+				r.valueFuncs[i] = rawBytesRowValueFunc
 			}
 		}
 	}
