@@ -316,8 +316,6 @@ func (c connector) Connect(ctx context.Context) (driver.Conn, error) {
 	return &Conn{
 		conn:                 conn,
 		close:                closeConn,
-		driver:               c.driver,
-		connConfig:           connConfig,
 		resetSessionFunc:     c.resetSession,
 		shouldPing:           c.shouldPing,
 		lastResetSessionTime: time.Now(),
@@ -414,8 +412,6 @@ func (dc *driverConnector) Connect(ctx context.Context) (driver.Conn, error) {
 	return &Conn{
 		conn:                 conn,
 		close:                conn.Close,
-		driver:               dc.driver,
-		connConfig:           *dc.config,
 		resetSessionFunc:     func(context.Context, *fbx.Conn) error { return nil },
 		lastResetSessionTime: time.Now(),
 		psRefCounts:          make(map[*fbconn.StatementDescription]int),
@@ -444,33 +440,33 @@ func UnregisterConnConfig(connStr string) {
 	fbxDriver.unregisterConnConfig(connStr)
 }
 
+// Conn adapts an [fbx.Conn] to the interfaces used by [database/sql].
+// Applications normally access it only inside an [sql.Conn.Raw] callback.
 type Conn struct {
 	conn                 *fbx.Conn
 	close                func(context.Context) error
-	driver               *Driver
-	connConfig           fbx.ConnConfig
-	resetSessionFunc     func(context.Context, *fbx.Conn) error       // Function is called before a connection is reused
-	shouldPing           func(context.Context, ShouldPingParams) bool // Function to decide if stdlib should ping before reusing a connection
+	resetSessionFunc     func(context.Context, *fbx.Conn) error
+	shouldPing           func(context.Context, ShouldPingParams) bool
 	lastResetSessionTime time.Time
 
-	// psRefCounts contains reference counts for prepared statements. Prepare uses the underlying fbx logic to generate
-	// deterministic statement names from the statement text. If this query has already been prepared then the existing
-	// *fbconn.StatementDescription will be returned. However, this means that if Close is called on the returned Stmt
-	// then the underlying prepared statement will be closed even when the underlying prepared statement is still in use
-	// by another database/sql Stmt. To prevent this psRefCounts keeps track of how many database/sql statements are using
-	// the same underlying statement and only closes the underlying statement when the reference count reaches 0.
+	// fbx reuses a native prepared statement for identical SQL. Keep it alive
+	// until every database/sql statement that references it has been closed.
 	psRefCounts map[*fbconn.StatementDescription]int
 }
 
-// Conn returns the underlying *fbx.Conn
+// Conn returns the underlying [fbx.Conn]. The returned connection must only be
+// used for the duration of the [sql.Conn.Raw] callback that supplied c.
 func (c *Conn) Conn() *fbx.Conn {
 	return c.conn
 }
 
+// Prepare implements [driver.Conn] using a background context.
 func (c *Conn) Prepare(query string) (driver.Stmt, error) {
 	return c.PrepareContext(context.Background(), query)
 }
 
+// PrepareContext implements [driver.ConnPrepareContext]. Identical SQL text
+// shares one native prepared statement until all returned statements close.
 func (c *Conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, error) {
 	if c.conn.IsClosed() {
 		return nil, driver.ErrBadConn
@@ -485,16 +481,22 @@ func (c *Conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, e
 	return &Stmt{sd: sd, conn: c}, nil
 }
 
+// Close implements [driver.Conn]. It allows up to five seconds to close or
+// release the underlying connection.
 func (c *Conn) Close() error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 	return c.close(ctx)
 }
 
+// Begin implements [driver.Conn] using the server's default transaction
+// options and a background context.
 func (c *Conn) Begin() (driver.Tx, error) {
 	return c.BeginTx(context.Background(), driver.TxOptions{})
 }
 
+// BeginTx implements [driver.ConnBeginTx]. LevelDefault preserves the server
+// default; repeatable-read and snapshot both map to Firebird concurrency mode.
 func (c *Conn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
 	if c.conn.IsClosed() {
 		return nil, driver.ErrBadConn
@@ -503,9 +505,7 @@ func (c *Conn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, e
 	var fbxOpts fbx.TxOptions
 	switch sql.IsolationLevel(opts.Isolation) {
 	case sql.LevelDefault:
-		// Use server / database default isolation. This is important for Firebird where the default is
-		// SNAPSHOT (concurrency) instead of READ COMMITTED.
-		// Leave fbxOpts.IsoLevel empty so fbx.Conn.BeginTx can use server defaults.
+		// Empty options preserve the server and database defaults.
 	case sql.LevelReadCommitted:
 		fbxOpts.IsoLevel = fbx.ReadCommitted
 	case sql.LevelRepeatableRead, sql.LevelSnapshot:
@@ -528,6 +528,7 @@ func (c *Conn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, e
 	return wrapTx{ctx: ctx, tx: tx}, nil
 }
 
+// ExecContext implements [driver.ExecerContext].
 func (c *Conn) ExecContext(ctx context.Context, query string, argsV []driver.NamedValue) (driver.Result, error) {
 	if c.conn.IsClosed() {
 		return nil, driver.ErrBadConn
@@ -537,7 +538,7 @@ func (c *Conn) ExecContext(ctx context.Context, query string, argsV []driver.Nam
 	convertNamedArguments(args, argsV)
 
 	commandTag, err := c.conn.Exec(ctx, query, args...)
-	// if we got a network error before we had a chance to send the query, retry
+	// database/sql may safely retry only when no query bytes reached the server.
 	if err != nil {
 		if fbconn.SafeToRetry(err) {
 			return nil, driver.ErrBadConn
@@ -546,6 +547,7 @@ func (c *Conn) ExecContext(ctx context.Context, query string, argsV []driver.Nam
 	return driver.RowsAffected(commandTag.RowsAffected()), err
 }
 
+// QueryContext implements [driver.QueryerContext].
 func (c *Conn) QueryContext(ctx context.Context, query string, argsV []driver.NamedValue) (driver.Rows, error) {
 	if c.conn.IsClosed() {
 		return nil, driver.ErrBadConn
@@ -571,6 +573,7 @@ func (c *Conn) QueryContext(ctx context.Context, query string, argsV []driver.Na
 	return &Rows{conn: c, rows: rows, skipNext: true, skipNextMore: more}, nil
 }
 
+// Ping implements [driver.Pinger].
 func (c *Conn) Ping(ctx context.Context) error {
 	if c.conn.IsClosed() {
 		return driver.ErrBadConn
@@ -587,11 +590,22 @@ func (c *Conn) Ping(ctx context.Context) error {
 	return nil
 }
 
+// IsValid implements [driver.Validator]. It prevents a native connection that
+// was closed by a fatal operation from being returned to the database/sql pool.
+func (c *Conn) IsValid() bool {
+	return !c.conn.IsClosed()
+}
+
+// CheckNamedValue implements [driver.NamedValueChecker]. Values are left
+// unchanged so the fbx argument encoder can handle Firebird-specific types and
+// [driver.Valuer] implementations.
 func (c *Conn) CheckNamedValue(*driver.NamedValue) error {
-	// Underlying fbx supports sql.Scanner and driver.Valuer interfaces natively. So everything can be passed through directly.
 	return nil
 }
 
+// ResetSession implements [driver.SessionResetter]. It rejects connections
+// with an active explicit transaction, optionally checks liveness, and then
+// invokes the function configured by [OptionResetSession].
 func (c *Conn) ResetSession(ctx context.Context) error {
 	if c.conn.IsClosed() {
 		return driver.ErrBadConn
@@ -606,7 +620,7 @@ func (c *Conn) ResetSession(ctx context.Context) error {
 	now := time.Now()
 	idle := now.Sub(c.lastResetSessionTime)
 
-	doPing := idle > time.Second // default behavior: ping only if idle > 1s
+	doPing := idle > time.Second
 
 	if c.shouldPing != nil {
 		doPing = c.shouldPing(ctx, ShouldPingParams{
@@ -626,44 +640,83 @@ func (c *Conn) ResetSession(ctx context.Context) error {
 	return c.resetSessionFunc(ctx, c.conn)
 }
 
+// Stmt adapts a native fbx prepared statement to [driver.Stmt].
 type Stmt struct {
-	sd   *fbconn.StatementDescription
-	conn *Conn
+	sd     *fbconn.StatementDescription
+	conn   *Conn
+	closed bool
 }
 
-func (s *Stmt) Close() error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
+var errStmtClosed = errors.New("stdlib: statement is closed")
 
-	refCount := s.conn.psRefCounts[s.sd]
-	if refCount == 1 {
-		delete(s.conn.psRefCounts, s.sd)
-	} else {
-		s.conn.psRefCounts[s.sd]--
+// Close implements [driver.Stmt]. The shared native statement is deallocated
+// after the last Stmt that references it is closed.
+func (s *Stmt) Close() error {
+	if s.closed {
 		return nil
 	}
 
-	return s.conn.conn.Deallocate(ctx, s.sd.SQL)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	refCount, ok := s.conn.psRefCounts[s.sd]
+	if !ok {
+		s.closed = true
+		return nil
+	}
+	if refCount > 1 {
+		s.conn.psRefCounts[s.sd] = refCount - 1
+		s.closed = true
+		return nil
+	}
+
+	if err := s.conn.conn.Deallocate(ctx, s.sd.SQL); err != nil {
+		return err
+	}
+
+	delete(s.conn.psRefCounts, s.sd)
+	s.closed = true
+	return nil
 }
 
+// NumInput implements [driver.Stmt] and reports the number of positional
+// parameters described by Firebird.
 func (s *Stmt) NumInput() int {
 	return len(s.sd.Parameters)
 }
 
+// Exec implements [driver.Stmt] using a background context.
 func (s *Stmt) Exec(argsV []driver.Value) (driver.Result, error) {
-	return nil, errors.New("Stmt.Exec deprecated and not implemented")
+	return s.ExecContext(context.Background(), namedValuesFromValues(argsV))
 }
 
+// ExecContext implements [driver.StmtExecContext].
 func (s *Stmt) ExecContext(ctx context.Context, argsV []driver.NamedValue) (driver.Result, error) {
+	if s.closed {
+		return nil, errStmtClosed
+	}
 	return s.conn.ExecContext(ctx, s.sd.SQL, argsV)
 }
 
+// Query implements [driver.Stmt] using a background context.
 func (s *Stmt) Query(argsV []driver.Value) (driver.Rows, error) {
-	return nil, errors.New("Stmt.Query deprecated and not implemented")
+	return s.QueryContext(context.Background(), namedValuesFromValues(argsV))
 }
 
+// QueryContext implements [driver.StmtQueryContext].
 func (s *Stmt) QueryContext(ctx context.Context, argsV []driver.NamedValue) (driver.Rows, error) {
+	if s.closed {
+		return nil, errStmtClosed
+	}
 	return s.conn.QueryContext(ctx, s.sd.SQL, argsV)
+}
+
+func namedValuesFromValues(values []driver.Value) []driver.NamedValue {
+	namedValues := make([]driver.NamedValue, len(values))
+	for i, value := range values {
+		namedValues[i] = driver.NamedValue{Ordinal: i + 1, Value: value}
+	}
+	return namedValues
 }
 
 type rowValueFunc func(src []byte) (driver.Value, error)

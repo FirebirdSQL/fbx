@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -982,6 +983,95 @@ func TestStmtQueryContextSuccess(t *testing.T) {
 	}
 
 	ensureDBValid(t, db)
+}
+
+func TestStmtLegacyExecAndQuery(t *testing.T) {
+	db := openDB(t)
+	defer closeDB(t, db)
+
+	const table = "stdlib_legacy_stmt_test"
+	_, err := db.Exec("recreate table " + table + " (id integer)")
+	require.NoError(t, err)
+	defer func() {
+		_, _ = db.Exec("drop table " + table)
+	}()
+
+	sqlConn, err := db.Conn(context.Background())
+	require.NoError(t, err)
+	defer sqlConn.Close()
+
+	err = sqlConn.Raw(func(driverConn any) error {
+		conn := driverConn.(*stdlib.Conn)
+
+		insert, err := conn.PrepareContext(context.Background(), "insert into "+table+" (id) values (?)")
+		if err != nil {
+			return err
+		}
+		defer insert.Close()
+
+		result, err := insert.Exec([]driver.Value{int64(73)})
+		if err != nil {
+			return err
+		}
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if rowsAffected != 1 {
+			return fmt.Errorf("RowsAffected = %d, want 1", rowsAffected)
+		}
+
+		query, err := conn.PrepareContext(context.Background(), "select id from "+table+" where id = ?")
+		if err != nil {
+			return err
+		}
+		defer query.Close()
+
+		rows, err := query.Query([]driver.Value{int64(73)})
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+
+		values := make([]driver.Value, len(rows.Columns()))
+		if err := rows.Next(values); err != nil {
+			return err
+		}
+		if len(values) != 1 || values[0] != int64(73) {
+			return fmt.Errorf("query values = %#v, want []driver.Value{int64(73)}", values)
+		}
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func TestConnValidatorDiscardsClosedConnection(t *testing.T) {
+	db := openDB(t)
+	defer closeDB(t, db)
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+
+	sqlConn, err := db.Conn(context.Background())
+	require.NoError(t, err)
+	err = sqlConn.Raw(func(driverConn any) error {
+		conn := driverConn.(*stdlib.Conn)
+		if !conn.IsValid() {
+			return errors.New("new connection is invalid")
+		}
+		if err := conn.Conn().Close(context.Background()); err != nil {
+			return err
+		}
+		if conn.IsValid() {
+			return errors.New("closed connection is still valid")
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	require.NoError(t, sqlConn.Close())
+	require.Equal(t, 0, db.Stats().OpenConnections)
+
+	require.NoError(t, db.Ping())
+	require.Equal(t, 1, db.Stats().OpenConnections)
 }
 
 func TestRowsColumnTypes(t *testing.T) {

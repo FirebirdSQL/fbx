@@ -2,8 +2,10 @@ package stdlib
 
 import (
 	"context"
+	"database/sql/driver"
 	"encoding/binary"
 	"errors"
+	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -176,6 +178,72 @@ func TestRawBytesRowValueFuncReturnsCopy(t *testing.T) {
 	}
 	if nullValue != nil {
 		t.Fatalf("NULL: got %#v (%T), want nil", nullValue, nullValue)
+	}
+}
+
+func TestNamedValuesFromValues(t *testing.T) {
+	t.Parallel()
+
+	values := []driver.Value{int64(42), "answer", nil}
+	got := namedValuesFromValues(values)
+	want := []driver.NamedValue{
+		{Ordinal: 1, Value: int64(42)},
+		{Ordinal: 2, Value: "answer"},
+		{Ordinal: 3, Value: nil},
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %#v, want %#v", got, want)
+	}
+}
+
+func TestStmtCloseIsIdempotentWithSharedStatement(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	nativeConn, err := fbx.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer nativeConn.Close(context.Background())
+
+	conn := &Conn{
+		conn:        nativeConn,
+		psRefCounts: make(map[*fbconn.StatementDescription]int),
+	}
+	const query = "select 42 from rdb$database"
+
+	firstDriverStmt, err := conn.PrepareContext(ctx, query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondDriverStmt, err := conn.PrepareContext(ctx, query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := firstDriverStmt.(*Stmt)
+	second := secondDriverStmt.(*Stmt)
+
+	if got := conn.psRefCounts[first.sd]; got != 2 {
+		t.Fatalf("initial reference count = %d, want 2", got)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := first.Query(nil); !errors.Is(err, errStmtClosed) {
+		t.Fatalf("Query after Close error = %v, want %v", err, errStmtClosed)
+	}
+	if got := conn.psRefCounts[first.sd]; got != 1 {
+		t.Fatalf("reference count after repeated Close = %d, want 1", got)
+	}
+	if err := second.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := conn.psRefCounts[first.sd]; ok {
+		t.Fatal("reference count remains after the final Close")
 	}
 }
 
