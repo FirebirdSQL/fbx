@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"rdb.red-soft.ru/fbx/fbproto"
 )
 
 func TestNormalizeTxLockTimeout(t *testing.T) {
@@ -53,6 +54,27 @@ func TestGetTPB(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, tpb)
 		require.NotEmpty(t, tpb)
+	})
+
+	t.Run("access mode only preserves default isolation", func(t *testing.T) {
+		tpb, err := TxOptions{AccessMode: ReadOnly}.GetTPB()
+		require.NoError(t, err)
+		require.Equal(t, []byte{
+			fbproto.Isc_tpb_version3,
+			fbproto.Isc_tpb_read,
+			fbproto.Isc_tpb_wait,
+		}, tpb)
+	})
+
+	t.Run("isolation only defaults to read write", func(t *testing.T) {
+		tpb, err := TxOptions{IsoLevel: RepeatableRead}.GetTPB()
+		require.NoError(t, err)
+		require.Equal(t, []byte{
+			fbproto.Isc_tpb_version3,
+			fbproto.Isc_tpb_write,
+			fbproto.Isc_tpb_concurrency,
+			fbproto.Isc_tpb_wait,
+		}, tpb)
 	})
 
 	t.Run("unknown access mode fails", func(t *testing.T) {
