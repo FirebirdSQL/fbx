@@ -1320,6 +1320,35 @@ func TestRowsColumnTypes(t *testing.T) {
 	})
 }
 
+func TestRowsColumnTypeNullable(t *testing.T) {
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		_, err := db.Exec("recreate table stdlib_column_nullable(id integer not null primary key, required_value integer not null, optional_value integer)")
+		require.NoError(t, err)
+
+		rows, err := db.Query("select id, required_value, optional_value from stdlib_column_nullable")
+		require.NoError(t, err)
+		defer rows.Close()
+
+		columns, err := rows.ColumnTypes()
+		require.NoError(t, err)
+		require.Len(t, columns, 3)
+
+		tests := []struct {
+			index int
+			want  bool
+		}{
+			{index: 0, want: false},
+			{index: 1, want: false},
+			{index: 2, want: true},
+		}
+		for _, tt := range tests {
+			got, ok := columns[tt.index].Nullable()
+			require.True(t, ok, "column %d", tt.index)
+			require.Equal(t, tt.want, got, "column %d", tt.index)
+		}
+	})
+}
+
 func TestRowsDatabaseSQLValueTypes(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
 		var numericValue, doubleValue, octetsValue, timeValue any

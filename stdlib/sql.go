@@ -593,7 +593,7 @@ func (c *Conn) QueryContext(ctx context.Context, query string, argsV []driver.Na
 		return nil, err
 	}
 
-	// Preload first row because otherwise we won't know what columns are available when database/sql asks.
+	// Preload one row so column metadata is available before database/sql calls Next.
 	more := rows.Next()
 	if err = rows.Err(); err != nil {
 		rows.Close()
@@ -772,6 +772,7 @@ func rawBytesRowValueFunc(src []byte) (driver.Value, error) {
 	return slices.Clone(src), nil
 }
 
+// Rows adapts native fbx rows to [database/sql/driver.Rows].
 type Rows struct {
 	conn         *Conn
 	rows         fbx.Rows
@@ -784,6 +785,7 @@ type Rows struct {
 	columnNames []string
 }
 
+// Columns implements [driver.Rows].
 func (r *Rows) Columns() []string {
 	if r.columnNames == nil {
 		fields := r.rows.FieldDescriptions()
@@ -796,7 +798,9 @@ func (r *Rows) Columns() []string {
 	return r.columnNames
 }
 
-// ColumnTypeDatabaseTypeName returns the database system type name. If the name is unknown the TypeID is returned.
+// ColumnTypeDatabaseTypeName implements
+// [driver.RowsColumnTypeDatabaseTypeName]. If the type name is unknown, it
+// returns the numeric Firebird type ID.
 func (r *Rows) ColumnTypeDatabaseTypeName(index int) string {
 	fd := r.rows.FieldDescriptions()[index]
 	if dt, ok := r.conn.conn.TypeMap().TypeForTypeID(fd.Type, fd.Subtype); ok {
@@ -806,9 +810,7 @@ func (r *Rows) ColumnTypeDatabaseTypeName(index int) string {
 	return strconv.FormatInt(int64(fd.Type), 10)
 }
 
-// ColumnTypeLength returns the length of the column type if the column is a
-// variable length type. If the column is not a variable length type ok
-// should return false.
+// ColumnTypeLength implements [driver.RowsColumnTypeLength].
 func (r *Rows) ColumnTypeLength(index int) (int64, bool) {
 	fd := r.rows.FieldDescriptions()[index]
 
@@ -823,8 +825,8 @@ func (r *Rows) ColumnTypeLength(index int) (int64, bool) {
 }
 
 func characterLength(fd fbconn.FieldDescription) int64 {
-	charsetId := int32(fd.Subtype) & 0xFF
-	name, err := fbproto.CharacterSetIdIntoName(charsetId)
+	charsetID := int32(fd.Subtype) & 0xFF
+	name, err := fbproto.CharacterSetIdIntoName(charsetID)
 	if err != nil {
 		return int64(fd.Length)
 	}
@@ -834,17 +836,20 @@ func characterLength(fd fbconn.FieldDescription) int64 {
 	}
 
 	maxBytes := uint32(encoding.MaxBytesPerChar)
-	if maxBytes == 0 {
-		return int64(fd.Length)
-	}
 	if fd.Length%maxBytes == 0 {
 		return int64(fd.Length / maxBytes)
 	}
 	return int64(fd.Length)
 }
 
-// ColumnTypePrecisionScale should return the precision and scale for decimal
-// types. If not applicable, ok should be false.
+// ColumnTypeNullable implements [driver.RowsColumnTypeNullable].
+func (r *Rows) ColumnTypeNullable(index int) (nullable, ok bool) {
+	fd := r.rows.FieldDescriptions()[index]
+	return fd.Nullable || fd.NullOk, true
+}
+
+// ColumnTypePrecisionScale implements [driver.RowsColumnTypePrecisionScale].
+// It reports scale and storage precision for fixed-scale NUMERIC and DECIMAL columns.
 func (r *Rows) ColumnTypePrecisionScale(index int) (precision, scale int64, ok bool) {
 	fd := r.rows.FieldDescriptions()[index]
 
@@ -892,16 +897,12 @@ func numericPrecisionForField(fd fbconn.FieldDescription) (int64, bool) {
 		return 18, true
 	case fbproto.SQL_TYPE_INT128:
 		return 38, true
-	case fbproto.SQL_TYPE_DEC64:
-		return 16, true
-	case fbproto.SQL_TYPE_DEC128:
-		return 34, true
 	default:
 		return 0, false
 	}
 }
 
-// ColumnTypeScanType returns the value type that can be used to scan types into.
+// ColumnTypeScanType implements [driver.RowsColumnTypeScanType].
 func (r *Rows) ColumnTypeScanType(index int) reflect.Type {
 	return columnTypeScanType(r.rows.FieldDescriptions()[index])
 }
@@ -1198,11 +1199,7 @@ func (r *Rows) Next(dest []driver.Value) (err error) {
 
 func convertNamedArguments(args []any, argsV []driver.NamedValue) {
 	for i, v := range argsV {
-		if v.Value != nil {
-			args[i] = v.Value.(any)
-		} else {
-			args[i] = nil
-		}
+		args[i] = v.Value
 	}
 }
 

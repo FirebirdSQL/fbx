@@ -373,18 +373,6 @@ func TestNumericPrecisionForField(t *testing.T) {
 			wantFound: true,
 		},
 		{
-			name:      "type dec64",
-			fd:        fbconn.FieldDescription{Type: fbproto.SQL_TYPE_DEC64, Length: 2},
-			wantPrec:  16,
-			wantFound: true,
-		},
-		{
-			name:      "type dec128",
-			fd:        fbconn.FieldDescription{Type: fbproto.SQL_TYPE_DEC128, Length: 2},
-			wantPrec:  34,
-			wantFound: true,
-		},
-		{
 			name:      "unknown length",
 			fd:        fbconn.FieldDescription{Type: fbproto.SQL_TYPE_NULL, Length: 3},
 			wantPrec:  0,
