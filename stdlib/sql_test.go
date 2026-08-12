@@ -173,6 +173,49 @@ func TestStdlibBlobBinary(t *testing.T) {
 	})
 }
 
+func TestStdlibBlobWithArray(t *testing.T) {
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		_, err := db.Exec("recreate table stdlib_blob_array(id integer primary key, data blob sub_type 0, numbers bigint[3])")
+		require.NoError(t, err)
+
+		inputBlob := []byte("blob-array-result")
+		inputNumbers := []int64{7, 8, 9}
+
+		tx, err := db.Begin()
+		require.NoError(t, err)
+		defer func() { _ = tx.Rollback() }()
+
+		_, err = tx.Exec(
+			"insert into stdlib_blob_array(id, data, numbers) values (?, ?, ?)",
+			1,
+			bytes.NewReader(inputBlob),
+			inputNumbers,
+		)
+		require.NoError(t, err)
+
+		rows, err := tx.Query("select data, numbers from stdlib_blob_array where id = ?", 1)
+		require.NoError(t, err)
+
+		require.True(t, rows.Next())
+		var (
+			blob    stdlib.Blob
+			numbers []int64
+		)
+		m := fbtype.NewMap()
+		err = rows.Scan(&blob, m.SQLScanner(&numbers))
+		require.NoError(t, err)
+		rows.Close()
+		require.NoError(t, rows.Err())
+
+		gotBlob, err := blob.Bytes()
+		require.NoError(t, err)
+		require.Equal(t, inputBlob, gotBlob)
+		require.Equal(t, inputNumbers, numbers)
+
+		require.NoError(t, tx.Commit())
+	})
+}
+
 func TestStdlibBlobText(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
 		tests := []struct {

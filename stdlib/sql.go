@@ -938,12 +938,41 @@ func columnTypeScanType(fd fbconn.FieldDescription) reflect.Type {
 	}
 }
 
+// Close implements [driver.Rows].
 func (r *Rows) Close() error {
 	r.rows.Close()
 	return r.rows.Err()
 }
 
-func (r *Rows) Next(dest []driver.Value) error {
+// scanBlobReaders scans BLOB columns into lazy readers and skips other columns.
+func scanBlobReaders(rows fbx.Rows, blobColumns []bool) ([]io.ReadCloser, error) {
+	readers := make([]io.ReadCloser, len(blobColumns))
+	scanTargets := make([]any, len(blobColumns))
+	for i, isBlob := range blobColumns {
+		if isBlob {
+			scanTargets[i] = &readers[i]
+		}
+	}
+
+	if err := rows.Scan(scanTargets...); err != nil {
+		closeBlobReaders(readers)
+		return nil, err
+	}
+
+	return readers, nil
+}
+
+// closeBlobReaders closes any BLOB readers that were not returned to database/sql.
+func closeBlobReaders(readers []io.ReadCloser) {
+	for _, reader := range readers {
+		if reader != nil {
+			_ = reader.Close()
+		}
+	}
+}
+
+// Next implements [driver.Rows].
+func (r *Rows) Next(dest []driver.Value) (err error) {
 	m := r.conn.conn.TypeMap()
 	fieldDescriptions := r.rows.FieldDescriptions()
 
@@ -1120,30 +1149,30 @@ func (r *Rows) Next(dest []driver.Value) error {
 		}
 	}
 
-	var blobValues []any
+	var blobReaders []io.ReadCloser
+	var keepBlobReaders bool
 	if r.hasBlobCols {
-		values, err := r.rows.Values()
+		blobReaders, err = scanBlobReaders(r.rows, r.blobColumns)
 		if err != nil {
 			return err
 		}
-		blobValues = values
+		defer func() {
+			if !keepBlobReaders {
+				closeBlobReaders(blobReaders)
+			}
+		}()
 	}
 
 	for i, rv := range r.rows.RawValues() {
 		if rv != nil {
 			if r.blobColumns[i] {
-				value := blobValues[i]
-				if value == nil {
+				reader := blobReaders[i]
+				if reader == nil {
 					dest[i] = nil
 					continue
 				}
-				reader, ok := value.(io.ReadCloser)
-				if !ok {
-					return fmt.Errorf("blob column %d returned %T", i, value)
-				}
 				blobValue, err := buildBlobValue(reader, &fieldDescriptions[i], r.conn)
 				if err != nil {
-					_ = reader.Close()
 					return err
 				}
 				dest[i] = blobValue
@@ -1159,6 +1188,7 @@ func (r *Rows) Next(dest []driver.Value) error {
 		}
 	}
 
+	keepBlobReaders = true
 	return nil
 }
 
