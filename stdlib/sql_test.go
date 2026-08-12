@@ -575,6 +575,36 @@ func TestConnQueryScanGoArray(t *testing.T) {
 	})
 }
 
+func TestConnQueryScanGoArrayNullClearsDestination(t *testing.T) {
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		_, err := db.Exec("recreate table scan_go_array_null_test (id integer primary key, array bigint[3])")
+		require.NoError(t, err)
+
+		_, err = db.Exec("insert into scan_go_array_null_test values (?, ?)", 1, []int64{1, 2, 3})
+		require.NoError(t, err)
+		_, err = db.Exec("insert into scan_go_array_null_test values (?, ?)", 2, []int64(nil))
+		require.NoError(t, err)
+
+		rows, err := db.Query("select array from scan_go_array_null_test order by id")
+		require.NoError(t, err)
+		defer rows.Close()
+
+		m := fbtype.NewMap()
+		actual := []int64{99}
+
+		require.True(t, rows.Next())
+		require.NoError(t, rows.Scan(m.SQLScanner(&actual)))
+		require.Equal(t, []int64{1, 2, 3}, actual)
+
+		require.True(t, rows.Next())
+		require.NoError(t, rows.Scan(m.SQLScanner(&actual)))
+		require.Nil(t, actual)
+
+		require.False(t, rows.Next())
+		require.NoError(t, rows.Err())
+	})
+}
+
 func TestConnQueryScanArray(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
 		_, err := db.Exec("recreate table scan_array_test (id integer primary key, array bigint[3])")
