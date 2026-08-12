@@ -952,6 +952,32 @@ func TestConnMultiplePrepareAndDeallocate(t *testing.T) {
 	})
 }
 
+func TestStmtCloseAfterDeallocateFailureIsIdempotent(t *testing.T) {
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		sqlConn, err := db.Conn(context.Background())
+		require.NoError(t, err)
+		defer sqlConn.Close()
+
+		err = sqlConn.Raw(func(driverConn any) error {
+			conn := driverConn.(*stdlib.Conn)
+
+			stmt, err := conn.PrepareContext(context.Background(), "select 42 from rdb$database")
+			if err != nil {
+				return err
+			}
+
+			if err := conn.Conn().Close(context.Background()); err != nil {
+				return err
+			}
+
+			require.Error(t, stmt.Close())
+			require.NoError(t, stmt.Close())
+			return nil
+		})
+		require.NoError(t, err)
+	})
+}
+
 func TestConnExecContextSuccess(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
 		_, err := db.ExecContext(context.Background(), "recreate table exec_context_test(id int primary key)")

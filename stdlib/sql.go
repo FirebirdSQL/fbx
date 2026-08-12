@@ -700,6 +700,10 @@ func (s *Stmt) Close() error {
 	}
 
 	if err := s.conn.conn.Deallocate(ctx, s.sd.SQL); err != nil {
+		if s.conn.conn.IsClosed() {
+			delete(s.conn.psRefCounts, s.sd)
+			s.closed = true
+		}
 		return err
 	}
 
