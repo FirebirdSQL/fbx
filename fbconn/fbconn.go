@@ -1187,7 +1187,7 @@ func (fbConn *FbConn) Client() *fbproto.Client {
 // Close closes a connection. It is safe to call Close on an already closed connection. Close attempts a clean close by
 // sending the exit message to Firebird/RedDatabase server. However, this could block so ctx is available to limit the time to wait. The
 // underlying net.Conn.Close() will always be called regardless of any other errors.
-func (fbConn *FbConn) Close(ctx context.Context) error {
+func (fbConn *FbConn) Close(ctx context.Context) (err error) {
 	fbConn.statusMu.Lock()
 	if fbConn.status == connStatusClosed {
 		fbConn.statusMu.Unlock()
@@ -1199,7 +1199,9 @@ func (fbConn *FbConn) Close(ctx context.Context) error {
 	fbConn.closeEventChannel()
 
 	defer fbConn.closeCleanupDone()
-	defer fbConn.conn.Close()
+	defer func() {
+		err = errors.Join(err, fbConn.conn.Close())
+	}()
 
 	if ctx != context.Background() {
 		// Close may be called while a cancellable query is in progress. This will most often be triggered by panic when
@@ -1220,7 +1222,7 @@ func (fbConn *FbConn) Close(ctx context.Context) error {
 	})
 	// Firebird replies to op_detach, but op_disconnect is terminal and has no response.
 	// Close is best-effort, so it closes the socket instead of waiting for detach acknowledgement.
-	return fbConn.conn.Close()
+	return nil
 }
 
 // DropDatabase drops the currently attached database and closes the connection.
