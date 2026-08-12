@@ -53,12 +53,63 @@ func TestConnectorBeforeConnectGetsIndependentConfig(t *testing.T) {
 	}
 }
 
+func TestConnectorRejectsAutocommitDisabled(t *testing.T) {
+	t.Parallel()
+
+	config, err := fbx.ParseConfig("firebird://user:password@primary/database")
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.Autocommit = false
+
+	_, err = GetConnector(*config).Connect(context.Background())
+	if !errors.Is(err, ErrAutocommitDisabled) {
+		t.Fatalf("Connect error = %v, want %v", err, ErrAutocommitDisabled)
+	}
+}
+
+func TestConnectorValidatesConfigAfterBeforeConnect(t *testing.T) {
+	t.Parallel()
+
+	config, err := fbx.ParseConfig("firebird://user:password@primary/database")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	connector := GetConnector(*config, OptionBeforeConnect(func(_ context.Context, candidate *fbx.ConnConfig) error {
+		candidate.Autocommit = false
+		return nil
+	}))
+	_, err = connector.Connect(context.Background())
+	if !errors.Is(err, ErrAutocommitDisabled) {
+		t.Fatalf("Connect error = %v, want %v", err, ErrAutocommitDisabled)
+	}
+}
+
 func TestDriverOpenConnectorParsesName(t *testing.T) {
 	t.Parallel()
 
 	d := &Driver{}
 	if _, err := d.OpenConnector("firebird://%"); err == nil {
 		t.Fatal("OpenConnector accepted an invalid connection string")
+	}
+}
+
+func TestDriverOpenConnectorRejectsAutocommitDisabled(t *testing.T) {
+	t.Parallel()
+
+	d := &Driver{}
+	config, err := fbx.ParseConfig("firebird://user:password@primary/database")
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.Autocommit = false
+	name := d.registerConnConfig(config)
+	defer d.unregisterConnConfig(name)
+
+	_, err = d.OpenConnector(name)
+	if !errors.Is(err, ErrAutocommitDisabled) {
+		t.Fatalf("OpenConnector error = %v, want %v", err, ErrAutocommitDisabled)
 	}
 }
 

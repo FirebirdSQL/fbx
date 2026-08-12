@@ -104,7 +104,13 @@ import (
 	"rdb.red-soft.ru/fbx/fbxpool"
 )
 
-var fbxDriver *Driver
+var (
+	fbxDriver *Driver
+
+	// ErrAutocommitDisabled is returned when a connector is configured with
+	// autocommit disabled. database/sql transactions must use sql.Tx instead.
+	ErrAutocommitDisabled = errors.New("stdlib: database/sql requires autocommit=true; use sql.Tx for explicit transactions")
+)
 
 func init() {
 	fbxDriver = &Driver{
@@ -199,6 +205,7 @@ func RandomizeHostOrderFunc(_ context.Context, connConfig *fbx.ConnConfig) error
 
 // GetConnector returns a [driver.Connector] that creates fbx connections using
 // a snapshot of config and the supplied opts. Pass the result to [sql.OpenDB].
+// Autocommit must be enabled; use [sql.Tx] for explicit transactions.
 func GetConnector(config fbx.ConnConfig, opts ...OptionOpenDB) driver.Connector {
 	c := connector{
 		config:        *config.Copy(),
@@ -218,7 +225,8 @@ func GetConnector(config fbx.ConnConfig, opts ...OptionOpenDB) driver.Connector 
 // pool. A [sql.DB] created from this connector must have its maximum idle
 // connections set to zero so database/sql does not retain connections acquired
 // from the underlying pool. [OpenDBFromPool] applies this setting automatically.
-// GetPoolConnector panics if pool is nil.
+// GetPoolConnector panics if pool is nil. Connections in pool must have
+// autocommit enabled.
 func GetPoolConnector(pool *fbxpool.Pool, opts ...OptionOpenDB) driver.Connector {
 	if pool == nil {
 		panic("stdlib: GetPoolConnector called with nil pool")
@@ -281,6 +289,9 @@ func (c connector) Connect(ctx context.Context) (driver.Conn, error) {
 		if err = c.beforeConnect(ctx, &connConfig); err != nil {
 			return nil, err
 		}
+		if err = validateConnConfig(&connConfig); err != nil {
+			return nil, err
+		}
 
 		if conn, err = fbx.ConnectConfig(ctx, &connConfig); err != nil {
 			return nil, err
@@ -300,12 +311,20 @@ func (c connector) Connect(ctx context.Context) (driver.Conn, error) {
 	} else {
 		var pconn *fbxpool.Conn
 
+		if err = validateConnConfig(c.pool.Config().ConnConfig); err != nil {
+			return nil, err
+		}
+
 		pconn, err = c.pool.Acquire(ctx)
 		if err != nil {
 			return nil, err
 		}
 
 		conn = pconn.Conn()
+		if err = validateConnConfig(conn.Config()); err != nil {
+			pconn.Release()
+			return nil, err
+		}
 
 		closeConn = func(_ context.Context) error {
 			pconn.Release()
@@ -321,6 +340,13 @@ func (c connector) Connect(ctx context.Context) (driver.Conn, error) {
 		lastResetSessionTime: time.Now(),
 		psRefCounts:          make(map[*fbconn.StatementDescription]int),
 	}, nil
+}
+
+func validateConnConfig(config *fbx.ConnConfig) error {
+	if !config.Autocommit {
+		return ErrAutocommitDisabled
+	}
+	return nil
 }
 
 // Driver returns the driver associated with the connector.
@@ -370,6 +396,9 @@ func (d *Driver) OpenConnector(name string) (driver.Connector, error) {
 		if err != nil {
 			return nil, err
 		}
+	}
+	if err := validateConnConfig(connConfig); err != nil {
+		return nil, err
 	}
 
 	return &driverConnector{driver: d, config: connConfig.Copy()}, nil
