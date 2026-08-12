@@ -151,6 +151,32 @@ func TestConnectCustomDialer(t *testing.T) {
 	closeConn(t, conn)
 }
 
+func TestLocalBLRErrorDoesNotCloseConnection(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	connString := os.Getenv("FBX_TEST_DATABASE")
+	if connString == "" {
+		t.Skip("Skipping due to missing environment variable FBX_TEST_DATABASE")
+	}
+
+	conn, err := fbconn.Connect(ctx, connString)
+	require.NoError(t, err)
+	defer closeConn(t, conn)
+
+	statement, err := conn.Prepare(ctx, "select cast(? as integer) from rdb$database")
+	require.NoError(t, err)
+	require.Len(t, statement.Description.StatementInfo.ParametersDescriptors, 1)
+
+	// Force GetParametersBlr to fail before an execute message reaches the server.
+	statement.Description.StatementInfo.ParametersDescriptors[0].Type = 65000
+	result := statement.Exec(ctx, [][]byte{{0, 0, 0, 7}}).Read()
+	require.Error(t, result.Err)
+	require.False(t, conn.IsClosed())
+	require.NoError(t, conn.Ping(ctx))
+	require.NoError(t, statement.Deallocate(ctx))
+}
+
 func TestConnectCustomLookup(t *testing.T) {
 	t.Parallel()
 
