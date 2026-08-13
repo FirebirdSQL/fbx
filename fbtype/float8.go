@@ -11,39 +11,70 @@ import (
 	"rdb.red-soft.ru/fbx/internal/fbio"
 )
 
+// Float64Scanner scans a Firebird floating-point value.
 type Float64Scanner interface {
 	ScanFloat64(Float8) error
 }
 
+// Float64Valuer returns a Firebird floating-point value to encode.
 type Float64Valuer interface {
 	Float64Value() (Float8, error)
 }
 
+func float64ToInt64(n float64) (int64, error) {
+	const int64UpperBound = 1 << 63
+	if math.IsNaN(n) || math.IsInf(n, 0) || n < math.MinInt64 || n >= int64UpperBound {
+		return 0, fmt.Errorf("cannot losslessly convert %v to int64", n)
+	}
+
+	i64 := int64(n)
+	if n != float64(i64) {
+		return 0, fmt.Errorf("cannot losslessly convert %v to int64", n)
+	}
+
+	return i64, nil
+}
+
+// Float8 represents the Firebird DOUBLE PRECISION type.
+//
+// Valid is false when the value represents SQL NULL.
 type Float8 struct {
 	Float64 float64
 	Valid   bool
 }
 
-// ScanFloat64 implements the Float64Scanner interface.
+// ScanFloat64 implements [Float64Scanner].
 func (f *Float8) ScanFloat64(n Float8) error {
 	*f = n
 	return nil
 }
 
+// Float64Value implements [Float64Valuer].
 func (f Float8) Float64Value() (Float8, error) {
 	return f, nil
 }
 
+// ScanInt64 implements [Int64Scanner].
 func (f *Float8) ScanInt64(n Int8) error {
 	*f = Float8{Float64: float64(n.Int64), Valid: n.Valid}
 	return nil
 }
 
+// Int64Value implements [Int64Valuer].
 func (f Float8) Int64Value() (Int8, error) {
-	return Int8{Int64: int64(f.Float64), Valid: f.Valid}, nil
+	if !f.Valid {
+		return Int8{}, nil
+	}
+
+	i64, err := float64ToInt64(f.Float64)
+	if err != nil {
+		return Int8{}, err
+	}
+
+	return Int8{Int64: i64, Valid: true}, nil
 }
 
-// Scan implements the database/sql Scanner interface.
+// Scan implements the [database/sql.Scanner] interface.
 func (f *Float8) Scan(src any) error {
 	if src == nil {
 		*f = Float8{}
@@ -66,7 +97,7 @@ func (f *Float8) Scan(src any) error {
 	return fmt.Errorf("cannot scan %T", src)
 }
 
-// Value implements the database/sql/driver Valuer interface.
+// Value implements the [database/sql/driver.Valuer] interface.
 func (f Float8) Value() (driver.Value, error) {
 	if !f.Valid {
 		return nil, nil
@@ -74,6 +105,7 @@ func (f Float8) Value() (driver.Value, error) {
 	return f.Float64, nil
 }
 
+// MarshalJSON encodes f as a JSON number or null.
 func (f Float8) MarshalJSON() ([]byte, error) {
 	if !f.Valid {
 		return []byte("null"), nil
@@ -81,6 +113,7 @@ func (f Float8) MarshalJSON() ([]byte, error) {
 	return json.Marshal(f.Float64)
 }
 
+// UnmarshalJSON decodes a JSON number or null into f.
 func (f *Float8) UnmarshalJSON(b []byte) error {
 	var n *float64
 	err := json.Unmarshal(b, &n)
@@ -97,8 +130,10 @@ func (f *Float8) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// Float8Codec encodes and decodes Firebird DOUBLE PRECISION values.
 type Float8Codec struct{}
 
+// PlanEncode returns an encode plan for supported Firebird DOUBLE PRECISION input values.
 func (Float8Codec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	switch value.(type) {
 	case float64:
@@ -163,6 +198,7 @@ func (encodePlanFloat8CodecBinaryInt64Valuer) Encode(value any, buf []byte) (new
 	return fbio.AppendUint64BE(buf, math.Float64bits(f)), nil
 }
 
+// PlanScan returns a scan plan for supported Firebird DOUBLE PRECISION target values.
 func (Float8Codec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
 	switch target.(type) {
 	case *float64:
@@ -173,7 +209,7 @@ func (Float8Codec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanP
 		return scanPlanBinaryFloat8ToInt64Scanner{}
 	case TextScanner:
 		return scanPlanBinaryFloat8ToTextScanner{}
-	case string:
+	case *string:
 		return scanPlanBinaryFloat8ToString{}
 	}
 
@@ -183,6 +219,11 @@ func (Float8Codec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanP
 type scanPlanBinaryFloat8ToFloat64 struct{}
 
 func (scanPlanBinaryFloat8ToFloat64) Scan(src []byte, dst any) error {
+	f, ok := (dst).(*float64)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
@@ -191,9 +232,7 @@ func (scanPlanBinaryFloat8ToFloat64) Scan(src []byte, dst any) error {
 		return fmt.Errorf("invalid length for float8: %v", len(src))
 	}
 
-	n := int64(binary.BigEndian.Uint64(src))
-	f := (dst).(*float64)
-	*f = math.Float64frombits(uint64(n))
+	*f = math.Float64frombits(binary.BigEndian.Uint64(src))
 
 	return nil
 }
@@ -201,7 +240,10 @@ func (scanPlanBinaryFloat8ToFloat64) Scan(src []byte, dst any) error {
 type scanPlanBinaryFloat8ToFloat64Scanner struct{}
 
 func (scanPlanBinaryFloat8ToFloat64Scanner) Scan(src []byte, dst any) error {
-	s := (dst).(Float64Scanner)
+	s, ok := (dst).(Float64Scanner)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
 
 	if src == nil {
 		return s.ScanFloat64(Float8{})
@@ -211,14 +253,17 @@ func (scanPlanBinaryFloat8ToFloat64Scanner) Scan(src []byte, dst any) error {
 		return fmt.Errorf("invalid length for float8: %v", len(src))
 	}
 
-	n := int64(binary.BigEndian.Uint64(src))
-	return s.ScanFloat64(Float8{Float64: math.Float64frombits(uint64(n)), Valid: true})
+	f64 := math.Float64frombits(binary.BigEndian.Uint64(src))
+	return s.ScanFloat64(Float8{Float64: f64, Valid: true})
 }
 
 type scanPlanBinaryFloat8ToInt64Scanner struct{}
 
 func (scanPlanBinaryFloat8ToInt64Scanner) Scan(src []byte, dst any) error {
-	s := (dst).(Int64Scanner)
+	s, ok := (dst).(Int64Scanner)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
 
 	if src == nil {
 		return s.ScanInt64(Int8{})
@@ -228,11 +273,10 @@ func (scanPlanBinaryFloat8ToInt64Scanner) Scan(src []byte, dst any) error {
 		return fmt.Errorf("invalid length for float8: %v", len(src))
 	}
 
-	ui64 := int64(binary.BigEndian.Uint64(src))
-	f64 := math.Float64frombits(uint64(ui64))
-	i64 := int64(f64)
-	if f64 != float64(i64) {
-		return fmt.Errorf("cannot losslessly convert %v to int64", f64)
+	f64 := math.Float64frombits(binary.BigEndian.Uint64(src))
+	i64, err := float64ToInt64(f64)
+	if err != nil {
+		return err
 	}
 
 	return s.ScanInt64(Int8{Int64: i64, Valid: true})
@@ -241,7 +285,10 @@ func (scanPlanBinaryFloat8ToInt64Scanner) Scan(src []byte, dst any) error {
 type scanPlanBinaryFloat8ToString struct{}
 
 func (scanPlanBinaryFloat8ToString) Scan(src []byte, dst any) error {
-	target := dst.(*string)
+	target, ok := dst.(*string)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
 
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into *string")
@@ -261,7 +308,10 @@ func (scanPlanBinaryFloat8ToString) Scan(src []byte, dst any) error {
 type scanPlanBinaryFloat8ToTextScanner struct{}
 
 func (scanPlanBinaryFloat8ToTextScanner) Scan(src []byte, dst any) error {
-	s := (dst).(TextScanner)
+	s, ok := (dst).(TextScanner)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
 
 	if src == nil {
 		return s.ScanText(Text{})
@@ -271,16 +321,17 @@ func (scanPlanBinaryFloat8ToTextScanner) Scan(src []byte, dst any) error {
 		return fmt.Errorf("invalid length for float8: %v", len(src))
 	}
 
-	ui64 := int64(binary.BigEndian.Uint64(src))
-	f64 := math.Float64frombits(uint64(ui64))
+	f64 := math.Float64frombits(binary.BigEndian.Uint64(src))
 
 	return s.ScanText(Text{String: strconv.FormatFloat(f64, 'f', -1, 64), Valid: true})
 }
 
+// DecodeDatabaseSQLValue decodes src into a database/sql driver value.
 func (c Float8Codec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
 	return c.DecodeValue(m, typeMetadata, src)
 }
 
+// DecodeValue decodes src into the default Go value for Firebird DOUBLE PRECISION.
 func (c Float8Codec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil

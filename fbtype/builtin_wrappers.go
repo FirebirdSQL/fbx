@@ -318,11 +318,12 @@ func (w *float32Wrapper) ScanInt64(v Int8) error {
 }
 
 func (w float32Wrapper) Int64Value() (Int8, error) {
-	if w > math.MaxInt64 {
-		return Int8{}, fmt.Errorf("%f is greater than maximum value for int64", w)
+	i64, err := float64ToInt64(float64(w))
+	if err != nil {
+		return Int8{}, err
 	}
 
-	return Int8{Int64: int64(w), Valid: true}, nil
+	return Int8{Int64: i64, Valid: true}, nil
 }
 
 func (w *float32Wrapper) ScanFloat64(v Float8) error {
@@ -330,7 +331,12 @@ func (w *float32Wrapper) ScanFloat64(v Float8) error {
 		return fmt.Errorf("cannot scan NULL into *float32")
 	}
 
-	*w = float32Wrapper(v.Float64)
+	f32, err := float64ToFloat32(v.Float64)
+	if err != nil {
+		return err
+	}
+
+	*w = float32Wrapper(f32)
 
 	return nil
 }
@@ -354,11 +360,12 @@ func (w *float64Wrapper) ScanInt64(v Int8) error {
 }
 
 func (w float64Wrapper) Int64Value() (Int8, error) {
-	if w > math.MaxInt64 {
-		return Int8{}, fmt.Errorf("%f is greater than maximum value for int64", w)
+	i64, err := float64ToInt64(float64(w))
+	if err != nil {
+		return Int8{}, err
 	}
 
-	return Int8{Int64: int64(w), Valid: true}, nil
+	return Int8{Int64: i64, Valid: true}, nil
 }
 
 func (w *float64Wrapper) ScanFloat64(v Float8) error {
