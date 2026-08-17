@@ -653,7 +653,6 @@ func encodeDecFloat16Binary(buf []byte, d DecFloat16) ([]byte, error) {
 	signum := decfloat.SignumPositive
 	if coef.Sign() < 0 {
 		signum = decfloat.SignumNegative
-		coef = new(big.Int).Abs(coef)
 	}
 
 	dd := decfloat.DecodedDecimal{
@@ -709,10 +708,6 @@ func decodeDecFloat16Binary(src []byte, dst *DecFloat16) error {
 	coef := dd.Coefficient
 	if coef == nil {
 		coef = big.NewInt(0)
-	}
-
-	if dd.Signum == decfloat.SignumNegative && coef.Sign() > 0 {
-		coef = new(big.Int).Neg(coef)
 	}
 
 	*dst = DecFloat16{

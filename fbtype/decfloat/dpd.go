@@ -1,7 +1,5 @@
 package decfloat
 
-import "fmt"
-
 var bin2dpd = [1000]uint16{0, 1, 2, 3, 4, 5, 6, 7,
 	8, 9, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 32,
 	33, 34, 35, 36, 37, 38, 39, 40, 41, 48, 49, 50, 51,
@@ -209,22 +207,3 @@ const dpdGroupBits2Digits = "000" + "001" + "002" + "003" + "004" + "005" + "006
 	"768" + "769" + "786" + "787" + "966" + "967" + "988" + "989" +
 	"770" + "771" + "772" + "773" + "774" + "775" + "776" + "777" +
 	"778" + "779" + "796" + "797" + "976" + "977" + "998" + "999"
-
-func encode3Digits(d int) uint16 {
-	if d < 0 || d > 999 {
-		panic(fmt.Sprintf("decfloat: encode3Digits out of range: %d", d))
-	}
-	return bin2dpd[d]
-}
-
-func decode3Digits(bits uint16, out []byte) {
-	if len(out) < 3 {
-		panic("decfloat: decode3Digits needs out len >= 3")
-	}
-
-	i := int(bits&0x3FF) * 3
-
-	out[0] = dpdGroupBits2Digits[i]
-	out[1] = dpdGroupBits2Digits[i+1]
-	out[2] = dpdGroupBits2Digits[i+2]
-}

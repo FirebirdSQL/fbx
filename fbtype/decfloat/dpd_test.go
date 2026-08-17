@@ -2,75 +2,36 @@ package decfloat
 
 import "testing"
 
-func TestEncodeDecode3Digits_RoundTrip_All(t *testing.T) {
-	var out [3]byte
-
-	for d := 0; d <= 999; d++ {
-		bits := encode3Digits(d)
-
-		if bits > 0x3FF {
-			t.Fatalf("encode3Digits(%d) returned out-of-range bits: 0x%x", d, bits)
+func TestDPDEncodeDecodeTablesRoundTripAllCanonicalValues(t *testing.T) {
+	for value := 0; value <= 999; value++ {
+		bits := bin2dpd[value]
+		if bits > 0x3ff {
+			t.Fatalf("bin2dpd[%d] contains out-of-range bits: 0x%x", value, bits)
 		}
 
-		decode3Digits(bits, out[:])
-
-		got := int(out[0]-'0')*100 + int(out[1]-'0')*10 + int(out[2]-'0')
-		if got != d {
-			t.Fatalf("round-trip mismatch for %d: bits=0x%x decoded=%q got=%d",
-				d, bits, string(out[:]), got)
+		i := int(bits) * dpdDigitsPerGroup
+		got := int(dpdGroupBits2Digits[i]-'0')*100 +
+			int(dpdGroupBits2Digits[i+1]-'0')*10 +
+			int(dpdGroupBits2Digits[i+2]-'0')
+		if got != value {
+			t.Fatalf("round-trip mismatch for %d: bits=0x%x got=%d", value, bits, got)
 		}
 	}
 }
 
-func TestEncode3Digits_OutOfRangePanics(t *testing.T) {
-	cases := []int{-1, -10, 1000, 9999}
-
-	for _, d := range cases {
-		func() {
-			defer func() {
-				if r := recover(); r == nil {
-					t.Fatalf("expected panic for encode3Digits(%d), got none", d)
-				}
-			}()
-			_ = encode3Digits(d)
-		}()
-	}
-}
-
-func TestDecode3Digits_OutTooShortPanics(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatalf("expected panic for decode3Digits with short out, got none")
-		}
-	}()
-
-	decode3Digits(0, make([]byte, 2))
-}
-
-func TestDecode3Digits_KnownValues(t *testing.T) {
-	type tc struct {
-		d int
-	}
-	tests := []tc{
-		{0},
-		{1},
-		{9},
-		{10},
-		{42},
-		{123},
-		{999},
+func TestDPDDecodeTableAllBitPatterns(t *testing.T) {
+	wantLength := (1 << dpdBitsPerGroup) * dpdDigitsPerGroup
+	if len(dpdGroupBits2Digits) != wantLength {
+		t.Fatalf("decode table length = %d, want %d", len(dpdGroupBits2Digits), wantLength)
 	}
 
-	var out [3]byte
-	for _, tt := range tests {
-		bits := encode3Digits(tt.d)
-		decode3Digits(bits, out[:])
-
-		want := tt.d
-		got := int(out[0]-'0')*100 + int(out[1]-'0')*10 + int(out[2]-'0')
-		if got != want {
-			t.Fatalf("mismatch for %d: bits=0x%x decoded=%q got=%d",
-				tt.d, bits, string(out[:]), got)
+	for bits := 0; bits < 1<<dpdBitsPerGroup; bits++ {
+		i := bits * dpdDigitsPerGroup
+		for offset := 0; offset < dpdDigitsPerGroup; offset++ {
+			digit := dpdGroupBits2Digits[i+offset]
+			if digit < '0' || digit > '9' {
+				t.Fatalf("decode table entry 0x%x contains non-digit %q", bits, digit)
+			}
 		}
 	}
 }
