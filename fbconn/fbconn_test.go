@@ -67,6 +67,24 @@ func TestAttachmentID(t *testing.T) {
 	require.Equal(t, uint64(expected), conn.AttachmentID())
 }
 
+func TestServerVersion(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	connString := os.Getenv("FBX_TEST_DATABASE")
+	if connString == "" {
+		t.Skip("Skipping due to missing environment variable FBX_TEST_DATABASE")
+	}
+
+	conn, err := fbconn.Connect(ctx, connString)
+	require.NoError(t, err)
+	defer closeConn(t, conn)
+
+	version := conn.ServerVersion()
+	require.Positive(t, version.Major)
+	require.NotEmpty(t, version.String())
+}
+
 func TestConnectWithOptions(t *testing.T) {
 	tests := []struct {
 		name string
@@ -94,93 +112,6 @@ func TestConnectWithOptions(t *testing.T) {
 		})
 	}
 }
-
-type fbmockWaitStep time.Duration
-
-//func (s fbmockWaitStep) Step(*fbproto3.Backend) error {
-//	time.Sleep(time.Duration(s))
-//	return nil
-//}
-
-//FIXME: fbx
-//func TestConnectTimeout(t *testing.T) {
-//	t.Parallel()
-//	tests := []struct {
-//		name    string
-//		connect func(connStr string) error
-//	}{
-//		{
-//			name: "via context that times out",
-//			connect: func(connStr string) error {
-//				ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*50)
-//				defer cancel()
-//				_, err := fbconn.Connect(ctx, connStr)
-//				return err
-//			},
-//		},
-//		{
-//			name: "via config ConnectTimeout",
-//			connect: func(connStr string) error {
-//				conf, err := fbconn.ParseConfig(connStr)
-//				require.NoError(t, err)
-//				conf.ConnectTimeout = time.Microsecond * 50
-//				_, err = fbconn.ConnectConfig(context.Background(), conf)
-//				return err
-//			},
-//		},
-//	}
-//	for _, tt := range tests {
-//		tt := tt
-//		t.Run(tt.name, func(t *testing.T) {
-//			t.Parallel()
-//			script := &fbmock.Script{
-//				Steps: []fbmock.Step{
-//					fbmock.ExpectAnyMessage(&fbproto3.StartupMessage{ProtocolVersion: fbproto3.ProtocolVersionNumber, Parameters: map[string]string{}}),
-//					fbmock.SendMessage(&fbproto3.AuthenticationOk{}),
-//					fbmockWaitStep(time.Millisecond * 500),
-//					fbmock.SendMessage(&fbproto3.BackendKeyData{ProcessID: 0, SecretKey: 0}),
-//					fbmock.SendMessage(&fbproto3.ReadyForQuery{TxStatus: 'I'}),
-//				},
-//			}
-//
-//			ln, err := net.Listen("tcp", "127.0.0.1:")
-//			require.NoError(t, err)
-//			defer ln.Close()
-//
-//			serverErrChan := make(chan error, 1)
-//			go func() {
-//				defer close(serverErrChan)
-//
-//				conn, err := ln.Accept()
-//				if err != nil {
-//					serverErrChan <- err
-//					return
-//				}
-//				defer conn.Close()
-//
-//				err = conn.SetDeadline(time.Now().Add(time.Millisecond * 450))
-//				if err != nil {
-//					serverErrChan <- err
-//					return
-//				}
-//
-//				err = script.Run(fbproto3.NewBackend(conn, conn))
-//				if err != nil {
-//					serverErrChan <- err
-//					return
-//				}
-//			}()
-//
-//			host, port, _ := strings.Cut(ln.Addr().String(), ":")
-//			connStr := fmt.Sprintf("sslmode=disable host=%s port=%s", host, port)
-//			tooLate := time.Now().Add(time.Millisecond * 500)
-//
-//			err = tt.connect(connStr)
-//			require.True(t, fbconn.Timeout(err), err)
-//			require.True(t, time.Now().Before(tooLate))
-//		})
-//	}
-//}
 
 func TestConnectInvalidUser(t *testing.T) {
 	t.Parallel()
@@ -357,8 +288,10 @@ func TestConnectWithValidateConnect(t *testing.T) {
 	}
 
 	acceptConnCount := 0
+	var validatedVersions []fbconn.ServerVersion
 	config.ValidateConnect = func(ctx context.Context, conn *fbconn.FbConn) error {
 		acceptConnCount++
+		validatedVersions = append(validatedVersions, conn.ServerVersion())
 		if acceptConnCount < 2 {
 			return errors.New("reject first conn")
 		}
@@ -380,6 +313,10 @@ func TestConnectWithValidateConnect(t *testing.T) {
 
 	assert.True(t, dialCount > 1)
 	assert.True(t, acceptConnCount > 1)
+	require.Len(t, validatedVersions, acceptConnCount)
+	for _, version := range validatedVersions {
+		assert.Positive(t, version.Major)
+	}
 }
 
 func TestConnectWithValidateConnectTargetSessionAttrsReadWrite(t *testing.T) {
@@ -495,15 +432,7 @@ func TestConnDeallocate(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = st.Exec(ctx, nil).Close()
-	// TODO: Once the driver propagates server-side "invalid statement handle" consistently,
-	// narrow this assertion to FbError 26000. For now Exec short-circuits with a local
-	// "statement is closed" error.
-	var fbErr *fbconn.FbError
-	if errors.As(err, &fbErr) {
-		assert.Equal(t, "26000", fbErr.Code)
-	} else {
-		assert.EqualError(t, err, "statement is closed")
-	}
+	assert.EqualError(t, err, "statement is closed")
 
 	ensureConnValid(t, fbConn)
 }
@@ -1511,8 +1440,11 @@ func TestConnEscapeString(t *testing.T) {
 		{in: "", out: ""},
 		{in: "42", out: "42"},
 		{in: "'", out: "''"},
+		{in: "''", out: "''''"},
 		{in: "hi'there", out: "hi''there"},
 		{in: "'hi there'", out: "''hi there''"},
+		{in: "Hi, world! 👋", out: "Hi, world! 👋"},
+		{in: "Na'vi", out: "Na''vi"},
 	}
 
 	for i, tt := range tests {
@@ -1550,10 +1482,13 @@ func TestConnCancelRequest(t *testing.T) {
 
 	for rr.NextRow() {
 	}
+	require.False(t, fbConn.IsClosed(), "connection closed while receiving cancellation")
 	res := rr.Read()
 
-	require.IsType(t, &fbconn.FbError{}, res.Err)
-	require.Equal(t, "HY008", res.Err.(*fbconn.FbError).Code)
+	var fbErr *fbconn.FbError
+	require.ErrorAs(t, res.Err, &fbErr)
+	require.Equal(t, "HY008", fbErr.Code)
+	require.False(t, fbConn.IsClosed(), "cancelled query error: %v; GDS codes: %v", res.Err, fbErr.GdsCodes)
 
 	err = <-errChan
 	require.NoError(t, err)
@@ -1646,6 +1581,7 @@ func TestHijackAndConstruct(t *testing.T) {
 	origConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	origAttachmentID := origConn.AttachmentID()
+	origServerVersion := origConn.ServerVersion()
 
 	err = origConn.SyncConn(ctx)
 	require.NoError(t, err)
@@ -1653,6 +1589,7 @@ func TestHijackAndConstruct(t *testing.T) {
 	hc, err := origConn.Hijack()
 	require.NoError(t, err)
 	require.Equal(t, origAttachmentID, hc.AttachmentID)
+	require.Equal(t, origServerVersion, hc.ServerVersion)
 
 	res := origConn.Exec(ctx, "select cast('Hello, world' as varchar(12)) from rdb$database").Read()
 	require.Error(t, res.Err)
@@ -1660,6 +1597,7 @@ func TestHijackAndConstruct(t *testing.T) {
 	newConn, err := fbconn.Construct(hc)
 	require.NoError(t, err)
 	require.Equal(t, origAttachmentID, newConn.AttachmentID())
+	require.Equal(t, origServerVersion, newConn.ServerVersion())
 
 	defer closeConn(t, newConn)
 
@@ -1850,72 +1788,6 @@ func TestConnCloseWhileCancellableQueryInProgress(t *testing.T) {
 	}
 }
 
-// FIXME: fbx
-//func TestFatalErrorReceivedAfterCommandComplete(t *testing.T) {
-//	t.Parallel()
-//
-//	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-//	defer cancel()
-//
-//	steps := fbmock.AcceptUnauthenticatedConnRequestSteps()
-//	steps = append(steps, fbmock.ExpectAnyMessage(&fbproto3.Parse{}))
-//	steps = append(steps, fbmock.ExpectAnyMessage(&fbproto3.Bind{}))
-//	steps = append(steps, fbmock.ExpectAnyMessage(&fbproto3.Describe{}))
-//	steps = append(steps, fbmock.ExpectAnyMessage(&fbproto3.Execute{}))
-//	steps = append(steps, fbmock.ExpectAnyMessage(&fbproto3.Sync{}))
-//	steps = append(steps, fbmock.SendMessage(&fbproto3.RowDescription{Fields: []fbproto3.FieldDescription{
-//		{Name: []byte("mock")},
-//	}}))
-//	steps = append(steps, fbmock.SendMessage(&fbproto3.CommandComplete{QueryStatus: []byte("SELECT 0")}))
-//	steps = append(steps, fbmock.SendMessage(&fbproto3.ErrorResponse{Severity: "FATAL", Code: "57P01"}))
-//
-//	script := &fbmock.Script{Steps: steps}
-//
-//	ln, err := net.Listen("tcp", "127.0.0.1:")
-//	require.NoError(t, err)
-//	defer ln.Close()
-//
-//	serverErrChan := make(chan error, 1)
-//	go func() {
-//		defer close(serverErrChan)
-//
-//		conn, err := ln.Accept()
-//		if err != nil {
-//			serverErrChan <- err
-//			return
-//		}
-//		defer conn.Close()
-//
-//		err = conn.SetDeadline(time.Now().Add(5 * time.Second))
-//		if err != nil {
-//			serverErrChan <- err
-//			return
-//		}
-//
-//		err = script.Run(fbproto3.NewBackend(conn, conn))
-//		if err != nil {
-//			serverErrChan <- err
-//			return
-//		}
-//	}()
-//
-//	host, port, _ := strings.Cut(ln.Addr().String(), ":")
-//	connStr := fmt.Sprintf("sslmode=disable host=%s port=%s", host, port)
-//
-//	ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
-//	defer cancel()
-//	conn, err := fbconn.Connect(ctx, connStr)
-//	require.NoError(t, err)
-//
-//	rr := conn.ExecParams(ctx, "mocked...", nil, nil, nil, nil)
-//
-//	for rr.NextRow() {
-//	}
-//
-//	_, err = rr.Close()
-//	require.Error(t, err)
-//}
-
 func TestConnCheckConn(t *testing.T) {
 	t.Parallel()
 
@@ -2013,6 +1885,109 @@ func TestConnOnFbError(t *testing.T) {
 	assert.True(t, fbConn.IsClosed())
 }
 
+func TestConnDefaultServerErrorKeepsConnectionOpen(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	require.NotNil(t, config.OnFbError)
+
+	conn, err := fbconn.ConnectConfig(ctx, config)
+	require.NoError(t, err)
+	defer closeConn(t, conn)
+
+	res := conn.Exec(ctx, "select 1/0 from rdb$database").Read()
+	require.Error(t, res.Err)
+	require.False(t, conn.IsClosed())
+
+	res = conn.Exec(ctx, "select * from fbx_missing_table_rs_317500").Read()
+	require.Error(t, res.Err)
+	require.False(t, conn.IsClosed())
+
+	require.NoError(t, conn.Ping(ctx))
+}
+
+func TestConnDefaultFatalServerErrorClosesConnection(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	require.NotNil(t, config.OnFbError)
+
+	subject, err := fbconn.ConnectConfig(ctx, config)
+	require.NoError(t, err)
+	defer closeConn(t, subject)
+
+	killer, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	defer closeConn(t, killer)
+
+	attachmentID := subjectAttachmentID(t, subject)
+	res := killer.Exec(ctx, fmt.Sprintf(
+		"delete from mon$attachments where mon$attachment_id = %d",
+		attachmentID,
+	)).Read()
+	require.NoError(t, res.Err)
+
+	err = subject.Ping(ctx)
+	require.Error(t, err)
+
+	var fbErr *fbconn.FbError
+	require.ErrorAs(t, err, &fbErr)
+	require.Contains(t, fbErr.GdsCodes, fbproto.Isc_att_shutdown)
+	require.True(t, fbconn.IsConnectionFatal(fbErr))
+	require.True(t, subject.IsClosed())
+}
+
+func TestConnFatalServerErrorCanBeOverridden(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+
+	handlerCalled := false
+	config.OnFbError = func(c *fbconn.FbConn, err *fbconn.FbError) bool {
+		handlerCalled = true
+		require.NotNil(t, c)
+		require.True(t, fbconn.IsConnectionFatal(err))
+		return true
+	}
+
+	subject, err := fbconn.ConnectConfig(ctx, config)
+	require.NoError(t, err)
+	defer closeConn(t, subject)
+
+	killer, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	defer closeConn(t, killer)
+
+	attachmentID := subjectAttachmentID(t, subject)
+	res := killer.Exec(ctx, fmt.Sprintf(
+		"delete from mon$attachments where mon$attachment_id = %d",
+		attachmentID,
+	)).Read()
+	require.NoError(t, res.Err)
+
+	err = subject.Ping(ctx)
+	require.Error(t, err)
+
+	var fbErr *fbconn.FbError
+	require.ErrorAs(t, err, &fbErr)
+	require.Contains(t, fbErr.GdsCodes, fbproto.Isc_att_shutdown)
+	require.True(t, fbconn.IsConnectionFatal(fbErr))
+	require.True(t, handlerCalled)
+	require.False(t, subject.IsClosed())
+}
+
 func TestConnCustomData(t *testing.T) {
 	t.Parallel()
 
@@ -2077,88 +2052,6 @@ func (c *prefixConn) Read(b []byte) (n int, err error) {
 	}
 	return c.Conn.Read(b)
 }
-
-//FIXME: fbx
-//func TestFatalErrorReceivedInPipelineMode(t *testing.T) {
-//	t.Parallel()
-//
-//	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-//	defer cancel()
-//
-//	steps := fbmock.AcceptUnauthenticatedConnRequestSteps()
-//	steps = append(steps, fbmock.ExpectAnyMessage(&fbproto3.Parse{}))
-//	steps = append(steps, fbmock.ExpectAnyMessage(&fbproto3.Describe{}))
-//	steps = append(steps, fbmock.ExpectAnyMessage(&fbproto3.Parse{}))
-//	steps = append(steps, fbmock.ExpectAnyMessage(&fbproto3.Describe{}))
-//	steps = append(steps, fbmock.ExpectAnyMessage(&fbproto3.Parse{}))
-//	steps = append(steps, fbmock.ExpectAnyMessage(&fbproto3.Describe{}))
-//	steps = append(steps, fbmock.SendMessage(&fbproto3.RowDescription{Fields: []fbproto3.FieldDescription{
-//		{Name: []byte("mock")},
-//	}}))
-//	steps = append(steps, fbmock.SendMessage(&fbproto3.ErrorResponse{Severity: "FATAL", Code: "57P01"}))
-//	// We shouldn't get anything after the first fatal error. A FATAL error after the connection had already been killed could cause a panic.
-//	steps = append(steps, fbmock.SendMessage(&fbproto3.ErrorResponse{Severity: "FATAL", Code: "57P01"}))
-//
-//	script := &fbmock.Script{Steps: steps}
-//
-//	ln, err := net.Listen("tcp", "127.0.0.1:")
-//	require.NoError(t, err)
-//	defer ln.Close()
-//
-//	serverKeepAlive := make(chan struct{})
-//	defer close(serverKeepAlive)
-//
-//	serverErrChan := make(chan error, 1)
-//	go func() {
-//		defer close(serverErrChan)
-//
-//		conn, err := ln.Accept()
-//		if err != nil {
-//			serverErrChan <- err
-//			return
-//		}
-//		defer conn.Close()
-//
-//		err = conn.SetDeadline(time.Now().Add(59 * time.Second))
-//		if err != nil {
-//			serverErrChan <- err
-//			return
-//		}
-//
-//		err = script.Run(fbproto3.NewBackend(conn, conn))
-//		if err != nil {
-//			serverErrChan <- err
-//			return
-//		}
-//
-//		<-serverKeepAlive
-//	}()
-//
-//	parts := strings.Split(ln.Addr().String(), ":")
-//	host := parts[0]
-//	port := parts[1]
-//	connStr := fmt.Sprintf("sslmode=disable host=%s port=%s", host, port)
-//
-//	ctx, cancel = context.WithTimeout(ctx, 59*time.Second)
-//	defer cancel()
-//	conn, err := fbconn.Connect(ctx, connStr)
-//	require.NoError(t, err)
-//
-//	pipeline := conn.StartPipeline(ctx)
-//	pipeline.SendPrepare("s1", "select 1", nil)
-//	pipeline.SendPrepare("s2", "select 2", nil)
-//	pipeline.SendPrepare("s3", "select 3", nil)
-//	err = pipeline.Sync()
-//	require.NoError(t, err)
-//
-//	_, err = pipeline.GetResults()
-//	require.NoError(t, err)
-//	_, err = pipeline.GetResults()
-//	require.Error(t, err)
-//
-//	err = pipeline.Close()
-//	require.Error(t, err)
-//}
 
 func mustEncode(buf []byte, err error) []byte {
 	if err != nil {

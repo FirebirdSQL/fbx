@@ -8,8 +8,6 @@ import (
 	"math/rand"
 	"os"
 	"reflect"
-	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -701,19 +699,7 @@ func TestBatchInsertFunc(t *testing.T) {
 }
 
 func exampleBatchSupported(ctx context.Context, conn *fbx.Conn) bool {
-	var v string
-	err := conn.QueryRow(ctx, "select rdb$get_context('SYSTEM','ENGINE_VERSION') from rdb$database").Scan(&v)
-	if err != nil {
-		panic(err)
-	}
-	major, err := strconv.Atoi(strings.Split(v, ".")[0])
-	if err != nil {
-		panic(err)
-	}
-	if major < 4 {
-		return false
-	}
-	return true
+	return conn.ServerVersion().AtLeast(4, 0, 0)
 }
 
 func ExampleBatchInsertRows() {

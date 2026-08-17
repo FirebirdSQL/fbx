@@ -201,7 +201,6 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 	}
 
 	if err := st.CloseCursor(ctx); err != nil {
-		st.conn.asyncClose()
 		rr.concludeCommand(QueryStatus{}, err)
 		rr.closed = true
 		return rr
@@ -263,7 +262,6 @@ func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *
 		if param.IsArray() && paramValues[i] != nil {
 			arrayId, err := putArray(st.conn, ctx, param.ArrayData, paramValues[i])
 			if err != nil {
-				st.conn.asyncClose()
 				rr.concludeCommand(QueryStatus{}, err)
 				rr.closed = true
 				return rr
@@ -279,12 +277,24 @@ func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *
 	var rowBlr []byte
 	if st.Description.HaveSingletonResult() {
 		execKind = fbproto.Op_execute2
-		rowBlr = st.Description.StatementInfo.GetRowBlr()
+		rowBlr, err = st.Description.StatementInfo.GetRowBlr()
+		if err != nil {
+			st.conn.asyncClose()
+			rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(ctx, err))
+			rr.closed = true
+			return rr
+		}
 	}
 
 	var sqlDataBlr []byte
 	if len(paramValues) > 0 {
-		sqlDataBlr = st.Description.StatementInfo.GetParametersBlr(paramValues)
+		sqlDataBlr, err = st.Description.StatementInfo.GetParametersBlr(paramValues)
+		if err != nil {
+			st.conn.asyncClose()
+			rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(ctx, err))
+			rr.closed = true
+			return rr
+		}
 	}
 
 	if err = st.conn.withWriteLockAndFlush(func() error {
@@ -319,7 +329,7 @@ func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *
 	if st.Description.HaveSingletonResult() {
 		switch r := msg.(type) {
 		case *fbproto.OpSqlResponse:
-			row, dataResp, err := st.conn.client.ReceiveSQLData(st.Description.StatementInfo.FieldDescriptors)
+			row, dataResp, err := st.conn.receiveSQLData(st.Description.StatementInfo.FieldDescriptors)
 			if err != nil {
 				st.conn.asyncClose()
 				rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(ctx, err))

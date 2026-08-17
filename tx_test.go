@@ -468,6 +468,22 @@ func TestBeginCustomTPB(t *testing.T) {
 	require.Equal(t, 11, lockTimeout)
 }
 
+func TestBeginInvalidTPBKeepsConnectionOpen(t *testing.T) {
+	t.Parallel()
+
+	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
+	defer closeConn(t, conn)
+
+	_, err := conn.BeginTxTPB(context.Background(), []byte{fbproto.Isc_tpb_version3, 0xff})
+	require.Error(t, err)
+
+	var fbErr *fbconn.FbError
+	require.ErrorAs(t, err, &fbErr)
+	require.False(t, fbconn.IsConnectionFatal(fbErr))
+	require.False(t, conn.IsClosed())
+	require.NoError(t, conn.Ping(context.Background()))
+}
+
 func TestTxNestedTransactionCommit(t *testing.T) {
 	//t.Parallel()
 

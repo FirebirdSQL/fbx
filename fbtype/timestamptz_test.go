@@ -543,6 +543,27 @@ func TestTzRawFromTimeRejectsOutOfRangeOffset(t *testing.T) {
 	}
 }
 
+func TestTzRawFromTimeRejectsSubMinuteOffset(t *testing.T) {
+	tm := time.Date(2025, 1, 1, 12, 0, 0, 0, time.FixedZone("+00:00:30", 30))
+
+	if _, err := tzRawFromTime(tm); err == nil {
+		t.Fatalf("tzRawFromTime expected sub-minute offset error, got nil")
+	}
+}
+
+func TestTzRawFromTimeAcceptsMaxPositiveOffset(t *testing.T) {
+	tm := time.Date(2025, 1, 1, 12, 0, 0, 0, time.FixedZone("+23:59", 1439*60))
+
+	tzRaw, err := tzRawFromTime(tm)
+	if err != nil {
+		t.Fatalf("tzRawFromTime failed: %v", err)
+	}
+
+	if tzRaw != 2878 {
+		t.Fatalf("tzRawFromTime = %d, want 2878", tzRaw)
+	}
+}
+
 func TestTzRawFromTimeFallsBackToOffsetWhenLocationNameOffsetMismatches(t *testing.T) {
 	tm := time.Date(2025, 1, 1, 0, 0, 0, 0, time.FixedZone("Europe/Moscow", 9*60*60))
 

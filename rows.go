@@ -1001,11 +1001,6 @@ func fieldPosByName(fldDescs []fbconn.FieldDescription, field string, normalize 
 }
 
 // structRowField describes a field of a struct.
-//
-// TODO: It would be a bit more efficient to track the path using the pointer
-// offset within the (outermost) struct and use unsafe.Pointer arithmetic to
-// construct references when scanning rows. However, it's not clear it's worth
-// using unsafe for this.
 type structRowField struct {
 	path []int
 }

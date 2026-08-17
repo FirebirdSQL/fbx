@@ -130,7 +130,7 @@ func TestLoggerFunc(t *testing.T) {
 
 	buf.Reset() // Clear logs written when establishing connection
 
-	if _, err := conn.Exec(context.TODO(), "select 1 from rdb$database"); err != nil {
+	if _, err := conn.Exec(ctx, "select 1 from rdb$database"); err != nil {
 		t.Fatal(err)
 	}
 
