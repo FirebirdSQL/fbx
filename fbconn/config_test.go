@@ -698,18 +698,3 @@ func TestParseConfigEnv(t *testing.T) {
 		})
 	}
 }
-
-func TestConfigCopyCertificateNotLinkedWithOriginal(t *testing.T) {
-	t.Parallel()
-
-	config, err := fbconn.ParseConfig("")
-	require.NoError(t, err)
-
-	config.Certificate = []byte{1, 2, 3}
-	copyConfig := config.Copy()
-	require.Equal(t, copyConfig.Certificate, config.Certificate)
-
-	config.Certificate[0] = 3
-	require.Equal(t, []byte{3, 2, 3}, config.Certificate)
-	require.NotEqual(t, copyConfig.Certificate, config.Certificate)
-}

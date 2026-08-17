@@ -10,7 +10,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx/fbproto"
-	"rdb.red-soft.ru/fbx/fbproto/auth"
 )
 
 func TestShouldRespondToCondAcceptStopsForKnownPluginsOnly(t *testing.T) {
@@ -272,81 +271,4 @@ func probeDPBHasTag(dpb []byte, tag byte) bool {
 		offset += length
 	}
 	return false
-}
-
-const pluginName = "cert_connect_test"
-
-type certificateCapturePlugin struct {
-	certificate    []byte
-	certificatePIN string
-}
-
-func (p *certificateCapturePlugin) Name() string        { return pluginName }
-func (p *certificateCapturePlugin) Advertise() []string { return []string{p.Name()} }
-func (p *certificateCapturePlugin) InitialClientData() []byte {
-	return p.certificate
-}
-func (p *certificateCapturePlugin) HandleServerData(string, string, string, []byte) (*auth.AuthPluginStep, error) {
-	return &auth.AuthPluginStep{Reply: p.certificate, AuthSpecific: p.certificate}, nil
-}
-func (p *certificateCapturePlugin) HandleAuthResponse([]byte) error { return nil }
-
-func TestConnectConfigPassesCertificateToPluginConstructor(t *testing.T) {
-	wantCert := []byte{0x01, 0x02, 0x03}
-	wantPIN := "123"
-
-	var constructed *certificateCapturePlugin
-	auth.RegisterAuthPlugin(pluginName, func(conf auth.UserConfig) auth.AuthPlugin {
-		plugin := &certificateCapturePlugin{certificate: conf.Certificate, certificatePIN: conf.CertificatePIN}
-		constructed = plugin
-		return plugin
-	})
-
-	config, err := ParseConfig("")
-	require.NoError(t, err)
-	config.Certificate = wantCert
-	config.CertificatePIN = wantPIN
-	config.AuthPluginList = []string{pluginName}
-
-	_, _ = ConnectConfig(context.Background(), config)
-
-	require.NotEmpty(t, constructed)
-	require.Equal(t, wantCert, constructed.certificate)
-	require.Equal(t, wantPIN, constructed.certificatePIN)
-}
-
-func TestUserConfigPassedToPluginWhenSetCurrentPluginReused(t *testing.T) {
-	srpPluginName := "Srp"
-	pluginList := []string{pluginName, srpPluginName}
-	wantCert := []byte{0x01, 0x02, 0x03}
-	wantPIN := "123"
-	auth.RegisterAuthPlugin(pluginName, func(conf auth.UserConfig) auth.AuthPlugin {
-		plugin := &certificateCapturePlugin{certificate: conf.Certificate, certificatePIN: conf.CertificatePIN}
-		return plugin
-	})
-	userConfig := auth.UserConfig{Certificate: wantCert, CertificatePIN: wantPIN}
-	m, err := auth.NewAuthManager(userConfig, pluginList)
-	require.NoError(t, err)
-	m.SetCurrentPlugin(pluginName)
-	step, err := m.HandleServerChallenge(pluginName, nil)
-	require.NoError(t, err)
-	require.NotNil(t, step)
-	require.Equal(t, step.AuthSpecific, m.AuthSpecificData())
-	require.Equal(t, step.AuthSpecific, wantCert)
-	require.Equal(t, pluginName, m.GetCurrentPlugin().Name())
-
-	_, ok := m.SetCurrentPlugin(srpPluginName)
-	require.True(t, ok)
-	step, err = m.HandleServerChallenge(srpPluginName, nil)
-	require.NoError(t, err)
-	require.NotNil(t, step)
-	require.Empty(t, step.AuthSpecific)
-
-	_, ok = m.SetCurrentPlugin(pluginName)
-	require.True(t, ok)
-	step, err = m.HandleServerChallenge(pluginName, nil)
-	require.NoError(t, err)
-	require.NotNil(t, step)
-	require.Equal(t, step.AuthSpecific, wantCert)
-	require.Equal(t, pluginName, m.GetCurrentPlugin().Name())
 }

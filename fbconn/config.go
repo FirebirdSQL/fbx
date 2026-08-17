@@ -54,17 +54,14 @@ type Config struct {
 	MaxBlobCacheSize           int
 	FetchBatchSize             int
 
-	Certificate    []byte
-	CertificatePIN string
+	// ConstructorOptions allows to pass methods for setting parameters to authentication plugins.
+	ConstructorOptions map[string][]auth.ConstructorOption
 
 	// BuildContextWatcherHandler is called to create a ContextWatcherHandler for a connection. The handler is called
 	// when a context passed to a FbConn method is canceled.
 	BuildContextWatcherHandler func(*FbConn) ctxwatch.Handler
 
 	RuntimeParams map[string]string // Run-time parameters to set on connection as session default values (e.g. search_path or application_name)
-
-	KerberosSrvName string
-	KerberosSpn     string
 
 	Fallbacks []*FallbackConfig
 
@@ -157,12 +154,16 @@ func (c *Config) Copy() *Config {
 		}
 		newConf.Fallbacks = fbs
 	}
-	if len(newConf.Certificate) > 0 {
-		newCertificate := make([]byte, len(c.Certificate))
-		copy(newCertificate, c.Certificate)
-		newConf.Certificate = newCertificate
-	}
 	return newConf
+}
+
+// SetPliginConstructorOptions allows to specify a list
+// of auth.ConstructorOptions for the specified authentication plugin.
+func (conf *Config) SetPliginConstructorOptions(plugin string, opts ...auth.ConstructorOption) {
+	if conf.ConstructorOptions == nil {
+		conf.ConstructorOptions = make(map[string][]auth.ConstructorOption)
+	}
+	conf.ConstructorOptions[strings.ToLower(strings.TrimSpace(plugin))] = opts
 }
 
 // FallbackConfig contains additional host/port pairs to try when the primary address fails
@@ -392,14 +393,6 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		"max_blob_cache_size":           {},
 		"fetch_batch_size":              {},
 		"target_session_attrs":          {},
-	}
-
-	// Adding kerberos configuration
-	if _, present := settings["krbsrvname"]; present {
-		config.KerberosSrvName = settings["krbsrvname"]
-	}
-	if _, present := settings["krbspn"]; present {
-		config.KerberosSpn = settings["krbspn"]
 	}
 
 	for k, v := range settings {
