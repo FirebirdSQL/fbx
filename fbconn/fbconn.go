@@ -476,16 +476,6 @@ func (fbConn *FbConn) enableWireCrypt(sessionKey []byte) (*wirecrypt.InitResult,
 	return initInfo, nil
 }
 
-// shouldRespondToCondAccept reports whether authentication must continue with
-// op_cont_auth before attach. A challenge or wire-encryption key requires a
-// response; an empty known-plugins response can proceed to attach-through-DPB.
-func shouldRespondToCondAccept(msg *fbproto.OpCondAccept) bool {
-	if msg == nil {
-		return true
-	}
-	return len(msg.Data) > 0 || hasWireCryptKeys(msg.ServerKeys)
-}
-
 // shouldRespondToDataAccept reports whether op_accept_data requires another
 // op_cont_auth exchange. Without wire-encryption keys, its generated plugin
 // reply is carried by the following attach DPB.
@@ -796,13 +786,12 @@ connectLoop:
 			}
 			continue connectLoop
 		case *fbproto.OpCondAccept:
-			respond := shouldRespondToCondAccept(msg)
-			if err := fbConn.handleCondAccept(msg, authManager, respond); err != nil {
+			// op_cond_accept always requests an authentication continuation,
+			// including an empty challenge that selects another plugin. The
+			// exchange must finish here so wire encryption starts before attach.
+			if err := fbConn.handleCondAccept(msg, authManager, true); err != nil {
 				fbConn.conn.Close()
 				return nil, newPerDialConnectError("authentication failed", err)
-			}
-			if !respond {
-				break connectLoop
 			}
 			continue connectLoop
 		case *fbproto.OpResponse:

@@ -13,30 +13,6 @@ import (
 	"rdb.red-soft.ru/fbx/fbproto/auth"
 )
 
-func TestShouldRespondToCondAcceptStopsForKnownPluginsOnly(t *testing.T) {
-	msg := &fbproto.OpCondAccept{
-		PluginName: "Srp",
-		ServerKeys: []byte{2, 3, 'S', 'r', 'p'},
-	}
-
-	require.False(t, shouldRespondToCondAccept(msg))
-}
-
-func TestShouldRespondToCondAcceptStopsForEmptyChallengeWithoutServerKeys(t *testing.T) {
-	msg := &fbproto.OpCondAccept{PluginName: "Srp"}
-
-	require.False(t, shouldRespondToCondAccept(msg))
-}
-
-func TestShouldRespondToCondAcceptContinuesForChallengeWithoutServerKeys(t *testing.T) {
-	msg := &fbproto.OpCondAccept{
-		PluginName: "Srp",
-		Data:       []byte("server-challenge"),
-	}
-
-	require.True(t, shouldRespondToCondAccept(msg))
-}
-
 func TestShouldRespondToDataAcceptStopsForChallengeWithoutServerKeys(t *testing.T) {
 	msg := &fbproto.OpDataAccept{
 		OpCondAccept: fbproto.OpCondAccept{
@@ -71,19 +47,6 @@ func TestShouldRespondToDataAcceptContinuesForWireCryptKeys(t *testing.T) {
 	require.True(t, shouldRespondToDataAccept(msg))
 }
 
-func TestShouldRespondToCondAcceptContinuesForWireCryptKeys(t *testing.T) {
-	msg := &fbproto.OpCondAccept{
-		PluginName: "Srp",
-		Data:       []byte("server-challenge"),
-		ServerKeys: []byte{
-			0, 9, 'S', 'y', 'm', 'm', 'e', 't', 'r', 'i', 'c',
-			1, 5, 'A', 'r', 'c', '4', '8',
-		},
-	}
-
-	require.True(t, shouldRespondToCondAccept(msg))
-}
-
 func TestDataAcceptChallengeWithoutKeysSendsAttachWithSpecificAuthData(t *testing.T) {
 	result := runAuthNegotiationProbe(t, fbproto.Op_accept_data)
 
@@ -98,24 +61,51 @@ func TestCondAcceptChallengeWithoutKeysSendsContAuth(t *testing.T) {
 	require.False(t, result.hasSpecificAuthData)
 }
 
+func TestCondAcceptPluginSwitchWithoutChallengeSendsContAuth(t *testing.T) {
+	result := runAuthNegotiationProbeWithOptions(t, fbproto.Op_cond_accept, []string{"Srp", "Srp256"}, nil)
+
+	require.Equal(t, fbproto.Op_cont_auth, result.opcode)
+	require.False(t, result.hasSpecificAuthData)
+	require.Equal(t, "Srp256", result.authPluginName)
+	require.Equal(t, "Srp,Srp256", result.authPluginList)
+	require.Len(t, result.authData, 256)
+	require.Empty(t, result.authKeys)
+}
+
 type authNegotiationProbeResult struct {
 	opcode              int
 	hasSpecificAuthData bool
+	authPluginName      string
+	authPluginList      string
+	authData            []byte
+	authKeys            []byte
 	err                 error
 }
 
 func runAuthNegotiationProbe(t *testing.T, acceptOpcode int) authNegotiationProbeResult {
+	return runAuthNegotiationProbeWithOptions(t, acceptOpcode, nil, probeSrpServerData())
+}
+
+func runAuthNegotiationProbeWithOptions(
+	t *testing.T,
+	acceptOpcode int,
+	authPluginList []string,
+	serverData []byte,
+) authNegotiationProbeResult {
 	t.Helper()
 
 	clientConn, serverConn := net.Pipe()
 	resultCh := make(chan authNegotiationProbeResult, 1)
 	go func() {
 		defer serverConn.Close()
-		resultCh <- runAuthNegotiationProbeServer(serverConn, acceptOpcode)
+		resultCh <- runAuthNegotiationProbeServer(serverConn, acceptOpcode, serverData)
 	}()
 
 	config, err := ParseConfig("firebird://sysdba:masterkey@mock/employee")
 	require.NoError(t, err)
+	if authPluginList != nil {
+		config.AuthPluginList = authPluginList
+	}
 	config.LookupFunc = func(context.Context, string) ([]string, error) {
 		return []string{"127.0.0.1"}, nil
 	}
@@ -140,7 +130,7 @@ func runAuthNegotiationProbe(t *testing.T, acceptOpcode int) authNegotiationProb
 	}
 }
 
-func runAuthNegotiationProbeServer(conn net.Conn, acceptOpcode int) authNegotiationProbeResult {
+func runAuthNegotiationProbeServer(conn net.Conn, acceptOpcode int, serverData []byte) authNegotiationProbeResult {
 	encoding, err := fbproto.NewEncoding("UTF8")
 	if err != nil {
 		return authNegotiationProbeResult{err: err}
@@ -152,7 +142,7 @@ func runAuthNegotiationProbeServer(conn net.Conn, acceptOpcode int) authNegotiat
 	if err := readProbeConnect(r); err != nil {
 		return authNegotiationProbeResult{err: err}
 	}
-	if err := writeProbeAccept(w, encoding, acceptOpcode); err != nil {
+	if err := writeProbeAcceptWithData(w, encoding, acceptOpcode, serverData); err != nil {
 		return authNegotiationProbeResult{err: err}
 	}
 
@@ -161,12 +151,22 @@ func runAuthNegotiationProbeServer(conn net.Conn, acceptOpcode int) authNegotiat
 		return authNegotiationProbeResult{err: err}
 	}
 	result := authNegotiationProbeResult{opcode: opcode}
-	if opcode == fbproto.Op_attach {
+	switch opcode {
+	case fbproto.Op_attach:
 		dpb, err := readProbeAttachDPB(r, encoding)
 		if err != nil {
 			return authNegotiationProbeResult{err: err}
 		}
 		result.hasSpecificAuthData = probeDPBHasTag(dpb, fbproto.Isc_dpb_specific_auth_data)
+	case fbproto.Op_cont_auth:
+		msg := &fbproto.OpContAuth{Encoding: encoding}
+		if err := msg.Read(r); err != nil {
+			return authNegotiationProbeResult{err: err}
+		}
+		result.authPluginName = msg.PluginName
+		result.authPluginList = msg.PluginList
+		result.authData = msg.AuthData
+		result.authKeys = msg.Keys
 	}
 	return result
 }
@@ -204,6 +204,10 @@ func readProbeConnect(r *fbproto.XDRReader) error {
 }
 
 func writeProbeAccept(w *fbproto.XDRWriter, encoding *fbproto.Encoding, opcode int) error {
+	return writeProbeAcceptWithData(w, encoding, opcode, probeSrpServerData())
+}
+
+func writeProbeAcceptWithData(w *fbproto.XDRWriter, encoding *fbproto.Encoding, opcode int, data []byte) error {
 	if err := w.WriteInt32(opcode); err != nil {
 		return err
 	}
@@ -216,7 +220,7 @@ func writeProbeAccept(w *fbproto.XDRWriter, encoding *fbproto.Encoding, opcode i
 	if err := w.WriteInt32(fbproto.Ptype_lazy_send); err != nil {
 		return err
 	}
-	if err := w.WriteBuffer(probeSrpServerData()); err != nil {
+	if err := w.WriteBuffer(data); err != nil {
 		return err
 	}
 	if err := w.WriteString("Srp256", encoding); err != nil {
