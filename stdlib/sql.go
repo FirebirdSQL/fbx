@@ -747,7 +747,7 @@ func (r *Rows) ColumnTypeScanType(index int) reflect.Type {
 		return reflect.TypeOf(int16(0))
 	case fbproto.SQL_TYPE_BOOLEAN:
 		return reflect.TypeOf(false)
-	case fbproto.SQL_TYPE_DATE, fbproto.SQL_TYPE_TIMESTAMP, fbproto.SQL_TYPE_TIMESTAMP_TZ, fbproto.SQL_TYPE_TIME:
+	case fbproto.SQL_TYPE_DATE, fbproto.SQL_TYPE_TIMESTAMP, fbproto.SQL_TYPE_TIMESTAMP_TZ, fbproto.SQL_TYPE_TIME, fbproto.SQL_TYPE_TIME_TZ:
 		return reflect.TypeOf(time.Time{})
 	default:
 		return reflect.TypeOf("")
@@ -868,6 +868,16 @@ func (r *Rows) Next(dest []driver.Value) error {
 				}
 			case fbproto.SQL_TYPE_TIMESTAMP_TZ:
 				var d fbtype.Timestamptz
+				scanPlan := m.PlanScan(typeMetadata, &d)
+				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
+					err := scanPlan.Scan(src, &d)
+					if err != nil {
+						return nil, err
+					}
+					return d.Value()
+				}
+			case fbproto.SQL_TYPE_TIME_TZ:
+				var d fbtype.Timetz
 				scanPlan := m.PlanScan(typeMetadata, &d)
 				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
 					err := scanPlan.Scan(src, &d)
