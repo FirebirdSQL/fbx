@@ -13,6 +13,8 @@ import (
 	"rdb.red-soft.ru/fbx/fbtype/decfloat"
 )
 
+// SpecialValue identifies whether an IEEE-754 decimal is finite, an infinity,
+// or a NaN value.
 type SpecialValue byte
 
 const (
@@ -28,6 +30,7 @@ const (
 	dec16MaxLeadingZerosPlain = 6
 )
 
+// String returns the canonical textual representation of s.
 func (s SpecialValue) String() string {
 	switch s {
 	case SpecialNone:
@@ -45,14 +48,41 @@ func (s SpecialValue) String() string {
 	}
 }
 
+func (s SpecialValue) isKnown() bool {
+	switch s {
+	case SpecialNone, SpecialPosInf, SpecialNegInf, SpecialQuietNaN, SpecialSignalingNaN:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s SpecialValue) isInfinity() bool {
+	return s == SpecialPosInf || s == SpecialNegInf
+}
+
+func (s SpecialValue) isNaN() bool {
+	return s == SpecialQuietNaN || s == SpecialSignalingNaN
+}
+
+// Dec16Scanner scans a Firebird DECFLOAT(16) value.
 type Dec16Scanner interface {
+	// ScanDec16 scans v into the receiver.
 	ScanDec16(v DecFloat16) error
 }
 
+// Dec16Valuer returns a Firebird DECFLOAT(16) value.
 type Dec16Valuer interface {
+	// Dec16Value returns the DECFLOAT(16) value to encode.
 	Dec16Value() (DecFloat16, error)
 }
 
+// DecFloat16 represents a Firebird DECFLOAT(16) value.
+//
+// For finite values, Int contains the signed coefficient and Exp contains the
+// unbiased decimal exponent. For example, Int=1234 and Exp=-2 represents
+// 12.34. A nil Int represents zero. Special selects a non-finite value and, in
+// that case, Int and Exp are ignored. Valid is false for SQL NULL.
 type DecFloat16 struct {
 	Int     *big.Int
 	Exp     int32
@@ -60,19 +90,30 @@ type DecFloat16 struct {
 	Special SpecialValue
 }
 
+// ScanDec16 implements [Dec16Scanner].
 func (d *DecFloat16) ScanDec16(v DecFloat16) error {
-	*d = v
+	if err := v.validate(); err != nil {
+		*d = DecFloat16{}
+		return err
+	}
+
+	*d = cloneDecFloat16(v)
 	return nil
 }
 
+// Dec16Value implements [Dec16Valuer].
 func (d DecFloat16) Dec16Value() (DecFloat16, error) {
-	return d, nil
+	if err := d.validate(); err != nil {
+		return DecFloat16{}, err
+	}
+	return cloneDecFloat16(d), nil
 }
 
-// Scan implements the database/sql Scanner interface
+// Scan implements the [database/sql.Scanner] interface.
 func (d *DecFloat16) Scan(src any) error {
+	*d = DecFloat16{}
+
 	if src == nil {
-		*d = DecFloat16{}
 		return nil
 	}
 
@@ -86,15 +127,20 @@ func (d *DecFloat16) Scan(src any) error {
 	return fmt.Errorf("cannot scan %T into DecFloat16", src)
 }
 
-// Value implements the database/sql/driver Valuer interface.
+// Value implements the [database/sql/driver.Valuer] interface.
 func (d DecFloat16) Value() (driver.Value, error) {
 	if !d.Valid {
 		return nil, nil
+	}
+	if err := d.validate(); err != nil {
+		return nil, err
 	}
 
 	return d.String(), nil
 }
 
+// String returns the decimal representation of d, or an empty string for SQL
+// NULL.
 func (d DecFloat16) String() string {
 	if !d.Valid {
 		return ""
@@ -107,15 +153,22 @@ func (d DecFloat16) String() string {
 	return formatDecFloat16General(d.Int, d.Exp)
 }
 
+// MarshalJSON encodes d as a JSON string or null.
 func (d DecFloat16) MarshalJSON() ([]byte, error) {
 	if !d.Valid {
 		return []byte("null"), nil
+	}
+	if err := d.validate(); err != nil {
+		return nil, err
 	}
 
 	return json.Marshal(d.String())
 }
 
+// UnmarshalJSON decodes a JSON string or null into d.
 func (d *DecFloat16) UnmarshalJSON(b []byte) error {
+	*d = DecFloat16{}
+
 	var s *string
 	if err := json.Unmarshal(b, &s); err != nil {
 		return err
@@ -129,22 +182,53 @@ func (d *DecFloat16) UnmarshalJSON(b []byte) error {
 	return scanPlanTextAnyToDecFloat16Scanner{}.Scan([]byte(*s), d)
 }
 
+// IsSpecial reports whether d is a valid infinity or NaN value.
 func (d DecFloat16) IsSpecial() bool {
-	return d.Special != SpecialNone
+	return d.Valid && (d.Special.isInfinity() || d.Special.isNaN())
 }
 
+// IsInfinity reports whether d is a valid positive or negative infinity.
 func (d DecFloat16) IsInfinity() bool {
-	return d.Special == SpecialPosInf || d.Special == SpecialNegInf
+	return d.Valid && d.Special.isInfinity()
 }
 
+// IsNaN reports whether d is a valid quiet or signaling NaN value.
 func (d DecFloat16) IsNaN() bool {
-	return d.Special == SpecialQuietNaN || d.Special == SpecialSignalingNaN
+	return d.Valid && d.Special.isNaN()
 }
 
+func (d DecFloat16) validate() error {
+	return validateDecFloat("DecFloat16", d.Valid, d.Special)
+}
+
+func validateDecFloat(typeName string, valid bool, special SpecialValue) error {
+	if !valid {
+		return nil
+	}
+	if !special.isKnown() {
+		return fmt.Errorf("fbtype: %s has unknown special value %d", typeName, special)
+	}
+	return nil
+}
+
+func cloneDecFloat16(d DecFloat16) DecFloat16 {
+	if !d.Valid {
+		return DecFloat16{}
+	}
+
+	clone := d
+	if d.Int != nil {
+		clone.Int = new(big.Int).Set(d.Int)
+	}
+	return clone
+}
+
+// DecFloat16Codec encodes and decodes Firebird DECFLOAT(16) values.
 type DecFloat16Codec struct{}
 
+// PlanEncode returns an encode plan for supported Firebird DECFLOAT(16) input
+// values.
 func (DecFloat16Codec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
-
 	switch value.(type) {
 	case Dec16Valuer:
 		return encodePlanDecFloat16CodecBinary{}
@@ -228,8 +312,9 @@ func (encodePlanDecFloat16CodecBinaryFromString) Encode(value any, buf []byte) (
 	return encodeDecFloat16Binary(buf, d)
 }
 
+// PlanScan returns a scan plan for supported Firebird DECFLOAT(16) target
+// values.
 func (DecFloat16Codec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
-
 	switch target.(type) {
 	case *DecFloat16:
 		return scanPlanBinaryDecFloat16ToDecFloat16{}
@@ -291,8 +376,7 @@ func (scanPlanBinaryDecFloat16ToString) Scan(src []byte, dst any) error {
 	}
 
 	if src == nil {
-		*strPtr = ""
-		return nil
+		return fmt.Errorf("cannot scan NULL into *string")
 	}
 
 	var d DecFloat16
@@ -369,6 +453,7 @@ func (scanPlanTextAnyToDecFloat16Scanner) Scan(src []byte, dst any) error {
 	return scanner.ScanDec16(d)
 }
 
+// DecodeDatabaseSQLValue decodes src into a database/sql driver value.
 func (c DecFloat16Codec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
@@ -383,6 +468,7 @@ func (c DecFloat16Codec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadat
 	return d.String(), nil
 }
 
+// DecodeValue decodes src into the default Go value for Firebird DECFLOAT(16).
 func (c DecFloat16Codec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
@@ -397,7 +483,10 @@ func (c DecFloat16Codec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []by
 	return d, nil
 }
 
-// Float64ToDecFloat16 converts float64 to DecFloat16, handling NaN/Inf explicitly and parsing finite values via decimal text.
+// Float64ToDecFloat16 converts f to a DecFloat16. It preserves infinities. A
+// finite value is converted through its shortest round-trip decimal
+// representation and returns an error if that representation does not fit
+// DECFLOAT(16).
 func Float64ToDecFloat16(f float64) (DecFloat16, error) {
 	if math.IsNaN(f) {
 		return DecFloat16{Valid: true, Special: SpecialQuietNaN}, nil
@@ -408,12 +497,14 @@ func Float64ToDecFloat16(f float64) (DecFloat16, error) {
 	if math.IsInf(f, -1) {
 		return DecFloat16{Valid: true, Special: SpecialNegInf}, nil
 	}
-
 	s := strconv.FormatFloat(f, 'f', -1, 64)
 
 	var d DecFloat16
 	if err := parseDecFloat16String(s, &d); err != nil {
-		return DecFloat16{}, fmt.Errorf("cannot convert float64 %f to DecFloat16: %w", f, err)
+		return DecFloat16{}, fmt.Errorf("cannot convert float64 %g to DecFloat16: %w", f, err)
+	}
+	if err := decfloat.Decimal64.ValidateFiniteCoefficientAndExponent(d.Int, int(d.Exp)); err != nil {
+		return DecFloat16{}, fmt.Errorf("cannot convert float64 %g to DecFloat16: %w", f, err)
 	}
 
 	return d, nil
@@ -423,6 +514,9 @@ func Float64ToDecFloat16(f float64) (DecFloat16, error) {
 func decFloat16ToFloat64(d DecFloat16) (float64, error) {
 	if !d.Valid {
 		return 0, fmt.Errorf("invalid DecFloat16")
+	}
+	if err := d.validate(); err != nil {
+		return 0, err
 	}
 
 	switch d.Special {
@@ -450,59 +544,89 @@ func decFloat16ToFloat64(d DecFloat16) (float64, error) {
 	return f, nil
 }
 
-// parseDecFloat16String parses a textual DECFLOAT(16) (including scientific notation) into dst.
+// parseDecFloat16String parses a textual DECFLOAT(16), including scientific
+// notation, into dst.
 func parseDecFloat16String(s string, dst *DecFloat16) error {
-	original := strings.TrimSpace(s)
-	s = original
-
-	switch strings.ToLower(s) {
-	case "+infinity", "+inf", "infinity", "inf":
-		*dst = DecFloat16{Valid: true, Special: SpecialPosInf}
-		return nil
-	case "-infinity", "-inf":
-		*dst = DecFloat16{Valid: true, Special: SpecialNegInf}
-		return nil
-	case "nan":
-		*dst = DecFloat16{Valid: true, Special: SpecialQuietNaN}
-		return nil
-	case "snan":
-		*dst = DecFloat16{Valid: true, Special: SpecialSignalingNaN}
-		return nil
-	}
-
-	var exp10 int32
-	if i := strings.IndexAny(s, "eE"); i >= 0 {
-		mant := strings.TrimSpace(s[:i])
-		expPart := strings.TrimSpace(s[i+1:])
-		if expPart == "" {
-			return fmt.Errorf("cannot parse DecFloat16 from %q: missing exponent", original)
-		}
-		e, err := strconv.ParseInt(expPart, 10, 32)
-		if err != nil {
-			return fmt.Errorf("cannot parse DecFloat16 from %q: bad exponent %q: %w", original, expPart, err)
-		}
-		exp10 = int32(e)
-		s = mant
-	}
-
-	num, exp, err := parseNumericString(s)
+	parsed, err := parseDecFloatString(s, "DecFloat16")
 	if err != nil {
-		return fmt.Errorf("cannot parse DecFloat16 from %q: %w", original, err)
-	}
-
-	exp += exp10
-	if num.Sign() == 0 {
-		exp = 0
+		*dst = DecFloat16{}
+		return err
 	}
 
 	*dst = DecFloat16{
-		Int:     num,
-		Exp:     exp,
+		Int:     parsed.coefficient,
+		Exp:     parsed.exponent,
 		Valid:   true,
-		Special: SpecialNone,
+		Special: parsed.special,
+	}
+	return nil
+}
+
+type parsedDecFloat struct {
+	coefficient *big.Int
+	exponent    int32
+	special     SpecialValue
+}
+
+func parseDecFloatString(s string, typeName string) (parsedDecFloat, error) {
+	original := strings.TrimSpace(s)
+	if special, ok := parseSpecialValue(original); ok {
+		return parsedDecFloat{special: special}, nil
 	}
 
-	return nil
+	mantissa := original
+	var scientificExponent int64
+	if exponentIndex := strings.IndexAny(original, "eE"); exponentIndex >= 0 {
+		if exponentIndex != strings.LastIndexAny(original, "eE") {
+			return parsedDecFloat{}, fmt.Errorf("cannot parse %s from %q: multiple exponents", typeName, original)
+		}
+
+		mantissa = strings.TrimSpace(original[:exponentIndex])
+		exponentText := strings.TrimSpace(original[exponentIndex+1:])
+		if exponentText == "" {
+			return parsedDecFloat{}, fmt.Errorf("cannot parse %s from %q: missing exponent", typeName, original)
+		}
+
+		var err error
+		scientificExponent, err = strconv.ParseInt(exponentText, 10, 32)
+		if err != nil {
+			return parsedDecFloat{}, fmt.Errorf("cannot parse %s from %q: bad exponent %q: %w", typeName, original, exponentText, err)
+		}
+	}
+
+	coefficient, exponent, err := parseNumericString(mantissa)
+	if err != nil {
+		return parsedDecFloat{}, fmt.Errorf("cannot parse %s from %q: %w", typeName, original, err)
+	}
+
+	if coefficient.Sign() == 0 {
+		return parsedDecFloat{coefficient: coefficient}, nil
+	}
+
+	combinedExponent := int64(exponent) + scientificExponent
+	if combinedExponent < math.MinInt32 || combinedExponent > math.MaxInt32 {
+		return parsedDecFloat{}, fmt.Errorf("cannot parse %s from %q: exponent %d is out of int32 range", typeName, original, combinedExponent)
+	}
+
+	return parsedDecFloat{
+		coefficient: coefficient,
+		exponent:    int32(combinedExponent),
+	}, nil
+}
+
+func parseSpecialValue(s string) (SpecialValue, bool) {
+	switch strings.ToLower(s) {
+	case "+infinity", "+inf", "infinity", "inf":
+		return SpecialPosInf, true
+	case "-infinity", "-inf":
+		return SpecialNegInf, true
+	case "nan", "+nan":
+		return SpecialQuietNaN, true
+	case "snan", "+snan":
+		return SpecialSignalingNaN, true
+	default:
+		return SpecialNone, false
+	}
 }
 
 // formatDecimal renders as a plain decimal string without scientific notation.
@@ -536,15 +660,15 @@ func formatDecimal(coef *big.Int, exp int32) string {
 		return result.String()
 	}
 
-	absExp := int(-exp)
-	if len(intStr) <= absExp {
+	absExp := -int64(exp)
+	if int64(len(intStr)) <= absExp {
 		result.WriteString("0.")
-		for i := 0; i < absExp-len(intStr); i++ {
+		for i := int64(0); i < absExp-int64(len(intStr)); i++ {
 			result.WriteByte('0')
 		}
 		result.WriteString(intStr)
 	} else {
-		dpPos := len(intStr) - absExp
+		dpPos := len(intStr) - int(absExp)
 		result.WriteString(intStr[:dpPos])
 		result.WriteByte('.')
 		result.WriteString(intStr[dpPos:])
@@ -553,7 +677,8 @@ func formatDecimal(coef *big.Int, exp int32) string {
 	return result.String()
 }
 
-// formatDecFloat16General formats a finite DecFloat16 using “general” rules: plain form when short, otherwise scientific.
+// formatDecFloat16General formats a finite DecFloat16 using general rules:
+// plain form when short, otherwise scientific.
 func formatDecFloat16General(coef *big.Int, exp int32) string {
 	if coef == nil || coef.Sign() == 0 {
 		return "0"
@@ -563,17 +688,17 @@ func formatDecFloat16General(coef *big.Int, exp int32) string {
 	digits := abs.String()
 	digitsCount := len(digits)
 
-	digitsToLeft := digitsCount + int(exp)
+	digitsToLeft := int64(digitsCount) + int64(exp)
 
 	if exp == 0 {
 		return formatDecimal(coef, exp)
 	}
-	if digitsToLeft > 0 && digitsToLeft <= dec16MaxIntDigitsPlain {
+	if digitsToLeft > 0 && digitsToLeft <= int64(dec16MaxIntDigitsPlain) {
 		return formatDecimal(coef, exp)
 	}
 	if digitsToLeft <= 0 {
 		leadingZeros := -digitsToLeft
-		if leadingZeros <= dec16MaxLeadingZerosPlain {
+		if leadingZeros <= int64(dec16MaxLeadingZerosPlain) {
 			return formatDecimal(coef, exp)
 		}
 	}
@@ -607,8 +732,11 @@ func formatDecFloatScientific(coef *big.Int, exp int32) string {
 	return fmt.Sprintf("%sE%+d", mant, k)
 }
 
-// encodeDecFloat16Binary encodes DecFloat16 into IEEE-754 decimal64
+// encodeDecFloat16Binary encodes DecFloat16 into IEEE-754 decimal64.
 func encodeDecFloat16Binary(buf []byte, d DecFloat16) ([]byte, error) {
+	if err := d.validate(); err != nil {
+		return nil, err
+	}
 	if !d.Valid {
 		return nil, nil
 	}
@@ -616,28 +744,10 @@ func encodeDecFloat16Binary(buf []byte, d DecFloat16) ([]byte, error) {
 	codec := decfloat.NewDecimalCodec(decfloat.Decimal64)
 
 	if d.Special != SpecialNone {
-		dd := decfloat.DecodedDecimal{
-			Signum: decfloat.SignumPositive,
-			Type:   decfloat.DecimalFinite,
+		dd, err := decodedDecimalFromSpecial(d.Special)
+		if err != nil {
+			return nil, err
 		}
-
-		switch d.Special {
-		case SpecialPosInf:
-			dd.Type = decfloat.DecimalInfinity
-			dd.Signum = decfloat.SignumPositive
-		case SpecialNegInf:
-			dd.Type = decfloat.DecimalInfinity
-			dd.Signum = decfloat.SignumNegative
-		case SpecialQuietNaN:
-			dd.Type = decfloat.DecimalNaN
-			dd.Signum = decfloat.SignumPositive
-		case SpecialSignalingNaN:
-			dd.Type = decfloat.DecimalSignalingNaN
-			dd.Signum = decfloat.SignumPositive
-		default:
-			return nil, fmt.Errorf("encodeDecFloat16Binary: unknown special %v", d.Special)
-		}
-
 		b, err := codec.Encode(dd)
 		if err != nil {
 			return nil, err
@@ -669,8 +779,10 @@ func encodeDecFloat16Binary(buf []byte, d DecFloat16) ([]byte, error) {
 	return append(buf, b...), nil
 }
 
-// decodeDecFloat16Binary decodes IEEE-754 decimal64 to DecFloat16
+// decodeDecFloat16Binary decodes IEEE-754 decimal64 to DecFloat16.
 func decodeDecFloat16Binary(src []byte, dst *DecFloat16) error {
+	*dst = DecFloat16{}
+
 	if len(src) != 8 {
 		return fmt.Errorf("invalid length for DECFLOAT(16): expected 8 bytes, got %d", len(src))
 	}
@@ -683,25 +795,11 @@ func decodeDecFloat16Binary(src []byte, dst *DecFloat16) error {
 	}
 
 	if dd.Type != decfloat.DecimalFinite {
-		*dst = DecFloat16{
-			Valid: true,
+		special, err := specialValueFromDecodedDecimal(dd)
+		if err != nil {
+			return err
 		}
-
-		switch dd.Type {
-		case decfloat.DecimalInfinity:
-			if dd.Signum == decfloat.SignumNegative {
-				dst.Special = SpecialNegInf
-			} else {
-				dst.Special = SpecialPosInf
-			}
-		case decfloat.DecimalNaN:
-			dst.Special = SpecialQuietNaN
-		case decfloat.DecimalSignalingNaN:
-			dst.Special = SpecialSignalingNaN
-		default:
-			return fmt.Errorf("decodeDecFloat16Binary: unknown decimal type %v", dd.Type)
-		}
-
+		*dst = DecFloat16{Valid: true, Special: special}
 		return nil
 	}
 
@@ -717,4 +815,44 @@ func decodeDecFloat16Binary(src []byte, dst *DecFloat16) error {
 		Special: SpecialNone,
 	}
 	return nil
+}
+
+func decodedDecimalFromSpecial(s SpecialValue) (decfloat.DecodedDecimal, error) {
+	switch s {
+	case SpecialPosInf:
+		return decfloat.DecodedDecimal{Signum: decfloat.SignumPositive, Type: decfloat.DecimalInfinity}, nil
+	case SpecialNegInf:
+		return decfloat.DecodedDecimal{Signum: decfloat.SignumNegative, Type: decfloat.DecimalInfinity}, nil
+	case SpecialQuietNaN:
+		return decfloat.DecodedDecimal{Signum: decfloat.SignumPositive, Type: decfloat.DecimalNaN}, nil
+	case SpecialSignalingNaN:
+		return decfloat.DecodedDecimal{Signum: decfloat.SignumPositive, Type: decfloat.DecimalSignalingNaN}, nil
+	default:
+		return decfloat.DecodedDecimal{}, fmt.Errorf("fbtype: unknown special value %d", s)
+	}
+}
+
+func specialValueFromDecodedDecimal(d decfloat.DecodedDecimal) (SpecialValue, error) {
+	var negative bool
+	switch d.Signum {
+	case decfloat.SignumPositive:
+	case decfloat.SignumNegative:
+		negative = true
+	default:
+		return SpecialNone, fmt.Errorf("fbtype: unknown decimal signum %d", d.Signum)
+	}
+
+	switch d.Type {
+	case decfloat.DecimalInfinity:
+		if negative {
+			return SpecialNegInf, nil
+		}
+		return SpecialPosInf, nil
+	case decfloat.DecimalNaN:
+		return SpecialQuietNaN, nil
+	case decfloat.DecimalSignalingNaN:
+		return SpecialSignalingNaN, nil
+	default:
+		return SpecialNone, fmt.Errorf("fbtype: decimal type %d is not special", d.Type)
+	}
 }

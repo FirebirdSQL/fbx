@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
+	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
 )
@@ -455,11 +456,29 @@ func TestDecFloat34_SpecialMethods(t *testing.T) {
 func TestDecFloat34_Overflow(t *testing.T) {
 	t.Parallel()
 
-	var d fbtype.DecFloat34
-	err := d.Scan("12345678901234567890123456789012345")
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_DEC128, 0, 16, 0)
 
-	require.NoError(t, err)
-	require.True(t, d.Valid)
+	for _, tt := range []struct {
+		name           string
+		input          string
+		expectEncodeOK bool
+	}{
+		{"34 digits", "1234567890123456789012345678901234", true},
+		{"35 digits", "12345678901234567890123456789012345", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var d fbtype.DecFloat34
+			require.NoError(t, d.Scan(tt.input))
+			require.True(t, d.Valid)
 
-	t.Logf("35 digits scanned: %s", d.String())
+			encoded, err := m.Encode(typeMetadata, d, nil)
+			if tt.expectEncodeOK {
+				require.NoError(t, err)
+				require.Len(t, encoded, 16)
+			} else {
+				require.ErrorContains(t, err, "coefficient out of range")
+			}
+		})
+	}
 }

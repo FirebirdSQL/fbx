@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
+	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
 )
@@ -455,47 +456,39 @@ func TestDecFloat16_Overflow(t *testing.T) {
 	tests := []struct {
 		name           string
 		input          string
-		expectScanErr  bool
 		expectEncodeOK bool
 	}{
 		{
 			name:           "16 digits OK",
 			input:          "1234567890123456",
-			expectScanErr:  false,
 			expectEncodeOK: true,
 		},
 		{
 			name:           "17 digits - scan OK, encode fail",
 			input:          "12345678901234567",
-			expectScanErr:  false,
 			expectEncodeOK: false,
 		},
 		{
 			name:           "20 digits - too many",
 			input:          "12345678901234567890",
-			expectScanErr:  false,
 			expectEncodeOK: false,
 		},
 	}
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_DEC64, 0, 8, 0)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var d fbtype.DecFloat16
-			err := d.Scan(tt.input)
-
-			if tt.expectScanErr {
-				require.Error(t, err)
-				return
-			}
-
-			require.NoError(t, err)
+			require.NoError(t, d.Scan(tt.input))
 			require.True(t, d.Valid)
 
-			t.Logf("Scanned %s: Int=%s, Exp=%d, digits=%d",
-				tt.input, d.Int.String(), d.Exp, len(d.Int.String()))
-
-			if !tt.expectEncodeOK {
-				t.Logf("Note: encoding to DECFLOAT(16) should fail for this value")
+			encoded, err := m.Encode(typeMetadata, d, nil)
+			if tt.expectEncodeOK {
+				require.NoError(t, err)
+				require.Len(t, encoded, 8)
+			} else {
+				require.ErrorContains(t, err, "coefficient out of range")
 			}
 		})
 	}
@@ -505,30 +498,33 @@ func TestDecFloat16_ExponentBoundaries(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		input   string
-		wantErr bool
+		name          string
+		input         string
+		wantEncodeErr bool
 	}{
 		{"min_exponent", "1E-398", false},
 		{"max_exponent", "9.999999999999999E+369", false},
 		{"near_min", "1E-397", false},
 		{"near_max", "1E+368", false},
 
-		{"underflow", "1E-399", false},
-		{"overflow", "1E+370", false},
+		{"underflow", "1E-399", true},
+		{"overflow", "1E+370", true},
 	}
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_DEC64, 0, 8, 0)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var d fbtype.DecFloat16
-			err := d.Scan(tt.input)
+			require.NoError(t, d.Scan(tt.input))
+			require.True(t, d.Valid)
 
-			if tt.wantErr {
-				require.Error(t, err)
+			encoded, err := m.Encode(typeMetadata, d, nil)
+			if tt.wantEncodeErr {
+				require.ErrorContains(t, err, "exponent out of range")
 			} else {
 				require.NoError(t, err)
-				require.True(t, d.Valid)
-				t.Logf("Parsed %s: Int=%s, Exp=%d", tt.input, d.Int.String(), d.Exp)
+				require.Len(t, encoded, 8)
 			}
 		})
 	}
