@@ -43,6 +43,9 @@ func isExpectedEqDec16(want fbtype.DecFloat16) func(any) bool {
 		if d.Special != want.Special {
 			return false
 		}
+		if d.NegativeZero != want.NegativeZero {
+			return false
+		}
 		if want.Special != fbtype.SpecialNone {
 			return true
 		}
@@ -87,7 +90,7 @@ func TestDecFloat16Codec_RoundTrip_DB(t *testing.T) {
 		{"0", "0"},
 		{"1", "1"},
 		{"-1", "-1"},
-		{"-0", "0"},
+		{"-0", "-0"},
 
 		{"0.1", "0.1"},
 		{"0.00001", "0.00001"},
@@ -142,6 +145,8 @@ func TestDecFloat16Codec_RoundTrip_DB(t *testing.T) {
 		{"-Infinity", "-Infinity"},
 		{"NaN", "NaN"},
 		{"sNaN", "sNaN"},
+		{"-NaN", "-NaN"},
+		{"-sNaN", "-sNaN"},
 	}
 
 	tests := make([]fbxtest.ValueRoundTripTest, 0, len(values)*2+2)
@@ -276,6 +281,11 @@ func TestDecFloat16_Value(t *testing.T) {
 			want:  "0",
 		},
 		{
+			name:  "negative zero",
+			input: mustDec16(t, "-0"),
+			want:  "-0",
+		},
+		{
 			name:  "special +Infinity",
 			input: mustDec16(t, "+Infinity"),
 			want:  "+Infinity",
@@ -289,6 +299,16 @@ func TestDecFloat16_Value(t *testing.T) {
 			name:  "special NaN",
 			input: mustDec16(t, "NaN"),
 			want:  "NaN",
+		},
+		{
+			name:  "special -NaN",
+			input: mustDec16(t, "-NaN"),
+			want:  "-NaN",
+		},
+		{
+			name:  "special -sNaN",
+			input: mustDec16(t, "-sNaN"),
+			want:  "-sNaN",
 		},
 		{
 			name:    "invalid (NULL)",
@@ -331,6 +351,11 @@ func TestDecFloat16_JSON(t *testing.T) {
 			want:  `"0"`,
 		},
 		{
+			name:  "negative zero",
+			input: mustDec16(t, "-0"),
+			want:  `"-0"`,
+		},
+		{
 			name:  "negative",
 			input: mustDec16(t, "-678.90"),
 			want:  `"-678.90"`,
@@ -349,6 +374,16 @@ func TestDecFloat16_JSON(t *testing.T) {
 			name:  "special NaN",
 			input: mustDec16(t, "NaN"),
 			want:  `"NaN"`,
+		},
+		{
+			name:  "special -NaN",
+			input: mustDec16(t, "-NaN"),
+			want:  `"-NaN"`,
+		},
+		{
+			name:  "special -sNaN",
+			input: mustDec16(t, "-sNaN"),
+			want:  `"-sNaN"`,
 		},
 		{
 			name:  "NULL",
@@ -406,6 +441,7 @@ func TestDecFloat16_SpecialMethods(t *testing.T) {
 		isSpecial  bool
 		isInfinity bool
 		isNaN      bool
+		isNegZero  bool
 	}{
 		{
 			name:  "normal number",
@@ -414,6 +450,11 @@ func TestDecFloat16_SpecialMethods(t *testing.T) {
 		{
 			name:  "zero",
 			input: mustDec16(t, "0"),
+		},
+		{
+			name:      "negative zero",
+			input:     mustDec16(t, "-0"),
+			isNegZero: true,
 		},
 		{
 			name:       "+Infinity",
@@ -439,6 +480,18 @@ func TestDecFloat16_SpecialMethods(t *testing.T) {
 			isSpecial: true,
 			isNaN:     true,
 		},
+		{
+			name:      "-NaN",
+			input:     mustDec16(t, "-NaN"),
+			isSpecial: true,
+			isNaN:     true,
+		},
+		{
+			name:      "-sNaN",
+			input:     mustDec16(t, "-sNaN"),
+			isSpecial: true,
+			isNaN:     true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -446,6 +499,7 @@ func TestDecFloat16_SpecialMethods(t *testing.T) {
 			require.Equal(t, tt.isSpecial, tt.input.IsSpecial())
 			require.Equal(t, tt.isInfinity, tt.input.IsInfinity())
 			require.Equal(t, tt.isNaN, tt.input.IsNaN())
+			require.Equal(t, tt.isNegZero, tt.input.IsNegativeZero())
 		})
 	}
 }

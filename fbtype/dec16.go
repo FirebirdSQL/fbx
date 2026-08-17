@@ -23,6 +23,8 @@ const (
 	SpecialNegInf
 	SpecialQuietNaN
 	SpecialSignalingNaN
+	SpecialNegQuietNaN
+	SpecialNegSignalingNaN
 )
 
 const (
@@ -43,6 +45,10 @@ func (s SpecialValue) String() string {
 		return "NaN"
 	case SpecialSignalingNaN:
 		return "sNaN"
+	case SpecialNegQuietNaN:
+		return "-NaN"
+	case SpecialNegSignalingNaN:
+		return "-sNaN"
 	default:
 		return "unknown"
 	}
@@ -50,7 +56,8 @@ func (s SpecialValue) String() string {
 
 func (s SpecialValue) isKnown() bool {
 	switch s {
-	case SpecialNone, SpecialPosInf, SpecialNegInf, SpecialQuietNaN, SpecialSignalingNaN:
+	case SpecialNone, SpecialPosInf, SpecialNegInf, SpecialQuietNaN,
+		SpecialSignalingNaN, SpecialNegQuietNaN, SpecialNegSignalingNaN:
 		return true
 	default:
 		return false
@@ -62,7 +69,8 @@ func (s SpecialValue) isInfinity() bool {
 }
 
 func (s SpecialValue) isNaN() bool {
-	return s == SpecialQuietNaN || s == SpecialSignalingNaN
+	return s == SpecialQuietNaN || s == SpecialSignalingNaN ||
+		s == SpecialNegQuietNaN || s == SpecialNegSignalingNaN
 }
 
 // Dec16Scanner scans a Firebird DECFLOAT(16) value.
@@ -88,6 +96,9 @@ type DecFloat16 struct {
 	Exp     int32
 	Valid   bool
 	Special SpecialValue
+	// NegativeZero preserves the IEEE-754 negative sign of a finite zero.
+	// It must be false for nonzero and special values.
+	NegativeZero bool
 }
 
 // ScanDec16 implements [Dec16Scanner].
@@ -149,6 +160,9 @@ func (d DecFloat16) String() string {
 	if d.Special != SpecialNone {
 		return d.Special.String()
 	}
+	if d.IsNegativeZero() {
+		return "-0"
+	}
 
 	return formatDecFloat16General(d.Int, d.Exp)
 }
@@ -197,16 +211,25 @@ func (d DecFloat16) IsNaN() bool {
 	return d.Valid && d.Special.isNaN()
 }
 
-func (d DecFloat16) validate() error {
-	return validateDecFloat("DecFloat16", d.Valid, d.Special)
+// IsNegativeZero reports whether d is a finite IEEE-754 negative zero.
+func (d DecFloat16) IsNegativeZero() bool {
+	return d.Valid && d.Special == SpecialNone && d.NegativeZero &&
+		(d.Int == nil || d.Int.Sign() == 0)
 }
 
-func validateDecFloat(typeName string, valid bool, special SpecialValue) error {
+func (d DecFloat16) validate() error {
+	return validateDecFloat("DecFloat16", d.Int, d.Valid, d.Special, d.NegativeZero)
+}
+
+func validateDecFloat(typeName string, coefficient *big.Int, valid bool, special SpecialValue, negativeZero bool) error {
 	if !valid {
 		return nil
 	}
 	if !special.isKnown() {
 		return fmt.Errorf("fbtype: %s has unknown special value %d", typeName, special)
+	}
+	if negativeZero && (special != SpecialNone || coefficient != nil && coefficient.Sign() != 0) {
+		return fmt.Errorf("fbtype: %s NegativeZero requires a finite zero", typeName)
 	}
 	return nil
 }
@@ -483,13 +506,17 @@ func (c DecFloat16Codec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []by
 	return d, nil
 }
 
-// Float64ToDecFloat16 converts f to a DecFloat16. It preserves infinities. A
-// finite value is converted through its shortest round-trip decimal
-// representation and returns an error if that representation does not fit
-// DECFLOAT(16).
+// Float64ToDecFloat16 converts f to a DecFloat16. It preserves signed zero,
+// infinities, and the sign of NaN. A finite value is converted through its
+// shortest round-trip decimal representation and returns an error if that
+// representation does not fit DECFLOAT(16).
 func Float64ToDecFloat16(f float64) (DecFloat16, error) {
 	if math.IsNaN(f) {
-		return DecFloat16{Valid: true, Special: SpecialQuietNaN}, nil
+		special := SpecialQuietNaN
+		if math.Signbit(f) {
+			special = SpecialNegQuietNaN
+		}
+		return DecFloat16{Valid: true, Special: special}, nil
 	}
 	if math.IsInf(f, 1) {
 		return DecFloat16{Valid: true, Special: SpecialPosInf}, nil
@@ -497,6 +524,14 @@ func Float64ToDecFloat16(f float64) (DecFloat16, error) {
 	if math.IsInf(f, -1) {
 		return DecFloat16{Valid: true, Special: SpecialNegInf}, nil
 	}
+	if f == 0 {
+		return DecFloat16{
+			Int:          big.NewInt(0),
+			Valid:        true,
+			NegativeZero: math.Signbit(f),
+		}, nil
+	}
+
 	s := strconv.FormatFloat(f, 'f', -1, 64)
 
 	var d DecFloat16
@@ -526,6 +561,11 @@ func decFloat16ToFloat64(d DecFloat16) (float64, error) {
 		return math.Inf(-1), nil
 	case SpecialQuietNaN, SpecialSignalingNaN:
 		return math.NaN(), nil
+	case SpecialNegQuietNaN, SpecialNegSignalingNaN:
+		return math.Copysign(math.NaN(), -1), nil
+	}
+	if d.IsNegativeZero() {
+		return math.Copysign(0, -1), nil
 	}
 
 	s := formatDecFloatScientific(d.Int, d.Exp)
@@ -554,18 +594,20 @@ func parseDecFloat16String(s string, dst *DecFloat16) error {
 	}
 
 	*dst = DecFloat16{
-		Int:     parsed.coefficient,
-		Exp:     parsed.exponent,
-		Valid:   true,
-		Special: parsed.special,
+		Int:          parsed.coefficient,
+		Exp:          parsed.exponent,
+		Valid:        true,
+		Special:      parsed.special,
+		NegativeZero: parsed.negativeZero,
 	}
 	return nil
 }
 
 type parsedDecFloat struct {
-	coefficient *big.Int
-	exponent    int32
-	special     SpecialValue
+	coefficient  *big.Int
+	exponent     int32
+	special      SpecialValue
+	negativeZero bool
 }
 
 func parseDecFloatString(s string, typeName string) (parsedDecFloat, error) {
@@ -599,8 +641,9 @@ func parseDecFloatString(s string, typeName string) (parsedDecFloat, error) {
 		return parsedDecFloat{}, fmt.Errorf("cannot parse %s from %q: %w", typeName, original, err)
 	}
 
+	negativeZero := coefficient.Sign() == 0 && strings.HasPrefix(mantissa, "-")
 	if coefficient.Sign() == 0 {
-		return parsedDecFloat{coefficient: coefficient}, nil
+		return parsedDecFloat{coefficient: coefficient, negativeZero: negativeZero}, nil
 	}
 
 	combinedExponent := int64(exponent) + scientificExponent
@@ -622,8 +665,12 @@ func parseSpecialValue(s string) (SpecialValue, bool) {
 		return SpecialNegInf, true
 	case "nan", "+nan":
 		return SpecialQuietNaN, true
+	case "-nan":
+		return SpecialNegQuietNaN, true
 	case "snan", "+snan":
 		return SpecialSignalingNaN, true
+	case "-snan":
+		return SpecialNegSignalingNaN, true
 	default:
 		return SpecialNone, false
 	}
@@ -761,7 +808,7 @@ func encodeDecFloat16Binary(buf []byte, d DecFloat16) ([]byte, error) {
 	}
 
 	signum := decfloat.SignumPositive
-	if coef.Sign() < 0 {
+	if coef.Sign() < 0 || d.NegativeZero {
 		signum = decfloat.SignumNegative
 	}
 
@@ -809,10 +856,11 @@ func decodeDecFloat16Binary(src []byte, dst *DecFloat16) error {
 	}
 
 	*dst = DecFloat16{
-		Int:     coef,
-		Exp:     dd.Exponent,
-		Valid:   true,
-		Special: SpecialNone,
+		Int:          coef,
+		Exp:          dd.Exponent,
+		Valid:        true,
+		Special:      SpecialNone,
+		NegativeZero: coef.Sign() == 0 && dd.Signum == decfloat.SignumNegative,
 	}
 	return nil
 }
@@ -827,6 +875,10 @@ func decodedDecimalFromSpecial(s SpecialValue) (decfloat.DecodedDecimal, error) 
 		return decfloat.DecodedDecimal{Signum: decfloat.SignumPositive, Type: decfloat.DecimalNaN}, nil
 	case SpecialSignalingNaN:
 		return decfloat.DecodedDecimal{Signum: decfloat.SignumPositive, Type: decfloat.DecimalSignalingNaN}, nil
+	case SpecialNegQuietNaN:
+		return decfloat.DecodedDecimal{Signum: decfloat.SignumNegative, Type: decfloat.DecimalNaN}, nil
+	case SpecialNegSignalingNaN:
+		return decfloat.DecodedDecimal{Signum: decfloat.SignumNegative, Type: decfloat.DecimalSignalingNaN}, nil
 	default:
 		return decfloat.DecodedDecimal{}, fmt.Errorf("fbtype: unknown special value %d", s)
 	}
@@ -849,8 +901,14 @@ func specialValueFromDecodedDecimal(d decfloat.DecodedDecimal) (SpecialValue, er
 		}
 		return SpecialPosInf, nil
 	case decfloat.DecimalNaN:
+		if negative {
+			return SpecialNegQuietNaN, nil
+		}
 		return SpecialQuietNaN, nil
 	case decfloat.DecimalSignalingNaN:
+		if negative {
+			return SpecialNegSignalingNaN, nil
+		}
 		return SpecialSignalingNaN, nil
 	default:
 		return SpecialNone, fmt.Errorf("fbtype: decimal type %d is not special", d.Type)

@@ -40,6 +40,9 @@ type DecFloat34 struct {
 	Exp     int32
 	Valid   bool
 	Special SpecialValue
+	// NegativeZero preserves the IEEE-754 negative sign of a finite zero.
+	// It must be false for nonzero and special values.
+	NegativeZero bool
 }
 
 // ScanDec34 implements [Dec34Scanner].
@@ -99,6 +102,9 @@ func (d DecFloat34) String() string {
 	if d.Special != SpecialNone {
 		return d.Special.String()
 	}
+	if d.IsNegativeZero() {
+		return "-0"
+	}
 	return formatDecFloat34General(d.Int, d.Exp)
 }
 
@@ -143,8 +149,14 @@ func (d DecFloat34) IsNaN() bool {
 	return d.Valid && d.Special.isNaN()
 }
 
+// IsNegativeZero reports whether d is a finite IEEE-754 negative zero.
+func (d DecFloat34) IsNegativeZero() bool {
+	return d.Valid && d.Special == SpecialNone && d.NegativeZero &&
+		(d.Int == nil || d.Int.Sign() == 0)
+}
+
 func (d DecFloat34) validate() error {
-	return validateDecFloat("DecFloat34", d.Valid, d.Special)
+	return validateDecFloat("DecFloat34", d.Int, d.Valid, d.Special, d.NegativeZero)
 }
 
 func cloneDecFloat34(d DecFloat34) DecFloat34 {
@@ -397,13 +409,17 @@ func (c DecFloat34Codec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []by
 	return d, nil
 }
 
-// Float64ToDecFloat34 converts f to a DecFloat34. It preserves infinities. A
-// finite value is converted through its shortest round-trip decimal
-// representation and returns an error if that representation does not fit
-// DECFLOAT(34).
+// Float64ToDecFloat34 converts f to a DecFloat34. It preserves signed zero,
+// infinities, and the sign of NaN. A finite value is converted through its
+// shortest round-trip decimal representation and returns an error if that
+// representation does not fit DECFLOAT(34).
 func Float64ToDecFloat34(f float64) (DecFloat34, error) {
 	if math.IsNaN(f) {
-		return DecFloat34{Valid: true, Special: SpecialQuietNaN}, nil
+		special := SpecialQuietNaN
+		if math.Signbit(f) {
+			special = SpecialNegQuietNaN
+		}
+		return DecFloat34{Valid: true, Special: special}, nil
 	}
 	if math.IsInf(f, 1) {
 		return DecFloat34{Valid: true, Special: SpecialPosInf}, nil
@@ -411,6 +427,14 @@ func Float64ToDecFloat34(f float64) (DecFloat34, error) {
 	if math.IsInf(f, -1) {
 		return DecFloat34{Valid: true, Special: SpecialNegInf}, nil
 	}
+	if f == 0 {
+		return DecFloat34{
+			Int:          big.NewInt(0),
+			Valid:        true,
+			NegativeZero: math.Signbit(f),
+		}, nil
+	}
+
 	s := strconv.FormatFloat(f, 'f', -1, 64)
 
 	var d DecFloat34
@@ -439,6 +463,11 @@ func decFloat34ToFloat64(d DecFloat34) (float64, error) {
 		return math.Inf(-1), nil
 	case SpecialQuietNaN, SpecialSignalingNaN:
 		return math.NaN(), nil
+	case SpecialNegQuietNaN, SpecialNegSignalingNaN:
+		return math.Copysign(math.NaN(), -1), nil
+	}
+	if d.IsNegativeZero() {
+		return math.Copysign(0, -1), nil
 	}
 
 	s := formatDecFloatScientific(d.Int, d.Exp)
@@ -467,10 +496,11 @@ func parseDecFloat34String(s string, dst *DecFloat34) error {
 	}
 
 	*dst = DecFloat34{
-		Int:     parsed.coefficient,
-		Exp:     parsed.exponent,
-		Valid:   true,
-		Special: parsed.special,
+		Int:          parsed.coefficient,
+		Exp:          parsed.exponent,
+		Valid:        true,
+		Special:      parsed.special,
+		NegativeZero: parsed.negativeZero,
 	}
 	return nil
 }
@@ -531,7 +561,7 @@ func encodeDecFloat34Binary(buf []byte, d DecFloat34) ([]byte, error) {
 	}
 
 	signum := decfloat.SignumPositive
-	if coef.Sign() < 0 {
+	if coef.Sign() < 0 || d.NegativeZero {
 		signum = decfloat.SignumNegative
 	}
 
@@ -578,10 +608,11 @@ func decodeDecFloat34Binary(src []byte, dst *DecFloat34) error {
 		coef = big.NewInt(0)
 	}
 	*dst = DecFloat34{
-		Int:     coef,
-		Exp:     dd.Exponent,
-		Valid:   true,
-		Special: SpecialNone,
+		Int:          coef,
+		Exp:          dd.Exponent,
+		Valid:        true,
+		Special:      SpecialNone,
+		NegativeZero: coef.Sign() == 0 && dd.Signum == decfloat.SignumNegative,
 	}
 	return nil
 }
