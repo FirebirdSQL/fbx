@@ -49,6 +49,24 @@ func TestConnect(t *testing.T) {
 	}
 }
 
+func TestAttachmentID(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	connString := os.Getenv("FBX_TEST_DATABASE")
+	if connString == "" {
+		t.Skip("Skipping due to missing environment variable FBX_TEST_DATABASE")
+	}
+
+	conn, err := fbconn.Connect(ctx, connString)
+	require.NoError(t, err)
+	defer closeConn(t, conn)
+
+	expected := subjectAttachmentID(t, conn)
+	require.Positive(t, conn.AttachmentID())
+	require.Equal(t, uint64(expected), conn.AttachmentID())
+}
+
 func TestServerVersion(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
@@ -1562,6 +1580,7 @@ func TestHijackAndConstruct(t *testing.T) {
 
 	origConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
+	origAttachmentID := origConn.AttachmentID()
 	origServerVersion := origConn.ServerVersion()
 
 	err = origConn.SyncConn(ctx)
@@ -1569,6 +1588,7 @@ func TestHijackAndConstruct(t *testing.T) {
 
 	hc, err := origConn.Hijack()
 	require.NoError(t, err)
+	require.Equal(t, origAttachmentID, hc.AttachmentID)
 	require.Equal(t, origServerVersion, hc.ServerVersion)
 
 	res := origConn.Exec(ctx, "select cast('Hello, world' as varchar(12)) from rdb$database").Read()
@@ -1576,6 +1596,7 @@ func TestHijackAndConstruct(t *testing.T) {
 
 	newConn, err := fbconn.Construct(hc)
 	require.NoError(t, err)
+	require.Equal(t, origAttachmentID, newConn.AttachmentID())
 	require.Equal(t, origServerVersion, newConn.ServerVersion())
 
 	defer closeConn(t, newConn)
