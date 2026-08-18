@@ -42,7 +42,7 @@ type ConnConfig struct {
 	createdByParseConfig bool // Used to enforce created by ParseConfig rule.
 }
 
-// ParseConfigOptions contains options that control how a config is built such as getsslpassword.
+// ParseConfigOptions contains options that control how a config is built.
 type ParseConfigOptions struct {
 	fbconn.ParseConfigOptions
 }
@@ -82,6 +82,9 @@ type Conn struct {
 	wbuf []byte
 	eqb  ExtendedQueryBuilder
 }
+
+// ServerVersion identifies the Firebird or RedDatabase server version.
+type ServerVersion = fbconn.ServerVersion
 
 // Identifier a Firebird identifier or name. Identifiers can be composed of
 // multiple parts such as ["schema", "table"] or ["table", "column"].
@@ -174,8 +177,7 @@ func DropDatabase(ctx context.Context, connString string) error {
 	return err
 }
 
-// ConnectWithOptions behaves exactly like Connect with the addition of options. At the present options is only used to
-// provide a GetSSLPassword function.
+// ConnectWithOptions behaves exactly like Connect with the addition of ParseConfigOptions.
 func ConnectWithOptions(ctx context.Context, connString string, options ParseConfigOptions) (*Conn, error) {
 	connConfig, err := ParseConfigWithOptions(connString, options)
 	if err != nil {
@@ -248,8 +250,7 @@ func DropDatabaseConfig(ctx context.Context, connConfig *ConnConfig) error {
 	return err
 }
 
-// ParseConfigWithOptions behaves exactly as ParseConfig does with the addition of options. At the present options is
-// only used to provide a GetSSLPassword function.
+// ParseConfigWithOptions behaves exactly as ParseConfig does with the addition of ParseConfigOptions.
 func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*ConnConfig, error) {
 	config, err := fbconn.ParseConfigWithOptions(connString, options.ParseConfigOptions)
 	if err != nil {
@@ -660,6 +661,12 @@ func (c *Conn) Ping(ctx context.Context) error {
 // is used and the connection must be returned to the same state before any *fbx.Conn methods are again used.
 func (c *Conn) FbConn() *fbconn.FbConn {
 	return c.fbConn
+}
+
+// ServerVersion returns the server version discovered while establishing the
+// connection. It does not perform a request to the server.
+func (c *Conn) ServerVersion() ServerVersion {
+	return c.fbConn.ServerVersion()
 }
 
 // TypeMap returns the connection info used for this connection.
@@ -1105,11 +1112,6 @@ func (c *Conn) QueryRow(ctx context.Context, sql string, args ...any) Row {
 }
 
 func (c *Conn) deallocateInvalidatedCachedStatements(ctx context.Context) error {
-	//FIXME: fbx need to check state of transaction bound to statement?
-	//	if txStatus := c.fbConn.TxStatus(); txStatus != 'I' && txStatus != 'T' {
-	//		return nil
-	//	}
-
 	var invalidatedStatements []*fbconn.Statement
 	if c.statementCache != nil {
 		invalidatedStatements = c.statementCache.GetInvalidated()

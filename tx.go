@@ -74,9 +74,6 @@ func (c *Conn) BeginTxTPB(ctx context.Context, tpb []byte) (Tx, error) {
 func (c *Conn) beginTxTPB(ctx context.Context, tpb []byte) (Tx, error) {
 	fbTx, err := c.fbConn.StartTransactionTPB(ctx, tpb)
 	if err != nil {
-		// begin should never fail unless there is an underlying connection issue or
-		// a context timeout. In either case, the connection is possibly broken.
-		c.die()
 		return nil, err
 	}
 

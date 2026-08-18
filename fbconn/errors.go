@@ -41,6 +41,65 @@ type FbError struct {
 	Position int
 }
 
+// IsConnectionFatal reports whether a server error makes the connection unsafe for further use.
+// Transport and protocol errors are handled separately and do not produce an [FbError].
+func IsConnectionFatal(err *FbError) bool {
+	if err == nil {
+		return false
+	}
+
+	// readStatusVector supplies a fallback SQLSTATE when the server omits it. A non-empty malformed value therefore
+	// indicates an unexpected server or protocol condition.
+	if err.Code != "" && len(err.Code) != 5 {
+		return true
+	}
+
+	if len(err.Code) == 5 && err.Code[:2] == "08" {
+		return true
+	}
+
+	switch err.Code {
+	case "2E000", // Invalid connection name.
+		"HY001", // Memory allocation error.
+		"HYT00", // Timeout expired.
+		"HYT01": // Connection timeout expired.
+		return true
+	}
+
+	for _, code := range err.GdsCodes {
+		if isConnectionFatalGDSCode(code) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isConnectionFatalGDSCode(code int) bool {
+	switch code {
+	case fbproto.Isc_bad_db_handle,
+		fbproto.Isc_network_error,
+		fbproto.Isc_net_read_err,
+		fbproto.Isc_net_write_err,
+		fbproto.Isc_lost_db_connection,
+		fbproto.Isc_io_error,
+		fbproto.Isc_req_sync,
+		fbproto.Isc_unavailable,
+		fbproto.Isc_shutdown,
+		fbproto.Isc_att_shutdown,
+		fbproto.Isc_net_server_shutdown,
+		fbproto.Isc_att_shut_killed,
+		fbproto.Isc_att_shut_idle,
+		fbproto.Isc_att_shut_db_down,
+		fbproto.Isc_att_shut_engine,
+		fbproto.Isc_ses_reset_failed,
+		fbproto.Isc_exception_stack_overflow:
+		return true
+	default:
+		return false
+	}
+}
+
 func (e *FbError) SQLState() string {
 	return e.Code
 }
@@ -101,12 +160,22 @@ type connLockError struct {
 	status string
 }
 
+// ErrConnClosed is returned, possibly wrapped, when an operation is attempted on a closed connection.
+var ErrConnClosed = errors.New("conn closed")
+
 func (e *connLockError) SafeToRetry() bool {
 	return true // a lock failure by definition happens before the connection is used.
 }
 
 func (e *connLockError) Error() string {
 	return e.status
+}
+
+func (e *connLockError) Unwrap() error {
+	if e.status == "conn closed" {
+		return ErrConnClosed
+	}
+	return nil
 }
 
 // ParseConfigError is the error returned when a connection string cannot be parsed.
@@ -142,13 +211,14 @@ func (e *ParseConfigError) Unwrap() error {
 func normalizeTimeoutError(ctx context.Context, err error) error {
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
-		if ctx.Err() == context.Canceled {
+		switch ctx.Err() {
+		case context.Canceled:
 			// Since the timeout was caused by a context cancellation, the actual error is context.Canceled not the timeout error.
 			return context.Canceled
-		} else if ctx.Err() == context.DeadlineExceeded {
+		case context.DeadlineExceeded:
 			return &errTimeout{err: ctx.Err()}
-		} else {
-			return &errTimeout{err: netErr}
+		default:
+			return &errTimeout{err: err}
 		}
 	}
 	return err

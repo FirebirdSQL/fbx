@@ -6,8 +6,6 @@ import (
 	"io"
 	"os"
 	"reflect"
-	"regexp"
-	"strconv"
 	"testing"
 	"time"
 
@@ -15,8 +13,6 @@ import (
 	"rdb.red-soft.ru/fbx/fbconn"
 	"rdb.red-soft.ru/fbx/fbproto"
 )
-
-var engineVersionRegexp = regexp.MustCompile(`^\s*(\d+)\.(\d+)\.(\d+)`)
 
 func TestBlobExplicitTxTextLengthAndEncoding(t *testing.T) {
 	ctx := context.Background()
@@ -142,46 +138,12 @@ func TestInlineBlobExplicitTxSeekEOFAndCloseReleases(t *testing.T) {
 	})
 }
 
-func fetchEngineVersion(ctx context.Context, t testing.TB, conn *Conn) string {
-	t.Helper()
-	var version string
-	err := conn.QueryRow(ctx, "select rdb$get_context('SYSTEM','ENGINE_VERSION') from rdb$database").Scan(&version)
-	require.NoError(t, err)
-	return version
-}
-
 func skipIfInlineBlobsUnsupported(ctx context.Context, t testing.TB, conn *Conn) {
 	t.Helper()
-	engineVersion := fetchEngineVersion(ctx, t, conn)
-	if !engineVersionSupportsInlineBlobs(engineVersion) {
-		t.Skipf("inline blobs not supported by server engine version %q", engineVersion)
+	version := conn.ServerVersion()
+	if version.Compare(5, 0, 3) < 0 || version.Compare(5, 0, 8) >= 0 {
+		t.Skipf("inline blobs not supported by server engine version %q", version)
 	}
-}
-
-func engineVersionSupportsInlineBlobs(version string) bool {
-	v := parseEngineVersionNumber(version)
-	return v >= 50003 && v < 50008
-}
-
-func parseEngineVersionNumber(version string) int {
-	matches := engineVersionRegexp.FindStringSubmatch(version)
-	if len(matches) != 4 {
-		panic(fmt.Sprintf("failed to parse server engine version %q: expected semantic version major.minor.patch", version))
-	}
-	major := mustAtoi("major", matches[1], version)
-	minor := mustAtoi("minor", matches[2], version)
-	patch := mustAtoi("patch", matches[3], version)
-
-	// Normalize as MAJOR*10000 + MINOR*100 + PATCH for stable numeric comparisons.
-	return major*10000 + minor*100 + patch
-}
-
-func mustAtoi(partName, value, version string) int {
-	n, err := strconv.Atoi(value)
-	if err != nil {
-		panic(fmt.Sprintf("failed to parse %s version part %q from engine version %q: %v", partName, value, version, err))
-	}
-	return n
 }
 
 func runWithBlobStreamModesInternal(

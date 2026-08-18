@@ -115,6 +115,108 @@ func countStatementHandlesForSQL(t testing.TB, conn *Conn, sql string) int64 {
 	return count
 }
 
+func TestConnDeallocateInvalidatedCachedStatementsWithActiveTransactions(t *testing.T) {
+	tests := []struct {
+		name    string
+		trigger func(context.Context, Tx) error
+	}{
+		{
+			name: "Exec",
+			trigger: func(ctx context.Context, tx Tx) error {
+				_, err := tx.Exec(
+					ctx,
+					"select cast(317502 as integer) from rdb$database",
+					QueryExecModeExec,
+				)
+				return err
+			},
+		},
+		{
+			name: "Query",
+			trigger: func(ctx context.Context, tx Tx) error {
+				var n int32
+				err := tx.QueryRow(
+					ctx,
+					"select cast(317502 as integer) from rdb$database",
+					QueryExecModeExec,
+				).Scan(&n)
+				if err != nil {
+					return err
+				}
+				if n != 317502 {
+					return fmt.Errorf("unexpected query result: %d", n)
+				}
+				return nil
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			connConfig := mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE"))
+			connConfig.DefaultQueryExecMode = QueryExecModeCacheStatement
+			connConfig.StatementCacheCapacity = 1
+
+			conn := mustConnect(t, connConfig)
+			defer func() {
+				require.NoError(t, conn.Close(context.Background()))
+			}()
+
+			tx1, err := conn.Begin(ctx)
+			require.NoError(t, err)
+			defer func() { _ = tx1.Rollback(context.Background()) }()
+
+			// Starting tx2 makes it the connection's current internal transaction. A
+			// statement subsequently prepared through tx1 is therefore explicitly
+			// bound to tx1 in fbconn.Statement.
+			tx2, err := conn.Begin(ctx)
+			require.NoError(t, err)
+			defer func() { _ = tx2.Rollback(context.Background()) }()
+
+			const boundSQL = "select cast(? as integer) + 1 from rdb$database"
+			var n int32
+			err = tx1.QueryRow(ctx, boundSQL, 1).Scan(&n)
+			require.NoError(t, err)
+			require.EqualValues(t, 2, n)
+			require.Contains(t, conn.preparedStatements, boundSQL)
+
+			// The cache only has room for one statement, so this puts the statement
+			// bound to tx1 on the invalidated list.
+			const evictingSQL = "select cast(? as integer) + 2 from rdb$database"
+			err = tx2.QueryRow(ctx, evictingSQL, 1).Scan(&n)
+			require.NoError(t, err)
+			require.EqualValues(t, 3, n)
+			invalidated := conn.statementCache.GetInvalidated()
+			require.Len(t, invalidated, 1)
+			require.Same(t, conn.preparedStatements[boundSQL], invalidated[0])
+
+			// Exec and Query both deallocate invalidated statements before starting
+			// their own operation. Deallocating a tx1-bound statement while called
+			// through tx2 must not affect either transaction or leak its server handle.
+			require.NoError(t, tt.trigger(ctx, tx2))
+			require.Empty(t, conn.statementCache.GetInvalidated())
+			require.NotContains(t, conn.preparedStatements, boundSQL)
+			require.EqualValues(t, 0, countStatementHandlesForSQL(t, conn, boundSQL))
+
+			err = tx1.QueryRow(ctx, "select cast(11 as integer) from rdb$database", QueryExecModeExec).Scan(&n)
+			require.NoError(t, err)
+			require.EqualValues(t, 11, n)
+
+			err = tx2.QueryRow(ctx, "select cast(22 as integer) from rdb$database", QueryExecModeExec).Scan(&n)
+			require.NoError(t, err)
+			require.EqualValues(t, 22, n)
+
+			require.NoError(t, tx1.Rollback(ctx))
+			require.NoError(t, tx2.Rollback(ctx))
+
+			err = conn.QueryRow(ctx, "select cast(33 as integer) from rdb$database", QueryExecModeExec).Scan(&n)
+			require.NoError(t, err)
+			require.EqualValues(t, 33, n)
+		})
+	}
+}
+
 func TestScanErrorRollsBackInternalTxAutocommit(t *testing.T) {
 	connConfig := mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE"))
 	require.True(t, connConfig.Autocommit, "default Autocommit must be true for this test")

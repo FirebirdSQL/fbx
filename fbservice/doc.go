@@ -1,0 +1,30 @@
+/*
+Package fbservice provides a high-level API for Firebird and RedDatabase
+services.
+
+A Manager stores connection settings and opens a separate service connection
+for each operation. Create a manager from a parsed configuration:
+
+	config, err := fbservice.ParseConfig(os.Getenv("DATABASE_URL"))
+	if err != nil {
+		return err
+	}
+	manager := fbservice.NewManager(config)
+
+Operations without special settings can omit their options:
+
+	err = manager.Backup(ctx, database, backupFile)
+
+Pass BackupOptions to request verbose output or change backup behavior:
+
+	err = manager.Backup(ctx, database, backupFile, fbservice.BackupOptions{
+		Output:          os.Stdout,
+		Verbose:         true,
+		IgnoreLimbo:     true,
+		ParallelWorkers: 4,
+	})
+
+Manager does not write to standard output unless an operation explicitly
+receives os.Stdout as its output.
+*/
+package fbservice

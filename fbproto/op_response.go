@@ -274,3 +274,16 @@ type ErrorResponse struct {
 	Line     int
 	Position int
 }
+
+func errorResponseFromOpResponse(op *OpResponse) *ErrorResponse {
+	return &ErrorResponse{
+		Object:   op.Object,
+		BlobId:   op.BlobId,
+		GdsCodes: append([]int(nil), op.GdsCodes...),
+		SqlErr:   op.SqlErr,
+		SqlState: op.SqlState,
+		Message:  op.Message,
+		Line:     op.Line,
+		Position: op.Position,
+	}
+}

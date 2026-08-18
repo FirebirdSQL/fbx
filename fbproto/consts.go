@@ -180,6 +180,10 @@ const (
 	Isc_spb_version1          = 1
 	Isc_spb_current_version   = 2
 	Isc_spb_version           = Isc_spb_current_version
+
+	// Isc_spb_version3 identifies a wide service attachment parameter buffer.
+	Isc_spb_version3          = 3
+
 	Isc_spb_user_name         = 28 // Isc_dpb_user_name
 	Isc_spb_sys_user_name     = 19 // isc_dpb_sys_user_name
 	Isc_spb_sys_user_name_enc = 31 // isc_dpb_sys_user_name_enc
@@ -192,19 +196,23 @@ const (
 	Isc_spb_address_path      = 109
 	Isc_spb_process_id        = 110
 	Isc_spb_trusted_auth      = 111
-	Isc_spb_process_name      = 112
-	Isc_spb_trusted_role      = 113
-	Isc_spb_verbint           = 114
-	Isc_spb_auth_block        = 115
-	Isc_spb_auth_plugin_name  = 116
-	Isc_spb_auth_plugin_list  = 117
-	Isc_spb_utf8_filename     = 118
-	Isc_spb_client_version    = 119
-	Isc_spb_remote_protocol   = 120
-	Isc_spb_host_name         = 121
-	Isc_spb_os_user           = 122
-	Isc_spb_config            = 123
-	Isc_spb_expected_db       = 124
+
+	// Isc_spb_specific_auth_data carries plugin-specific authentication data.
+	Isc_spb_specific_auth_data = Isc_spb_trusted_auth
+
+	Isc_spb_process_name       = 112
+	Isc_spb_trusted_role       = 113
+	Isc_spb_verbint            = 114
+	Isc_spb_auth_block         = 115
+	Isc_spb_auth_plugin_name   = 116
+	Isc_spb_auth_plugin_list   = 117
+	Isc_spb_utf8_filename      = 118
+	Isc_spb_client_version     = 119
+	Isc_spb_remote_protocol    = 120
+	Isc_spb_host_name          = 121
+	Isc_spb_os_user            = 122
+	Isc_spb_config             = 123
+	Isc_spb_expected_db        = 124
 
 	Isc_spb_connect_timeout       = 57 // isc_dpb_connect_timeout
 	Isc_spb_dummy_packet_interval = 58 // isc_dpb_dummy_packet_interval
@@ -263,6 +271,7 @@ const (
 	Isc_spb_bkp_file               = 5
 	Isc_spb_bkp_factor             = 6
 	Isc_spb_bkp_length             = 7
+	Isc_spb_bkp_parallel_workers   = 21
 	Isc_spb_bkp_ignore_checksums   = 0x01
 	Isc_spb_bkp_ignore_limbo       = 0x02
 	Isc_spb_bkp_metadata_only      = 0x04
@@ -270,7 +279,11 @@ const (
 	Isc_spb_bkp_old_descriptions   = 0x10
 	Isc_spb_bkp_non_transportable  = 0x20
 	Isc_spb_bkp_convert            = 0x40
-	Isc_spb_bkp_expand             = 0x8
+	Isc_spb_bkp_expand             = 0x80
+	Isc_spb_bkp_no_triggers        = 0x8000
+	Isc_spb_bkp_zip                = 0x010000
+	Isc_spb_bkp_compression        = 102
+	Isc_spb_bkp_replace            = 103
 
 	// restore
 	Isc_spb_res_buffers        = 9
@@ -417,6 +430,248 @@ const (
 	Isc_blr_cstring         = 40
 	Isc_blr_cstring2        = 41
 	Isc_blr_blob            = 261
+
+	Isc_blr_version4 = 4
+	Isc_blr_version5 = 5
+
+	Isc_blr_eoc = 76
+	Isc_blr_end = 255
+
+	Isc_blr_assignment   = 1
+	Isc_blr_begin        = 2
+	Isc_blr_dcl_variable = 3
+	Isc_blr_message      = 4
+	Isc_blr_erase        = 5
+	Isc_blr_for          = 7
+	Isc_blr_if           = 8
+	Isc_blr_loop         = 9
+	Isc_blr_modify       = 10
+	Isc_blr_handler      = 11
+	Isc_blr_receive      = 12
+	Isc_blr_select       = 13
+	Isc_blr_send         = 14
+	Isc_blr_store        = 15
+	Isc_blr_label        = 17
+	Isc_blr_leave        = 18
+	Isc_blr_store2       = 19
+	Isc_blr_post         = 20
+	Isc_blr_literal      = 21
+	Isc_blr_dbkey        = 22
+	Isc_blr_field        = 23
+	Isc_blr_fid          = 24
+	Isc_blr_parameter    = 25
+	Isc_blr_variable     = 26
+	Isc_blr_average      = 27
+	Isc_blr_count        = 28
+	Isc_blr_maximum      = 29
+	Isc_blr_minimum      = 30
+	Isc_blr_total        = 31
+
+	Isc_blr_add         = 34
+	Isc_blr_subtract    = 35
+	Isc_blr_multiply    = 36
+	Isc_blr_divide      = 37
+	Isc_blr_negate      = 38
+	Isc_blr_concatenate = 39
+	Isc_blr_substring   = 40
+	Isc_blr_parameter2  = 41
+	Isc_blr_from        = 42
+	Isc_blr_via         = 43
+	Isc_blr_user_name   = 44
+	Isc_blr_null        = 45
+	Isc_blr_equiv       = 46
+	Isc_blr_eql         = 47
+	Isc_blr_neq         = 48
+	Isc_blr_gtr         = 49
+	Isc_blr_geq         = 50
+	Isc_blr_lss         = 51
+	Isc_blr_leq         = 52
+	Isc_blr_containing  = 53
+	Isc_blr_matching    = 54
+	Isc_blr_starting    = 55
+	Isc_blr_between     = 56
+	Isc_blr_or          = 57
+	Isc_blr_and         = 58
+	Isc_blr_not         = 59
+	Isc_blr_any         = 60
+	Isc_blr_missing     = 61
+	Isc_blr_unique      = 62
+	Isc_blr_like        = 63
+
+	Isc_blr_rse        = 67
+	Isc_blr_first      = 68
+	Isc_blr_project    = 69
+	Isc_blr_sort       = 70
+	Isc_blr_boolean    = 71
+	Isc_blr_ascending  = 72
+	Isc_blr_descending = 73
+	Isc_blr_relation   = 74
+	Isc_blr_rid        = 75
+	Isc_blr_union      = 76
+	Isc_blr_map        = 77
+	Isc_blr_group_by   = 78
+	Isc_blr_aggregate  = 79
+	Isc_blr_join_type  = 80
+
+	Isc_blr_agg_count   = 83
+	Isc_blr_agg_max     = 84
+	Isc_blr_agg_min     = 85
+	Isc_blr_agg_total   = 86
+	Isc_blr_agg_average = 87
+
+	Isc_blr_agg_count2           = 93
+	Isc_blr_agg_count_distinct   = 94
+	Isc_blr_agg_total_distinct   = 95
+	Isc_blr_agg_average_distinct = 96
+
+	Isc_blr_function   = 100
+	Isc_blr_gen_id     = 101
+	Isc_blr_upcase     = 103
+	Isc_blr_value_if   = 105
+	Isc_blr_matching2  = 106
+	Isc_blr_index      = 107
+	Isc_blr_ansi_like  = 108
+	Isc_blr_scrollable = 109
+
+	Isc_blr_rs_stream = 119
+	Isc_blr_exec_proc = 120
+
+	Isc_blr_procedure       = 124
+	Isc_blr_pid             = 125
+	Isc_blr_exec_pid        = 126
+	Isc_blr_singular        = 127
+	Isc_blr_abort           = 128
+	Isc_blr_block           = 129
+	Isc_blr_error_handler   = 130
+	Isc_blr_cast            = 131
+	Isc_blr_pid2            = 132
+	Isc_blr_procedure2      = 133
+	Isc_blr_start_savepoint = 134
+	Isc_blr_end_savepoint   = 135
+
+	Isc_blr_plan         = 139
+	Isc_blr_merge        = 140
+	Isc_blr_join         = 141
+	Isc_blr_sequential   = 142
+	Isc_blr_navigational = 143
+	Isc_blr_indices      = 144
+	Isc_blr_retrieve     = 145
+	Isc_blr_relation2    = 146
+	Isc_blr_rid2         = 147
+
+	Isc_blr_set_generator = 150
+	Isc_blr_ansi_any      = 151
+	Isc_blr_exists        = 152
+
+	Isc_blr_record_version = 154
+	Isc_blr_stall          = 155
+
+	Isc_blr_ansi_all = 158
+	Isc_blr_extract  = 159
+
+	Isc_blr_extract_year        = 0
+	Isc_blr_extract_month       = 1
+	Isc_blr_extract_day         = 2
+	Isc_blr_extract_hour        = 3
+	Isc_blr_extract_minute      = 4
+	Isc_blr_extract_second      = 5
+	Isc_blr_extract_weekday     = 6
+	Isc_blr_extract_yearday     = 7
+	Isc_blr_extract_millisecond = 8
+	Isc_blr_extract_week        = 9
+	Isc_blr_current_date        = 160
+	Isc_blr_current_timestamp   = 161
+	Isc_blr_current_time        = 162
+
+	Isc_blr_post_arg           = 163
+	Isc_blr_exec_into          = 164
+	Isc_blr_dcl_cursor         = 166
+	Isc_blr_cursor_stmt        = 167
+	Isc_blr_current_timestamp2 = 168
+	Isc_blr_current_time2      = 169
+	Isc_blr_agg_list           = 170
+	Isc_blr_agg_list_distinct  = 171
+	Isc_blr_modify2            = 172
+
+	Isc_blr_current_role = 174
+	Isc_blr_skip         = 175
+
+	Isc_blr_exec_sql      = 176
+	Isc_blr_internal_info = 177
+	Isc_blr_nullsfirst    = 178
+	Isc_blr_writelock     = 179
+	Isc_blr_nullslast     = 180
+
+	Isc_blr_lowcase = 181
+	Isc_blr_strlen  = 182
+
+	Isc_blr_strlen_bit   = 0
+	Isc_blr_strlen_char  = 1
+	Isc_blr_strlen_octet = 2
+	Isc_blr_trim         = 183
+
+	Isc_blr_trim_both     = 0
+	Isc_blr_trim_leading  = 1
+	Isc_blr_trim_trailing = 2
+
+	Isc_blr_trim_spaces     = 0
+	Isc_blr_trim_characters = 1
+
+	Isc_blr_cursor_open         = 0
+	Isc_blr_cursor_close        = 1
+	Isc_blr_cursor_fetch        = 2
+	Isc_blr_cursor_fetch_scroll = 3
+
+	Isc_blr_scroll_forward  = 0
+	Isc_blr_scroll_backward = 1
+	Isc_blr_scroll_bof      = 2
+	Isc_blr_scroll_eof      = 3
+	Isc_blr_scroll_absolute = 4
+	Isc_blr_scroll_relative = 5
+
+	Isc_blr_init_variable = 184
+	Isc_blr_recurse       = 185
+	Isc_blr_sys_function  = 186
+
+	Isc_blr_auto_trans = 187
+	Isc_blr_similar    = 188
+	Isc_blr_exec_stmt  = 189
+
+	Isc_blr_exec_stmt_inputs     = 1
+	Isc_blr_exec_stmt_outputs    = 2
+	Isc_blr_exec_stmt_sql        = 3
+	Isc_blr_exec_stmt_proc_block = 4
+	Isc_blr_exec_stmt_data_src   = 5
+	Isc_blr_exec_stmt_user       = 6
+	Isc_blr_exec_stmt_pwd        = 7
+	Isc_blr_exec_stmt_tran       = 8
+	Isc_blr_exec_stmt_tran_clone = 9
+	Isc_blr_exec_stmt_privs      = 10
+	Isc_blr_exec_stmt_in_params  = 11
+	Isc_blr_exec_stmt_in_params2 = 12
+	Isc_blr_exec_stmt_out_params = 13
+	Isc_blr_exec_stmt_role       = 14
+	Isc_blr_stmt_expr            = 190
+	Isc_blr_derived_expr         = 191
+
+	Isc_blr_procedure3        = 192
+	Isc_blr_exec_proc2        = 193
+	Isc_blr_function2         = 194
+	Isc_blr_window            = 195
+	Isc_blr_partition_by      = 196
+	Isc_blr_continue_loop     = 197
+	Isc_blr_procedure4        = 198
+	Isc_blr_agg_function      = 199
+	Isc_blr_substring_similar = 200
+	Isc_blr_bool_as_value     = 201
+	Isc_blr_coalesce          = 202
+	Isc_blr_decode            = 203
+	Isc_blr_exec_subproc      = 204
+	Isc_blr_subproc_decl      = 205
+	Isc_blr_subproc           = 206
+	Isc_blr_subfunc_decl      = 207
+	Isc_blr_subfunc           = 208
+	Isc_blr_record_version2   = 209
 
 	// SDL params
 	Isc_sdl_version1      = 1

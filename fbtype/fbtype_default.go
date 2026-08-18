@@ -14,16 +14,20 @@ var (
 	defaultMapInitOnce = sync.Once{}
 )
 
-func MakeTypeSubtype(t uint32, sub int32) uint32 {
-	return uint32(int32(t) | (sub << 16))
+// MakeTypeSubtype packs a Firebird TypeID and subtype into a single key used
+// for type registration lookups.
+func MakeTypeSubtype(typeID uint32, subType int32) uint32 {
+	return uint32(int32(typeID) | (subType << 16))
 }
 
-func GetType(t uint32) uint32 {
-	return uint32(int32(t) & 0xFFFF)
+// GetType extracts the Firebird TypeID from a key created by MakeTypeSubtype.
+func GetType(typeID uint32) uint32 {
+	return uint32(int32(typeID) & 0xFFFF)
 }
 
-func GetSubType(t uint32) int32 {
-	return int32(t) >> 16
+// GetSubType extracts the subtype from a key created by MakeTypeSubtype.
+func GetSubType(typeID uint32) int32 {
+	return int32(typeID) >> 16
 }
 
 func initDefaultMap() {
@@ -34,25 +38,8 @@ func initDefaultMap() {
 
 		memoizedEncodePlans: make(map[TypeMetadata]map[reflect.Type]EncodePlan),
 
-		TryWrapEncodePlanFuncs: []TryWrapEncodePlanFunc{
-			TryWrapDerefPointerEncodePlan,
-			TryWrapBuiltinTypeEncodePlan,
-			TryWrapFindUnderlyingTypeEncodePlan,
-			TryWrapStructEncodePlan,
-			TryWrapSliceEncodePlan,
-			TryWrapMultiDimSliceEncodePlan,
-			TryWrapArrayEncodePlan,
-		},
-
-		TryWrapScanPlanFuncs: []TryWrapScanPlanFunc{
-			TryPointerPointerScanPlan,
-			TryWrapBuiltinTypeScanPlan,
-			TryFindUnderlyingTypeScanPlan,
-			TryWrapStructScanPlan,
-			TryWrapPtrSliceScanPlan,
-			TryWrapPtrMultiDimSliceScanPlan,
-			TryWrapPtrArrayScanPlan,
-		},
+		TryWrapEncodePlanFuncs: defaultTryWrapEncodePlanFuncs(),
+		TryWrapScanPlanFuncs:   defaultTryWrapScanPlanFuncs(),
 	}
 
 	// Base types
@@ -74,8 +61,12 @@ func initDefaultMap() {
 	defaultMap.RegisterType(&Type{Name: "numeric", TypeID: MakeTypeSubtype(fbproto.SQL_TYPE_LONG, 1), Codec: &NumericCodec{}})
 	defaultMap.RegisterType(&Type{Name: "numeric", TypeID: MakeTypeSubtype(fbproto.SQL_TYPE_INT64, 1), Codec: &NumericCodec{}})
 	defaultMap.RegisterType(&Type{Name: "numeric", TypeID: MakeTypeSubtype(fbproto.SQL_TYPE_INT128, 1), Codec: &NumericCodec{}})
-	defaultMap.RegisterType(&Type{Name: "octets", TypeID: MakeTypeSubtype(fbproto.SQL_TYPE_TEXT, 1), Codec: &ByteaCodec{}})
-	defaultMap.RegisterType(&Type{Name: "octets", TypeID: MakeTypeSubtype(fbproto.SQL_TYPE_VARYING, 1), Codec: &ByteaCodec{}})
+	defaultMap.RegisterType(&Type{Name: "decimal", TypeID: MakeTypeSubtype(fbproto.SQL_TYPE_SHORT, 2), Codec: &NumericCodec{}})
+	defaultMap.RegisterType(&Type{Name: "decimal", TypeID: MakeTypeSubtype(fbproto.SQL_TYPE_LONG, 2), Codec: &NumericCodec{}})
+	defaultMap.RegisterType(&Type{Name: "decimal", TypeID: MakeTypeSubtype(fbproto.SQL_TYPE_INT64, 2), Codec: &NumericCodec{}})
+	defaultMap.RegisterType(&Type{Name: "decimal", TypeID: MakeTypeSubtype(fbproto.SQL_TYPE_INT128, 2), Codec: &NumericCodec{}})
+	defaultMap.RegisterType(&Type{Name: "octets", TypeID: MakeTypeSubtype(fbproto.SQL_TYPE_TEXT, 1), Codec: &OctetsCodec{}})
+	defaultMap.RegisterType(&Type{Name: "octets", TypeID: MakeTypeSubtype(fbproto.SQL_TYPE_VARYING, 1), Codec: &OctetsCodec{}})
 	defaultMap.RegisterType(&Type{Name: "decfloat16", TypeID: fbproto.SQL_TYPE_DEC64, Codec: DecFloat16Codec{}})
 	defaultMap.RegisterType(&Type{Name: "decfloat34", TypeID: fbproto.SQL_TYPE_DEC128, Codec: DecFloat34Codec{}})
 	defaultMap.RegisterType(&Type{Name: "null", TypeID: fbproto.SQL_TYPE_NULL, Codec: NullCodec{}})
@@ -101,7 +92,7 @@ func initDefaultMap() {
 	registerDefaultFbTypeVariants[bool](defaultMap, "boolean")
 	registerDefaultFbTypeVariants[time.Time](defaultMap, "timestamptz")
 	registerDefaultFbTypeVariants[string](defaultMap, "text")
-	registerDefaultFbTypeVariants[[]byte](defaultMap, "bytea")
+	registerDefaultFbTypeVariants[[]byte](defaultMap, "octets")
 
 	// fbtype provided structs
 	registerDefaultFbTypeVariants[Bool](defaultMap, "boolean")
