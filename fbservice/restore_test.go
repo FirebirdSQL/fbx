@@ -41,7 +41,7 @@ func TestManagerRestoreMapsOptions(t *testing.T) {
 			Output:                  &output,
 			Verbose:                 true,
 			Replace:                 true,
-			ReadOnly:                true,
+			AccessMode:              RestoreAccessModeReadOnly,
 			DeactivateIndexes:       true,
 			SkipShadows:             true,
 			SkipValidityConstraints: true,
@@ -58,7 +58,7 @@ func TestManagerRestoreMapsOptions(t *testing.T) {
 		Output:                  &output,
 		Verbose:                 true,
 		Replace:                 true,
-		ReadOnly:                true,
+		AccessMode:              fbconn.RestoreAccessModeReadOnly,
 		DeactivateIndexes:       true,
 		SkipShadows:             true,
 		SkipValidityConstraints: true,
@@ -68,6 +68,42 @@ func TestManagerRestoreMapsOptions(t *testing.T) {
 		PageSize:                16384,
 		ParallelWorkers:         4,
 	}, connection.restoreOptions)
+}
+
+func TestManagerRestoreMapsAccessMode(t *testing.T) {
+	tests := map[string]struct {
+		accessMode RestoreAccessMode
+		want       fbconn.RestoreAccessMode
+	}{
+		"from backup": {
+			accessMode: RestoreAccessModeFromBackup,
+			want:       fbconn.RestoreAccessModeFromBackup,
+		},
+		"read-only": {
+			accessMode: RestoreAccessModeReadOnly,
+			want:       fbconn.RestoreAccessModeReadOnly,
+		},
+		"read-write": {
+			accessMode: RestoreAccessModeReadWrite,
+			want:       fbconn.RestoreAccessModeReadWrite,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			manager, connection := newTestManager(t)
+
+			err := manager.Restore(
+				context.Background(),
+				"/backup/employee.fbk",
+				"/data/employee.fdb",
+				RestoreOptions{AccessMode: tt.accessMode},
+			)
+
+			require.NoError(t, err)
+			require.Equal(t, tt.want, connection.restoreOptions.AccessMode)
+		})
+	}
 }
 
 func TestManagerRestoreRejectsMultipleOptions(t *testing.T) {
@@ -129,6 +165,12 @@ func TestManagerRestoreValidatesRequestBeforeOpeningConnection(t *testing.T) {
 			database:   "/data/employee.fdb",
 			options:    RestoreOptions{ParallelWorkers: -1},
 			errText:    "restore parallel workers must be between 0",
+		},
+		"invalid access mode": {
+			backupFile: "/backup/employee.fbk",
+			database:   "/data/employee.fdb",
+			options:    RestoreOptions{AccessMode: RestoreAccessMode(255)},
+			errText:    "invalid restore access mode 255",
 		},
 	}
 	if strconv.IntSize > 32 {

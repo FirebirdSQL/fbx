@@ -21,7 +21,7 @@ func TestBuildRestoreActionSPB(t *testing.T) {
 	options := RestoreOptions{
 		Verbose:                 true,
 		Replace:                 true,
-		ReadOnly:                true,
+		AccessMode:              RestoreAccessModeReadOnly,
 		DeactivateIndexes:       true,
 		SkipShadows:             true,
 		SkipValidityConstraints: true,
@@ -75,7 +75,7 @@ func TestBuildRestoreActionSPB(t *testing.T) {
 	require.Equal(t, len(spb), offset)
 }
 
-func TestBuildRestoreActionSPBUsesCreateByDefault(t *testing.T) {
+func TestBuildRestoreActionSPBUsesCreateAndAccessModeFromBackupByDefault(t *testing.T) {
 	spb, err := buildRestoreActionSPB(
 		"/backup/employee.fbk",
 		"/data/employee.fdb",
@@ -83,15 +83,78 @@ func TestBuildRestoreActionSPBUsesCreateByDefault(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	optionsOffset := len(spb) - 5
-	require.Equal(t, byte(fbproto.Isc_spb_res_access_mode), spb[optionsOffset-2])
-	require.Equal(t, byte(fbproto.Isc_spb_res_am_readwrite), spb[optionsOffset-1])
-	require.Equal(t, byte(fbproto.Isc_spb_options), spb[optionsOffset])
+	offset := 1
+	offset = requireServiceActionString(
+		t,
+		spb,
+		offset,
+		fbproto.Isc_spb_dbname,
+		"/data/employee.fdb",
+	)
+	offset = requireServiceActionString(
+		t,
+		spb,
+		offset,
+		fbproto.Isc_spb_bkp_file,
+		"/backup/employee.fbk",
+	)
+	require.Equal(t, byte(fbproto.Isc_spb_options), spb[offset])
+	offset++
 	require.Equal(
 		t,
 		uint32(fbproto.Isc_spb_res_create),
-		binary.LittleEndian.Uint32(spb[optionsOffset+1:]),
+		binary.LittleEndian.Uint32(spb[offset:offset+4]),
 	)
+	offset += 4
+	require.Equal(t, len(spb), offset)
+}
+
+func TestBuildRestoreActionSPBAccessMode(t *testing.T) {
+	tests := map[string]struct {
+		accessMode RestoreAccessMode
+		wireMode   byte
+	}{
+		"read-only": {
+			accessMode: RestoreAccessModeReadOnly,
+			wireMode:   fbproto.Isc_spb_res_am_readonly,
+		},
+		"read-write": {
+			accessMode: RestoreAccessModeReadWrite,
+			wireMode:   fbproto.Isc_spb_res_am_readwrite,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			spb, err := buildRestoreActionSPB(
+				"/backup/employee.fbk",
+				"/data/employee.fdb",
+				RestoreOptions{AccessMode: tt.accessMode},
+			)
+			require.NoError(t, err)
+
+			offset := 1
+			offset = requireServiceActionString(
+				t,
+				spb,
+				offset,
+				fbproto.Isc_spb_dbname,
+				"/data/employee.fdb",
+			)
+			offset = requireServiceActionString(
+				t,
+				spb,
+				offset,
+				fbproto.Isc_spb_bkp_file,
+				"/backup/employee.fbk",
+			)
+			require.Equal(t, byte(fbproto.Isc_spb_res_access_mode), spb[offset])
+			offset++
+			require.Equal(t, tt.wireMode, spb[offset])
+			offset++
+			require.Equal(t, byte(fbproto.Isc_spb_options), spb[offset])
+		})
+	}
 }
 
 func TestBuildRestoreActionSPBAcceptsMaximumValues(t *testing.T) {
@@ -131,10 +194,6 @@ func TestBuildRestoreActionSPBAcceptsMaximumValues(t *testing.T) {
 	offset++
 	require.Equal(t, uint32(32768), binary.LittleEndian.Uint32(spb[offset:offset+4]))
 	offset += 4
-	require.Equal(t, byte(fbproto.Isc_spb_res_access_mode), spb[offset])
-	offset++
-	require.Equal(t, byte(fbproto.Isc_spb_res_am_readwrite), spb[offset])
-	offset++
 	require.Equal(t, byte(fbproto.Isc_spb_res_parallel_workers), spb[offset])
 	offset++
 	require.Equal(t, uint32(maxServiceActionInt32), binary.LittleEndian.Uint32(spb[offset:offset+4]))
@@ -194,6 +253,12 @@ func TestBuildRestoreActionSPBValidation(t *testing.T) {
 			database:   "/data/employee.fdb",
 			options:    RestoreOptions{ParallelWorkers: -1},
 			wantError:  "restore parallel workers must be between",
+		},
+		"invalid access mode": {
+			backupFile: "/backup/employee.fbk",
+			database:   "/data/employee.fdb",
+			options:    RestoreOptions{AccessMode: RestoreAccessMode(255)},
+			wantError:  "invalid restore access mode 255",
 		},
 	}
 	if strconv.IntSize > 32 {

@@ -9,10 +9,22 @@ import (
 	"rdb.red-soft.ru/fbx/fbproto"
 )
 
+// RestoreAccessMode specifies the access mode of a restored database.
+type RestoreAccessMode uint8
+
+const (
+	// RestoreAccessModeFromBackup preserves the access mode recorded in the backup.
+	RestoreAccessModeFromBackup RestoreAccessMode = iota
+	// RestoreAccessModeReadOnly restores the database in read-only mode.
+	RestoreAccessModeReadOnly
+	// RestoreAccessModeReadWrite restores the database in read-write mode.
+	RestoreAccessModeReadWrite
+)
+
 // RestoreOptions controls a logical restore performed by [ServiceConn.Restore].
 //
-// The zero value creates a new read-write database using the server defaults
-// and discards service output.
+// The zero value creates a new database using the server defaults, preserves
+// the access mode recorded in the backup, and discards service output.
 type RestoreOptions struct {
 	// Output receives service output. A nil value discards the output. Calls to
 	// [io.Writer.Write] are synchronous, so Output must not block indefinitely.
@@ -25,8 +37,9 @@ type RestoreOptions struct {
 	// false, Restore creates a new database and fails if it already exists.
 	Replace bool
 
-	// ReadOnly marks the restored database as read-only.
-	ReadOnly bool
+	// AccessMode controls the access mode of the restored database. The zero
+	// value preserves the access mode recorded in the backup.
+	AccessMode RestoreAccessMode
 
 	// DeactivateIndexes leaves indexes inactive after restoring them.
 	DeactivateIndexes bool
@@ -121,12 +134,17 @@ func buildRestoreActionSPB(
 		spb.AppendByte(fbproto.Isc_spb_res_page_size)
 		spb.AppendInt32(int32(options.PageSize))
 	}
-	accessMode := byte(fbproto.Isc_spb_res_am_readwrite)
-	if options.ReadOnly {
-		accessMode = fbproto.Isc_spb_res_am_readonly
+	switch options.AccessMode {
+	case RestoreAccessModeFromBackup:
+	case RestoreAccessModeReadOnly:
+		spb.AppendByte(fbproto.Isc_spb_res_access_mode)
+		spb.AppendByte(fbproto.Isc_spb_res_am_readonly)
+	case RestoreAccessModeReadWrite:
+		spb.AppendByte(fbproto.Isc_spb_res_access_mode)
+		spb.AppendByte(fbproto.Isc_spb_res_am_readwrite)
+	default:
+		return nil, fmt.Errorf("invalid restore access mode %d", options.AccessMode)
 	}
-	spb.AppendByte(fbproto.Isc_spb_res_access_mode)
-	spb.AppendByte(accessMode)
 	if options.Verbose {
 		spb.AppendByte(fbproto.Isc_spb_verbose)
 	}

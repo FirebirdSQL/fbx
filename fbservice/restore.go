@@ -9,10 +9,22 @@ import (
 	"rdb.red-soft.ru/fbx/fbconn"
 )
 
+// RestoreAccessMode specifies the access mode of a restored database.
+type RestoreAccessMode uint8
+
+const (
+	// RestoreAccessModeFromBackup preserves the access mode recorded in the backup.
+	RestoreAccessModeFromBackup RestoreAccessMode = iota
+	// RestoreAccessModeReadOnly restores the database in read-only mode.
+	RestoreAccessModeReadOnly
+	// RestoreAccessModeReadWrite restores the database in read-write mode.
+	RestoreAccessModeReadWrite
+)
+
 // RestoreOptions controls a logical restore performed by [Manager.Restore].
 //
-// The zero value creates a new read-write database using the server defaults
-// and discards service output.
+// The zero value creates a new database using the server defaults, preserves
+// the access mode recorded in the backup, and discards service output.
 type RestoreOptions struct {
 	// Output receives service output. A nil value discards the output. Calls to
 	// [io.Writer.Write] are synchronous, so Output must not block indefinitely.
@@ -26,8 +38,9 @@ type RestoreOptions struct {
 	// false, Restore creates a new database and fails if it already exists.
 	Replace bool
 
-	// ReadOnly marks the restored database as read-only.
-	ReadOnly bool
+	// AccessMode controls the access mode of the restored database. The zero
+	// value preserves the access mode recorded in the backup.
+	AccessMode RestoreAccessMode
 
 	// DeactivateIndexes leaves indexes inactive after restoring them.
 	DeactivateIndexes bool
@@ -83,6 +96,10 @@ func (m *Manager) Restore(
 	if err := validateRestoreRequest(backupFile, database, option); err != nil {
 		return err
 	}
+	accessMode, err := toFbconnRestoreAccessMode(option.AccessMode)
+	if err != nil {
+		return err
+	}
 
 	conn, err := m.open(ctx, database)
 	if err != nil {
@@ -96,7 +113,7 @@ func (m *Manager) Restore(
 		Output:                  option.Output,
 		Verbose:                 option.Verbose,
 		Replace:                 option.Replace,
-		ReadOnly:                option.ReadOnly,
+		AccessMode:              accessMode,
 		DeactivateIndexes:       option.DeactivateIndexes,
 		SkipShadows:             option.SkipShadows,
 		SkipValidityConstraints: option.SkipValidityConstraints,
@@ -152,6 +169,19 @@ func validateRestoreRequest(
 		)
 	}
 	return nil
+}
+
+func toFbconnRestoreAccessMode(mode RestoreAccessMode) (fbconn.RestoreAccessMode, error) {
+	switch mode {
+	case RestoreAccessModeFromBackup:
+		return fbconn.RestoreAccessModeFromBackup, nil
+	case RestoreAccessModeReadOnly:
+		return fbconn.RestoreAccessModeReadOnly, nil
+	case RestoreAccessModeReadWrite:
+		return fbconn.RestoreAccessModeReadWrite, nil
+	default:
+		return 0, fmt.Errorf("invalid restore access mode %d", mode)
+	}
 }
 
 func validateRestoreOptionString(name string, value string) error {

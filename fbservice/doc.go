@@ -45,6 +45,12 @@ Set Replace explicitly to replace an existing database:
 		Replace: true,
 	})
 
+Set AccessMode to override the access mode recorded in the backup:
+
+	err = manager.Restore(ctx, backupFile, database, fbservice.RestoreOptions{
+		AccessMode: fbservice.RestoreAccessModeReadOnly,
+	})
+
 Manager does not write to standard output unless an operation explicitly
 receives os.Stdout as its output.
 */
