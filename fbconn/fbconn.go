@@ -1163,7 +1163,10 @@ func (fbConn *FbConn) Close(ctx context.Context) error {
 	fbConn.closeEventChannel()
 
 	defer fbConn.closeCleanupDone()
-	defer fbConn.conn.Close()
+	defer func() {
+		_ = fbConn.conn.Close()
+		fbConn.client.WaitForCompressionRead()
+	}()
 
 	if ctx != context.Background() {
 		// Close may be called while a cancellable query is in progress. This will most often be triggered by panic when
@@ -1220,8 +1223,11 @@ func (fbConn *FbConn) DropDatabase(ctx context.Context) (err error) {
 		}
 		fbConn.status = connStatusClosed
 		fbConn.clearAllInlineBlobCache()
-		compressionErr := fbConn.client.CloseCompression()
+		compressionErr := fbConn.withWriteLock(func() error {
+			return fbConn.client.CloseCompression()
+		})
 		closeErr := fbConn.conn.Close()
+		fbConn.client.WaitForCompressionRead()
 		fbConn.closeCleanupDone()
 		err = errors.Join(err, closeErr, compressionErr)
 	}()
@@ -1264,7 +1270,10 @@ func (fbConn *FbConn) asyncClose() {
 	go func() {
 		defer fbConn.closeCleanupDone()
 		_ = fbConn.conn.Close()
-		_ = fbConn.client.CloseCompression()
+		_ = fbConn.withWriteLock(func() error {
+			return fbConn.client.CloseCompression()
+		})
+		fbConn.client.WaitForCompressionRead()
 	}()
 }
 

@@ -5,28 +5,40 @@ import (
 	"compress/zlib"
 	"fmt"
 	"io"
+	"net"
+	"sync"
 )
 
 type Client struct {
-	Encoding           *Encoding
-	reader             io.Reader
-	writer             io.Writer
-	plugin             string
-	codec              StreamCodec
-	compressionEnabled bool
-	compressionDirty   bool
-	compressor         *zlib.Writer
-	decompressor       io.ReadCloser
-	xdrReader          *XDRReader
-	xdrWriter          *XDRWriter
-	rowScratch         rowScratch
-	tracer             *tracer
-	lazyCounter        int
-	reusable           reusableServerMessages
-	inlineBlobHandler  func(*OpInlineBlob)
-	inlineBlobAlloc    func(int) []byte
-	inlineBlobCache    *inlineBlobCache
-	inlineBlobPool     *inlineBlobPool
+	Encoding *Encoding
+	reader   io.Reader
+	writer   io.Writer
+	plugin   string
+	codec    StreamCodec
+	// Reads and compressed writes use separate locks so a blocked write cannot
+	// prevent the reader from draining the peer's response.
+	readMu             sync.Mutex
+	compressionWriteMu sync.Mutex
+	// compressionMu protects compression negotiation and read-side lifecycle.
+	// It is never held while reading from the transport.
+	compressionMu       sync.Mutex
+	compressionEnabled  bool
+	compressionClosed   bool
+	compressionRead     bool
+	compressionReadDone chan struct{}
+	compressionDirty    bool
+	compressor          *zlib.Writer
+	decompressor        io.ReadCloser
+	xdrReader           *XDRReader
+	xdrWriter           *XDRWriter
+	rowScratch          rowScratch
+	tracer              *tracer
+	lazyCounter         int
+	reusable            reusableServerMessages
+	inlineBlobHandler   func(*OpInlineBlob)
+	inlineBlobAlloc     func(int) []byte
+	inlineBlobCache     *inlineBlobCache
+	inlineBlobPool      *inlineBlobPool
 
 	writeScratch []byte
 }
@@ -93,8 +105,16 @@ func (c *Client) Rebind(r io.Reader, w io.Writer) {
 
 // EnableCompression enables streaming zlib compression for subsequent wire data.
 func (c *Client) EnableCompression() error {
+	c.compressionWriteMu.Lock()
+	defer c.compressionWriteMu.Unlock()
+	c.compressionMu.Lock()
+	defer c.compressionMu.Unlock()
+
 	if c.compressionEnabled {
 		return nil
+	}
+	if c.compressionClosed {
+		return net.ErrClosed
 	}
 
 	c.compressor = zlib.NewWriter(writerFunc(c.writeTransport))
@@ -104,10 +124,24 @@ func (c *Client) EnableCompression() error {
 
 // CompressionEnabled reports whether wire compression is enabled.
 func (c *Client) CompressionEnabled() bool {
+	if c == nil {
+		return false
+	}
+	c.compressionMu.Lock()
+	defer c.compressionMu.Unlock()
 	return c.compressionEnabled
 }
 
 func (c *Client) flushCompression() error {
+	c.compressionWriteMu.Lock()
+	defer c.compressionWriteMu.Unlock()
+	if c.compressionClosedState() {
+		return net.ErrClosed
+	}
+	return c.flushCompressionLocked()
+}
+
+func (c *Client) flushCompressionLocked() error {
 	if c.compressor == nil || !c.compressionDirty {
 		return nil
 	}
@@ -120,7 +154,13 @@ func (c *Client) flushCompression() error {
 
 // Flush emits all compressed data and then flushes the underlying writer, if it supports flushing.
 func (c *Client) Flush() error {
-	if err := c.flushCompression(); err != nil {
+	c.compressionWriteMu.Lock()
+	defer c.compressionWriteMu.Unlock()
+
+	if c.compressionClosedState() {
+		return net.ErrClosed
+	}
+	if err := c.flushCompressionLocked(); err != nil {
 		return err
 	}
 	if flusher, ok := c.writer.(interface{ Flush() error }); ok {
@@ -131,17 +171,33 @@ func (c *Client) Flush() error {
 
 // CloseCompression finalizes the compressed stream and releases its resources.
 // It flushes the underlying writer but does not close the underlying transport.
+// If a read is in progress, that read closes the decompressor before returning.
+// Further compression or I/O operations on the Client fail with [net.ErrClosed].
 func (c *Client) CloseCompression() error {
-	if c == nil || !c.compressionEnabled {
+	if c == nil {
+		return nil
+	}
+
+	c.compressionWriteMu.Lock()
+	c.compressionMu.Lock()
+	if !c.compressionEnabled {
+		c.compressionMu.Unlock()
+		c.compressionWriteMu.Unlock()
 		return nil
 	}
 
 	compressor := c.compressor
-	decompressor := c.decompressor
 	c.compressor = nil
-	c.decompressor = nil
 	c.compressionEnabled = false
+	c.compressionClosed = true
 	c.compressionDirty = false
+
+	var decompressor io.ReadCloser
+	if !c.compressionRead {
+		decompressor = c.decompressor
+		c.decompressor = nil
+	}
+	c.compressionMu.Unlock()
 
 	var resultErr error
 	if compressor != nil {
@@ -152,12 +208,34 @@ func (c *Client) CloseCompression() error {
 			resultErr = err
 		}
 	}
+	c.compressionWriteMu.Unlock()
 	if decompressor != nil {
 		if err := decompressor.Close(); resultErr == nil {
 			resultErr = err
 		}
 	}
 	return resultErr
+}
+
+// WaitForCompressionRead waits for an in-progress compressed read and its
+// decompressor cleanup. The underlying transport should be closed first so a
+// blocked read can return.
+func (c *Client) WaitForCompressionRead() {
+	if c == nil {
+		return
+	}
+
+	c.compressionMu.Lock()
+	if !c.compressionRead {
+		c.compressionMu.Unlock()
+		return
+	}
+	if c.compressionReadDone == nil {
+		c.compressionReadDone = make(chan struct{})
+	}
+	done := c.compressionReadDone
+	c.compressionMu.Unlock()
+	<-done
 }
 
 // SetCodec sets the active wire encryption codec.
@@ -259,18 +337,59 @@ func (c *Client) ReleaseInlineBlobData(data []byte) {
 }
 
 func (c *Client) Read(buf []byte) (n int, err error) {
-	if c.compressionEnabled {
-		if c.decompressor == nil {
-			// zlib.NewReader consumes the stream header, so delay it until the
-			// server is expected to have sent compressed data.
-			c.decompressor, err = zlib.NewReader(readerFunc(c.readTransport))
-			if err != nil {
-				return 0, err
-			}
-		}
-		return c.decompressor.Read(buf)
+	c.readMu.Lock()
+	defer c.readMu.Unlock()
+
+	c.compressionMu.Lock()
+	if c.compressionClosed {
+		c.compressionMu.Unlock()
+		return 0, net.ErrClosed
 	}
-	return c.readTransport(buf)
+	if !c.compressionEnabled {
+		c.compressionMu.Unlock()
+		return c.readTransport(buf)
+	}
+
+	c.compressionRead = true
+	decompressor := c.decompressor
+	c.compressionMu.Unlock()
+	defer c.finishCompressionRead()
+
+	if decompressor == nil {
+		// zlib.NewReader consumes the stream header, so delay it until the
+		// server is expected to have sent compressed data.
+		decompressor, err = zlib.NewReader(readerFunc(c.readTransport))
+		if err != nil {
+			return 0, err
+		}
+
+		c.compressionMu.Lock()
+		c.decompressor = decompressor
+		c.compressionMu.Unlock()
+	}
+	return decompressor.Read(buf)
+}
+
+func (c *Client) finishCompressionRead() {
+	c.compressionMu.Lock()
+	var decompressor io.ReadCloser
+	if c.compressionClosed {
+		decompressor = c.decompressor
+		c.decompressor = nil
+	}
+	c.compressionMu.Unlock()
+
+	if decompressor != nil {
+		_ = decompressor.Close()
+	}
+
+	c.compressionMu.Lock()
+	c.compressionRead = false
+	if done := c.compressionReadDone; done != nil {
+		close(done)
+		c.compressionReadDone = nil
+	}
+	c.compressionMu.Unlock()
 }
 
 func (c *Client) readTransport(buf []byte) (n int, err error) {
@@ -286,6 +405,12 @@ func (c *Client) readTransport(buf []byte) (n int, err error) {
 }
 
 func (c *Client) Write(buf []byte) (n int, err error) {
+	c.compressionWriteMu.Lock()
+	defer c.compressionWriteMu.Unlock()
+
+	if c.compressionClosedState() {
+		return 0, net.ErrClosed
+	}
 	if c.compressor != nil {
 		n, err = c.compressor.Write(buf)
 		if n > 0 {
@@ -294,6 +419,12 @@ func (c *Client) Write(buf []byte) (n int, err error) {
 		return n, err
 	}
 	return c.writeTransport(buf)
+}
+
+func (c *Client) compressionClosedState() bool {
+	c.compressionMu.Lock()
+	defer c.compressionMu.Unlock()
+	return c.compressionClosed
 }
 
 func (c *Client) writeTransport(buf []byte) (n int, err error) {

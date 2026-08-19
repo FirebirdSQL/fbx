@@ -5,7 +5,11 @@ import (
 	"bytes"
 	"compress/zlib"
 	"io"
+	"net"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -17,6 +21,46 @@ type failOnRead struct {
 func (r failOnRead) Read([]byte) (int, error) {
 	r.t.Fatal("compression initialization must not read from the transport")
 	return 0, io.ErrUnexpectedEOF
+}
+
+type blockingCompressionReader struct {
+	readStarted      chan struct{}
+	releaseRead      chan struct{}
+	closeCalled      chan struct{}
+	readStartedOnce  sync.Once
+	releaseReadOnce  sync.Once
+	closeCalledOnce  sync.Once
+	readActive       atomic.Bool
+	closedDuringRead atomic.Bool
+}
+
+func newBlockingCompressionReader() *blockingCompressionReader {
+	return &blockingCompressionReader{
+		readStarted: make(chan struct{}),
+		releaseRead: make(chan struct{}),
+		closeCalled: make(chan struct{}),
+	}
+}
+
+func (r *blockingCompressionReader) Read(buf []byte) (int, error) {
+	r.readActive.Store(true)
+	r.readStartedOnce.Do(func() { close(r.readStarted) })
+	<-r.releaseRead
+	r.readActive.Store(false)
+	buf[0] = 1
+	return 1, nil
+}
+
+func (r *blockingCompressionReader) Close() error {
+	if r.readActive.Load() {
+		r.closedDuringRead.Store(true)
+	}
+	r.closeCalledOnce.Do(func() { close(r.closeCalled) })
+	return nil
+}
+
+func (r *blockingCompressionReader) release() {
+	r.releaseReadOnce.Do(func() { close(r.releaseRead) })
 }
 
 type xorStreamCodec struct {
@@ -166,4 +210,99 @@ func TestCloseCompressionFinalizesStreamAndFlushesWriter(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, zr.Close())
 	require.Equal(t, payload, decoded)
+}
+
+func TestClosedCompressionDoesNotUseUncompressedTransport(t *testing.T) {
+	client := NewClient(bytes.NewReader(nil), io.Discard, nil)
+	require.NoError(t, client.EnableCompression())
+	require.NoError(t, client.CloseCompression())
+
+	_, err := client.Read(make([]byte, 1))
+	require.ErrorIs(t, err, net.ErrClosed)
+	_, err = client.Write([]byte("request"))
+	require.ErrorIs(t, err, net.ErrClosed)
+	require.ErrorIs(t, client.Flush(), net.ErrClosed)
+	require.ErrorIs(t, client.EnableCompression(), net.ErrClosed)
+	require.NoError(t, client.CloseCompression())
+}
+
+func TestCloseCompressionDefersReaderCloseUntilReadCompletes(t *testing.T) {
+	client := NewClient(bytes.NewReader(nil), io.Discard, nil)
+	require.NoError(t, client.EnableCompression())
+
+	blockingReader := newBlockingCompressionReader()
+	defer blockingReader.release()
+	client.compressionMu.Lock()
+	client.decompressor = blockingReader
+	client.compressionMu.Unlock()
+
+	readDone := make(chan error, 1)
+	go func() {
+		_, err := client.Read(make([]byte, 1))
+		readDone <- err
+	}()
+
+	select {
+	case <-blockingReader.readStarted:
+	case <-time.After(time.Second):
+		t.Fatal("compressed read did not start")
+	}
+
+	closeDone := make(chan error, 1)
+	go func() {
+		closeDone <- client.CloseCompression()
+	}()
+
+	select {
+	case err := <-closeDone:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		blockingReader.release()
+		t.Fatal("CloseCompression blocked on an active read")
+	}
+
+	closedBeforeReadCompleted := false
+	select {
+	case <-blockingReader.closeCalled:
+		closedBeforeReadCompleted = true
+	default:
+	}
+
+	waitStarted := make(chan struct{})
+	waitDone := make(chan struct{})
+	go func() {
+		close(waitStarted)
+		client.WaitForCompressionRead()
+		close(waitDone)
+	}()
+	<-waitStarted
+	select {
+	case <-waitDone:
+		blockingReader.release()
+		t.Fatal("WaitForCompressionRead returned before the read completed")
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	blockingReader.release()
+	select {
+	case err := <-readDone:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("compressed read did not finish")
+	}
+
+	select {
+	case <-blockingReader.closeCalled:
+	case <-time.After(time.Second):
+		t.Fatal("decompressor was not closed after the read completed")
+	}
+
+	select {
+	case <-waitDone:
+	case <-time.After(time.Second):
+		t.Fatal("WaitForCompressionRead did not return after the read completed")
+	}
+	require.False(t, closedBeforeReadCompleted)
+	require.False(t, blockingReader.closedDuringRead.Load())
+	require.False(t, client.CompressionEnabled())
 }
