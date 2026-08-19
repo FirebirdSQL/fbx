@@ -146,6 +146,23 @@ func TestAsyncCloseWaitsForCompressionRead(t *testing.T) {
 }
 
 func TestCloseUnblocksCompressedReadBeforeCleanup(t *testing.T) {
+	testSynchronousCloseUnblocksCompressedReadBeforeCleanup(t, func(fbConn *FbConn) error {
+		return fbConn.Close(context.Background())
+	})
+}
+
+func TestServiceConnCloseUnblocksCompressedReadBeforeCleanup(t *testing.T) {
+	testSynchronousCloseUnblocksCompressedReadBeforeCleanup(t, func(fbConn *FbConn) error {
+		return (&ServiceConn{conn: fbConn}).Close(context.Background())
+	})
+}
+
+func testSynchronousCloseUnblocksCompressedReadBeforeCleanup(
+	t *testing.T,
+	closeConnection func(*FbConn) error,
+) {
+	t.Helper()
+
 	transport := newBlockingCompressionConn(t, bytes.Repeat([]byte("response "), 1024))
 	defer transport.releaseRead()
 
@@ -166,7 +183,7 @@ func TestCloseUnblocksCompressedReadBeforeCleanup(t *testing.T) {
 
 	closeDone := make(chan error, 1)
 	go func() {
-		closeDone <- fbConn.Close(context.Background())
+		closeDone <- closeConnection(fbConn)
 	}()
 	select {
 	case <-transport.closed:

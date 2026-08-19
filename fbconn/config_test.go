@@ -563,30 +563,46 @@ func TestConfigCopyCanBeUsedToConnect(t *testing.T) {
 
 func TestNetworkAddress(t *testing.T) {
 	tests := []struct {
-		name    string
-		host    string
-		wantNet string
+		name        string
+		host        string
+		port        uint16
+		wantNet     string
+		wantAddress string
 	}{
 		{
-			name:    "Assume TCP for unknown formats",
-			host:    "a/tmp",
-			wantNet: "tcp",
+			name:        "Absolute local database path uses provided port",
+			host:        "/var/lib/firebird/data/employee.fdb",
+			port:        3051,
+			wantNet:     "tcp",
+			wantAddress: "localhost:3051",
 		},
 		{
-			name:    "loopback interface",
-			host:    "localhost",
-			wantNet: "tcp",
+			name:        "Assume TCP for unknown formats",
+			host:        "a/tmp",
+			port:        3050,
+			wantNet:     "tcp",
+			wantAddress: "a/tmp:3050",
 		},
 		{
-			name:    "IP address",
-			host:    "127.0.0.1",
-			wantNet: "tcp",
+			name:        "loopback interface",
+			host:        "localhost",
+			port:        3050,
+			wantNet:     "tcp",
+			wantAddress: "localhost:3050",
+		},
+		{
+			name:        "IP address",
+			host:        "127.0.0.1",
+			port:        3050,
+			wantNet:     "tcp",
+			wantAddress: "127.0.0.1:3050",
 		},
 	}
 	for i, tt := range tests {
-		gotNet, _ := fbconn.NetworkAddress(tt.host, 3050)
+		gotNet, gotAddress := fbconn.NetworkAddress(tt.host, tt.port)
 
 		assert.Equalf(t, tt.wantNet, gotNet, "Test %d (%s)", i, tt.name)
+		assert.Equalf(t, tt.wantAddress, gotAddress, "Test %d (%s)", i, tt.name)
 	}
 }
 
@@ -702,4 +718,19 @@ func TestParseConfigEnv(t *testing.T) {
 			assertConfigsEqual(t, tt.config, config, fmt.Sprintf("Test %d (%s)", i, tt.name))
 		})
 	}
+}
+
+func TestConfigCopyCertificateNotLinkedWithOriginal(t *testing.T) {
+	t.Parallel()
+
+	config, err := fbconn.ParseConfig("")
+	require.NoError(t, err)
+
+	config.Certificate = []byte{1, 2, 3}
+	copyConfig := config.Copy()
+	require.Equal(t, copyConfig.Certificate, config.Certificate)
+
+	config.Certificate[0] = 3
+	require.Equal(t, []byte{3, 2, 3}, config.Certificate)
+	require.NotEqual(t, copyConfig.Certificate, config.Certificate)
 }

@@ -72,6 +72,14 @@ func (t *tracer) traceRequest(sender byte, msg ClientMessage) {
 		t.traceSeekBlobMessage(sender, msg)
 	case *OpInfoBlob:
 		t.traceInfoBlobMessage(sender, msg)
+	case *OpServiceAttach:
+		t.traceServiceAttachMessage(sender, msg)
+	case *OpServiceDetach:
+		t.traceServiceDetachMessage(sender, msg)
+	case *OpServiceStart:
+		t.traceServiceStartMessage(sender, msg)
+	case *OpServiceInfo:
+		t.traceServiceInfoMessage(sender, msg)
 	case *OpDisconnect:
 		t.writeTrace(sender, "Disconnect", nil)
 	case *OpDetach:
@@ -154,6 +162,47 @@ func (t *tracer) traceInfoDatabaseMessage(sender byte, msg *OpInfoDatabase) {
 		fmt.Fprintf(t.buf, " lenItems=%d bufSize=%d", len(msg.Parameters), msg.BufferLength)
 		if t.FullLogMode && len(msg.Parameters) > 0 {
 			fmt.Fprintf(t.buf, " items=%s", traceSingleQuotedString(msg.Parameters))
+		}
+	})
+}
+
+func (t *tracer) traceServiceAttachMessage(sender byte, msg *OpServiceAttach) {
+	t.writeTrace(sender, "ServiceAttach", func() {
+		fmt.Fprintf(t.buf, " service=%s spbLen=%d", traceDoubleQuotedString([]byte(msg.ServiceName)), len(msg.SPB))
+		if t.FullLogMode && len(msg.SPB) > 0 {
+			fmt.Fprintf(t.buf, " spb=%s", traceSingleQuotedString(msg.SPB))
+		}
+	})
+}
+
+func (t *tracer) traceServiceDetachMessage(sender byte, msg *OpServiceDetach) {
+	t.writeTrace(sender, "ServiceDetach", func() {
+		fmt.Fprintf(t.buf, " handle=%d", msg.ServiceHandle)
+	})
+}
+
+func (t *tracer) traceServiceStartMessage(sender byte, msg *OpServiceStart) {
+	t.writeTrace(sender, "ServiceStart", func() {
+		fmt.Fprintf(t.buf, " handle=%d actionLen=%d", msg.ServiceHandle, len(msg.ActionSPB))
+		if t.FullLogMode && len(msg.ActionSPB) > 0 {
+			fmt.Fprintf(t.buf, " action=%s", traceSingleQuotedString(msg.ActionSPB))
+		}
+	})
+}
+
+func (t *tracer) traceServiceInfoMessage(sender byte, msg *OpServiceInfo) {
+	t.writeTrace(sender, "ServiceInfo", func() {
+		fmt.Fprintf(t.buf, " handle=%d sendLen=%d recvLen=%d requestedBufSize=%d bufSize=%d",
+			msg.ServiceHandle,
+			len(msg.SendItems),
+			len(msg.ReceiveItems),
+			msg.BufferLength,
+			msg.effectiveBufferLength())
+		if t.FullLogMode && len(msg.SendItems) > 0 {
+			fmt.Fprintf(t.buf, " send=%s", traceSingleQuotedString(msg.SendItems))
+		}
+		if t.FullLogMode && len(msg.ReceiveItems) > 0 {
+			fmt.Fprintf(t.buf, " recv=%s", traceSingleQuotedString(msg.ReceiveItems))
 		}
 	})
 }

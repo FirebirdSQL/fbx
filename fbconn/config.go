@@ -57,6 +57,9 @@ type Config struct {
 	MaxBlobCacheSize           int
 	FetchBatchSize             int
 
+	Certificate    []byte
+	CertificatePIN string
+
 	// BuildContextWatcherHandler is called to create a ContextWatcherHandler for a connection. The handler is called
 	// when a context passed to a FbConn method is canceled.
 	BuildContextWatcherHandler func(*FbConn) ctxwatch.Handler
@@ -68,7 +71,8 @@ type Config struct {
 
 	Fallbacks []*FallbackConfig
 
-	// ValidateConnect is called during a connection attempt after a successful authentication, before the connection is returned.
+	// ValidateConnect is called during a connection attempt after a successful authentication and server version discovery,
+	// before the connection is returned.
 	// If this returns an error the connection is closed and the next fallback config is tried.
 	ValidateConnect ValidateConnectFunc
 
@@ -76,7 +80,10 @@ type Config struct {
 	// or prepare statements). If this returns an error the connection attempt fails.
 	AfterConnect AfterConnectFunc
 
-	// OnFbError is a callback function called when a Firebird error happened on server
+	// OnFbError is called when the server returns a Firebird error. Returning true keeps the connection open, and
+	// returning false closes it. [ParseConfig] sets a handler that closes the connection when [IsConnectionFatal]
+	// reports true. Replacing the handler overrides this policy; setting OnFbError to nil keeps the connection open
+	// for all server errors. The callback must not query the supplied [FbConn].
 	OnFbError FbErrorHandler
 
 	// OnFbWarning is a callback function called when a Firebird warning obtained by client with success response
@@ -155,6 +162,11 @@ func (c *Config) Copy() *Config {
 		}
 		newConf.Fallbacks = fbs
 	}
+	if len(newConf.Certificate) > 0 {
+		newCertificate := make([]byte, len(c.Certificate))
+		copy(newCertificate, c.Certificate)
+		newConf.Certificate = newCertificate
+	}
 	return newConf
 }
 
@@ -191,12 +203,11 @@ func isAbsolutePath(path string) bool {
 }
 
 // NetworkAddress converts host and port into network and address suitable for use with net.Dial.
-// If host is an absolute path, it currently falls back to a local TCP connection to localhost:3050.
+// If host is an absolute path, it falls back to a local TCP connection using the provided port.
 func NetworkAddress(host string, port uint16) (network, address string) {
 	if isAbsolutePath(host) {
 		network = "tcp"
-		//TODO: fbx allow override default port
-		address = net.JoinHostPort("localhost", "3050")
+		address = net.JoinHostPort("localhost", strconv.Itoa(int(port)))
 	} else {
 		network = "tcp"
 		address = net.JoinHostPort(host, strconv.Itoa(int(port)))
@@ -300,14 +311,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		BuildContextWatcherHandler: func(fbConn *FbConn) ctxwatch.Handler {
 			return &CancelRequestContextWatcherHandler{Conn: fbConn}
 		},
-		OnFbError: func(_ *FbConn, fbErr *FbError) bool {
-			// we want to automatically close any fatal errors
-			// FIXME: fbx how to check if server error is fatal?
-			//if strings.EqualFold(fbErr.Severity, "FATAL") {
-			//	return false
-			//}
-			return true
-		},
+		OnFbError:                  defaultOnFbError,
 		AuthPluginList:             pluginList,
 		WireCrypt:                  convertToBool(settings["wire_crypt"], true),
 		WireCompression:            convertToBool(settings["wire_compression"], false),

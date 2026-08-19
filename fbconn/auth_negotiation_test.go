@@ -4,6 +4,7 @@ import (
 	"compress/zlib"
 	"context"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"testing"
@@ -11,31 +12,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx/fbproto"
+	"rdb.red-soft.ru/fbx/fbproto/auth"
 )
-
-func TestShouldRespondToCondAcceptStopsForKnownPluginsOnly(t *testing.T) {
-	msg := &fbproto.OpCondAccept{
-		PluginName: "Srp",
-		ServerKeys: []byte{2, 3, 'S', 'r', 'p'},
-	}
-
-	require.False(t, shouldRespondToCondAccept(msg))
-}
-
-func TestShouldRespondToCondAcceptStopsForEmptyChallengeWithoutServerKeys(t *testing.T) {
-	msg := &fbproto.OpCondAccept{PluginName: "Srp"}
-
-	require.False(t, shouldRespondToCondAccept(msg))
-}
-
-func TestShouldRespondToCondAcceptContinuesForChallengeWithoutServerKeys(t *testing.T) {
-	msg := &fbproto.OpCondAccept{
-		PluginName: "Srp",
-		Data:       []byte("server-challenge"),
-	}
-
-	require.True(t, shouldRespondToCondAccept(msg))
-}
 
 func TestShouldRespondToDataAcceptStopsForChallengeWithoutServerKeys(t *testing.T) {
 	msg := &fbproto.OpDataAccept{
@@ -69,19 +47,6 @@ func TestShouldRespondToDataAcceptContinuesForWireCryptKeys(t *testing.T) {
 	}
 
 	require.True(t, shouldRespondToDataAccept(msg))
-}
-
-func TestShouldRespondToCondAcceptContinuesForWireCryptKeys(t *testing.T) {
-	msg := &fbproto.OpCondAccept{
-		PluginName: "Srp",
-		Data:       []byte("server-challenge"),
-		ServerKeys: []byte{
-			0, 9, 'S', 'y', 'm', 'm', 'e', 't', 'r', 'i', 'c',
-			1, 5, 'A', 'r', 'c', '4', '8',
-		},
-	}
-
-	require.True(t, shouldRespondToCondAccept(msg))
 }
 
 func TestDataAcceptChallengeWithoutKeysSendsAttachWithSpecificAuthData(t *testing.T) {
@@ -143,25 +108,54 @@ func TestCompressionNegotiationControlsFollowingRequestEncoding(t *testing.T) {
 	}
 }
 
+func TestCondAcceptPluginSwitchWithoutChallengeSendsContAuth(t *testing.T) {
+	result := runAuthNegotiationProbeWithOptions(t, fbproto.Op_cond_accept, []string{"Srp", "Srp256"}, nil)
+
+	require.Equal(t, fbproto.Op_cont_auth, result.opcode)
+	require.False(t, result.hasSpecificAuthData)
+	require.Equal(t, "Srp256", result.authPluginName)
+	require.Equal(t, "Srp,Srp256", result.authPluginList)
+	require.NotEmpty(t, result.authData)
+	_, err := hex.DecodeString(string(result.authData))
+	require.NoError(t, err)
+	require.Empty(t, result.authKeys)
+}
+
 type authNegotiationProbeResult struct {
 	opcode                int
 	hasSpecificAuthData   bool
 	compressionAdvertised bool
+	authPluginName        string
+	authPluginList        string
+	authData              []byte
+	authKeys              []byte
 	err                   error
 }
 
 func runAuthNegotiationProbe(t *testing.T, acceptOpcode int) authNegotiationProbeResult {
+	return runAuthNegotiationProbeWithOptions(t, acceptOpcode, nil, probeSrpServerData())
+}
+
+func runAuthNegotiationProbeWithOptions(
+	t *testing.T,
+	acceptOpcode int,
+	authPluginList []string,
+	serverData []byte,
+) authNegotiationProbeResult {
 	t.Helper()
 
 	clientConn, serverConn := net.Pipe()
 	resultCh := make(chan authNegotiationProbeResult, 1)
 	go func() {
 		defer func() { _ = serverConn.Close() }()
-		resultCh <- runAuthNegotiationProbeServer(serverConn, acceptOpcode)
+		resultCh <- runAuthNegotiationProbeServer(serverConn, acceptOpcode, serverData)
 	}()
 
 	config, err := ParseConfig("firebird://sysdba:masterkey@mock/employee")
 	require.NoError(t, err)
+	if authPluginList != nil {
+		config.AuthPluginList = authPluginList
+	}
 	config.LookupFunc = func(context.Context, string) ([]string, error) {
 		return []string{"127.0.0.1"}, nil
 	}
@@ -186,7 +180,7 @@ func runAuthNegotiationProbe(t *testing.T, acceptOpcode int) authNegotiationProb
 	}
 }
 
-func runAuthNegotiationProbeServer(conn net.Conn, acceptOpcode int) authNegotiationProbeResult {
+func runAuthNegotiationProbeServer(conn net.Conn, acceptOpcode int, serverData []byte) authNegotiationProbeResult {
 	encoding, err := fbproto.NewEncoding("UTF8")
 	if err != nil {
 		return authNegotiationProbeResult{err: err}
@@ -198,7 +192,7 @@ func runAuthNegotiationProbeServer(conn net.Conn, acceptOpcode int) authNegotiat
 	if err := readProbeConnect(r); err != nil {
 		return authNegotiationProbeResult{err: err}
 	}
-	if err := writeProbeAccept(w, encoding, acceptOpcode, false); err != nil {
+	if err := writeProbeAcceptWithData(w, encoding, acceptOpcode, serverData); err != nil {
 		return authNegotiationProbeResult{err: err}
 	}
 
@@ -207,12 +201,22 @@ func runAuthNegotiationProbeServer(conn net.Conn, acceptOpcode int) authNegotiat
 		return authNegotiationProbeResult{err: err}
 	}
 	result := authNegotiationProbeResult{opcode: opcode}
-	if opcode == fbproto.Op_attach {
+	switch opcode {
+	case fbproto.Op_attach:
 		dpb, err := readProbeAttachDPB(r, encoding)
 		if err != nil {
 			return authNegotiationProbeResult{err: err}
 		}
 		result.hasSpecificAuthData = probeDPBHasTag(dpb, fbproto.Isc_dpb_specific_auth_data)
+	case fbproto.Op_cont_auth:
+		msg := &fbproto.OpContAuth{Encoding: encoding}
+		if err := msg.Read(r); err != nil {
+			return authNegotiationProbeResult{err: err}
+		}
+		result.authPluginName = msg.PluginName
+		result.authPluginList = msg.PluginList
+		result.authData = msg.AuthData
+		result.authKeys = msg.Keys
 	}
 	return result
 }
@@ -229,7 +233,13 @@ func runCompressionNegotiationProbeServer(conn net.Conn, compressionAccepted boo
 	if err != nil {
 		return authNegotiationProbeResult{err: err}
 	}
-	if err := writeProbeAccept(w, encoding, fbproto.Op_cond_accept, compressionAccepted); err != nil {
+	if err := writeProbeAcceptWithOptions(
+		w,
+		encoding,
+		fbproto.Op_cond_accept,
+		probeSrpServerData(),
+		compressionAccepted,
+	); err != nil {
 		return authNegotiationProbeResult{err: err}
 	}
 
@@ -301,7 +311,26 @@ func readProbeConnectCompression(r *fbproto.XDRReader) (bool, error) {
 	return compressionAdvertised, nil
 }
 
-func writeProbeAccept(w *fbproto.XDRWriter, encoding *fbproto.Encoding, opcode int, compress bool) error {
+func writeProbeAccept(w *fbproto.XDRWriter, encoding *fbproto.Encoding, opcode int) error {
+	return writeProbeAcceptWithOptions(w, encoding, opcode, probeSrpServerData(), false)
+}
+
+func writeProbeAcceptWithData(
+	w *fbproto.XDRWriter,
+	encoding *fbproto.Encoding,
+	opcode int,
+	data []byte,
+) error {
+	return writeProbeAcceptWithOptions(w, encoding, opcode, data, false)
+}
+
+func writeProbeAcceptWithOptions(
+	w *fbproto.XDRWriter,
+	encoding *fbproto.Encoding,
+	opcode int,
+	data []byte,
+	compress bool,
+) error {
 	if err := w.WriteInt32(opcode); err != nil {
 		return err
 	}
@@ -321,7 +350,7 @@ func writeProbeAccept(w *fbproto.XDRWriter, encoding *fbproto.Encoding, opcode i
 	if opcode == fbproto.Op_accept {
 		return nil
 	}
-	if err := w.WriteBuffer(probeSrpServerData()); err != nil {
+	if err := w.WriteBuffer(data); err != nil {
 		return err
 	}
 	if err := w.WriteString("Srp256", encoding); err != nil {
@@ -377,4 +406,81 @@ func probeDPBHasTag(dpb []byte, tag byte) bool {
 		offset += length
 	}
 	return false
+}
+
+const pluginName = "cert_connect_test"
+
+type certificateCapturePlugin struct {
+	certificate    []byte
+	certificatePIN string
+}
+
+func (p *certificateCapturePlugin) Name() string        { return pluginName }
+func (p *certificateCapturePlugin) Advertise() []string { return []string{p.Name()} }
+func (p *certificateCapturePlugin) InitialClientData() []byte {
+	return p.certificate
+}
+func (p *certificateCapturePlugin) HandleServerData(string, string, string, []byte) (*auth.AuthPluginStep, error) {
+	return &auth.AuthPluginStep{Reply: p.certificate, AuthSpecific: p.certificate}, nil
+}
+func (p *certificateCapturePlugin) HandleAuthResponse([]byte) error { return nil }
+
+func TestConnectConfigPassesCertificateToPluginConstructor(t *testing.T) {
+	wantCert := []byte{0x01, 0x02, 0x03}
+	wantPIN := "123"
+
+	var constructed *certificateCapturePlugin
+	auth.RegisterAuthPlugin(pluginName, func(conf auth.UserConfig) auth.AuthPlugin {
+		plugin := &certificateCapturePlugin{certificate: conf.Certificate, certificatePIN: conf.CertificatePIN}
+		constructed = plugin
+		return plugin
+	})
+
+	config, err := ParseConfig("")
+	require.NoError(t, err)
+	config.Certificate = wantCert
+	config.CertificatePIN = wantPIN
+	config.AuthPluginList = []string{pluginName}
+
+	_, _ = ConnectConfig(context.Background(), config)
+
+	require.NotEmpty(t, constructed)
+	require.Equal(t, wantCert, constructed.certificate)
+	require.Equal(t, wantPIN, constructed.certificatePIN)
+}
+
+func TestUserConfigPassedToPluginWhenSetCurrentPluginReused(t *testing.T) {
+	srpPluginName := "Srp"
+	pluginList := []string{pluginName, srpPluginName}
+	wantCert := []byte{0x01, 0x02, 0x03}
+	wantPIN := "123"
+	auth.RegisterAuthPlugin(pluginName, func(conf auth.UserConfig) auth.AuthPlugin {
+		plugin := &certificateCapturePlugin{certificate: conf.Certificate, certificatePIN: conf.CertificatePIN}
+		return plugin
+	})
+	userConfig := auth.UserConfig{Certificate: wantCert, CertificatePIN: wantPIN}
+	m, err := auth.NewAuthManager(userConfig, pluginList)
+	require.NoError(t, err)
+	m.SetCurrentPlugin(pluginName)
+	step, err := m.HandleServerChallenge(pluginName, nil)
+	require.NoError(t, err)
+	require.NotNil(t, step)
+	require.Equal(t, step.AuthSpecific, m.AuthSpecificData())
+	require.Equal(t, step.AuthSpecific, wantCert)
+	require.Equal(t, pluginName, m.GetCurrentPlugin().Name())
+
+	_, ok := m.SetCurrentPlugin(srpPluginName)
+	require.True(t, ok)
+	step, err = m.HandleServerChallenge(srpPluginName, nil)
+	require.NoError(t, err)
+	require.NotNil(t, step)
+	require.Empty(t, step.AuthSpecific)
+
+	_, ok = m.SetCurrentPlugin(pluginName)
+	require.True(t, ok)
+	step, err = m.HandleServerChallenge(pluginName, nil)
+	require.NoError(t, err)
+	require.NotNil(t, step)
+	require.Equal(t, step.AuthSpecific, wantCert)
+	require.Equal(t, pluginName, m.GetCurrentPlugin().Name())
 }

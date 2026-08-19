@@ -563,18 +563,7 @@ func (c *Client) ReceiveMessage() (ServerMessage, error) {
 		case *OpResponse:
 			if c.lazyCounter == 0 {
 				if m.Failure {
-					// OpResponse is reused, so copy slices that could be overwritten by the next read.
-					gdsCodes := append([]int(nil), m.GdsCodes...)
-					return &ErrorResponse{
-						Object:   m.Object,
-						BlobId:   m.BlobId,
-						GdsCodes: gdsCodes,
-						SqlErr:   m.SqlErr,
-						SqlState: m.SqlState,
-						Message:  m.Message,
-						Line:     m.Line,
-						Position: m.Position,
-					}, nil
+					return errorResponseFromOpResponse(m), nil
 				}
 			} else {
 				if m.Failure {
@@ -641,6 +630,11 @@ func (c *Client) ReadSlice(datatype uint32, length int) (ServerMessage, error) {
 	default:
 		return nil, fmt.Errorf("unexpected response opcode: %d", opcode)
 	}
-	err = msg.Read(c.xdrReader)
-	return msg, err
+	if err = msg.Read(c.xdrReader); err != nil {
+		return nil, err
+	}
+	if op, ok := msg.(*OpResponse); ok && op.Failure {
+		return errorResponseFromOpResponse(op), nil
+	}
+	return msg, nil
 }
