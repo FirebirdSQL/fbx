@@ -177,12 +177,12 @@ const (
 	Isc_tpb_lock_timeout     = 21
 
 	// Service Parameter Block parameter
-	Isc_spb_version1          = 1
-	Isc_spb_current_version   = 2
-	Isc_spb_version           = Isc_spb_current_version
+	Isc_spb_version1        = 1
+	Isc_spb_current_version = 2
+	Isc_spb_version         = Isc_spb_current_version
 
 	// Isc_spb_version3 identifies a wide service attachment parameter buffer.
-	Isc_spb_version3          = 3
+	Isc_spb_version3 = 3
 
 	Isc_spb_user_name         = 28 // Isc_dpb_user_name
 	Isc_spb_sys_user_name     = 19 // isc_dpb_sys_user_name
@@ -200,19 +200,19 @@ const (
 	// Isc_spb_specific_auth_data carries plugin-specific authentication data.
 	Isc_spb_specific_auth_data = Isc_spb_trusted_auth
 
-	Isc_spb_process_name       = 112
-	Isc_spb_trusted_role       = 113
-	Isc_spb_verbint            = 114
-	Isc_spb_auth_block         = 115
-	Isc_spb_auth_plugin_name   = 116
-	Isc_spb_auth_plugin_list   = 117
-	Isc_spb_utf8_filename      = 118
-	Isc_spb_client_version     = 119
-	Isc_spb_remote_protocol    = 120
-	Isc_spb_host_name          = 121
-	Isc_spb_os_user            = 122
-	Isc_spb_config             = 123
-	Isc_spb_expected_db        = 124
+	Isc_spb_process_name     = 112
+	Isc_spb_trusted_role     = 113
+	Isc_spb_verbint          = 114
+	Isc_spb_auth_block       = 115
+	Isc_spb_auth_plugin_name = 116
+	Isc_spb_auth_plugin_list = 117
+	Isc_spb_utf8_filename    = 118
+	Isc_spb_client_version   = 119
+	Isc_spb_remote_protocol  = 120
+	Isc_spb_host_name        = 121
+	Isc_spb_os_user          = 122
+	Isc_spb_config           = 123
+	Isc_spb_expected_db      = 124
 
 	Isc_spb_connect_timeout       = 57 // isc_dpb_connect_timeout
 	Isc_spb_dummy_packet_interval = 58 // isc_dpb_dummy_packet_interval
