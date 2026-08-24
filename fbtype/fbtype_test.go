@@ -633,6 +633,50 @@ func TestMapScanPtrArrayWrapperRejectsLengthMismatch(t *testing.T) {
 	assert.Contains(t, err.Error(), "cannot scan array with length 2")
 }
 
+type nullRejectingArraySetter struct {
+	err error
+}
+
+func (s *nullRejectingArraySetter) SetDimensions([]fbtype.ArrayDimension) error {
+	return s.err
+}
+
+func (*nullRejectingArraySetter) ScanIndex(int) any {
+	return nil
+}
+
+func TestSQLScannerNilArrayTargetReturnsError(t *testing.T) {
+	tests := []struct {
+		name   string
+		target any
+	}{
+		{name: "untyped nil", target: nil},
+		{name: "slice pointer", target: (*[]int64)(nil)},
+		{name: "flat array pointer", target: (*fbtype.FlatArray[int64])(nil)},
+		{name: "array wrapper pointer", target: (*fbtype.Array[int64])(nil)},
+		{name: "custom setter pointer", target: (*nullRejectingArraySetter)(nil)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.NotPanics(t, func() {
+				err := fbtype.NewMap().SQLScanner(tt.target).Scan(nil)
+				require.Error(t, err)
+			})
+		})
+	}
+}
+
+func TestArrayScanNullPropagatesSetDimensionsError(t *testing.T) {
+	wantErr := fmt.Errorf("cannot represent NULL")
+	target := &nullRejectingArraySetter{err: wantErr}
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_ARRAY, 0, 0, 0)
+	typeMetadata.SetArrayMetadata(&fbtype.ArrayData{})
+
+	err := fbtype.NewMap().Scan(typeMetadata, nil, target)
+	require.ErrorIs(t, err, wantErr)
+}
+
 type scannerString string
 
 func (ss *scannerString) Scan(v any) error {
