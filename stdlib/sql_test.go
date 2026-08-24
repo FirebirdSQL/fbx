@@ -173,6 +173,51 @@ func TestStdlibBlobBinary(t *testing.T) {
 	})
 }
 
+func TestLazyBlobRemainsReadableAfterQueryRowReleasesConnection(t *testing.T) {
+	connString := os.Getenv("FBX_TEST_DATABASE")
+	if connString == "" {
+		t.Skip("FBX_TEST_DATABASE is not set")
+	}
+
+	ctx := context.Background()
+	config, err := fbx.ParseConfig(connString)
+	require.NoError(t, err)
+
+	config.MaxInlineBlobSize = 0
+	db := stdlib.OpenDB(*config)
+	db.SetMaxIdleConns(0)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	_, err = db.ExecContext(ctx, `
+recreate table stdlib_blob_query_row_lease (
+	id integer primary key,
+	data blob sub_type 0
+)`)
+	require.NoError(t, err)
+
+	want := bytes.Repeat([]byte("lazy-blob-lease-regression\n"), 8192)
+	_, err = db.ExecContext(
+		ctx,
+		"insert into stdlib_blob_query_row_lease(id, data) values (?, ?)",
+		1,
+		bytes.NewReader(want),
+	)
+	require.NoError(t, err)
+
+	var blob stdlib.Blob
+	err = db.QueryRowContext(
+		ctx,
+		"select data from stdlib_blob_query_row_lease where id = ?",
+		1,
+	).Scan(&blob)
+	require.NoError(t, err)
+	require.Zero(t, db.Stats().OpenConnections, "QueryRow.Scan must release the connection lease")
+
+	got, err := blob.Bytes()
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
 func TestStdlibBlobWithArray(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
 		_, err := db.Exec("recreate table stdlib_blob_array(id integer primary key, data blob sub_type 0, numbers bigint[3])")

@@ -942,31 +942,21 @@ func (r *Rows) Close() error {
 	return r.rows.Err()
 }
 
-// scanBlobReaders scans BLOB columns into lazy readers and skips other columns.
-func scanBlobReaders(rows fbx.Rows, blobColumns []bool) ([]io.ReadCloser, error) {
-	readers := make([]io.ReadCloser, len(blobColumns))
+// scanBlobValues materializes BLOB columns while rows still owns the connection.
+func scanBlobValues(rows fbx.Rows, blobColumns []bool) ([][]byte, error) {
+	values := make([][]byte, len(blobColumns))
 	scanTargets := make([]any, len(blobColumns))
 	for i, isBlob := range blobColumns {
 		if isBlob {
-			scanTargets[i] = &readers[i]
+			scanTargets[i] = &values[i]
 		}
 	}
 
 	if err := rows.Scan(scanTargets...); err != nil {
-		closeBlobReaders(readers)
 		return nil, err
 	}
 
-	return readers, nil
-}
-
-// closeBlobReaders closes any BLOB readers that were not returned to database/sql.
-func closeBlobReaders(readers []io.ReadCloser) {
-	for _, reader := range readers {
-		if reader != nil {
-			_ = reader.Close()
-		}
-	}
+	return values, nil
 }
 
 // Next implements [driver.Rows].
@@ -1147,29 +1137,18 @@ func (r *Rows) Next(dest []driver.Value) (err error) {
 		}
 	}
 
-	var blobReaders []io.ReadCloser
-	var keepBlobReaders bool
+	var blobValues [][]byte
 	if r.hasBlobCols {
-		blobReaders, err = scanBlobReaders(r.rows, r.blobColumns)
+		blobValues, err = scanBlobValues(r.rows, r.blobColumns)
 		if err != nil {
 			return err
 		}
-		defer func() {
-			if !keepBlobReaders {
-				closeBlobReaders(blobReaders)
-			}
-		}()
 	}
 
 	for i, rv := range r.rows.RawValues() {
 		if rv != nil {
 			if r.blobColumns[i] {
-				reader := blobReaders[i]
-				if reader == nil {
-					dest[i] = nil
-					continue
-				}
-				blobValue, err := buildBlobValue(reader, &fieldDescriptions[i], r.conn)
+				blobValue, err := buildBlobValue(blobValues[i], &fieldDescriptions[i])
 				if err != nil {
 					return err
 				}
@@ -1186,7 +1165,6 @@ func (r *Rows) Next(dest []driver.Value) (err error) {
 		}
 	}
 
-	keepBlobReaders = true
 	return nil
 }
 
