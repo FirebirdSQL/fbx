@@ -678,8 +678,8 @@ type Stmt struct {
 
 var errStmtClosed = errors.New("stdlib: statement is closed")
 
-// Close implements [driver.Stmt]. The shared native statement is deallocated
-// after the last Stmt that references it is closed.
+// Close implements [driver.Stmt]. It releases this Stmt's reference and attempts
+// to deallocate the shared native statement after the last reference is closed.
 func (s *Stmt) Close() error {
 	if s.closed {
 		return nil
@@ -699,17 +699,10 @@ func (s *Stmt) Close() error {
 		return nil
 	}
 
-	if err := s.conn.conn.Deallocate(ctx, s.sd.SQL); err != nil {
-		if s.conn.conn.IsClosed() {
-			delete(s.conn.psRefCounts, s.sd)
-			s.closed = true
-		}
-		return err
-	}
-
+	err := s.conn.conn.Deallocate(ctx, s.sd.SQL)
 	delete(s.conn.psRefCounts, s.sd)
 	s.closed = true
-	return nil
+	return err
 }
 
 // NumInput implements [driver.Stmt] and reports the number of positional
