@@ -1091,7 +1091,7 @@ func (r *Rows) Next(dest []driver.Value) (err error) {
 
 					var array fbtype.ArraySQLScanner
 					var err error
-					array.ArrayBuffer = src
+					array.ArrayBuffer = slices.Clone(src)
 					array.ArrayData, err = fbtype.NewArrayData(fd.ArrayData.TypeId,
 						fd.ArrayData.SubType,
 						fd.ArrayData.Length,

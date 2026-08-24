@@ -693,6 +693,48 @@ func TestConnQueryScanGoArrayNullClearsDestination(t *testing.T) {
 	})
 }
 
+func TestConnQueryArrayDriverValueOwnsFetchBuffer(t *testing.T) {
+	config, err := fbx.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	config.FetchBatchSize = 1
+
+	db := stdlib.OpenDB(*config)
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(0)
+	defer closeDB(t, db)
+
+	_, err = db.Exec(`recreate table scan_array_buffer_lifetime (
+		id integer not null primary key,
+		array bigint[3] not null
+	)`)
+	require.NoError(t, err)
+	_, err = db.Exec("insert into scan_array_buffer_lifetime values (?, ?)", 1, []int64{1, 2, 3})
+	require.NoError(t, err)
+	_, err = db.Exec("insert into scan_array_buffer_lifetime values (?, ?)", 2, []int64{10, 20, 30})
+	require.NoError(t, err)
+
+	rows, err := db.Query("select array from scan_array_buffer_lifetime order by id")
+	require.NoError(t, err)
+	defer rows.Close()
+
+	require.True(t, rows.Next())
+	var firstRaw any
+	require.NoError(t, rows.Scan(&firstRaw))
+	first, ok := firstRaw.(fbtype.ArraySQLScanner)
+	require.True(t, ok)
+	firstBuffer := bytes.Clone(first.ArrayBuffer)
+
+	require.True(t, rows.Next())
+	var secondRaw any
+	require.NoError(t, rows.Scan(&secondRaw))
+	require.IsType(t, fbtype.ArraySQLScanner{}, secondRaw)
+
+	require.Equal(t, firstBuffer, first.ArrayBuffer)
+	var firstValues []int64
+	require.NoError(t, fbtype.NewMap().SQLScanner(&firstValues).Scan(first))
+	require.Equal(t, []int64{1, 2, 3}, firstValues)
+}
+
 func TestConnQueryScanArray(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
 		_, err := db.Exec("recreate table scan_array_test (id integer primary key, array bigint[3])")
