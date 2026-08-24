@@ -8,7 +8,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	gitlab.com/nyarla/go-crypt v0.0.0-20160106005555-d9a5dc2b789b
 	golang.org/x/sync v0.22.0
-	golang.org/x/text v0.38.0
+	golang.org/x/text v0.41.0
 	modernc.org/mathutil v1.7.1
 )
 
