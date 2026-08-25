@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/big"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -184,6 +185,16 @@ func TestNumericCodec(t *testing.T) {
 					Test:   eqNum("1234567890123456789"),
 				},
 				{
+					Param:  mustParseNumeric(t, "99999999999999999999999999999999999999"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("99999999999999999999999999999999999999"),
+				},
+				{
+					Param:  mustParseNumeric(t, "-99999999999999999999999999999999999999"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("-99999999999999999999999999999999999999"),
+				},
+				{
 					Param:  mustParseNumeric(t, "170141183460469231731687303715884105727"),
 					Result: new(fbtype.Numeric),
 					Test:   eqNum("170141183460469231731687303715884105727"),
@@ -192,6 +203,56 @@ func TestNumericCodec(t *testing.T) {
 					Param:  mustParseNumeric(t, "-170141183460469231731687303715884105728"),
 					Result: new(fbtype.Numeric),
 					Test:   eqNum("-170141183460469231731687303715884105728"),
+				},
+			},
+		},
+		{
+			typeName: "numeric(23,5)",
+			tests: []fbxtest.ValueRoundTripTest{
+				{
+					Param:  mustParseNumeric(t, "999999999999999999.99999"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("999999999999999999.99999"),
+				},
+				{
+					Param:  mustParseNumeric(t, "-999999999999999999.99999"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("-999999999999999999.99999"),
+				},
+				{
+					Param:  mustParseNumeric(t, "1701411834604692317316873037158841.05727"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("1701411834604692317316873037158841.05727"),
+				},
+				{
+					Param:  mustParseNumeric(t, "-1701411834604692317316873037158841.05728"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("-1701411834604692317316873037158841.05728"),
+				},
+			},
+		},
+		{
+			typeName: "numeric(12,11)",
+			tests: []fbxtest.ValueRoundTripTest{
+				{
+					Param:  mustParseNumeric(t, "9.99999999999"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("9.99999999999"),
+				},
+				{
+					Param:  mustParseNumeric(t, "-9.99999999999"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("-9.99999999999"),
+				},
+				{
+					Param:  mustParseNumeric(t, "92233720.36854775807"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("92233720.36854775807"),
+				},
+				{
+					Param:  mustParseNumeric(t, "-92233720.36854775808"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("-92233720.36854775808"),
 				},
 			},
 		},
@@ -404,7 +465,7 @@ func TestNumericCodec(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.typeName, func(t *testing.T) {
-			if strings.HasPrefix(c.typeName, "numeric(38,") {
+			if strings.HasPrefix(c.typeName, "numeric(38,") || strings.HasPrefix(c.typeName, "numeric(23,") {
 				defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
 					if getServerMajorVersionForConn(ctx, tb, conn) <= 3 {
 						t.Skip(c.typeName + " is not supported by server engine version <= 3")
@@ -494,6 +555,109 @@ func TestNumericScanScientificExact(t *testing.T) {
 			assert.Equal(t, tt.want, got.String())
 		})
 	}
+}
+
+func TestParseNumericRejectsUnsupportedExponent(t *testing.T) {
+	for _, src := range []string{
+		"0e-39",
+		"0e-2147483648",
+		"000e-40",
+		"1e-39",
+		"1e-2147483648",
+		"1e2147483647",
+		"2e38",
+		"1e9223372036854775807",
+		"1e9223372036854775808",
+	} {
+		t.Run(src, func(t *testing.T) {
+			_, err := fbtype.ParseNumeric(src)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestParseNumericCombinesExponentsBeforeValidation(t *testing.T) {
+	tests := []struct {
+		src  string
+		want string
+	}{
+		{
+			src:  "0.000000000001e50",
+			want: "1" + strings.Repeat("0", 38),
+		},
+		{
+			src:  "100e-40",
+			want: "0." + strings.Repeat("0", 37) + "1",
+		},
+		{
+			src:  "0.00",
+			want: "0.00",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.src, func(t *testing.T) {
+			n, err := fbtype.ParseNumeric(tt.src)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, n.String())
+		})
+	}
+}
+
+func TestNumericManualUnsupportedExponentReturnsErrors(t *testing.T) {
+	for _, exp := range []int32{math.MinInt32, math.MaxInt32} {
+		t.Run(strconv.FormatInt(int64(exp), 10), func(t *testing.T) {
+			n := fbtype.Numeric{Int: big.NewInt(1), Exp: exp, Valid: true}
+
+			assert.Contains(t, n.String(), "<invalid Numeric:")
+
+			_, err := n.Value()
+			require.Error(t, err)
+
+			_, err = n.NumericValue()
+			require.Error(t, err)
+
+			_, err = n.Float64Value()
+			require.Error(t, err)
+
+			_, err = n.Int64Value()
+			require.Error(t, err)
+
+			_, err = json.Marshal(n)
+			require.Error(t, err)
+
+			_, err = fbtype.EncodeNumericBinaryFB(nil, n, 0, 16)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestNumericInt64ValueRescalesBeforeRangeCheck(t *testing.T) {
+	n := fbtype.Numeric{
+		Int:   mustBigInt(t, "92233720368547758070"),
+		Exp:   -1,
+		Valid: true,
+	}
+
+	got, err := n.Int64Value()
+	require.NoError(t, err)
+	assert.Equal(t, fbtype.Int8{Int64: math.MaxInt64, Valid: true}, got)
+}
+
+func TestNumericRoundingRejectsManualExtremeExponent(t *testing.T) {
+	n := fbtype.Numeric{Int: big.NewInt(1), Exp: math.MinInt32, Valid: true}
+
+	_, err := fbtype.EncodeNumericBinaryFBRoundHalfAwayFromZero(nil, n, -38, 16)
+	require.Error(t, err)
+}
+
+func TestNumericFloatRoundingHandlesExtremeNegativeExponent(t *testing.T) {
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_INT128, 1, 16, -38)
+
+	buf, err := m.Encode(typeMetadata, math.SmallestNonzeroFloat64, nil)
+	require.NoError(t, err)
+	assert.Equal(t, make([]byte, 16), buf)
 }
 
 func TestNumericScanSupportsDatabaseSQLValuesAndClearsOnError(t *testing.T) {
