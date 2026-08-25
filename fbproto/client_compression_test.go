@@ -34,6 +34,67 @@ type blockingCompressionReader struct {
 	closedDuringRead atomic.Bool
 }
 
+type blockingFirstRead struct {
+	reader      io.Reader
+	readStarted chan struct{}
+	releaseRead chan struct{}
+	startOnce   sync.Once
+	releaseOnce sync.Once
+}
+
+func newBlockingFirstRead(reader io.Reader) *blockingFirstRead {
+	return &blockingFirstRead{
+		reader:      reader,
+		readStarted: make(chan struct{}),
+		releaseRead: make(chan struct{}),
+	}
+}
+
+func (r *blockingFirstRead) Read(buf []byte) (int, error) {
+	r.startOnce.Do(func() {
+		close(r.readStarted)
+		<-r.releaseRead
+	})
+	return r.reader.Read(buf)
+}
+
+func (r *blockingFirstRead) release() {
+	r.releaseOnce.Do(func() { close(r.releaseRead) })
+}
+
+type armableBlockingWriter struct {
+	writer       io.Writer
+	armed        atomic.Bool
+	writeStarted chan struct{}
+	releaseWrite chan struct{}
+	startOnce    sync.Once
+	releaseOnce  sync.Once
+}
+
+func newArmableBlockingWriter(writer io.Writer) *armableBlockingWriter {
+	return &armableBlockingWriter{
+		writer:       writer,
+		writeStarted: make(chan struct{}),
+		releaseWrite: make(chan struct{}),
+	}
+}
+
+func (w *armableBlockingWriter) Write(buf []byte) (int, error) {
+	if w.armed.Load() {
+		w.startOnce.Do(func() { close(w.writeStarted) })
+		<-w.releaseWrite
+	}
+	return w.writer.Write(buf)
+}
+
+func (w *armableBlockingWriter) arm() {
+	w.armed.Store(true)
+}
+
+func (w *armableBlockingWriter) release() {
+	w.releaseOnce.Do(func() { close(w.releaseWrite) })
+}
+
 func newBlockingCompressionReader() *blockingCompressionReader {
 	return &blockingCompressionReader{
 		readStarted: make(chan struct{}),
@@ -232,9 +293,9 @@ func TestCloseCompressionDefersReaderCloseUntilReadCompletes(t *testing.T) {
 
 	blockingReader := newBlockingCompressionReader()
 	defer blockingReader.release()
-	client.compressionMu.Lock()
-	client.decompressor = blockingReader
-	client.compressionMu.Unlock()
+	client.compression.stateMu.Lock()
+	client.compression.decompressor = blockingReader
+	client.compression.stateMu.Unlock()
 
 	readDone := make(chan error, 1)
 	go func() {
@@ -268,14 +329,19 @@ func TestCloseCompressionDefersReaderCloseUntilReadCompletes(t *testing.T) {
 	default:
 	}
 
-	waitStarted := make(chan struct{})
-	waitDone := make(chan struct{})
-	go func() {
-		close(waitStarted)
-		client.WaitForCompressionRead()
-		close(waitDone)
-	}()
-	<-waitStarted
+	const waiterCount = 2
+	waitStarted := make(chan struct{}, waiterCount)
+	waitDone := make(chan struct{}, waiterCount)
+	for range waiterCount {
+		go func() {
+			waitStarted <- struct{}{}
+			client.WaitForCompressionRead()
+			waitDone <- struct{}{}
+		}()
+	}
+	for range waiterCount {
+		<-waitStarted
+	}
 	select {
 	case <-waitDone:
 		blockingReader.release()
@@ -297,12 +363,127 @@ func TestCloseCompressionDefersReaderCloseUntilReadCompletes(t *testing.T) {
 		t.Fatal("decompressor was not closed after the read completed")
 	}
 
-	select {
-	case <-waitDone:
-	case <-time.After(time.Second):
-		t.Fatal("WaitForCompressionRead did not return after the read completed")
+	for range waiterCount {
+		select {
+		case <-waitDone:
+		case <-time.After(time.Second):
+			t.Fatal("WaitForCompressionRead did not return after the read completed")
+		}
 	}
 	require.False(t, closedBeforeReadCompleted)
 	require.False(t, blockingReader.closedDuringRead.Load())
 	require.False(t, client.CompressionEnabled())
+}
+
+func TestCloseCompressionDefersReaderCloseDuringInitialization(t *testing.T) {
+	var wire bytes.Buffer
+	compressor := zlib.NewWriter(&wire)
+	_, err := compressor.Write(bytes.Repeat([]byte("response "), 128))
+	require.NoError(t, err)
+	require.NoError(t, compressor.Close())
+
+	transport := newBlockingFirstRead(bytes.NewReader(wire.Bytes()))
+	defer transport.release()
+	client := NewClient(transport, io.Discard, nil)
+	require.NoError(t, client.EnableCompression())
+
+	readDone := make(chan error, 1)
+	go func() {
+		_, err := client.Read(make([]byte, 1))
+		readDone <- err
+	}()
+
+	select {
+	case <-transport.readStarted:
+	case <-time.After(time.Second):
+		t.Fatal("zlib reader initialization did not start")
+	}
+
+	closeDone := make(chan error, 1)
+	go func() {
+		closeDone <- client.CloseCompression()
+	}()
+	select {
+	case err := <-closeDone:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("CloseCompression blocked during zlib reader initialization")
+	}
+
+	waitStarted := make(chan struct{})
+	waitDone := make(chan struct{})
+	go func() {
+		close(waitStarted)
+		client.WaitForCompressionRead()
+		close(waitDone)
+	}()
+	<-waitStarted
+	select {
+	case <-waitDone:
+		transport.release()
+		t.Fatal("compression cleanup completed during zlib reader initialization")
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	transport.release()
+	select {
+	case err := <-readDone:
+		require.ErrorIs(t, err, net.ErrClosed)
+	case <-time.After(time.Second):
+		t.Fatal("compressed read did not finish")
+	}
+	select {
+	case <-waitDone:
+	case <-time.After(time.Second):
+		t.Fatal("compression cleanup did not finish")
+	}
+}
+
+func TestCloseCompressionWaitsForActiveCompressedWrite(t *testing.T) {
+	transport := newArmableBlockingWriter(io.Discard)
+	defer transport.release()
+	client := NewClient(nil, transport, nil)
+	require.NoError(t, client.EnableCompression())
+
+	_, err := client.Write([]byte("request"))
+	require.NoError(t, err)
+	transport.arm()
+
+	flushDone := make(chan error, 1)
+	go func() {
+		flushDone <- client.Flush()
+	}()
+	select {
+	case <-transport.writeStarted:
+	case <-time.After(time.Second):
+		t.Fatal("compressed write did not block on the transport")
+	}
+
+	closeDone := make(chan error, 1)
+	closeStarted := make(chan struct{})
+	go func() {
+		close(closeStarted)
+		closeDone <- client.CloseCompression()
+	}()
+	<-closeStarted
+	select {
+	case <-closeDone:
+		transport.release()
+		t.Fatal("CloseCompression completed during an active compressed write")
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	transport.release()
+	select {
+	case err := <-flushDone:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("compressed write did not finish")
+	}
+	select {
+	case err := <-closeDone:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("CloseCompression did not finish")
+	}
 }

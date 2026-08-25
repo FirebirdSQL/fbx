@@ -2,57 +2,29 @@ package fbproto
 
 import (
 	"bytes"
-	"compress/zlib"
 	"fmt"
 	"io"
-	"net"
-	"sync"
 )
 
 type Client struct {
-	Encoding *Encoding
-	reader   io.Reader
-	writer   io.Writer
-	plugin   string
-	codec    StreamCodec
-	// Reads and compressed writes use separate locks so a blocked write cannot
-	// prevent the reader from draining the peer's response.
-	readMu             sync.Mutex
-	compressionWriteMu sync.Mutex
-	// compressionMu protects compression negotiation and read-side lifecycle.
-	// It is never held while reading from the transport.
-	compressionMu       sync.Mutex
-	compressionEnabled  bool
-	compressionClosed   bool
-	compressionRead     bool
-	compressionReadDone chan struct{}
-	compressionDirty    bool
-	compressor          *zlib.Writer
-	decompressor        io.ReadCloser
-	xdrReader           *XDRReader
-	xdrWriter           *XDRWriter
-	rowScratch          rowScratch
-	tracer              *tracer
-	lazyCounter         int
-	reusable            reusableServerMessages
-	inlineBlobHandler   func(*OpInlineBlob)
-	inlineBlobAlloc     func(int) []byte
-	inlineBlobCache     *inlineBlobCache
-	inlineBlobPool      *inlineBlobPool
+	Encoding          *Encoding
+	reader            io.Reader
+	writer            io.Writer
+	plugin            string
+	codec             StreamCodec
+	compression       *compressionStream
+	xdrReader         *XDRReader
+	xdrWriter         *XDRWriter
+	rowScratch        rowScratch
+	tracer            *tracer
+	lazyCounter       int
+	reusable          reusableServerMessages
+	inlineBlobHandler func(*OpInlineBlob)
+	inlineBlobAlloc   func(int) []byte
+	inlineBlobCache   *inlineBlobCache
+	inlineBlobPool    *inlineBlobPool
 
 	writeScratch []byte
-}
-
-type readerFunc func([]byte) (int, error)
-
-func (f readerFunc) Read(buf []byte) (int, error) {
-	return f(buf)
-}
-
-type writerFunc func([]byte) (int, error)
-
-func (f writerFunc) Write(buf []byte) (int, error) {
-	return f(buf)
 }
 
 type reusableServerMessages struct {
@@ -82,6 +54,7 @@ func NewClient(r io.Reader, w io.Writer, encoding *Encoding) *Client {
 	c.writer = w
 	c.xdrReader = NewXDRReader(&c)
 	c.xdrWriter = NewXDRWriter(&c)
+	c.compression = newCompressionStream(c.readTransport, c.writeTransport, c.flushTransport)
 	c.Encoding = encoding
 	c.reusable.condAccept.Encoding = encoding
 	c.reusable.dataAccept.Encoding = encoding
@@ -101,141 +74,6 @@ func (c *Client) LazyCounter() int {
 func (c *Client) Rebind(r io.Reader, w io.Writer) {
 	c.reader = r
 	c.writer = w
-}
-
-// EnableCompression enables streaming zlib compression for subsequent wire data.
-func (c *Client) EnableCompression() error {
-	c.compressionWriteMu.Lock()
-	defer c.compressionWriteMu.Unlock()
-	c.compressionMu.Lock()
-	defer c.compressionMu.Unlock()
-
-	if c.compressionEnabled {
-		return nil
-	}
-	if c.compressionClosed {
-		return net.ErrClosed
-	}
-
-	c.compressor = zlib.NewWriter(writerFunc(c.writeTransport))
-	c.compressionEnabled = true
-	return nil
-}
-
-// CompressionEnabled reports whether wire compression is enabled.
-func (c *Client) CompressionEnabled() bool {
-	if c == nil {
-		return false
-	}
-	c.compressionMu.Lock()
-	defer c.compressionMu.Unlock()
-	return c.compressionEnabled
-}
-
-func (c *Client) flushCompression() error {
-	c.compressionWriteMu.Lock()
-	defer c.compressionWriteMu.Unlock()
-	if c.compressionClosedState() {
-		return net.ErrClosed
-	}
-	return c.flushCompressionLocked()
-}
-
-func (c *Client) flushCompressionLocked() error {
-	if c.compressor == nil || !c.compressionDirty {
-		return nil
-	}
-	if err := c.compressor.Flush(); err != nil {
-		return err
-	}
-	c.compressionDirty = false
-	return nil
-}
-
-// Flush emits all compressed data and then flushes the underlying writer, if it supports flushing.
-func (c *Client) Flush() error {
-	c.compressionWriteMu.Lock()
-	defer c.compressionWriteMu.Unlock()
-
-	if c.compressionClosedState() {
-		return net.ErrClosed
-	}
-	if err := c.flushCompressionLocked(); err != nil {
-		return err
-	}
-	if flusher, ok := c.writer.(interface{ Flush() error }); ok {
-		return flusher.Flush()
-	}
-	return nil
-}
-
-// CloseCompression finalizes the compressed stream and releases its resources.
-// It flushes the underlying writer but does not close the underlying transport.
-// If a read is in progress, that read closes the decompressor before returning.
-// Further compression or I/O operations on the Client fail with [net.ErrClosed].
-func (c *Client) CloseCompression() error {
-	if c == nil {
-		return nil
-	}
-
-	c.compressionWriteMu.Lock()
-	c.compressionMu.Lock()
-	if !c.compressionEnabled {
-		c.compressionMu.Unlock()
-		c.compressionWriteMu.Unlock()
-		return nil
-	}
-
-	compressor := c.compressor
-	c.compressor = nil
-	c.compressionEnabled = false
-	c.compressionClosed = true
-	c.compressionDirty = false
-
-	var decompressor io.ReadCloser
-	if !c.compressionRead {
-		decompressor = c.decompressor
-		c.decompressor = nil
-	}
-	c.compressionMu.Unlock()
-
-	var resultErr error
-	if compressor != nil {
-		resultErr = compressor.Close()
-	}
-	if flusher, ok := c.writer.(interface{ Flush() error }); ok {
-		if err := flusher.Flush(); resultErr == nil {
-			resultErr = err
-		}
-	}
-	c.compressionWriteMu.Unlock()
-	if decompressor != nil {
-		if err := decompressor.Close(); resultErr == nil {
-			resultErr = err
-		}
-	}
-	return resultErr
-}
-
-// WaitForCompressionRead waits for an in-progress compressed read and its
-// decompressor cleanup. The underlying transport should be closed first so a
-// blocked read can return.
-func (c *Client) WaitForCompressionRead() {
-	if c == nil {
-		return
-	}
-
-	c.compressionMu.Lock()
-	if !c.compressionRead {
-		c.compressionMu.Unlock()
-		return
-	}
-	if c.compressionReadDone == nil {
-		c.compressionReadDone = make(chan struct{})
-	}
-	done := c.compressionReadDone
-	c.compressionMu.Unlock()
-	<-done
 }
 
 // SetCodec sets the active wire encryption codec.
@@ -337,59 +175,7 @@ func (c *Client) ReleaseInlineBlobData(data []byte) {
 }
 
 func (c *Client) Read(buf []byte) (n int, err error) {
-	c.readMu.Lock()
-	defer c.readMu.Unlock()
-
-	c.compressionMu.Lock()
-	if c.compressionClosed {
-		c.compressionMu.Unlock()
-		return 0, net.ErrClosed
-	}
-	if !c.compressionEnabled {
-		c.compressionMu.Unlock()
-		return c.readTransport(buf)
-	}
-
-	c.compressionRead = true
-	decompressor := c.decompressor
-	c.compressionMu.Unlock()
-	defer c.finishCompressionRead()
-
-	if decompressor == nil {
-		// zlib.NewReader consumes the stream header, so delay it until the
-		// server is expected to have sent compressed data.
-		decompressor, err = zlib.NewReader(readerFunc(c.readTransport))
-		if err != nil {
-			return 0, err
-		}
-
-		c.compressionMu.Lock()
-		c.decompressor = decompressor
-		c.compressionMu.Unlock()
-	}
-	return decompressor.Read(buf)
-}
-
-func (c *Client) finishCompressionRead() {
-	c.compressionMu.Lock()
-	var decompressor io.ReadCloser
-	if c.compressionClosed {
-		decompressor = c.decompressor
-		c.decompressor = nil
-	}
-	c.compressionMu.Unlock()
-
-	if decompressor != nil {
-		_ = decompressor.Close()
-	}
-
-	c.compressionMu.Lock()
-	c.compressionRead = false
-	if done := c.compressionReadDone; done != nil {
-		close(done)
-		c.compressionReadDone = nil
-	}
-	c.compressionMu.Unlock()
+	return c.compression.read(buf)
 }
 
 func (c *Client) readTransport(buf []byte) (n int, err error) {
@@ -405,26 +191,14 @@ func (c *Client) readTransport(buf []byte) (n int, err error) {
 }
 
 func (c *Client) Write(buf []byte) (n int, err error) {
-	c.compressionWriteMu.Lock()
-	defer c.compressionWriteMu.Unlock()
-
-	if c.compressionClosedState() {
-		return 0, net.ErrClosed
-	}
-	if c.compressor != nil {
-		n, err = c.compressor.Write(buf)
-		if n > 0 {
-			c.compressionDirty = true
-		}
-		return n, err
-	}
-	return c.writeTransport(buf)
+	return c.compression.write(buf)
 }
 
-func (c *Client) compressionClosedState() bool {
-	c.compressionMu.Lock()
-	defer c.compressionMu.Unlock()
-	return c.compressionClosed
+func (c *Client) flushTransport() error {
+	if flusher, ok := c.writer.(interface{ Flush() error }); ok {
+		return flusher.Flush()
+	}
+	return nil
 }
 
 func (c *Client) writeTransport(buf []byte) (n int, err error) {
