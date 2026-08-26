@@ -314,6 +314,39 @@ func TestInt128CodecEncodesNumericWithTruncation(t *testing.T) {
 	require.Nil(t, buf)
 }
 
+func TestInt128ArrayEncodingRejectsTypedNilValuerElements(t *testing.T) {
+	m := fbtype.NewMap()
+	arrayData, err := fbtype.NewArrayData(
+		fbproto.SQL_TYPE_INT128,
+		0,
+		16,
+		0,
+		[]map[string]int{{"Lower": 1, "Upper": 2}},
+	)
+	require.NoError(t, err)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_ARRAY, 0, 16, 0)
+	typeMetadata.SetArrayMetadata(arrayData)
+
+	validInt128 := fbtype.Int128{Int: *big.NewInt(42), Valid: true}
+	validNumeric := mustParseNumeric(t, "84")
+	validInt8 := fbtype.Int8{Int64: 126, Valid: true}
+	tests := []struct {
+		name  string
+		value any
+	}{
+		{name: "Int128Valuer", value: []*fbtype.Int128{&validInt128, nil}},
+		{name: "NumericValuer", value: []*fbtype.Numeric{&validNumeric, nil}},
+		{name: "Int64Valuer", value: []*fbtype.Int8{&validInt8, nil}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := m.Encode(typeMetadata, tt.value, nil)
+			require.ErrorContains(t, err, "cannot encode NULL array element at index 1")
+		})
+	}
+}
+
 func TestInt128ScanClearsDestinationOnError(t *testing.T) {
 	tooLarge := new(big.Int).Lsh(big.NewInt(1), 127)
 

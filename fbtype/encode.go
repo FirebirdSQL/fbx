@@ -650,6 +650,20 @@ func (m *Map) Encode(typeMetadata TypeMetadata, value any, buf []byte) (newBuf [
 
 var valuerReflectType = reflect.TypeFor[driver.Valuer]()
 
+func isNilValue(value any) bool {
+	if value == nil {
+		return true
+	}
+
+	refVal := reflect.ValueOf(value)
+	switch refVal.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Map, reflect.Ptr, reflect.UnsafePointer, reflect.Interface, reflect.Slice:
+		return refVal.IsNil()
+	default:
+		return false
+	}
+}
+
 // isNilDriverValuer reports whether value is nil and whether a nil
 // driver.Valuer should still have Value called.
 func isNilDriverValuer(value any) (isNil bool, callNilDriverValuer bool) {
