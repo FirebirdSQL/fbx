@@ -10,6 +10,8 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
+
+	"rdb.red-soft.ru/fbx/fbproto"
 )
 
 var big10 *big.Int = big.NewInt(10)
@@ -353,42 +355,73 @@ func (n Numeric) numberTextBytes() []byte {
 // NumericCodec encodes and decodes Firebird NUMERIC and DECIMAL values.
 type NumericCodec struct{}
 
+func validateNumericTypeMetadata(typeMetadata TypeMetadata) error {
+	var expectedLength uint32
+	switch typeMetadata.TypeID {
+	case fbproto.SQL_TYPE_SHORT:
+		expectedLength = 2
+	case fbproto.SQL_TYPE_LONG:
+		expectedLength = 4
+	case fbproto.SQL_TYPE_INT64:
+		expectedLength = 8
+	case fbproto.SQL_TYPE_INT128:
+		expectedLength = 16
+	default:
+		return fmt.Errorf("unsupported numeric type ID: %d", typeMetadata.TypeID)
+	}
+
+	if typeMetadata.Length != expectedLength {
+		return fmt.Errorf(
+			"invalid storage length %d for numeric type ID %d: expected %d",
+			typeMetadata.Length, typeMetadata.TypeID, expectedLength,
+		)
+	}
+
+	return nil
+}
+
 // PlanEncode returns an encode plan for supported Firebird NUMERIC and DECIMAL input values.
 func (NumericCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	switch value.(type) {
 	case NumericValuer:
-		return encodePlanNumericCodecBinaryNumericValuer{scale: typeMetadata.Scale, length: typeMetadata.Length}
+		return encodePlanNumericCodecBinaryNumericValuer{typeMetadata: typeMetadata}
 	case Float64Valuer:
-		return encodePlanNumericCodecBinaryFloat64Valuer{scale: typeMetadata.Scale, length: typeMetadata.Length}
+		return encodePlanNumericCodecBinaryFloat64Valuer{typeMetadata: typeMetadata}
 	case Int64Valuer:
-		return encodePlanNumericCodecBinaryInt64Valuer{scale: typeMetadata.Scale, length: typeMetadata.Length}
+		return encodePlanNumericCodecBinaryInt64Valuer{typeMetadata: typeMetadata}
 	case string:
-		return encodePlanNumericCodecTextString{scale: typeMetadata.Scale, length: typeMetadata.Length}
+		return encodePlanNumericCodecTextString{typeMetadata: typeMetadata}
 	}
 
 	return nil
 }
 
 type encodePlanNumericCodecBinaryNumericValuer struct {
-	scale  int32
-	length uint32
+	typeMetadata TypeMetadata
 }
 
 func (p encodePlanNumericCodecBinaryNumericValuer) Encode(value any, buf []byte) ([]byte, error) {
+	if err := validateNumericTypeMetadata(p.typeMetadata); err != nil {
+		return nil, err
+	}
+
 	n, err := value.(NumericValuer).NumericValue()
 	if err != nil {
 		return nil, err
 	}
 
-	return EncodeNumericBinaryFB(buf, n, p.scale, p.length)
+	return EncodeNumericBinaryFB(buf, n, p.typeMetadata.Scale, p.typeMetadata.Length)
 }
 
 type encodePlanNumericCodecBinaryFloat64Valuer struct {
-	scale  int32
-	length uint32
+	typeMetadata TypeMetadata
 }
 
 func (p encodePlanNumericCodecBinaryFloat64Valuer) Encode(value any, buf []byte) ([]byte, error) {
+	if err := validateNumericTypeMetadata(p.typeMetadata); err != nil {
+		return nil, err
+	}
+
 	v, err := value.(Float64Valuer).Float64Value()
 	if err != nil {
 		return nil, err
@@ -403,15 +436,18 @@ func (p encodePlanNumericCodecBinaryFloat64Valuer) Encode(value any, buf []byte)
 	}
 	n.Valid = true
 
-	return encodeNumericBinaryFBRoundHalfAwayFromZero(buf, n, p.scale, p.length)
+	return encodeNumericBinaryFBRoundHalfAwayFromZero(buf, n, p.typeMetadata.Scale, p.typeMetadata.Length)
 }
 
 type encodePlanNumericCodecBinaryInt64Valuer struct {
-	scale  int32
-	length uint32
+	typeMetadata TypeMetadata
 }
 
 func (p encodePlanNumericCodecBinaryInt64Valuer) Encode(value any, buf []byte) ([]byte, error) {
+	if err := validateNumericTypeMetadata(p.typeMetadata); err != nil {
+		return nil, err
+	}
+
 	v, err := value.(Int64Valuer).Int64Value()
 	if err != nil {
 		return nil, err
@@ -426,15 +462,18 @@ func (p encodePlanNumericCodecBinaryInt64Valuer) Encode(value any, buf []byte) (
 		Valid: true,
 	}
 
-	return EncodeNumericBinaryFB(buf, n, p.scale, p.length)
+	return EncodeNumericBinaryFB(buf, n, p.typeMetadata.Scale, p.typeMetadata.Length)
 }
 
 type encodePlanNumericCodecTextString struct {
-	scale  int32
-	length uint32
+	typeMetadata TypeMetadata
 }
 
 func (p encodePlanNumericCodecTextString) Encode(value any, buf []byte) ([]byte, error) {
+	if err := validateNumericTypeMetadata(p.typeMetadata); err != nil {
+		return nil, err
+	}
+
 	s := value.(string)
 
 	var n Numeric
@@ -443,7 +482,7 @@ func (p encodePlanNumericCodecTextString) Encode(value any, buf []byte) ([]byte,
 	}
 	n.Valid = true
 
-	return EncodeNumericBinaryFB(buf, n, p.scale, p.length)
+	return EncodeNumericBinaryFB(buf, n, p.typeMetadata.Scale, p.typeMetadata.Length)
 }
 
 func encodeNumericText(n Numeric, buf []byte) (newBuf []byte, err error) {
@@ -463,53 +502,28 @@ func encodeNumericText(n Numeric, buf []byte) (newBuf []byte, err error) {
 func (NumericCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
 	switch target.(type) {
 	case *Numeric:
-		return scanPlanBinaryNumericToNumeric{
-			scale:  typeMetadata.Scale,
-			length: typeMetadata.Length,
-		}
+		return scanPlanBinaryNumericToNumeric{typeMetadata: typeMetadata}
 	case NumericScanner:
-		return scanPlanBinaryNumericToNumericScanner{
-			scale:  typeMetadata.Scale,
-			length: typeMetadata.Length,
-		}
+		return scanPlanBinaryNumericToNumericScanner{typeMetadata: typeMetadata}
 	case Float64Scanner:
-		return scanPlanBinaryNumericToFloat64Scanner{
-			scale:  typeMetadata.Scale,
-			length: typeMetadata.Length,
-		}
+		return scanPlanBinaryNumericToFloat64Scanner{typeMetadata: typeMetadata}
 	case Int64Scanner:
-		return scanPlanBinaryNumericToInt64Scanner{
-			scale:  typeMetadata.Scale,
-			length: typeMetadata.Length,
-		}
+		return scanPlanBinaryNumericToInt64Scanner{typeMetadata: typeMetadata}
 	case TextScanner:
-		return scanPlanBinaryNumericToTextScanner{
-			scale:  typeMetadata.Scale,
-			length: typeMetadata.Length,
-		}
+		return scanPlanBinaryNumericToTextScanner{typeMetadata: typeMetadata}
 	case *string:
-		return scanPlanBinaryNumericToString{
-			scale:  typeMetadata.Scale,
-			length: typeMetadata.Length,
-		}
+		return scanPlanBinaryNumericToString{typeMetadata: typeMetadata}
 	case *float64:
-		return scanPlanBinaryNumericToFloat64Ptr{
-			scale:  typeMetadata.Scale,
-			length: typeMetadata.Length,
-		}
+		return scanPlanBinaryNumericToFloat64Ptr{typeMetadata: typeMetadata}
 	case *int64:
-		return scanPlanBinaryNumericToInt64Ptr{
-			scale:  typeMetadata.Scale,
-			length: typeMetadata.Length,
-		}
+		return scanPlanBinaryNumericToInt64Ptr{typeMetadata: typeMetadata}
 	}
 
 	return nil
 }
 
 type scanPlanBinaryNumericToFloat64Ptr struct {
-	scale  int32
-	length uint32
+	typeMetadata TypeMetadata
 }
 
 func (p scanPlanBinaryNumericToFloat64Ptr) Scan(src []byte, dst any) error {
@@ -523,7 +537,7 @@ func (p scanPlanBinaryNumericToFloat64Ptr) Scan(src []byte, dst any) error {
 	}
 
 	var n Numeric
-	if err := DecodeNumericBinaryFB(&n, src, p.scale); err != nil {
+	if err := decodeNumericBinaryFBForScan(&n, src, p.typeMetadata); err != nil {
 		return err
 	}
 
@@ -537,8 +551,7 @@ func (p scanPlanBinaryNumericToFloat64Ptr) Scan(src []byte, dst any) error {
 }
 
 type scanPlanBinaryNumericToInt64Ptr struct {
-	scale  int32
-	length uint32
+	typeMetadata TypeMetadata
 }
 
 func (p scanPlanBinaryNumericToInt64Ptr) Scan(src []byte, dst any) error {
@@ -552,7 +565,7 @@ func (p scanPlanBinaryNumericToInt64Ptr) Scan(src []byte, dst any) error {
 	}
 
 	var n Numeric
-	if err := DecodeNumericBinaryFB(&n, src, p.scale); err != nil {
+	if err := decodeNumericBinaryFBForScan(&n, src, p.typeMetadata); err != nil {
 		return err
 	}
 
@@ -570,8 +583,7 @@ func (p scanPlanBinaryNumericToInt64Ptr) Scan(src []byte, dst any) error {
 }
 
 type scanPlanBinaryNumericToNumeric struct {
-	scale  int32
-	length uint32
+	typeMetadata TypeMetadata
 }
 
 func (p scanPlanBinaryNumericToNumeric) Scan(src []byte, dst any) error {
@@ -586,7 +598,7 @@ func (p scanPlanBinaryNumericToNumeric) Scan(src []byte, dst any) error {
 	}
 
 	var n Numeric
-	if err := DecodeNumericBinaryFB(&n, src, p.scale); err != nil {
+	if err := decodeNumericBinaryFBForScan(&n, src, p.typeMetadata); err != nil {
 		*nPtr = Numeric{}
 		return err
 	}
@@ -596,8 +608,7 @@ func (p scanPlanBinaryNumericToNumeric) Scan(src []byte, dst any) error {
 }
 
 type scanPlanBinaryNumericToNumericScanner struct {
-	scale  int32
-	length uint32
+	typeMetadata TypeMetadata
 }
 
 func (p scanPlanBinaryNumericToNumericScanner) Scan(src []byte, dst any) error {
@@ -611,7 +622,7 @@ func (p scanPlanBinaryNumericToNumericScanner) Scan(src []byte, dst any) error {
 	}
 
 	var n Numeric
-	if err := DecodeNumericBinaryFB(&n, src, p.scale); err != nil {
+	if err := decodeNumericBinaryFBForScan(&n, src, p.typeMetadata); err != nil {
 		return err
 	}
 
@@ -619,8 +630,7 @@ func (p scanPlanBinaryNumericToNumericScanner) Scan(src []byte, dst any) error {
 }
 
 type scanPlanBinaryNumericToFloat64Scanner struct {
-	scale  int32
-	length uint32
+	typeMetadata TypeMetadata
 }
 
 func (p scanPlanBinaryNumericToFloat64Scanner) Scan(src []byte, dst any) error {
@@ -634,7 +644,7 @@ func (p scanPlanBinaryNumericToFloat64Scanner) Scan(src []byte, dst any) error {
 	}
 
 	var n Numeric
-	if err := DecodeNumericBinaryFB(&n, src, p.scale); err != nil {
+	if err := decodeNumericBinaryFBForScan(&n, src, p.typeMetadata); err != nil {
 		return err
 	}
 
@@ -647,8 +657,7 @@ func (p scanPlanBinaryNumericToFloat64Scanner) Scan(src []byte, dst any) error {
 }
 
 type scanPlanBinaryNumericToInt64Scanner struct {
-	scale  int32
-	length uint32
+	typeMetadata TypeMetadata
 }
 
 func (p scanPlanBinaryNumericToInt64Scanner) Scan(src []byte, dst any) error {
@@ -662,7 +671,7 @@ func (p scanPlanBinaryNumericToInt64Scanner) Scan(src []byte, dst any) error {
 	}
 
 	var n Numeric
-	if err := DecodeNumericBinaryFB(&n, src, p.scale); err != nil {
+	if err := decodeNumericBinaryFBForScan(&n, src, p.typeMetadata); err != nil {
 		return err
 	}
 
@@ -679,8 +688,7 @@ func (p scanPlanBinaryNumericToInt64Scanner) Scan(src []byte, dst any) error {
 }
 
 type scanPlanBinaryNumericToTextScanner struct {
-	scale  int32
-	length uint32
+	typeMetadata TypeMetadata
 }
 
 func (p scanPlanBinaryNumericToTextScanner) Scan(src []byte, dst any) error {
@@ -694,7 +702,7 @@ func (p scanPlanBinaryNumericToTextScanner) Scan(src []byte, dst any) error {
 	}
 
 	var n Numeric
-	if err := DecodeNumericBinaryFB(&n, src, p.scale); err != nil {
+	if err := decodeNumericBinaryFBForScan(&n, src, p.typeMetadata); err != nil {
 		return err
 	}
 
@@ -707,8 +715,7 @@ func (p scanPlanBinaryNumericToTextScanner) Scan(src []byte, dst any) error {
 }
 
 type scanPlanBinaryNumericToString struct {
-	scale  int32
-	length uint32
+	typeMetadata TypeMetadata
 }
 
 func (p scanPlanBinaryNumericToString) Scan(src []byte, dst any) error {
@@ -722,7 +729,7 @@ func (p scanPlanBinaryNumericToString) Scan(src []byte, dst any) error {
 	}
 
 	var n Numeric
-	if err := DecodeNumericBinaryFB(&n, src, p.scale); err != nil {
+	if err := decodeNumericBinaryFBForScan(&n, src, p.typeMetadata); err != nil {
 		return err
 	}
 
@@ -803,6 +810,46 @@ func DecodeNumericBinaryFB(dst *Numeric, src []byte, scale int32) error {
 		Exp:   scale,
 		Valid: true,
 	}
+	return nil
+}
+
+func decodeNumericBinaryFBForScan(dst *Numeric, src []byte, typeMetadata TypeMetadata) error {
+	if err := validateNumericTypeMetadata(typeMetadata); err != nil {
+		*dst = Numeric{}
+		return err
+	}
+
+	storageLength := typeMetadata.Length
+	expectedWireLength := int(storageLength)
+	switch storageLength {
+	case 2:
+		expectedWireLength = 4
+	case 4, 8, 16:
+	default:
+		*dst = Numeric{}
+		return fmt.Errorf("unsupported numeric storage length: %d", storageLength)
+	}
+
+	if len(src) != expectedWireLength {
+		*dst = Numeric{}
+		return fmt.Errorf(
+			"invalid wire length %d for numeric storage length %d: expected %d",
+			len(src), storageLength, expectedWireLength,
+		)
+	}
+
+	if err := DecodeNumericBinaryFB(dst, src, typeMetadata.Scale); err != nil {
+		return err
+	}
+
+	if storageLength == 2 {
+		coefficient := dst.Int.Int64()
+		if coefficient < math.MinInt16 || coefficient > math.MaxInt16 {
+			*dst = Numeric{}
+			return fmt.Errorf("numeric coefficient %d is out of range for SMALLINT storage", coefficient)
+		}
+	}
+
 	return nil
 }
 
