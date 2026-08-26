@@ -97,13 +97,13 @@ func (n *Numeric) ScanInt64(v Int8) error {
 	return nil
 }
 
-// Int64Value implements [Int64Valuer].
+// Int64Value implements [Int64Valuer]. It discards any fractional part toward zero.
 func (n Numeric) Int64Value() (Int8, error) {
 	if !n.Valid {
 		return Int8{}, nil
 	}
 
-	bi, err := n.toBigInt()
+	bi, err := n.toTruncatedBigInt()
 	if err != nil {
 		return Int8{}, err
 	}
@@ -145,36 +145,16 @@ func (n *Numeric) toBigInt() (*big.Int, error) {
 	if err := validateNumericRepresentable(*n); err != nil {
 		return nil, err
 	}
-	if n.Int == nil || n.Int.Sign() == 0 {
-		return big.NewInt(0), nil
+
+	return rescaleNumeric(*n, 0, numericExact)
+}
+
+func (n *Numeric) toTruncatedBigInt() (*big.Int, error) {
+	if err := validateNumericRepresentable(*n); err != nil {
+		return nil, err
 	}
 
-	if n.Exp == 0 {
-		return n.Int, nil
-	}
-
-	num := &big.Int{}
-	num.Set(n.Int)
-	if n.Exp > 0 {
-		mul := &big.Int{}
-		mul.Exp(big10, big.NewInt(int64(n.Exp)), nil)
-		num.Mul(num, mul)
-		return num, nil
-	}
-
-	divisorExp := -int64(n.Exp)
-	if divisorExp > int64(decimalDigitCount(n.Int)) {
-		return nil, fmt.Errorf("numeric with exponent %d cannot be converted to an integer exactly", n.Exp)
-	}
-
-	div := &big.Int{}
-	div.Exp(big10, big.NewInt(divisorExp), nil)
-	remainder := &big.Int{}
-	num.DivMod(num, div, remainder)
-	if remainder.Sign() != 0 {
-		return nil, fmt.Errorf("numeric with exponent %d cannot be converted to an integer exactly", n.Exp)
-	}
-	return num, nil
+	return rescaleNumeric(*n, 0, numericTruncate)
 }
 
 func parseDecimalMantissa(str string) (n *big.Int, exp int32, err error) {
@@ -919,6 +899,7 @@ type numericRoundingMode uint8
 
 const (
 	numericExact numericRoundingMode = iota
+	numericTruncate
 	numericRoundHalfAwayFromZero
 )
 
@@ -963,6 +944,9 @@ func rescaleNumeric(n Numeric, scale int32, mode numericRoundingMode) (*big.Int,
 	}
 	if mode == numericExact {
 		return nil, fmt.Errorf("numeric value cannot be represented exactly with scale %d", scale)
+	}
+	if mode == numericTruncate {
+		return q, nil
 	}
 
 	twiceRemainder := new(big.Int).Lsh(new(big.Int).Abs(rem), 1)

@@ -644,6 +644,108 @@ func TestNumericInt64ValueRescalesBeforeRangeCheck(t *testing.T) {
 	assert.Equal(t, fbtype.Int8{Int64: math.MaxInt64, Valid: true}, got)
 }
 
+func TestNumericInt64ValueTruncatesFractionTowardZero(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want int64
+	}{
+		{name: "positive", src: "123.987", want: 123},
+		{name: "negative", src: "-123.987", want: -123},
+		{name: "positive below one", src: "0.999", want: 0},
+		{name: "negative above minus one", src: "-0.999", want: 0},
+		{name: "positive int64 maximum", src: "9223372036854775807.9", want: math.MaxInt64},
+		{name: "negative int64 minimum", src: "-9223372036854775808.9", want: math.MinInt64},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			n := mustParseNumeric(t, tt.src)
+
+			got, err := n.Int64Value()
+			require.NoError(t, err)
+			assert.Equal(t, fbtype.Int8{Int64: tt.want, Valid: true}, got)
+		})
+	}
+}
+
+func TestNumericInt64ValueChecksRangeAfterTruncation(t *testing.T) {
+	for _, src := range []string{
+		"9223372036854775808.1",
+		"-9223372036854775809.1",
+	} {
+		t.Run(src, func(t *testing.T) {
+			n := mustParseNumeric(t, src)
+
+			_, err := n.Int64Value()
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestNumericEncodesToIntegerCodecsWithTruncation(t *testing.T) {
+	tests := []struct {
+		name         string
+		typeMetadata fbtype.TypeMetadata
+		src          string
+		want         int64
+	}{
+		{
+			name:         "smallint",
+			typeMetadata: fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 0, 4, 0),
+			src:          "32767.9",
+			want:         math.MaxInt16,
+		},
+		{
+			name:         "integer",
+			typeMetadata: fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 0, 4, 0),
+			src:          "-2147483648.9",
+			want:         math.MinInt32,
+		},
+		{
+			name:         "bigint",
+			typeMetadata: fbtype.NewTypeMetadata(fbproto.SQL_TYPE_INT64, 0, 8, 0),
+			src:          "9223372036854775807.9",
+			want:         math.MaxInt64,
+		},
+	}
+
+	m := fbtype.NewMap()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf, err := m.Encode(tt.typeMetadata, mustParseNumeric(t, tt.src), nil)
+			require.NoError(t, err)
+
+			var got int64
+			err = m.Scan(tt.typeMetadata, buf, &got)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestNumericEncodeToIntegerCodecChecksRangeAfterTruncation(t *testing.T) {
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 0, 4, 0)
+
+	_, err := m.Encode(typeMetadata, mustParseNumeric(t, "32768.1"), nil)
+	require.Error(t, err)
+}
+
+func TestNumericScanToInt64StillRequiresExactValue(t *testing.T) {
+	n := mustParseNumeric(t, "123.45")
+	buf, err := fbtype.EncodeNumericBinaryFB(nil, n, -2, 4)
+	require.NoError(t, err)
+
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 1, 4, -2)
+	var dst int64
+	plan := fbtype.NumericCodec{}.PlanScan(nil, typeMetadata, &dst)
+	require.NotNil(t, plan)
+
+	err = plan.Scan(buf, &dst)
+	require.Error(t, err)
+}
+
 func TestNumericRoundingRejectsManualExtremeExponent(t *testing.T) {
 	n := fbtype.Numeric{Int: big.NewInt(1), Exp: math.MinInt32, Valid: true}
 
