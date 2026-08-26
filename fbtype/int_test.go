@@ -272,6 +272,38 @@ func TestInt8UnmarshalJSON(t *testing.T) {
 	}
 }
 
+func TestIntegerUnmarshalJSONClearsDestinationOnError(t *testing.T) {
+	t.Run("Int2", func(t *testing.T) {
+		got := fbtype.Int2{Int16: 42, Valid: true}
+		if err := got.UnmarshalJSON([]byte(`"bad"`)); err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if got != (fbtype.Int2{}) {
+			t.Fatalf("got = %#v, want zero value", got)
+		}
+	})
+
+	t.Run("Int4", func(t *testing.T) {
+		got := fbtype.Int4{Int32: 42, Valid: true}
+		if err := got.UnmarshalJSON([]byte(`"bad"`)); err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if got != (fbtype.Int4{}) {
+			t.Fatalf("got = %#v, want zero value", got)
+		}
+	})
+
+	t.Run("Int8", func(t *testing.T) {
+		got := fbtype.Int8{Int64: 42, Valid: true}
+		if err := got.UnmarshalJSON([]byte(`"bad"`)); err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if got != (fbtype.Int8{}) {
+			t.Fatalf("got = %#v, want zero value", got)
+		}
+	})
+}
+
 func TestSmallintEncodeRangeCheck(t *testing.T) {
 	m := fbtype.NewMap()
 	smallint := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 0, 2, 0)
@@ -387,7 +419,7 @@ func TestIntegerScanClearsDestinationOnError(t *testing.T) {
 	})
 }
 
-func TestIntegerStringScanPlansReportTargetTypeChanged(t *testing.T) {
+func TestIntegerScanPlansReportTargetTypeChangedBeforeReadingSource(t *testing.T) {
 	m := fbtype.NewMap()
 
 	int4Buf := make([]byte, 4)
@@ -396,35 +428,75 @@ func TestIntegerStringScanPlansReportTargetTypeChanged(t *testing.T) {
 	int8Buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(int8Buf, 42)
 
-	for _, tt := range []struct {
+	codecs := []struct {
 		name         string
 		typeMetadata fbtype.TypeMetadata
-		src          []byte
+		validSrc     []byte
 	}{
 		{
-			name:         "int4 to string",
+			name:         "int4",
 			typeMetadata: fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 0, 4, 0),
-			src:          int4Buf,
+			validSrc:     int4Buf,
 		},
 		{
-			name:         "int8 to string",
+			name:         "int8",
 			typeMetadata: fbtype.NewTypeMetadata(fbproto.SQL_TYPE_INT64, 0, 8, 0),
-			src:          int8Buf,
+			validSrc:     int8Buf,
 		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			var dst string
-			plan := m.PlanScan(tt.typeMetadata, &dst)
-			if plan == nil {
-				t.Fatalf("expected scan plan, got nil")
-			}
+	}
 
-			var wrongTarget int64
-			err := plan.Scan(tt.src, &wrongTarget)
-			if !errors.Is(err, fbtype.ErrScanTargetTypeChanged) {
-				t.Fatalf("error = %v, want ErrScanTargetTypeChanged", err)
+	targets := []struct {
+		name   string
+		target any
+	}{
+		{name: "int8", target: new(int8)},
+		{name: "uint8", target: new(uint8)},
+		{name: "int16", target: new(int16)},
+		{name: "uint16", target: new(uint16)},
+		{name: "int32", target: new(int32)},
+		{name: "uint32", target: new(uint32)},
+		{name: "int64", target: new(int64)},
+		{name: "uint64", target: new(uint64)},
+		{name: "int", target: new(int)},
+		{name: "uint", target: new(uint)},
+		{name: "Int64Scanner", target: new(fbtype.Int8)},
+		{name: "string", target: new(string)},
+		{name: "TextScanner", target: new(fbtype.Text)},
+	}
+
+	for _, codec := range codecs {
+		t.Run(codec.name, func(t *testing.T) {
+			for _, target := range targets {
+				t.Run(target.name, func(t *testing.T) {
+					plan := m.PlanScan(codec.typeMetadata, target.target)
+					if plan == nil {
+						t.Fatal("expected scan plan, got nil")
+					}
+
+					for _, src := range [][]byte{codec.validSrc, nil, {1, 2, 3}} {
+						err := plan.Scan(src, new(float64))
+						if !errors.Is(err, fbtype.ErrScanTargetTypeChanged) {
+							t.Fatalf("source %v: error = %v, want ErrScanTargetTypeChanged", src, err)
+						}
+					}
+				})
 			}
 		})
+	}
+}
+
+func TestInt4DecodeDatabaseSQLValueChecksSmallintRange(t *testing.T) {
+	m := fbtype.NewMap()
+	metadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 0, 2, 0)
+	src := make([]byte, 4)
+	binary.BigEndian.PutUint32(src, uint32(65536))
+
+	value, err := (fbtype.Int4Codec{}).DecodeDatabaseSQLValue(m, metadata, src)
+	if err == nil {
+		t.Fatalf("value = %v, expected range error", value)
+	}
+	if !strings.Contains(err.Error(), "greater than maximum value for int16") {
+		t.Fatalf("error = %q, want SMALLINT range error", err)
 	}
 }
 

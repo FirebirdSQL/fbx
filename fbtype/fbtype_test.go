@@ -233,7 +233,7 @@ func TestMapScanSmallintIntoAnyReturnsInt16(t *testing.T) {
 	m := fbtype.NewMap()
 	var got any
 
-	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 0, 4, 0)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 0, 2, 0)
 	err := m.Scan(typeMetadata, []byte{0, 0, 0, 1}, &got)
 
 	require.NoError(t, err)
@@ -797,7 +797,7 @@ func TestMapScanSQLScannerAndPointerPointerTargets(t *testing.T) {
 	src := []byte{0, 0, 0, 42}
 	var v fbCustomInt
 
-	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 0, 4, 0)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 0, 2, 0)
 	plan := m.PlanScan(typeMetadata, &v)
 	err := plan.Scan(src, &v)
 	require.NoError(t, err)
@@ -831,7 +831,7 @@ func TestPlanScanNilInterfaceTargetFails(t *testing.T) {
 	m := fbtype.NewMap()
 	src := []byte{0, 0, 0, 42}
 	var v interface{}
-	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 0, 4, 0)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 0, 2, 0)
 	plan := m.PlanScan(typeMetadata, v)
 	err := plan.Scan(src, v)
 	assert.Error(t, err)

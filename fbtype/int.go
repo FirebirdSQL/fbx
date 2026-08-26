@@ -124,6 +124,7 @@ func (dst *Int2) UnmarshalJSON(b []byte) error {
 	var n *int16
 	err := json.Unmarshal(b, &n)
 	if err != nil {
+		*dst = Int2{}
 		return err
 	}
 
@@ -234,6 +235,7 @@ func (dst *Int4) UnmarshalJSON(b []byte) error {
 	var n *int32
 	err := json.Unmarshal(b, &n)
 	if err != nil {
+		*dst = Int4{}
 		return err
 	}
 
@@ -362,6 +364,14 @@ func (c Int4Codec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src
 		return nil, nil
 	}
 
+	if typeMetadata.TypeID == fbproto.SQL_TYPE_SHORT {
+		var n int16
+		if err := codecScan(c, m, typeMetadata, src, &n); err != nil {
+			return nil, err
+		}
+		return int64(n), nil
+	}
+
 	var n int64
 	err := codecScan(c, m, typeMetadata, src, &n)
 	if err != nil {
@@ -396,17 +406,17 @@ func (c Int4Codec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (a
 type scanPlanBinaryInt4ToInt8 struct{}
 
 func (scanPlanBinaryInt4ToInt8) Scan(src []byte, dst any) error {
+	p, ok := dst.(*int8)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
 	if len(src) != 4 {
 		return fmt.Errorf("invalid length for int4: %v", len(src))
-	}
-
-	p, ok := (dst).(*int8)
-	if !ok {
-		return ErrScanTargetTypeChanged
 	}
 
 	n := int32(binary.BigEndian.Uint32(src))
@@ -424,17 +434,17 @@ func (scanPlanBinaryInt4ToInt8) Scan(src []byte, dst any) error {
 type scanPlanBinaryInt4ToUint8 struct{}
 
 func (scanPlanBinaryInt4ToUint8) Scan(src []byte, dst any) error {
+	p, ok := dst.(*uint8)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
 	if len(src) != 4 {
 		return fmt.Errorf("invalid length for int4: %v", len(src))
-	}
-
-	p, ok := (dst).(*uint8)
-	if !ok {
-		return ErrScanTargetTypeChanged
 	}
 
 	n := int32(binary.BigEndian.Uint32(src))
@@ -454,17 +464,17 @@ func (scanPlanBinaryInt4ToUint8) Scan(src []byte, dst any) error {
 type scanPlanBinaryInt4ToInt16 struct{}
 
 func (scanPlanBinaryInt4ToInt16) Scan(src []byte, dst any) error {
+	p, ok := dst.(*int16)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
 	if len(src) != 4 {
 		return fmt.Errorf("invalid length for int4: %v", len(src))
-	}
-
-	p, ok := (dst).(*int16)
-	if !ok {
-		return ErrScanTargetTypeChanged
 	}
 
 	n := int32(binary.BigEndian.Uint32(src))
@@ -482,17 +492,17 @@ func (scanPlanBinaryInt4ToInt16) Scan(src []byte, dst any) error {
 type scanPlanBinaryInt4ToUint16 struct{}
 
 func (scanPlanBinaryInt4ToUint16) Scan(src []byte, dst any) error {
+	p, ok := dst.(*uint16)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
 	if len(src) != 4 {
 		return fmt.Errorf("invalid length for int4: %v", len(src))
-	}
-
-	p, ok := (dst).(*uint16)
-	if !ok {
-		return ErrScanTargetTypeChanged
 	}
 
 	n := int32(binary.BigEndian.Uint32(src))
@@ -512,17 +522,17 @@ func (scanPlanBinaryInt4ToUint16) Scan(src []byte, dst any) error {
 type scanPlanBinaryInt4ToInt32 struct{}
 
 func (scanPlanBinaryInt4ToInt32) Scan(src []byte, dst any) error {
+	p, ok := dst.(*int32)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
 	if len(src) != 4 {
 		return fmt.Errorf("invalid length for int4: %v", len(src))
-	}
-
-	p, ok := (dst).(*int32)
-	if !ok {
-		return ErrScanTargetTypeChanged
 	}
 
 	*p = int32(binary.BigEndian.Uint32(src))
@@ -533,17 +543,17 @@ func (scanPlanBinaryInt4ToInt32) Scan(src []byte, dst any) error {
 type scanPlanBinaryInt4ToUint32 struct{}
 
 func (scanPlanBinaryInt4ToUint32) Scan(src []byte, dst any) error {
+	p, ok := dst.(*uint32)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
 	if len(src) != 4 {
 		return fmt.Errorf("invalid length for int4: %v", len(src))
-	}
-
-	p, ok := (dst).(*uint32)
-	if !ok {
-		return ErrScanTargetTypeChanged
 	}
 
 	n := int32(binary.BigEndian.Uint32(src))
@@ -559,17 +569,17 @@ func (scanPlanBinaryInt4ToUint32) Scan(src []byte, dst any) error {
 type scanPlanBinaryInt4ToInt64 struct{}
 
 func (scanPlanBinaryInt4ToInt64) Scan(src []byte, dst any) error {
+	p, ok := dst.(*int64)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
 	if len(src) != 4 {
 		return fmt.Errorf("invalid length for int4: %v", len(src))
-	}
-
-	p, ok := (dst).(*int64)
-	if !ok {
-		return ErrScanTargetTypeChanged
 	}
 
 	*p = int64(int32(binary.BigEndian.Uint32(src)))
@@ -580,17 +590,17 @@ func (scanPlanBinaryInt4ToInt64) Scan(src []byte, dst any) error {
 type scanPlanBinaryInt4ToUint64 struct{}
 
 func (scanPlanBinaryInt4ToUint64) Scan(src []byte, dst any) error {
+	p, ok := dst.(*uint64)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
 	if len(src) != 4 {
 		return fmt.Errorf("invalid length for int4: %v", len(src))
-	}
-
-	p, ok := (dst).(*uint64)
-	if !ok {
-		return ErrScanTargetTypeChanged
 	}
 
 	n := int32(binary.BigEndian.Uint32(src))
@@ -606,17 +616,17 @@ func (scanPlanBinaryInt4ToUint64) Scan(src []byte, dst any) error {
 type scanPlanBinaryInt4ToInt struct{}
 
 func (scanPlanBinaryInt4ToInt) Scan(src []byte, dst any) error {
+	p, ok := dst.(*int)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
 	if len(src) != 4 {
 		return fmt.Errorf("invalid length for int4: %v", len(src))
-	}
-
-	p, ok := (dst).(*int)
-	if !ok {
-		return ErrScanTargetTypeChanged
 	}
 
 	*p = int(int32(binary.BigEndian.Uint32(src)))
@@ -627,17 +637,17 @@ func (scanPlanBinaryInt4ToInt) Scan(src []byte, dst any) error {
 type scanPlanBinaryInt4ToUint struct{}
 
 func (scanPlanBinaryInt4ToUint) Scan(src []byte, dst any) error {
+	p, ok := dst.(*uint)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
 	if len(src) != 4 {
 		return fmt.Errorf("invalid length for int4: %v", len(src))
-	}
-
-	p, ok := (dst).(*uint)
-	if !ok {
-		return ErrScanTargetTypeChanged
 	}
 
 	n := int64(int32(binary.BigEndian.Uint32(src)))
@@ -795,6 +805,7 @@ func (dst *Int8) UnmarshalJSON(b []byte) error {
 	var n *int64
 	err := json.Unmarshal(b, &n)
 	if err != nil {
+		*dst = Int8{}
 		return err
 	}
 
@@ -922,17 +933,17 @@ func (c Int8Codec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (a
 type scanPlanBinaryInt8ToInt8 struct{}
 
 func (scanPlanBinaryInt8ToInt8) Scan(src []byte, dst any) error {
+	p, ok := dst.(*int8)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
 	if len(src) != 8 {
 		return fmt.Errorf("invalid length for int8: %v", len(src))
-	}
-
-	p, ok := (dst).(*int8)
-	if !ok {
-		return ErrScanTargetTypeChanged
 	}
 
 	n := int64(binary.BigEndian.Uint64(src))
@@ -950,17 +961,17 @@ func (scanPlanBinaryInt8ToInt8) Scan(src []byte, dst any) error {
 type scanPlanBinaryInt8ToUint8 struct{}
 
 func (scanPlanBinaryInt8ToUint8) Scan(src []byte, dst any) error {
+	p, ok := dst.(*uint8)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
 	if len(src) != 8 {
 		return fmt.Errorf("invalid length for int8: %v", len(src))
-	}
-
-	p, ok := (dst).(*uint8)
-	if !ok {
-		return ErrScanTargetTypeChanged
 	}
 
 	n := int64(binary.BigEndian.Uint64(src))
@@ -980,17 +991,17 @@ func (scanPlanBinaryInt8ToUint8) Scan(src []byte, dst any) error {
 type scanPlanBinaryInt8ToInt16 struct{}
 
 func (scanPlanBinaryInt8ToInt16) Scan(src []byte, dst any) error {
+	p, ok := dst.(*int16)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
 	if len(src) != 8 {
 		return fmt.Errorf("invalid length for int8: %v", len(src))
-	}
-
-	p, ok := (dst).(*int16)
-	if !ok {
-		return ErrScanTargetTypeChanged
 	}
 
 	n := int64(binary.BigEndian.Uint64(src))
@@ -1008,17 +1019,17 @@ func (scanPlanBinaryInt8ToInt16) Scan(src []byte, dst any) error {
 type scanPlanBinaryInt8ToUint16 struct{}
 
 func (scanPlanBinaryInt8ToUint16) Scan(src []byte, dst any) error {
+	p, ok := dst.(*uint16)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
 	if len(src) != 8 {
 		return fmt.Errorf("invalid length for int8: %v", len(src))
-	}
-
-	p, ok := (dst).(*uint16)
-	if !ok {
-		return ErrScanTargetTypeChanged
 	}
 
 	n := int64(binary.BigEndian.Uint64(src))
@@ -1038,17 +1049,17 @@ func (scanPlanBinaryInt8ToUint16) Scan(src []byte, dst any) error {
 type scanPlanBinaryInt8ToInt32 struct{}
 
 func (scanPlanBinaryInt8ToInt32) Scan(src []byte, dst any) error {
+	p, ok := dst.(*int32)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
 	if len(src) != 8 {
 		return fmt.Errorf("invalid length for int8: %v", len(src))
-	}
-
-	p, ok := (dst).(*int32)
-	if !ok {
-		return ErrScanTargetTypeChanged
 	}
 
 	n := int64(binary.BigEndian.Uint64(src))
@@ -1066,17 +1077,17 @@ func (scanPlanBinaryInt8ToInt32) Scan(src []byte, dst any) error {
 type scanPlanBinaryInt8ToUint32 struct{}
 
 func (scanPlanBinaryInt8ToUint32) Scan(src []byte, dst any) error {
+	p, ok := dst.(*uint32)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
 	if len(src) != 8 {
 		return fmt.Errorf("invalid length for int8: %v", len(src))
-	}
-
-	p, ok := (dst).(*uint32)
-	if !ok {
-		return ErrScanTargetTypeChanged
 	}
 
 	n := int64(binary.BigEndian.Uint64(src))
@@ -1096,17 +1107,17 @@ func (scanPlanBinaryInt8ToUint32) Scan(src []byte, dst any) error {
 type scanPlanBinaryInt8ToInt64 struct{}
 
 func (scanPlanBinaryInt8ToInt64) Scan(src []byte, dst any) error {
+	p, ok := dst.(*int64)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
 	if len(src) != 8 {
 		return fmt.Errorf("invalid length for int8: %v", len(src))
-	}
-
-	p, ok := (dst).(*int64)
-	if !ok {
-		return ErrScanTargetTypeChanged
 	}
 
 	*p = int64(binary.BigEndian.Uint64(src))
@@ -1117,17 +1128,17 @@ func (scanPlanBinaryInt8ToInt64) Scan(src []byte, dst any) error {
 type scanPlanBinaryInt8ToUint64 struct{}
 
 func (scanPlanBinaryInt8ToUint64) Scan(src []byte, dst any) error {
+	p, ok := dst.(*uint64)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
 	if len(src) != 8 {
 		return fmt.Errorf("invalid length for int8: %v", len(src))
-	}
-
-	p, ok := (dst).(*uint64)
-	if !ok {
-		return ErrScanTargetTypeChanged
 	}
 
 	n := int64(binary.BigEndian.Uint64(src))
@@ -1143,17 +1154,17 @@ func (scanPlanBinaryInt8ToUint64) Scan(src []byte, dst any) error {
 type scanPlanBinaryInt8ToInt struct{}
 
 func (scanPlanBinaryInt8ToInt) Scan(src []byte, dst any) error {
+	p, ok := dst.(*int)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
 	if len(src) != 8 {
 		return fmt.Errorf("invalid length for int8: %v", len(src))
-	}
-
-	p, ok := (dst).(*int)
-	if !ok {
-		return ErrScanTargetTypeChanged
 	}
 
 	n := int64(binary.BigEndian.Uint64(src))
@@ -1171,17 +1182,17 @@ func (scanPlanBinaryInt8ToInt) Scan(src []byte, dst any) error {
 type scanPlanBinaryInt8ToUint struct{}
 
 func (scanPlanBinaryInt8ToUint) Scan(src []byte, dst any) error {
+	p, ok := dst.(*uint)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
 	if len(src) != 8 {
 		return fmt.Errorf("invalid length for int8: %v", len(src))
-	}
-
-	p, ok := (dst).(*uint)
-	if !ok {
-		return ErrScanTargetTypeChanged
 	}
 
 	n := int64(binary.BigEndian.Uint64(src))
