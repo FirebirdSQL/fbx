@@ -177,12 +177,12 @@ const (
 	Isc_tpb_lock_timeout     = 21
 
 	// Service Parameter Block parameter
-	Isc_spb_version1          = 1
-	Isc_spb_current_version   = 2
-	Isc_spb_version           = Isc_spb_current_version
+	Isc_spb_version1        = 1
+	Isc_spb_current_version = 2
+	Isc_spb_version         = Isc_spb_current_version
 
 	// Isc_spb_version3 identifies a wide service attachment parameter buffer.
-	Isc_spb_version3          = 3
+	Isc_spb_version3 = 3
 
 	Isc_spb_user_name         = 28 // Isc_dpb_user_name
 	Isc_spb_sys_user_name     = 19 // isc_dpb_sys_user_name
@@ -200,19 +200,19 @@ const (
 	// Isc_spb_specific_auth_data carries plugin-specific authentication data.
 	Isc_spb_specific_auth_data = Isc_spb_trusted_auth
 
-	Isc_spb_process_name       = 112
-	Isc_spb_trusted_role       = 113
-	Isc_spb_verbint            = 114
-	Isc_spb_auth_block         = 115
-	Isc_spb_auth_plugin_name   = 116
-	Isc_spb_auth_plugin_list   = 117
-	Isc_spb_utf8_filename      = 118
-	Isc_spb_client_version     = 119
-	Isc_spb_remote_protocol    = 120
-	Isc_spb_host_name          = 121
-	Isc_spb_os_user            = 122
-	Isc_spb_config             = 123
-	Isc_spb_expected_db        = 124
+	Isc_spb_process_name     = 112
+	Isc_spb_trusted_role     = 113
+	Isc_spb_verbint          = 114
+	Isc_spb_auth_block       = 115
+	Isc_spb_auth_plugin_name = 116
+	Isc_spb_auth_plugin_list = 117
+	Isc_spb_utf8_filename    = 118
+	Isc_spb_client_version   = 119
+	Isc_spb_remote_protocol  = 120
+	Isc_spb_host_name        = 121
+	Isc_spb_os_user          = 122
+	Isc_spb_config           = 123
+	Isc_spb_expected_db      = 124
 
 	Isc_spb_connect_timeout       = 57 // isc_dpb_connect_timeout
 	Isc_spb_dummy_packet_interval = 58 // isc_dpb_dummy_packet_interval
@@ -268,38 +268,66 @@ const (
 	Isc_dpb_search_path           = 105
 
 	// backup
-	Isc_spb_bkp_file               = 5
-	Isc_spb_bkp_factor             = 6
-	Isc_spb_bkp_length             = 7
-	Isc_spb_bkp_parallel_workers   = 21
-	Isc_spb_bkp_ignore_checksums   = 0x01
-	Isc_spb_bkp_ignore_limbo       = 0x02
-	Isc_spb_bkp_metadata_only      = 0x04
-	Isc_spb_bkp_no_garbage_collect = 0x08
-	Isc_spb_bkp_old_descriptions   = 0x10
-	Isc_spb_bkp_non_transportable  = 0x20
-	Isc_spb_bkp_convert            = 0x40
-	Isc_spb_bkp_expand             = 0x80
-	Isc_spb_bkp_no_triggers        = 0x8000
-	Isc_spb_bkp_zip                = 0x010000
-	Isc_spb_bkp_compression        = 102
-	Isc_spb_bkp_replace            = 103
+	Isc_spb_bkp_file                = 5
+	Isc_spb_bkp_factor              = 6
+	Isc_spb_bkp_length              = 7
+	Isc_spb_bkp_skip_data           = 8
+	Isc_spb_bkp_stat                = 15
+	Isc_spb_bkp_keyholder           = 16
+	Isc_spb_bkp_keyname             = 17
+	Isc_spb_bkp_crypt               = 18
+	Isc_spb_bkp_include_data        = 19
+	Isc_spb_bkp_parallel_workers    = 21
+	Isc_spb_bkp_skip_schema_data    = 22
+	Isc_spb_bkp_include_schema_data = 23
+	Isc_spb_bkp_ignore_checksums    = 0x01
+	Isc_spb_bkp_ignore_limbo        = 0x02
+	Isc_spb_bkp_metadata_only       = 0x04
+	Isc_spb_bkp_no_garbage_collect  = 0x08
+	Isc_spb_bkp_old_descriptions    = 0x10
+	Isc_spb_bkp_non_transportable   = 0x20
+	Isc_spb_bkp_convert             = 0x40
+	Isc_spb_bkp_expand              = 0x80
+	Isc_spb_bkp_no_triggers         = 0x8000
+	Isc_spb_bkp_zip                 = 0x010000
+	Isc_spb_bkp_direct_io           = 0x020000
+	Isc_spb_bkp_compression         = 102
+	Isc_spb_bkp_replace             = 103
 
 	// restore
-	Isc_spb_res_buffers          = 9
-	Isc_spb_res_page_size        = 10
-	Isc_spb_res_length           = 11
-	Isc_spb_res_access_mode      = 12
-	Isc_spb_res_parallel_workers = Isc_spb_bkp_parallel_workers
-	Isc_spb_res_deactivate_idx   = 0x0100
-	Isc_spb_res_no_shadow        = 0x0200
-	Isc_spb_res_no_validity      = 0x0400
-	Isc_spb_res_one_at_a_time    = 0x0800
-	Isc_spb_res_replace          = 0x1000
-	Isc_spb_res_create           = 0x2000
-	Isc_spb_res_use_all_space    = 0x4000
-	Isc_spb_res_am_readonly      = Isc_spb_prp_am_readonly
-	Isc_spb_res_am_readwrite     = Isc_spb_prp_am_readwrite
+	Isc_spb_res_buffers             = 9
+	Isc_spb_res_page_size           = 10
+	Isc_spb_res_length              = 11
+	Isc_spb_res_access_mode         = 12
+	Isc_spb_res_fix_fss_data        = 13
+	Isc_spb_res_fix_fss_metadata    = 14
+	Isc_spb_res_skip_data           = Isc_spb_bkp_skip_data
+	Isc_spb_res_include_data        = Isc_spb_bkp_include_data
+	Isc_spb_res_skip_schema_data    = Isc_spb_bkp_skip_schema_data
+	Isc_spb_res_include_schema_data = Isc_spb_bkp_include_schema_data
+	Isc_spb_res_keyholder           = Isc_spb_bkp_keyholder
+	Isc_spb_res_keyname             = Isc_spb_bkp_keyname
+	Isc_spb_res_crypt               = Isc_spb_bkp_crypt
+	Isc_spb_res_stat                = Isc_spb_bkp_stat
+	Isc_spb_res_replica_mode        = 20
+	Isc_spb_res_parallel_workers    = Isc_spb_bkp_parallel_workers
+	Isc_spb_res_metadata_only       = Isc_spb_bkp_metadata_only
+	Isc_spb_res_deactivate_idx      = 0x0100
+	Isc_spb_res_no_shadow           = 0x0200
+	Isc_spb_res_no_validity         = 0x0400
+	Isc_spb_res_one_at_a_time       = 0x0800
+	Isc_spb_res_replace             = 0x1000
+	Isc_spb_res_create              = 0x2000
+	Isc_spb_res_use_all_space       = 0x4000
+	Isc_spb_res_direct_io           = Isc_spb_bkp_direct_io
+	Isc_spb_res_ts_original_paths   = 0x800000
+	Isc_spb_res_am_readonly         = Isc_spb_prp_am_readonly
+	Isc_spb_res_am_readwrite        = Isc_spb_prp_am_readwrite
+	Isc_spb_res_rm_none             = Isc_spb_prp_rm_none
+	Isc_spb_res_rm_readonly         = Isc_spb_prp_rm_readonly
+	Isc_spb_res_rm_readwrite        = Isc_spb_prp_rm_readwrite
+	Isc_spb_res_ts_mapping_file     = 120
+	Isc_spb_res_ts_path             = 121
 
 	// Parameters for isc_action_svc_nbak
 	Isc_spb_nbk_level         = 5
@@ -338,6 +366,11 @@ const (
 	Isc_spb_prp_sm_multi  = 1
 	Isc_spb_prp_sm_single = 2
 	Isc_spb_prp_sm_full   = 3
+
+	// Parameters for isc_spb_prp_replica_mode
+	Isc_spb_prp_rm_none      = 0
+	Isc_spb_prp_rm_readonly  = 1
+	Isc_spb_prp_rm_readwrite = 2
 
 	// Parameters for isc_action_svc_repair
 	Isc_spb_rpr_commit_trans         = 15
