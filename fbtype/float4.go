@@ -124,20 +124,6 @@ func (encodePlanFloat4CodecBinaryString) Encode(value any, buf []byte) ([]byte, 
 	return fbio.AppendUint32BE(buf, math.Float32bits(float32(n))), nil
 }
 
-type encodePlanTextFloat32 struct{}
-
-func (encodePlanTextFloat32) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	n := value.(float32)
-	return append(buf, strconv.FormatFloat(float64(n), 'f', -1, 32)...), nil
-}
-
-type encodePlanTextString struct{}
-
-func (encodePlanTextString) Encode(value any, buf []byte) ([]byte, error) {
-	s := value.(string)
-	return append(buf, s...), nil
-}
-
 type encodePlanFloat4CodecBinaryFloat64Valuer struct{}
 
 func (encodePlanFloat4CodecBinaryFloat64Valuer) Encode(value any, buf []byte) (newBuf []byte, err error) {

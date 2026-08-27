@@ -249,26 +249,6 @@ func (plan *scanPlanBinaryTimestampToString) Scan(src []byte, dst any) error {
 	return nil
 }
 
-type scanPlanTextTimestampToTimestampScanner struct{ location *time.Location }
-
-func (plan *scanPlanTextTimestampToTimestampScanner) Scan(src []byte, dst any) error {
-	scanner, ok := dst.(TimestampScanner)
-	if !ok {
-		return ErrScanTargetTypeChanged
-	}
-
-	if src == nil {
-		return scanner.ScanTimestamp(Timestamp{})
-	}
-
-	t, err := parseTimestampString(string(src), plan.location)
-	if err != nil {
-		return err
-	}
-
-	return scanner.ScanTimestamp(Timestamp{Time: t, Valid: true})
-}
-
 // DecodeDatabaseSQLValue decodes src into a database/sql driver value.
 func (c *TimestampCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
 	if src == nil {

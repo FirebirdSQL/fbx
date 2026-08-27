@@ -234,23 +234,6 @@ func (scanPlanBinaryUUIDToTextScanner) Scan(src []byte, dst any) error {
 	return scanner.ScanText(Text{String: encodeUUID(buf), Valid: true})
 }
 
-type scanPlanTextAnyToUUIDScanner struct{}
-
-func (scanPlanTextAnyToUUIDScanner) Scan(src []byte, dst any) error {
-	scanner := (dst).(UUIDScanner)
-
-	if src == nil {
-		return scanner.ScanUUID(UUID{})
-	}
-
-	buf, err := parseUUID(string(src))
-	if err != nil {
-		return err
-	}
-
-	return scanner.ScanUUID(UUID{Bytes: buf, Valid: true})
-}
-
 func (c UUIDCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil

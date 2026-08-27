@@ -146,27 +146,6 @@ func (encodePlanBoolCodecBinaryBool) Encode(value any, buf []byte) (newBuf []byt
 	return buf, nil
 }
 
-type encodePlanBoolCodecTextBoolValuer struct{}
-
-func (encodePlanBoolCodecTextBoolValuer) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	b, err := value.(BoolValuer).BoolValue()
-	if err != nil {
-		return nil, err
-	}
-
-	if !b.Valid {
-		return nil, nil
-	}
-
-	if b.Bool {
-		buf = append(buf, 't')
-	} else {
-		buf = append(buf, 'f')
-	}
-
-	return buf, nil
-}
-
 type encodePlanBoolCodecBinaryBoolValuer struct{}
 
 func (encodePlanBoolCodecBinaryBoolValuer) Encode(value any, buf []byte) (newBuf []byte, err error) {
@@ -183,20 +162,6 @@ func (encodePlanBoolCodecBinaryBoolValuer) Encode(value any, buf []byte) (newBuf
 		buf = append(buf, 1)
 	} else {
 		buf = append(buf, 0)
-	}
-
-	return buf, nil
-}
-
-type encodePlanBoolCodecTextBool struct{}
-
-func (encodePlanBoolCodecTextBool) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	v := value.(bool)
-
-	if v {
-		buf = append(buf, 'T', 'R', 'U', 'E')
-	} else {
-		buf = append(buf, 'F', 'A', 'L', 'S', 'E')
 	}
 
 	return buf, nil
@@ -253,32 +218,6 @@ func (scanPlanBinaryBoolToBool) Scan(src []byte, dst any) error {
 	return nil
 }
 
-type scanPlanTextAnyToBool struct{}
-
-func (scanPlanTextAnyToBool) Scan(src []byte, dst any) error {
-	if src == nil {
-		return fmt.Errorf("cannot scan NULL into %T", dst)
-	}
-
-	if len(src) == 0 {
-		return fmt.Errorf("cannot scan empty string into %T", dst)
-	}
-
-	p, ok := (dst).(*bool)
-	if !ok {
-		return ErrScanTargetTypeChanged
-	}
-
-	v, err := planTextToBool(src)
-	if err != nil {
-		return err
-	}
-
-	*p = v
-
-	return nil
-}
-
 type scanPlanBinaryBoolToBoolScanner struct{}
 
 func (scanPlanBinaryBoolToBoolScanner) Scan(src []byte, dst any) error {
@@ -322,30 +261,6 @@ func (scanPlanBinaryBoolToString) Scan(src []byte, dst any) error {
 	}
 
 	return nil
-}
-
-type scanPlanTextAnyToBoolScanner struct{}
-
-func (scanPlanTextAnyToBoolScanner) Scan(src []byte, dst any) error {
-	s, ok := (dst).(BoolScanner)
-	if !ok {
-		return ErrScanTargetTypeChanged
-	}
-
-	if src == nil {
-		return s.ScanBool(Bool{})
-	}
-
-	if len(src) == 0 {
-		return fmt.Errorf("cannot scan empty string into %T", dst)
-	}
-
-	v, err := planTextToBool(src)
-	if err != nil {
-		return err
-	}
-
-	return s.ScanBool(Bool{Bool: v, Valid: true})
 }
 
 func planTextToBool(src []byte) (bool, error) {
