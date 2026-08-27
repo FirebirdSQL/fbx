@@ -26,10 +26,11 @@ type TimestamptzValuer interface {
 
 // Timestamptz represents the Firebird TIMESTAMP WITH TIME ZONE type.
 //
-// Time contains the timestamp adjusted to the stored Firebird time zone. Valid is false when the value represents SQL NULL.
+// Time contains the timestamp adjusted to the stored Firebird time zone. Valid
+// is false when the value represents SQL NULL.
 type Timestamptz struct {
-	Time  time.Time // Time contains the timestamp adjusted to the stored Firebird time zone.
-	Valid bool      // Valid is false when the value represents SQL NULL.
+	Time  time.Time
+	Valid bool
 	tzRaw uint16
 }
 

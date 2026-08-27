@@ -27,12 +27,13 @@ type TimetzValuer interface {
 
 // Timetz represents the Firebird TIME WITH TIME ZONE type.
 //
-// Time contains the decoded time of day and time zone on Firebird's TIME WITH TIME ZONE base date,
-// 2020-01-01. The date is fixed only so Go can represent the value as time.Time; Firebird TIME WITH
-// TIME ZONE itself does not store a date. Valid is false when the value represents SQL NULL.
+// Time contains the decoded time of day and time zone on Firebird's TIME WITH
+// TIME ZONE base date, 2020-01-01. The date is fixed only so Go can represent
+// the value as time.Time; Firebird TIME WITH TIME ZONE itself does not store a
+// date. Valid is false when the value represents SQL NULL.
 type Timetz struct {
-	Time  time.Time // Time contains the decoded time of day and time zone on Firebird's 2020-01-01 base date.
-	Valid bool      // Valid is false when the value represents SQL NULL.
+	Time  time.Time
+	Valid bool
 	tzRaw uint16
 }
 

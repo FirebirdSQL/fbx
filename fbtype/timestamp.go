@@ -34,8 +34,8 @@ type TimestampValuer interface {
 // interpreted as wall-clock date/time when encoding; its location is not
 // converted to UTC. Valid is false when the value represents SQL NULL.
 type Timestamp struct {
-	Time  time.Time // Time contains the timestamp value.
-	Valid bool      // Valid is false when the value represents SQL NULL.
+	Time  time.Time
+	Valid bool
 }
 
 // ScanTimestamp implements [TimestampScanner].
@@ -123,8 +123,9 @@ func (ts *Timestamp) UnmarshalJSON(b []byte) error {
 
 // TimestampCodec encodes and decodes Firebird TIMESTAMP values.
 type TimestampCodec struct {
-	// ScanLocation is the location that the time is assumed to be in for scanning. This is different from
-	// TimestamptzCodec.ScanLocation in that this setting does change the instant in time that the timestamp represents.
+	// ScanLocation is the location assigned to decoded TIMESTAMP values. Because
+	// Firebird TIMESTAMP has no time zone, a non-nil ScanLocation preserves the
+	// stored wall-clock fields but changes the instant represented by time.Time.
 	ScanLocation *time.Location
 }
 

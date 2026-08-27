@@ -22,9 +22,12 @@ const (
 )
 
 var (
+	// timeAnchorDate is the arbitrary date used when Firebird TIME values must
+	// be represented as time.Time.
 	timeAnchorDate = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	// Firebird uses this date to resolve named time zones for TIME WITH TIME ZONE.
+	// timetzBaseDate is the Firebird base date used to resolve named time zones
+	// for TIME WITH TIME ZONE.
 	timetzBaseDate = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 )
 
@@ -72,12 +75,13 @@ type TimeValuer interface {
 
 // Time represents the Firebird TIME type.
 //
-// Microseconds contains the time of day as microseconds since midnight. Firebird stores TIME on the
-// wire as the number of 100-microsecond ticks since midnight, so values are truncated to that
-// precision when encoded. Valid is false when the value represents SQL NULL.
+// Microseconds contains the time of day as microseconds since midnight.
+// Firebird stores TIME on the wire as the number of 100-microsecond ticks since
+// midnight, so values are truncated to that precision when encoded. Valid is
+// false when the value represents SQL NULL.
 type Time struct {
-	Microseconds int64 // Microseconds since midnight.
-	Valid        bool  // Valid is false when the value represents SQL NULL.
+	Microseconds int64
+	Valid        bool
 }
 
 // ScanTime implements [TimeScanner].
@@ -316,7 +320,7 @@ func (scanPlanBinaryTimeToTextScanner) Scan(src []byte, dst any) error {
 	return ts.ScanText(Text{String: formatted, Valid: true})
 }
 
-// Scan TIME to *string
+// scanPlanBinaryTimeToString scans Firebird TIME into *string.
 type scanPlanBinaryTimeToString struct{}
 
 func (scanPlanBinaryTimeToString) Scan(src []byte, dst any) error {
