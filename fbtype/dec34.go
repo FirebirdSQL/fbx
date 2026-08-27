@@ -425,7 +425,7 @@ func parseDecFloat34String(s string, dst *DecFloat34) error {
 		s = mant
 	}
 
-	num, exp, err := parseNumericString(s)
+	num, exp, err := parseDecimalMantissa(s)
 	if err != nil {
 		return fmt.Errorf("cannot parse DecFloat34 from %q: %w", original, err)
 	}

@@ -608,6 +608,17 @@ func (s *Stmt) QueryContext(ctx context.Context, argsV []driver.NamedValue) (dri
 
 type rowValueFunc func(src []byte) (driver.Value, error)
 
+func numericRowValueFunc(m *fbtype.Map, typeMetadata fbtype.TypeMetadata) rowValueFunc {
+	var d fbtype.Numeric
+	scanPlan := m.PlanScan(typeMetadata, &d)
+	return func(src []byte) (driver.Value, error) {
+		if err := scanPlan.Scan(src, &d); err != nil {
+			return nil, err
+		}
+		return d.Value()
+	}
+}
+
 type Rows struct {
 	conn         *Conn
 	rows         fbx.Rows
@@ -705,6 +716,19 @@ func isNumericSubtype(subtype int32) bool {
 	return subtype == 1 || subtype == 2
 }
 
+func isScaledNumericField(fd fbconn.FieldDescription) bool {
+	if !isNumericSubtype(fd.Subtype) {
+		return false
+	}
+
+	switch fd.Type {
+	case fbproto.SQL_TYPE_SHORT, fbproto.SQL_TYPE_LONG, fbproto.SQL_TYPE_INT64, fbproto.SQL_TYPE_INT128:
+		return true
+	default:
+		return false
+	}
+}
+
 func numericPrecisionForField(fd fbconn.FieldDescription) (int64, bool) {
 	switch fd.Type {
 	case fbproto.SQL_TYPE_SHORT:
@@ -728,8 +752,8 @@ func numericPrecisionForField(fd fbconn.FieldDescription) (int64, bool) {
 func (r *Rows) ColumnTypeScanType(index int) reflect.Type {
 	fd := r.rows.FieldDescriptions()[index]
 
-	if isNumericSubtype(fd.Subtype) {
-		return reflect.TypeOf(float64(0))
+	if isScaledNumericField(fd) {
+		return reflect.TypeOf("")
 	}
 
 	switch fd.Type {
@@ -769,6 +793,10 @@ func (r *Rows) Next(dest []driver.Value) error {
 
 		for i, fd := range fieldDescriptions {
 			typeMetadata := fbtype.NewTypeMetadata(fd.Type, fd.Subtype, fd.Length, fd.Scale)
+			if isScaledNumericField(fd) {
+				r.valueFuncs[i] = numericRowValueFunc(m, typeMetadata)
+				continue
+			}
 
 			switch fd.Type {
 			case fbproto.SQL_TYPE_BLOB:
@@ -807,54 +835,27 @@ func (r *Rows) Next(dest []driver.Value) error {
 					return d, err
 				}
 			case fbproto.SQL_TYPE_SHORT:
-				if isNumericSubtype(fd.Subtype) {
-					var d float64
-					scanPlan := m.PlanScan(typeMetadata, &d)
-					r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
-						err := scanPlan.Scan(src, &d)
-						return d, err
-					}
-				} else {
-					var d int16
-					scanPlan := m.PlanScan(typeMetadata, &d)
-					r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
-						err := scanPlan.Scan(src, &d)
-						return int64(d), err
-					}
+				var d int16
+				scanPlan := m.PlanScan(typeMetadata, &d)
+				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
+					err := scanPlan.Scan(src, &d)
+					return int64(d), err
 				}
 
 			case fbproto.SQL_TYPE_LONG:
-				if isNumericSubtype(fd.Subtype) {
-					var d float64
-					scanPlan := m.PlanScan(typeMetadata, &d)
-					r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
-						err := scanPlan.Scan(src, &d)
-						return d, err
-					}
-				} else {
-					var d int32
-					scanPlan := m.PlanScan(typeMetadata, &d)
-					r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
-						err := scanPlan.Scan(src, &d)
-						return int64(d), err
-					}
+				var d int32
+				scanPlan := m.PlanScan(typeMetadata, &d)
+				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
+					err := scanPlan.Scan(src, &d)
+					return int64(d), err
 				}
 
 			case fbproto.SQL_TYPE_INT64:
-				if isNumericSubtype(fd.Subtype) {
-					var d float64
-					scanPlan := m.PlanScan(typeMetadata, &d)
-					r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
-						err := scanPlan.Scan(src, &d)
-						return d, err
-					}
-				} else {
-					var d int64
-					scanPlan := m.PlanScan(typeMetadata, &d)
-					r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
-						err := scanPlan.Scan(src, &d)
-						return d, err
-					}
+				var d int64
+				scanPlan := m.PlanScan(typeMetadata, &d)
+				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
+					err := scanPlan.Scan(src, &d)
+					return d, err
 				}
 			case fbproto.SQL_TYPE_TIMESTAMP:
 				var d fbtype.Timestamp
@@ -894,20 +895,11 @@ func (r *Rows) Next(dest []driver.Value) error {
 					return d, err
 				}
 			case fbproto.SQL_TYPE_INT128:
-				if isNumericSubtype(fd.Subtype) {
-					var d float64
-					scanPlan := m.PlanScan(typeMetadata, &d)
-					r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
-						err := scanPlan.Scan(src, &d)
-						return d, err
-					}
-				} else {
-					var d string
-					scanPlan := m.PlanScan(typeMetadata, &d)
-					r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
-						err := scanPlan.Scan(src, &d)
-						return d, err
-					}
+				var d string
+				scanPlan := m.PlanScan(typeMetadata, &d)
+				r.valueFuncs[i] = func(src []byte) (driver.Value, error) {
+					err := scanPlan.Scan(src, &d)
+					return d, err
 				}
 			case fbproto.SQL_TYPE_DEC64, fbproto.SQL_TYPE_DEC128:
 				var d string

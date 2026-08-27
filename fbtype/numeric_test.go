@@ -2,9 +2,12 @@ package fbtype_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"math"
 	"math/big"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -65,12 +68,13 @@ func TestNumericBinaryScanToFloat64_Local(t *testing.T) {
 
 	var dst fbtype.Float8
 
-	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_D_FLOAT, 0, 4, -2)
-	plan := fbtype.NumericCodec{}.PlanScan(
-		nil,
-		typeMetadata,
-		&dst,
-	)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 1, 4, -2)
+	m := fbtype.NewMap()
+	dataType, ok := m.TypeForTypeID(typeMetadata.TypeID, typeMetadata.SubType)
+	require.True(t, ok)
+	require.IsType(t, &fbtype.NumericCodec{}, dataType.Codec)
+
+	plan := dataType.Codec.PlanScan(m, typeMetadata, &dst)
 	require.NotNil(t, plan)
 
 	err = plan.Scan(buf, &dst)
@@ -155,6 +159,151 @@ func TestNumericBinaryScanToInt64_Local(t *testing.T) {
 	assert.Equal(t, int64(123456), dst.Int64)
 }
 
+func TestNumericScanUsesPhysicalStorageLength(t *testing.T) {
+	tests := []struct {
+		name         string
+		typeMetadata fbtype.TypeMetadata
+		coefficient  string
+		wireLength   uint32
+	}{
+		{
+			name:         "smallint",
+			typeMetadata: fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 1, 2, 0),
+			coefficient:  "32767",
+			wireLength:   4,
+		},
+		{
+			name:         "integer",
+			typeMetadata: fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 1, 4, 0),
+			coefficient:  "2147483647",
+			wireLength:   4,
+		},
+		{
+			name:         "bigint",
+			typeMetadata: fbtype.NewTypeMetadata(fbproto.SQL_TYPE_INT64, 1, 8, 0),
+			coefficient:  "9223372036854775807",
+			wireLength:   8,
+		},
+		{
+			name:         "int128",
+			typeMetadata: fbtype.NewTypeMetadata(fbproto.SQL_TYPE_INT128, 1, 16, 0),
+			coefficient:  "170141183460469231731687303715884105727",
+			wireLength:   16,
+		},
+	}
+
+	m := fbtype.NewMap()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			src, err := fbtype.EncodeNumericBinaryFB(nil, mustParseNumeric(t, tt.coefficient), 0, tt.wireLength)
+			require.NoError(t, err)
+
+			var got fbtype.Numeric
+			err = m.Scan(tt.typeMetadata, src, &got)
+			require.NoError(t, err)
+			assert.Equal(t, tt.coefficient, got.Int.String())
+		})
+	}
+}
+
+func TestNumericScanChecksSmallintPhysicalRange(t *testing.T) {
+	m := fbtype.NewMap()
+	shortMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 1, 2, 0)
+	longMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 1, 4, 0)
+
+	for _, coefficient := range []string{"32768", "-32769"} {
+		t.Run(coefficient, func(t *testing.T) {
+			src, err := fbtype.EncodeNumericBinaryFB(nil, mustParseNumeric(t, coefficient), 0, 4)
+			require.NoError(t, err)
+
+			got := mustParseNumeric(t, "42")
+			err = m.Scan(shortMetadata, src, &got)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "out of range for SMALLINT storage")
+			assert.Equal(t, fbtype.Numeric{}, got)
+
+			err = m.Scan(longMetadata, src, &got)
+			require.NoError(t, err)
+			assert.Equal(t, coefficient, got.Int.String())
+		})
+	}
+}
+
+func TestNumericScanRejectsWireLengthMismatches(t *testing.T) {
+	tests := []struct {
+		name         string
+		typeMetadata fbtype.TypeMetadata
+		wireLength   uint32
+	}{
+		{
+			name:         "smallint with int64 wire value",
+			typeMetadata: fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 1, 2, 0),
+			wireLength:   8,
+		},
+		{
+			name:         "integer with int64 wire value",
+			typeMetadata: fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 1, 4, 0),
+			wireLength:   8,
+		},
+		{
+			name:         "bigint with int32 wire value",
+			typeMetadata: fbtype.NewTypeMetadata(fbproto.SQL_TYPE_INT64, 1, 8, 0),
+			wireLength:   4,
+		},
+		{
+			name:         "int128 with int64 wire value",
+			typeMetadata: fbtype.NewTypeMetadata(fbproto.SQL_TYPE_INT128, 1, 16, 0),
+			wireLength:   8,
+		},
+	}
+
+	m := fbtype.NewMap()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			src, err := fbtype.EncodeNumericBinaryFB(nil, mustParseNumeric(t, "1"), 0, tt.wireLength)
+			require.NoError(t, err)
+
+			got := mustParseNumeric(t, "42")
+			err = m.Scan(tt.typeMetadata, src, &got)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "invalid wire length")
+			assert.Equal(t, fbtype.Numeric{}, got)
+		})
+	}
+}
+
+func TestNumericScanRejectsUnsupportedStorageLength(t *testing.T) {
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 1, 3, 0)
+	src, err := fbtype.EncodeNumericBinaryFB(nil, mustParseNumeric(t, "1"), 0, 4)
+	require.NoError(t, err)
+
+	got := mustParseNumeric(t, "42")
+	err = m.Scan(typeMetadata, src, &got)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid storage length")
+	assert.Equal(t, fbtype.Numeric{}, got)
+}
+
+func TestNumericCodecRejectsTypeLengthMismatch(t *testing.T) {
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 1, 16, -2)
+
+	buf, err := m.Encode(typeMetadata, "1.23", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid storage length 16")
+	assert.Nil(t, buf)
+
+	src, err := fbtype.EncodeNumericBinaryFB(nil, mustParseNumeric(t, "1.23"), -2, 16)
+	require.NoError(t, err)
+
+	got := mustParseNumeric(t, "42")
+	err = m.Scan(typeMetadata, src, &got)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid storage length 16")
+	assert.Equal(t, fbtype.Numeric{}, got)
+}
+
 func TestNumericCodec(t *testing.T) {
 
 	eqNum := func(s string) func(any) bool {
@@ -181,6 +330,16 @@ func TestNumericCodec(t *testing.T) {
 					Test:   eqNum("1234567890123456789"),
 				},
 				{
+					Param:  mustParseNumeric(t, "99999999999999999999999999999999999999"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("99999999999999999999999999999999999999"),
+				},
+				{
+					Param:  mustParseNumeric(t, "-99999999999999999999999999999999999999"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("-99999999999999999999999999999999999999"),
+				},
+				{
 					Param:  mustParseNumeric(t, "170141183460469231731687303715884105727"),
 					Result: new(fbtype.Numeric),
 					Test:   eqNum("170141183460469231731687303715884105727"),
@@ -189,6 +348,56 @@ func TestNumericCodec(t *testing.T) {
 					Param:  mustParseNumeric(t, "-170141183460469231731687303715884105728"),
 					Result: new(fbtype.Numeric),
 					Test:   eqNum("-170141183460469231731687303715884105728"),
+				},
+			},
+		},
+		{
+			typeName: "numeric(23,5)",
+			tests: []fbxtest.ValueRoundTripTest{
+				{
+					Param:  mustParseNumeric(t, "999999999999999999.99999"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("999999999999999999.99999"),
+				},
+				{
+					Param:  mustParseNumeric(t, "-999999999999999999.99999"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("-999999999999999999.99999"),
+				},
+				{
+					Param:  mustParseNumeric(t, "1701411834604692317316873037158841.05727"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("1701411834604692317316873037158841.05727"),
+				},
+				{
+					Param:  mustParseNumeric(t, "-1701411834604692317316873037158841.05728"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("-1701411834604692317316873037158841.05728"),
+				},
+			},
+		},
+		{
+			typeName: "numeric(12,11)",
+			tests: []fbxtest.ValueRoundTripTest{
+				{
+					Param:  mustParseNumeric(t, "9.99999999999"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("9.99999999999"),
+				},
+				{
+					Param:  mustParseNumeric(t, "-9.99999999999"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("-9.99999999999"),
+				},
+				{
+					Param:  mustParseNumeric(t, "92233720.36854775807"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("92233720.36854775807"),
+				},
+				{
+					Param:  mustParseNumeric(t, "-92233720.36854775808"),
+					Result: new(fbtype.Numeric),
+					Test:   eqNum("-92233720.36854775808"),
 				},
 			},
 		},
@@ -401,7 +610,7 @@ func TestNumericCodec(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.typeName, func(t *testing.T) {
-			if strings.HasPrefix(c.typeName, "numeric(38,") {
+			if strings.HasPrefix(c.typeName, "numeric(38,") || strings.HasPrefix(c.typeName, "numeric(23,") {
 				defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
 					if getServerMajorVersionForConn(ctx, tb, conn) <= 3 {
 						t.Skip(c.typeName + " is not supported by server engine version <= 3")
@@ -438,6 +647,365 @@ func TestNumericFloat64Valuer(t *testing.T) {
 		assert.NoErrorf(t, err, "%d", i)
 		assert.Equalf(t, tt.f, f, "%d", i)
 	}
+}
+
+func TestNumericScanScientificExact(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "large positive exponent",
+			src:  "1.234567890123456789e18",
+			want: "1234567890123456789",
+		},
+		{
+			name: "large negative exponent",
+			src:  "1.234567890123456789e-3",
+			want: "0.001234567890123456789",
+		},
+		{
+			name: "trailing zeros preserved",
+			src:  "1.2300e2",
+			want: "123.00",
+		},
+		{
+			name: "uppercase exponent",
+			src:  "-9.99E3",
+			want: "-9990",
+		},
+		{
+			name: "positive sign and exponent",
+			src:  "+1.20e+2",
+			want: "120",
+		},
+		{
+			name: "positive signed zero",
+			src:  "+000",
+			want: "0",
+		},
+		{
+			name: "negative signed zero",
+			src:  "-000",
+			want: "0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got fbtype.Numeric
+			require.NoError(t, got.ScanScientific(tt.src))
+			require.True(t, got.Valid)
+			assert.Equal(t, tt.want, got.String())
+		})
+	}
+}
+
+func TestParseNumericRejectsUnsupportedExponent(t *testing.T) {
+	for _, src := range []string{
+		"0e-39",
+		"0e-2147483648",
+		"000e-40",
+		"1e-39",
+		"1e-2147483648",
+		"1e2147483647",
+		"2e38",
+		"1e9223372036854775807",
+		"1e9223372036854775808",
+	} {
+		t.Run(src, func(t *testing.T) {
+			_, err := fbtype.ParseNumeric(src)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestParseNumericCombinesExponentsBeforeValidation(t *testing.T) {
+	tests := []struct {
+		src  string
+		want string
+	}{
+		{
+			src:  "0.000000000001e50",
+			want: "1" + strings.Repeat("0", 38),
+		},
+		{
+			src:  "100e-40",
+			want: "0." + strings.Repeat("0", 37) + "1",
+		},
+		{
+			src:  "0.00",
+			want: "0.00",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.src, func(t *testing.T) {
+			n, err := fbtype.ParseNumeric(tt.src)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, n.String())
+		})
+	}
+}
+
+func TestNumericManualUnsupportedExponentReturnsErrors(t *testing.T) {
+	for _, exp := range []int32{math.MinInt32, math.MaxInt32} {
+		t.Run(strconv.FormatInt(int64(exp), 10), func(t *testing.T) {
+			n := fbtype.Numeric{Int: big.NewInt(1), Exp: exp, Valid: true}
+
+			assert.Contains(t, n.String(), "<invalid Numeric:")
+
+			_, err := n.Value()
+			require.Error(t, err)
+
+			_, err = n.NumericValue()
+			require.Error(t, err)
+
+			_, err = n.Float64Value()
+			require.Error(t, err)
+
+			_, err = n.Int64Value()
+			require.Error(t, err)
+
+			_, err = json.Marshal(n)
+			require.Error(t, err)
+
+			_, err = fbtype.EncodeNumericBinaryFB(nil, n, 0, 16)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestNumericInt64ValueRescalesBeforeRangeCheck(t *testing.T) {
+	n := fbtype.Numeric{
+		Int:   mustBigInt(t, "92233720368547758070"),
+		Exp:   -1,
+		Valid: true,
+	}
+
+	got, err := n.Int64Value()
+	require.NoError(t, err)
+	assert.Equal(t, fbtype.Int8{Int64: math.MaxInt64, Valid: true}, got)
+}
+
+func TestNumericInt64ValueTruncatesFractionTowardZero(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want int64
+	}{
+		{name: "positive", src: "123.987", want: 123},
+		{name: "negative", src: "-123.987", want: -123},
+		{name: "positive below one", src: "0.999", want: 0},
+		{name: "negative above minus one", src: "-0.999", want: 0},
+		{name: "positive int64 maximum", src: "9223372036854775807.9", want: math.MaxInt64},
+		{name: "negative int64 minimum", src: "-9223372036854775808.9", want: math.MinInt64},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			n := mustParseNumeric(t, tt.src)
+
+			got, err := n.Int64Value()
+			require.NoError(t, err)
+			assert.Equal(t, fbtype.Int8{Int64: tt.want, Valid: true}, got)
+		})
+	}
+}
+
+func TestNumericInt64ValueChecksRangeAfterTruncation(t *testing.T) {
+	for _, src := range []string{
+		"9223372036854775808.1",
+		"-9223372036854775809.1",
+	} {
+		t.Run(src, func(t *testing.T) {
+			n := mustParseNumeric(t, src)
+
+			_, err := n.Int64Value()
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestNumericEncodesToIntegerCodecsWithTruncation(t *testing.T) {
+	tests := []struct {
+		name         string
+		typeMetadata fbtype.TypeMetadata
+		src          string
+		want         int64
+	}{
+		{
+			name:         "smallint",
+			typeMetadata: fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 0, 2, 0),
+			src:          "32767.9",
+			want:         math.MaxInt16,
+		},
+		{
+			name:         "integer",
+			typeMetadata: fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 0, 4, 0),
+			src:          "-2147483648.9",
+			want:         math.MinInt32,
+		},
+		{
+			name:         "bigint",
+			typeMetadata: fbtype.NewTypeMetadata(fbproto.SQL_TYPE_INT64, 0, 8, 0),
+			src:          "9223372036854775807.9",
+			want:         math.MaxInt64,
+		},
+	}
+
+	m := fbtype.NewMap()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf, err := m.Encode(tt.typeMetadata, mustParseNumeric(t, tt.src), nil)
+			require.NoError(t, err)
+
+			var got int64
+			err = m.Scan(tt.typeMetadata, buf, &got)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestNumericEncodeToIntegerCodecChecksRangeAfterTruncation(t *testing.T) {
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 0, 2, 0)
+
+	_, err := m.Encode(typeMetadata, mustParseNumeric(t, "32768.1"), nil)
+	require.Error(t, err)
+}
+
+func TestNumericScanToInt64StillRequiresExactValue(t *testing.T) {
+	n := mustParseNumeric(t, "123.45")
+	buf, err := fbtype.EncodeNumericBinaryFB(nil, n, -2, 4)
+	require.NoError(t, err)
+
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 1, 4, -2)
+	var dst int64
+	plan := fbtype.NumericCodec{}.PlanScan(nil, typeMetadata, &dst)
+	require.NotNil(t, plan)
+
+	err = plan.Scan(buf, &dst)
+	require.Error(t, err)
+}
+
+func TestNumericRoundingRejectsManualExtremeExponent(t *testing.T) {
+	n := fbtype.Numeric{Int: big.NewInt(1), Exp: math.MinInt32, Valid: true}
+
+	_, err := fbtype.EncodeNumericBinaryFBRoundHalfAwayFromZero(nil, n, -38, 16)
+	require.Error(t, err)
+}
+
+func TestNumericFloatRoundingHandlesExtremeNegativeExponent(t *testing.T) {
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_INT128, 1, 16, -38)
+
+	buf, err := m.Encode(typeMetadata, math.SmallestNonzeroFloat64, nil)
+	require.NoError(t, err)
+	assert.Equal(t, make([]byte, 16), buf)
+}
+
+func TestNumericScanSupportsDatabaseSQLValuesAndClearsOnError(t *testing.T) {
+	var got fbtype.Numeric
+
+	require.NoError(t, got.Scan([]byte("12.34")))
+	assert.Equal(t, "12.34", got.String())
+
+	require.NoError(t, got.Scan(int64(-42)))
+	assert.Equal(t, "-42", got.String())
+
+	require.NoError(t, got.Scan(float64(12.5)))
+	assert.Equal(t, "12.5", got.String())
+
+	bigValue := big.NewInt(99)
+	require.NoError(t, got.Scan(bigValue))
+	bigValue.SetInt64(100)
+	assert.Equal(t, "99", got.String())
+
+	bigPtrValue := big.NewInt(123)
+	require.NoError(t, got.Scan(bigPtrValue))
+	bigPtrValue.SetInt64(321)
+	assert.Equal(t, "123", got.String())
+
+	stale := mustParseNumeric(t, "42")
+	require.Error(t, stale.Scan("not-a-number"))
+	assert.False(t, stale.Valid)
+
+	stale = mustParseNumeric(t, "42")
+	require.Error(t, stale.Scan(math.Inf(1)))
+	assert.False(t, stale.Valid)
+
+	stale = mustParseNumeric(t, "42")
+	require.Error(t, stale.Scan(struct{}{}))
+	assert.False(t, stale.Valid)
+}
+
+func TestNumericScanNumericAndValueCopyBigInt(t *testing.T) {
+	src := fbtype.Numeric{Int: big.NewInt(42), Exp: -1, Valid: true}
+
+	var dst fbtype.Numeric
+	require.NoError(t, dst.ScanNumeric(src))
+	src.Int.SetInt64(99)
+	assert.Equal(t, "4.2", dst.String())
+
+	value, err := dst.NumericValue()
+	require.NoError(t, err)
+	value.Int.SetInt64(77)
+	assert.Equal(t, "4.2", dst.String())
+}
+
+func TestNumericUnmarshalJSONWhitespaceNullQuotedScientificAndClears(t *testing.T) {
+	stale := mustParseNumeric(t, "42")
+	require.NoError(t, json.Unmarshal([]byte(" null "), &stale))
+	assert.False(t, stale.Valid)
+
+	var got fbtype.Numeric
+	require.NoError(t, json.Unmarshal([]byte(`"1.234567890123456789e18"`), &got))
+	assert.Equal(t, "1234567890123456789", got.String())
+
+	require.NoError(t, json.Unmarshal([]byte(`1e-3`), &got))
+	assert.Equal(t, "0.001", got.String())
+
+	stale = mustParseNumeric(t, "42")
+	require.Error(t, json.Unmarshal([]byte(`"bad"`), &stale))
+	assert.False(t, stale.Valid)
+}
+
+func TestNumericDecodeDatabaseSQLValueReturnsString(t *testing.T) {
+	n := mustParseNumeric(t, "12.34")
+	buf, err := fbtype.EncodeNumericBinaryFB(nil, n, -2, 4)
+	require.NoError(t, err)
+
+	codec := fbtype.NumericCodec{}
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 1, 4, -2)
+
+	value, err := codec.DecodeDatabaseSQLValue(fbtype.NewMap(), typeMetadata, buf)
+	require.NoError(t, err)
+	require.IsType(t, "", value)
+	assert.Equal(t, "12.34", value)
+
+	value, err = codec.DecodeDatabaseSQLValue(fbtype.NewMap(), typeMetadata, nil)
+	require.NoError(t, err)
+	assert.Nil(t, value)
+}
+
+func TestNumericPrimitiveScanNullErrors(t *testing.T) {
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 1, 4, -2)
+
+	var f float64
+	err := m.Scan(typeMetadata, nil, &f)
+	require.ErrorContains(t, err, "cannot scan NULL into *float64")
+
+	var i int64
+	err = m.Scan(typeMetadata, nil, &i)
+	require.ErrorContains(t, err, "cannot scan NULL into *int64")
+
+	var s string
+	err = m.Scan(typeMetadata, nil, &s)
+	require.ErrorContains(t, err, "cannot scan NULL into *string")
 }
 
 func TestNumericInt128_DB(t *testing.T) {
