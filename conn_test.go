@@ -34,6 +34,8 @@ func TestConnect(t *testing.T) {
 	}
 
 	assertConfigsEqual(t, config, conn.Config(), "Conn.Config() returns original config")
+	require.Equal(t, conn.FbConn().ServerVersion(), conn.ServerVersion())
+	require.Positive(t, conn.ServerVersion().Major)
 
 	var currentDB string
 	err = conn.QueryRow(context.Background(), "select mon$attachment_name from mon$attachments where mon$attachment_id = current_connection").Scan(&currentDB)
@@ -235,6 +237,12 @@ func TestParseConfigCreateDatabase(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, config.CreateDatabase)
 	assert.Empty(t, config.RuntimeParams["create_database"])
+}
+
+func TestParseConfigWireCompression(t *testing.T) {
+	config, err := fbx.ParseConfig("wire_compression=true")
+	require.NoError(t, err)
+	require.True(t, config.WireCompression)
 }
 
 func TestConfigCopyReturnsEqualConfig(t *testing.T) {
@@ -771,7 +779,7 @@ func TestPrepareIdempotency(t *testing.T) {
 	defer cancel()
 
 	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		for i := 0; i < 2; i++ {
+		for i := range 2 {
 			_, err := conn.Prepare(context.Background(), "test", "select cast(42 as integer) from rdb$database")
 			if err != nil {
 				t.Fatalf("%d. Unable to prepare statement: %v", i, err)
@@ -903,9 +911,7 @@ func TestFatalRxError(t *testing.T) {
 
 	var wg sync.WaitGroup
 	queryStarted := make(chan struct{})
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		var n int32
 		var s string
 		close(queryStarted)
@@ -921,7 +927,7 @@ func TestFatalRxError(t *testing.T) {
 			return
 		}
 		t.Errorf("Expected QueryRow Scan to return fatal FbError, but instead received %v", err)
-	}()
+	})
 
 	<-queryStarted
 	deadline := time.Now().Add(2 * time.Second)
@@ -945,7 +951,7 @@ func TestFatalTxError(t *testing.T) {
 	t.Parallel()
 
 	// Run timing sensitive test many times
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		func() {
 			conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
 			defer closeConn(t, conn)

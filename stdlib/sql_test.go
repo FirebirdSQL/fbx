@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"reflect"
-	"regexp"
 	"strconv"
 	"sync"
 	"testing"
@@ -27,12 +27,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var (
-	serverMajorVersionCheckOnce sync.Once
-	serverMajorVersionValue     int
-	engineMajorRegexp           = regexp.MustCompile(`\d+`)
-)
-
 func openDB(t testing.TB, opts ...stdlib.OptionOpenDB) *sql.DB {
 	t.Helper()
 	config, err := fbx.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
@@ -42,28 +36,17 @@ func openDB(t testing.TB, opts ...stdlib.OptionOpenDB) *sql.DB {
 
 func getServerMajorVersion(t testing.TB, db *sql.DB) int {
 	t.Helper()
-	serverMajorVersionCheckOnce.Do(func() {
-		var version string
-		err := db.QueryRow("select rdb$get_context('SYSTEM','ENGINE_VERSION') from rdb$database").Scan(&version)
-		require.NoError(t, err)
+	conn, err := db.Conn(context.Background())
+	require.NoError(t, err)
+	defer conn.Close()
 
-		major, ok := parseEngineMajorVersion(version)
-		require.Truef(t, ok, "failed to parse engine version: %q", version)
-		serverMajorVersionValue = major
+	var major int
+	err = conn.Raw(func(driverConn any) error {
+		major = driverConn.(*stdlib.Conn).Conn().ServerVersion().Major
+		return nil
 	})
-	return serverMajorVersionValue
-}
-
-func parseEngineMajorVersion(version string) (int, bool) {
-	match := engineMajorRegexp.FindString(version)
-	if match == "" {
-		return 0, false
-	}
-	major, err := strconv.Atoi(match)
-	if err != nil {
-		return 0, false
-	}
-	return major, true
+	require.NoError(t, err)
+	return major
 }
 
 func closeDB(t testing.TB, db *sql.DB) {
@@ -185,6 +168,94 @@ func TestStdlibBlobBinary(t *testing.T) {
 		got, err := blob.Bytes()
 		require.NoError(t, err)
 		require.Equal(t, data, got)
+
+		require.NoError(t, tx.Commit())
+	})
+}
+
+func TestLazyBlobRemainsReadableAfterQueryRowReleasesConnection(t *testing.T) {
+	connString := os.Getenv("FBX_TEST_DATABASE")
+	if connString == "" {
+		t.Skip("FBX_TEST_DATABASE is not set")
+	}
+
+	ctx := context.Background()
+	config, err := fbx.ParseConfig(connString)
+	require.NoError(t, err)
+
+	config.MaxInlineBlobSize = 0
+	db := stdlib.OpenDB(*config)
+	db.SetMaxIdleConns(0)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	_, err = db.ExecContext(ctx, `
+recreate table stdlib_blob_query_row_lease (
+	id integer primary key,
+	data blob sub_type 0
+)`)
+	require.NoError(t, err)
+
+	want := bytes.Repeat([]byte("lazy-blob-lease-regression\n"), 8192)
+	_, err = db.ExecContext(
+		ctx,
+		"insert into stdlib_blob_query_row_lease(id, data) values (?, ?)",
+		1,
+		bytes.NewReader(want),
+	)
+	require.NoError(t, err)
+
+	var blob stdlib.Blob
+	err = db.QueryRowContext(
+		ctx,
+		"select data from stdlib_blob_query_row_lease where id = ?",
+		1,
+	).Scan(&blob)
+	require.NoError(t, err)
+	require.Zero(t, db.Stats().OpenConnections, "QueryRow.Scan must release the connection lease")
+
+	got, err := blob.Bytes()
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
+func TestStdlibBlobWithArray(t *testing.T) {
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		_, err := db.Exec("recreate table stdlib_blob_array(id integer primary key, data blob sub_type 0, numbers bigint[3])")
+		require.NoError(t, err)
+
+		inputBlob := []byte("blob-array-result")
+		inputNumbers := []int64{7, 8, 9}
+
+		tx, err := db.Begin()
+		require.NoError(t, err)
+		defer func() { _ = tx.Rollback() }()
+
+		_, err = tx.Exec(
+			"insert into stdlib_blob_array(id, data, numbers) values (?, ?, ?)",
+			1,
+			bytes.NewReader(inputBlob),
+			inputNumbers,
+		)
+		require.NoError(t, err)
+
+		rows, err := tx.Query("select data, numbers from stdlib_blob_array where id = ?", 1)
+		require.NoError(t, err)
+
+		require.True(t, rows.Next())
+		var (
+			blob    stdlib.Blob
+			numbers []int64
+		)
+		m := fbtype.NewMap()
+		err = rows.Scan(&blob, m.SQLScanner(&numbers))
+		require.NoError(t, err)
+		rows.Close()
+		require.NoError(t, rows.Err())
+
+		gotBlob, err := blob.Bytes()
+		require.NoError(t, err)
+		require.Equal(t, inputBlob, gotBlob)
+		require.Equal(t, inputNumbers, numbers)
 
 		require.NoError(t, tx.Commit())
 	})
@@ -592,6 +663,78 @@ func TestConnQueryScanGoArray(t *testing.T) {
 	})
 }
 
+func TestConnQueryScanGoArrayNullClearsDestination(t *testing.T) {
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		_, err := db.Exec("recreate table scan_go_array_null_test (id integer primary key, array bigint[3])")
+		require.NoError(t, err)
+
+		_, err = db.Exec("insert into scan_go_array_null_test values (?, ?)", 1, []int64{1, 2, 3})
+		require.NoError(t, err)
+		_, err = db.Exec("insert into scan_go_array_null_test values (?, ?)", 2, []int64(nil))
+		require.NoError(t, err)
+
+		rows, err := db.Query("select array from scan_go_array_null_test order by id")
+		require.NoError(t, err)
+		defer rows.Close()
+
+		m := fbtype.NewMap()
+		actual := []int64{99}
+
+		require.True(t, rows.Next())
+		require.NoError(t, rows.Scan(m.SQLScanner(&actual)))
+		require.Equal(t, []int64{1, 2, 3}, actual)
+
+		require.True(t, rows.Next())
+		require.NoError(t, rows.Scan(m.SQLScanner(&actual)))
+		require.Nil(t, actual)
+
+		require.False(t, rows.Next())
+		require.NoError(t, rows.Err())
+	})
+}
+
+func TestConnQueryArrayDriverValueOwnsFetchBuffer(t *testing.T) {
+	config, err := fbx.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	config.FetchBatchSize = 1
+
+	db := stdlib.OpenDB(*config)
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(0)
+	defer closeDB(t, db)
+
+	_, err = db.Exec(`recreate table scan_array_buffer_lifetime (
+		id integer not null primary key,
+		array bigint[3] not null
+	)`)
+	require.NoError(t, err)
+	_, err = db.Exec("insert into scan_array_buffer_lifetime values (?, ?)", 1, []int64{1, 2, 3})
+	require.NoError(t, err)
+	_, err = db.Exec("insert into scan_array_buffer_lifetime values (?, ?)", 2, []int64{10, 20, 30})
+	require.NoError(t, err)
+
+	rows, err := db.Query("select array from scan_array_buffer_lifetime order by id")
+	require.NoError(t, err)
+	defer rows.Close()
+
+	require.True(t, rows.Next())
+	var firstRaw any
+	require.NoError(t, rows.Scan(&firstRaw))
+	first, ok := firstRaw.(fbtype.ArraySQLScanner)
+	require.True(t, ok)
+	firstBuffer := bytes.Clone(first.ArrayBuffer)
+
+	require.True(t, rows.Next())
+	var secondRaw any
+	require.NoError(t, rows.Scan(&secondRaw))
+	require.IsType(t, fbtype.ArraySQLScanner{}, secondRaw)
+
+	require.Equal(t, firstBuffer, first.ArrayBuffer)
+	var firstValues []int64
+	require.NoError(t, fbtype.NewMap().SQLScanner(&firstValues).Scan(first))
+	require.Equal(t, []int64{1, 2, 3}, firstValues)
+}
+
 func TestConnQueryScanArray(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
 		_, err := db.Exec("recreate table scan_array_test (id integer primary key, array bigint[3])")
@@ -896,6 +1039,32 @@ func TestConnMultiplePrepareAndDeallocate(t *testing.T) {
 	})
 }
 
+func TestStmtCloseAfterDeallocateFailureIsIdempotent(t *testing.T) {
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		sqlConn, err := db.Conn(context.Background())
+		require.NoError(t, err)
+		defer sqlConn.Close()
+
+		err = sqlConn.Raw(func(driverConn any) error {
+			conn := driverConn.(*stdlib.Conn)
+
+			stmt, err := conn.PrepareContext(context.Background(), "select 42 from rdb$database")
+			if err != nil {
+				return err
+			}
+
+			if err := conn.Conn().Close(context.Background()); err != nil {
+				return err
+			}
+
+			require.Error(t, stmt.Close())
+			require.NoError(t, stmt.Close())
+			return nil
+		})
+		require.NoError(t, err)
+	})
+}
+
 func TestConnExecContextSuccess(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
 		_, err := db.ExecContext(context.Background(), "recreate table exec_context_test(id int primary key)")
@@ -1002,6 +1171,95 @@ func TestStmtQueryContextSuccess(t *testing.T) {
 	ensureDBValid(t, db)
 }
 
+func TestStmtLegacyExecAndQuery(t *testing.T) {
+	db := openDB(t)
+	defer closeDB(t, db)
+
+	const table = "stdlib_legacy_stmt_test"
+	_, err := db.Exec("recreate table " + table + " (id integer)")
+	require.NoError(t, err)
+	defer func() {
+		_, _ = db.Exec("drop table " + table)
+	}()
+
+	sqlConn, err := db.Conn(context.Background())
+	require.NoError(t, err)
+	defer sqlConn.Close()
+
+	err = sqlConn.Raw(func(driverConn any) error {
+		conn := driverConn.(*stdlib.Conn)
+
+		insert, err := conn.PrepareContext(context.Background(), "insert into "+table+" (id) values (?)")
+		if err != nil {
+			return err
+		}
+		defer insert.Close()
+
+		result, err := insert.Exec([]driver.Value{int64(73)})
+		if err != nil {
+			return err
+		}
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if rowsAffected != 1 {
+			return fmt.Errorf("RowsAffected = %d, want 1", rowsAffected)
+		}
+
+		query, err := conn.PrepareContext(context.Background(), "select id from "+table+" where id = ?")
+		if err != nil {
+			return err
+		}
+		defer query.Close()
+
+		rows, err := query.Query([]driver.Value{int64(73)})
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+
+		values := make([]driver.Value, len(rows.Columns()))
+		if err := rows.Next(values); err != nil {
+			return err
+		}
+		if len(values) != 1 || values[0] != int64(73) {
+			return fmt.Errorf("query values = %#v, want []driver.Value{int64(73)}", values)
+		}
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func TestConnValidatorDiscardsClosedConnection(t *testing.T) {
+	db := openDB(t)
+	defer closeDB(t, db)
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+
+	sqlConn, err := db.Conn(context.Background())
+	require.NoError(t, err)
+	err = sqlConn.Raw(func(driverConn any) error {
+		conn := driverConn.(*stdlib.Conn)
+		if !conn.IsValid() {
+			return errors.New("new connection is invalid")
+		}
+		if err := conn.Conn().Close(context.Background()); err != nil {
+			return err
+		}
+		if conn.IsValid() {
+			return errors.New("closed connection is still valid")
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	require.NoError(t, sqlConn.Close())
+	require.Equal(t, 0, db.Stats().OpenConnections)
+
+	require.NoError(t, db.Ping())
+	require.Equal(t, 1, db.Stats().OpenConnections)
+}
+
 func TestRowsColumnTypes(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
 		columnTypesTests := []struct {
@@ -1077,10 +1335,10 @@ func TestRowsColumnTypes(t *testing.T) {
 					Scale:     2,
 					OK:        true,
 				},
-				ScanType: reflect.TypeOf(float64(0)),
+				ScanType: reflect.TypeOf(""),
 			}, {
 				Name:     "D",
-				TypeName: "32756",
+				TypeName: "TIMETZ",
 				Length: struct {
 					Len int64
 					OK  bool
@@ -1097,7 +1355,7 @@ func TestRowsColumnTypes(t *testing.T) {
 					Scale:     0,
 					OK:        false,
 				},
-				ScanType: reflect.TypeOf(""),
+				ScanType: reflect.TypeOf(time.Time{}),
 			},
 		}
 
@@ -1146,6 +1404,59 @@ func TestRowsColumnTypes(t *testing.T) {
 				t.Errorf("(%d) got: %v, want: %v", i, c.ScanType(), tt.ScanType)
 			}
 		}
+	})
+}
+
+func TestRowsColumnTypeNullable(t *testing.T) {
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		_, err := db.Exec("recreate table stdlib_column_nullable(id integer not null primary key, required_value integer not null, optional_value integer)")
+		require.NoError(t, err)
+
+		rows, err := db.Query("select id, required_value, optional_value from stdlib_column_nullable")
+		require.NoError(t, err)
+		defer rows.Close()
+
+		columns, err := rows.ColumnTypes()
+		require.NoError(t, err)
+		require.Len(t, columns, 3)
+
+		tests := []struct {
+			index int
+			want  bool
+		}{
+			{index: 0, want: false},
+			{index: 1, want: false},
+			{index: 2, want: true},
+		}
+		for _, tt := range tests {
+			got, ok := columns[tt.index].Nullable()
+			require.True(t, ok, "column %d", tt.index)
+			require.Equal(t, tt.want, got, "column %d", tt.index)
+		}
+	})
+}
+
+func TestRowsDatabaseSQLValueTypes(t *testing.T) {
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		var numericValue, doubleValue, octetsValue, timeValue any
+		err := db.QueryRow(`
+			select
+				cast(9007199254740993 as numeric(18, 0)),
+				cast(123.5 as double precision),
+				cast(x'deadbeef' as varchar(4) character set octets),
+				cast('14:30:45.1234' as time)
+			from rdb$database
+		`).Scan(&numericValue, &doubleValue, &octetsValue, &timeValue)
+		require.NoError(t, err)
+
+		require.IsType(t, "", numericValue)
+		require.Equal(t, "9007199254740993", numericValue)
+		require.IsType(t, float64(0), doubleValue)
+		require.Equal(t, float64(123.5), doubleValue)
+		require.IsType(t, []byte(nil), octetsValue)
+		require.Equal(t, []byte{0xde, 0xad, 0xbe, 0xef}, octetsValue)
+		require.IsType(t, time.Time{}, timeValue)
+		require.Equal(t, time.Date(2000, 1, 1, 14, 30, 45, 123400000, time.UTC), timeValue)
 	})
 }
 
@@ -1400,17 +1711,16 @@ func TestCheckIdleConn(t *testing.T) {
 	c, err := db.Conn(context.Background())
 	require.NoError(t, err)
 
-	var cPID uint32
+	var attachmentID uint64
 	err = c.Raw(func(driverConn any) error {
-		//FIXME: there is no pid in fbconn
-		//cPID = driverConn.(*stdlib.Conn).Conn().FbConn().PID()
+		attachmentID = driverConn.(*stdlib.Conn).Conn().FbConn().AttachmentID()
 		return nil
 	})
 	require.NoError(t, err)
 	err = c.Close()
 	require.NoError(t, err)
 
-	require.NotContains(t, ids, cPID)
+	require.NotContains(t, ids, attachmentID)
 }
 
 func TestOptionShouldPing_HookCalledOnReuse(t *testing.T) {
@@ -1437,4 +1747,46 @@ func TestOptionShouldPing_HookCalledOnReuse(t *testing.T) {
 	require.NoError(t, err)
 
 	require.True(t, hookCalled, "hook should be called on reuse")
+}
+
+func TestOptionShouldPing_FirstReuseIdleDuration(t *testing.T) {
+	var idleDuration time.Duration
+	var hookCalled bool
+
+	db := openDB(t,
+		stdlib.OptionShouldPing(func(_ context.Context, params stdlib.ShouldPingParams) bool {
+			hookCalled = true
+			idleDuration = params.IdleDuration
+			return false
+		}),
+	)
+	defer closeDB(t, db)
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+
+	require.NoError(t, db.Ping())
+	_, err := db.Exec("select 1 from rdb$database")
+	require.NoError(t, err)
+
+	require.True(t, hookCalled)
+	require.Less(t, idleDuration, time.Minute)
+}
+
+func TestOptionAfterConnect_ErrorClosesConnection(t *testing.T) {
+	callbackErr := errors.New("after-connect error")
+	var connected *fbx.Conn
+
+	db := openDB(t,
+		stdlib.OptionAfterConnect(func(_ context.Context, conn *fbx.Conn) error {
+			connected = conn
+			return callbackErr
+		}),
+	)
+	defer closeDB(t, db)
+
+	err := db.Ping()
+	require.ErrorIs(t, err, callbackErr)
+	require.NotNil(t, connected)
+	defer connected.Close(context.Background())
+	require.True(t, connected.IsClosed())
 }

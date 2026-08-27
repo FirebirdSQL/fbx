@@ -277,12 +277,22 @@ func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *
 	var rowBlr []byte
 	if st.Description.HaveSingletonResult() {
 		execKind = fbproto.Op_execute2
-		rowBlr = st.Description.StatementInfo.GetRowBlr()
+		rowBlr, err = st.Description.StatementInfo.GetRowBlr()
+		if err != nil {
+			rr.concludeCommand(QueryStatus{}, err)
+			rr.closed = true
+			return rr
+		}
 	}
 
 	var sqlDataBlr []byte
 	if len(paramValues) > 0 {
-		sqlDataBlr = st.Description.StatementInfo.GetParametersBlr(paramValues)
+		sqlDataBlr, err = st.Description.StatementInfo.GetParametersBlr(paramValues)
+		if err != nil {
+			rr.concludeCommand(QueryStatus{}, err)
+			rr.closed = true
+			return rr
+		}
 	}
 
 	if err = st.conn.withWriteLockAndFlush(func() error {

@@ -83,6 +83,9 @@ type Conn struct {
 	eqb  ExtendedQueryBuilder
 }
 
+// ServerVersion identifies the Firebird or RedDatabase server version.
+type ServerVersion = fbconn.ServerVersion
+
 // Identifier a Firebird identifier or name. Identifiers can be composed of
 // multiple parts such as ["schema", "table"] or ["table", "column"].
 type Identifier []string
@@ -651,6 +654,11 @@ func (c *Conn) Ping(ctx context.Context) error {
 	return c.fbConn.Ping(ctx)
 }
 
+// WireCompressionEnabled reports whether wire compression was negotiated with the server.
+func (c *Conn) WireCompressionEnabled() bool {
+	return c != nil && c.fbConn != nil && c.fbConn.WireCompressionEnabled()
+}
+
 // FbConn returns the underlying *fbconn.FbConn. This is an escape hatch method that allows lower level access to the
 // Firebird connection than fbx exposes.
 //
@@ -658,6 +666,12 @@ func (c *Conn) Ping(ctx context.Context) error {
 // is used and the connection must be returned to the same state before any *fbx.Conn methods are again used.
 func (c *Conn) FbConn() *fbconn.FbConn {
 	return c.fbConn
+}
+
+// ServerVersion returns the server version discovered while establishing the
+// connection. It does not perform a request to the server.
+func (c *Conn) ServerVersion() ServerVersion {
+	return c.fbConn.ServerVersion()
 }
 
 // TypeMap returns the connection info used for this connection.
@@ -1103,11 +1117,6 @@ func (c *Conn) QueryRow(ctx context.Context, sql string, args ...any) Row {
 }
 
 func (c *Conn) deallocateInvalidatedCachedStatements(ctx context.Context) error {
-	//FIXME: fbx need to check state of transaction bound to statement?
-	//	if txStatus := c.fbConn.TxStatus(); txStatus != 'I' && txStatus != 'T' {
-	//		return nil
-	//	}
-
 	var invalidatedStatements []*fbconn.Statement
 	if c.statementCache != nil {
 		invalidatedStatements = c.statementCache.GetInvalidated()

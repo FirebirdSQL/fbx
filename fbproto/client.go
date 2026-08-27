@@ -12,6 +12,7 @@ type Client struct {
 	writer            io.Writer
 	plugin            string
 	codec             StreamCodec
+	compression       *compressionStream
 	xdrReader         *XDRReader
 	xdrWriter         *XDRWriter
 	rowScratch        rowScratch
@@ -28,6 +29,7 @@ type Client struct {
 
 type reusableServerMessages struct {
 	dummy         OpDummy
+	accept        OpAccept
 	condAccept    OpCondAccept
 	dataAccept    OpDataAccept
 	response      OpResponse
@@ -52,6 +54,7 @@ func NewClient(r io.Reader, w io.Writer, encoding *Encoding) *Client {
 	c.writer = w
 	c.xdrReader = NewXDRReader(&c)
 	c.xdrWriter = NewXDRWriter(&c)
+	c.compression = newCompressionStream(c.readTransport, c.writeTransport, c.flushTransport)
 	c.Encoding = encoding
 	c.reusable.condAccept.Encoding = encoding
 	c.reusable.dataAccept.Encoding = encoding
@@ -172,6 +175,10 @@ func (c *Client) ReleaseInlineBlobData(data []byte) {
 }
 
 func (c *Client) Read(buf []byte) (n int, err error) {
+	return c.compression.read(buf)
+}
+
+func (c *Client) readTransport(buf []byte) (n int, err error) {
 	if c.codec != nil {
 		n, err = c.reader.Read(buf)
 		if n > 0 {
@@ -184,6 +191,17 @@ func (c *Client) Read(buf []byte) (n int, err error) {
 }
 
 func (c *Client) Write(buf []byte) (n int, err error) {
+	return c.compression.write(buf)
+}
+
+func (c *Client) flushTransport() error {
+	if flusher, ok := c.writer.(interface{ Flush() error }); ok {
+		return flusher.Flush()
+	}
+	return nil
+}
+
+func (c *Client) writeTransport(buf []byte) (n int, err error) {
 	if c.codec != nil {
 		if cap(c.writeScratch) < cryptoChunkSize {
 			c.writeScratch = make([]byte, cryptoChunkSize)
@@ -263,6 +281,8 @@ func (c *Client) ReadMessage() (ServerMessage, error) {
 	switch opcode {
 	case Op_dummy:
 		return &c.reusable.dummy, nil
+	case Op_accept:
+		msg = &c.reusable.accept
 	case Op_cond_accept:
 		c.reusable.condAccept.Encoding = c.Encoding
 		msg = &c.reusable.condAccept

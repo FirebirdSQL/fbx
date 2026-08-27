@@ -5,10 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"regexp"
-	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -362,12 +359,6 @@ S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlSta
 S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=0 blobId=0 lenData=0 data='' gdsCodes=0
 `, `\t`, "\t")
 
-var (
-	serverEngineVersionNumberCheckOnce sync.Once
-	serverEngineVersionNumberValue     int
-	engineVersionRegexp                = regexp.MustCompile(`^\s*(\d+)\.(\d+)\.(\d+)`)
-)
-
 type traceSnapshotProfile string
 
 const (
@@ -455,50 +446,10 @@ func getExpectedTraceSnapshotsForServerEngineVersion(t testing.TB, versionNumber
 	return snapshots
 }
 
-func fetchEngineVersion(ctx context.Context, t testing.TB, conn *fbconn.FbConn) string {
+func getServerEngineVersionNumber(t testing.TB, conn *fbconn.FbConn) int {
 	t.Helper()
-
-	result := conn.Exec(ctx, "select rdb$get_context('SYSTEM','ENGINE_VERSION') from rdb$database").Read()
-	require.NoError(t, result.Err)
-	require.NotEmpty(t, result.Rows)
-	require.NotEmpty(t, result.Rows[0])
-	require.NotNil(t, result.Rows[0][0])
-
-	return string(result.Rows[0][0])
-}
-
-func getServerEngineVersionNumber(ctx context.Context, t testing.TB) int {
-	t.Helper()
-	serverEngineVersionNumberCheckOnce.Do(func() {
-		versionConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
-		require.NoError(t, err)
-		defer versionConn.Close(ctx)
-
-		serverEngineVersionNumberValue = parseEngineVersionNumber(fetchEngineVersion(ctx, t, versionConn))
-	})
-
-	return serverEngineVersionNumberValue
-}
-
-func parseEngineVersionNumber(version string) int {
-	matches := engineVersionRegexp.FindStringSubmatch(version)
-	if len(matches) != 4 {
-		panic(fmt.Sprintf("failed to parse server engine version %q: expected semantic version major.minor.patch", version))
-	}
-	major := mustAtoi("major", matches[1], version)
-	minor := mustAtoi("minor", matches[2], version)
-	patch := mustAtoi("patch", matches[3], version)
-
-	// Normalize as MAJOR*10000 + MINOR*100 + PATCH for stable numeric comparisons.
-	return major*10000 + minor*100 + patch
-}
-
-func mustAtoi(partName, value, version string) int {
-	n, err := strconv.Atoi(value)
-	if err != nil {
-		panic(fmt.Sprintf("failed to parse %s version part %q from engine version %q: %v", partName, value, version, err))
-	}
-	return n
+	version := conn.ServerVersion()
+	return version.Major*10000 + version.Minor*100 + version.Patch
 }
 
 func TestTrace(t *testing.T) {
@@ -511,7 +462,7 @@ func TestTrace(t *testing.T) {
 	require.NoError(t, err)
 	defer conn.Close(ctx)
 
-	serverEngineVersionNumber := getServerEngineVersionNumber(ctx, t)
+	serverEngineVersionNumber := getServerEngineVersionNumber(t, conn)
 	expectedSnapshots := getExpectedTraceSnapshotsForServerEngineVersion(t, serverEngineVersionNumber)
 
 	traceOutput := &bytes.Buffer{}
@@ -541,7 +492,7 @@ func TestFullLogTrace(t *testing.T) {
 	require.NoError(t, err)
 	defer conn.Close(ctx)
 
-	serverEngineVersionNumber := getServerEngineVersionNumber(ctx, t)
+	serverEngineVersionNumber := getServerEngineVersionNumber(t, conn)
 	expectedSnapshots := getExpectedTraceSnapshotsForServerEngineVersion(t, serverEngineVersionNumber)
 
 	traceOutput := &bytes.Buffer{}

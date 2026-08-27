@@ -33,6 +33,8 @@ fbtype maps between all common base types directly between Go and Firebird. In p
     float64       double precision
 
     time.Time     date
+                  time
+                  time with time zone
                   timestamp
                   timestamp with time zone
 

@@ -8,9 +8,6 @@ import (
 	"fmt"
 	"os"
 	"reflect"
-	"regexp"
-	"strconv"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -22,11 +19,6 @@ import (
 )
 
 var defaultConnTestRunner fbxtest.ConnTestRunner
-var (
-	serverMajorVersionCheckOnce sync.Once
-	serverMajorVersionValue     int
-	engineMajorRegexp           = regexp.MustCompile(`\d+`)
-)
 
 func init() {
 	defaultConnTestRunner = fbxtest.DefaultConnTestRunner()
@@ -37,32 +29,9 @@ func init() {
 	}
 }
 
-func getServerMajorVersionForConn(ctx context.Context, t testing.TB, conn interface {
-	QueryRow(ctx context.Context, sql string, args ...any) fbx.Row
-}) int {
+func getServerMajorVersionForConn(ctx context.Context, t testing.TB, conn *fbx.Conn) int {
 	t.Helper()
-	serverMajorVersionCheckOnce.Do(func() {
-		var version string
-		err := conn.QueryRow(ctx, "select rdb$get_context('SYSTEM','ENGINE_VERSION') from rdb$database").Scan(&version)
-		require.NoError(t, err)
-
-		major, ok := parseEngineMajorVersion(version)
-		require.Truef(t, ok, "failed to parse engine version: %q", version)
-		serverMajorVersionValue = major
-	})
-	return serverMajorVersionValue
-}
-
-func parseEngineMajorVersion(version string) (int, bool) {
-	match := engineMajorRegexp.FindString(version)
-	if match == "" {
-		return 0, false
-	}
-	major, err := strconv.Atoi(match)
-	if err != nil {
-		return 0, false
-	}
-	return major, true
+	return conn.ServerVersion().Major
 }
 
 // Renamed helper types used to test underlying-type wrappers.
@@ -264,7 +233,7 @@ func TestMapScanSmallintIntoAnyReturnsInt16(t *testing.T) {
 	m := fbtype.NewMap()
 	var got any
 
-	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 0, 4, 0)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 0, 2, 0)
 	err := m.Scan(typeMetadata, []byte{0, 0, 0, 1}, &got)
 
 	require.NoError(t, err)
@@ -360,8 +329,8 @@ func TestMapScanRegisteredTypeIntoSQLScannerReceivesDatabaseSQLValue(t *testing.
 
 	err = m.Scan(typeMetadata, src, scanner)
 	require.NoError(t, err)
-	require.IsType(t, float64(0), got)
-	assert.Equal(t, 12.34, got)
+	require.IsType(t, "", got)
+	assert.Equal(t, "12.34", got)
 
 	got = "not nil"
 	err = m.Scan(typeMetadata, nil, scanner)
@@ -552,6 +521,141 @@ func TestMapEncodeSliceWrapperUsesReflectForUncommonTypes(t *testing.T) {
 	assert.Equal(t, "[{1 3}]|[true false true]", string(buf))
 }
 
+func TestMapEncodeEmptyArrayIsDistinctFromNullArray(t *testing.T) {
+	m := fbtype.NewMap()
+	arrayData, err := fbtype.NewArrayData(
+		fbproto.SQL_TYPE_INT64,
+		0,
+		8,
+		0,
+		[]map[string]int{{"Lower": 1, "Upper": 3}},
+	)
+	require.NoError(t, err)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_ARRAY, 0, 8, 0)
+	typeMetadata.SetArrayMetadata(arrayData)
+
+	buf, err := m.Encode(typeMetadata, []*fbtype.Int8{}, nil)
+	require.NoError(t, err)
+	require.NotNil(t, buf)
+	require.Empty(t, buf)
+
+	buf, err = m.Encode(typeMetadata, []*fbtype.Int8(nil), nil)
+	require.NoError(t, err)
+	require.Nil(t, buf)
+}
+
+func TestDimensionsAcceptsNullArray(t *testing.T) {
+	tests := []struct {
+		name  string
+		value any
+	}{
+		{name: "untyped nil", value: nil},
+		{name: "typed nil slice", value: []int64(nil)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dimensions, err := fbtype.Dimensions(tt.value, []int{1})
+			require.NoError(t, err)
+			require.Nil(t, dimensions)
+		})
+	}
+}
+
+func TestMapEncodeArrayRejectsNullElements(t *testing.T) {
+	m := fbtype.NewMap()
+	arrayData, err := fbtype.NewArrayData(
+		fbproto.SQL_TYPE_INT64,
+		0,
+		8,
+		0,
+		[]map[string]int{{"Lower": 1, "Upper": 3}},
+	)
+	require.NoError(t, err)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_ARRAY, 0, 8, 0)
+	typeMetadata.SetArrayMetadata(arrayData)
+
+	valid := fbtype.Int8{Int64: 42, Valid: true}
+	validBuiltin := int64(84)
+	tests := []struct {
+		name      string
+		value     any
+		wantIndex int
+	}{
+		{name: "typed nil first", value: []*fbtype.Int8{nil, &valid}, wantIndex: 0},
+		{name: "typed nil last", value: []*fbtype.Int8{&valid, nil}, wantIndex: 1},
+		{name: "typed nil builtin", value: []*int64{&validBuiltin, nil}, wantIndex: 1},
+		{name: "untyped nil", value: []any{int64(1), nil}, wantIndex: 1},
+		{name: "invalid Int8", value: []fbtype.Int8{valid, fbtype.Int8{}}, wantIndex: 1},
+		{name: "invalid Numeric", value: []fbtype.Numeric{{Valid: true}, {}}, wantIndex: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := m.Encode(typeMetadata, tt.value, nil)
+			require.ErrorContains(t, err, fmt.Sprintf("cannot encode NULL array element at index %d", tt.wantIndex))
+		})
+	}
+}
+
+func TestMapEncodeArrayPreservesValidEmptyStringElement(t *testing.T) {
+	m := fbtype.NewMap()
+	arrayData, err := fbtype.NewArrayData(
+		fbproto.SQL_TYPE_VARYING,
+		0,
+		10,
+		0,
+		[]map[string]int{{"Lower": 1, "Upper": 1}},
+	)
+	require.NoError(t, err)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_ARRAY, 0, 10, 0)
+	typeMetadata.SetArrayMetadata(arrayData)
+
+	buf, err := m.Encode(typeMetadata, []string{""}, nil)
+	require.NoError(t, err)
+	require.Equal(t, []byte{0, 0, 0, 0}, buf)
+
+	_, err = m.Encode(typeMetadata, []fbtype.Text{{}}, nil)
+	require.ErrorContains(t, err, "cannot encode NULL array element at index 0")
+}
+
+func TestMapEncodeArrayPreservesValidBooleanAndTextElements(t *testing.T) {
+	m := fbtype.NewMap()
+
+	booleanData, err := fbtype.NewArrayData(
+		fbproto.SQL_TYPE_BOOLEAN,
+		0,
+		1,
+		0,
+		[]map[string]int{{"Lower": 1, "Upper": 2}},
+	)
+	require.NoError(t, err)
+	booleanMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_ARRAY, 0, 1, 0)
+	booleanMetadata.SetArrayMetadata(booleanData)
+
+	buf, err := m.Encode(booleanMetadata, []bool{false, true}, nil)
+	require.NoError(t, err)
+	require.Equal(t, []byte{0, 0, 0, 0, 1, 0, 0, 0}, buf)
+
+	_, err = m.Encode(booleanMetadata, []fbtype.Bool{{}}, nil)
+	require.ErrorContains(t, err, "cannot encode NULL array element at index 0")
+
+	textData, err := fbtype.NewArrayData(
+		fbproto.SQL_TYPE_TEXT,
+		0,
+		3,
+		0,
+		[]map[string]int{{"Lower": 1, "Upper": 2}},
+	)
+	require.NoError(t, err)
+	textMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_ARRAY, 0, 3, 0)
+	textMetadata.SetArrayMetadata(textData)
+
+	buf, err = m.Encode(textMetadata, []string{"", "a"}, nil)
+	require.NoError(t, err)
+	require.Equal(t, []byte{' ', ' ', ' ', 0, 'a', ' ', ' ', 0}, buf)
+}
+
 func TestMapScanMultiDimensionalSliceUsesMultiDimensionalWrapper(t *testing.T) {
 	m := fbtype.NewMap()
 	typeID := uint32(999995)
@@ -664,6 +768,50 @@ func TestMapScanPtrArrayWrapperRejectsLengthMismatch(t *testing.T) {
 	assert.Contains(t, err.Error(), "cannot scan array with length 2")
 }
 
+type nullRejectingArraySetter struct {
+	err error
+}
+
+func (s *nullRejectingArraySetter) SetDimensions([]fbtype.ArrayDimension) error {
+	return s.err
+}
+
+func (*nullRejectingArraySetter) ScanIndex(int) any {
+	return nil
+}
+
+func TestSQLScannerNilArrayTargetReturnsError(t *testing.T) {
+	tests := []struct {
+		name   string
+		target any
+	}{
+		{name: "untyped nil", target: nil},
+		{name: "slice pointer", target: (*[]int64)(nil)},
+		{name: "flat array pointer", target: (*fbtype.FlatArray[int64])(nil)},
+		{name: "array wrapper pointer", target: (*fbtype.Array[int64])(nil)},
+		{name: "custom setter pointer", target: (*nullRejectingArraySetter)(nil)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.NotPanics(t, func() {
+				err := fbtype.NewMap().SQLScanner(tt.target).Scan(nil)
+				require.Error(t, err)
+			})
+		})
+	}
+}
+
+func TestArrayScanNullPropagatesSetDimensionsError(t *testing.T) {
+	wantErr := fmt.Errorf("cannot represent NULL")
+	target := &nullRejectingArraySetter{err: wantErr}
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_ARRAY, 0, 0, 0)
+	typeMetadata.SetArrayMetadata(&fbtype.ArrayData{})
+
+	err := fbtype.NewMap().Scan(typeMetadata, nil, target)
+	require.ErrorIs(t, err, wantErr)
+}
+
 type scannerString string
 
 func (ss *scannerString) Scan(v any) error {
@@ -693,7 +841,7 @@ func TestMapScanSQLScannerAndPointerPointerTargets(t *testing.T) {
 	src := []byte{0, 0, 0, 42}
 	var v fbCustomInt
 
-	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 0, 4, 0)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 0, 2, 0)
 	plan := m.PlanScan(typeMetadata, &v)
 	err := plan.Scan(src, &v)
 	require.NoError(t, err)
@@ -727,7 +875,7 @@ func TestPlanScanNilInterfaceTargetFails(t *testing.T) {
 	m := fbtype.NewMap()
 	src := []byte{0, 0, 0, 42}
 	var v interface{}
-	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 0, 4, 0)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 0, 2, 0)
 	plan := m.PlanScan(typeMetadata, v)
 	err := plan.Scan(src, v)
 	assert.Error(t, err)

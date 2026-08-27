@@ -146,142 +146,14 @@ func (p *StatementInfo) feedDescriptors(r *ServerInfoBufferReader) error {
 	}
 }
 
-func (p *StatementInfo) GetRowBlr() []byte {
-	return p.CalculateBlr(p.FieldDescriptors, nil)
+// GetRowBlr generates a BLR buffer from FieldDescriptors.
+func (p *StatementInfo) GetRowBlr() ([]byte, error) {
+	return fbproto.CalculateBLR(p.FieldDescriptors, nil)
 }
 
-func (p *StatementInfo) GetParametersBlr(values [][]byte) []byte {
-	return p.CalculateBlr(p.ParametersDescriptors, values)
-}
-
-func (p *StatementInfo) CalculateBlr(descriptors []fbproto.FieldDescriptor, values [][]byte) []byte {
-	ln := len(descriptors) * 2
-	blr := make([]byte, (ln*4)+8)
-	// FIXME: fbx remove magic numbers and use blr codes
-	blr[0] = 5
-	blr[1] = 2
-	blr[2] = 4
-	blr[3] = 0
-	blr[4] = byte(ln & 255)
-	blr[5] = byte(ln >> 8)
-	n := 6
-
-	for i, x := range descriptors {
-		sqlscale := x.Scale
-		if sqlscale < 0 {
-			sqlscale += 256
-		}
-		dataLength := x.Length
-		if values != nil {
-			if values[i] != nil {
-				dataLength = len(values[i])
-			} else {
-				dataLength = 0
-			}
-		}
-		switch x.Type {
-		case fbproto.SQL_TYPE_VARYING:
-			charsetID := byte(x.Subtype & 0xFF)
-			collationID := byte((x.Subtype >> 8) & 0xFF)
-			blr[n] = 38 // blr_varying2
-			blr[n+1] = charsetID
-			blr[n+2] = collationID
-			blr[n+3] = byte(dataLength & 255)
-			blr[n+4] = byte(dataLength >> 8)
-			n += 5
-		case fbproto.SQL_TYPE_TEXT:
-			charsetID := byte(x.Subtype & 0xFF)
-			collationID := byte((x.Subtype >> 8) & 0xFF)
-			blr[n] = 15 // blr_text2
-			blr[n+1] = charsetID
-			blr[n+2] = collationID
-			blr[n+3] = byte(dataLength & 255)
-			blr[n+4] = byte(dataLength >> 8)
-			n += 5
-		case fbproto.SQL_TYPE_LONG:
-			blr[n] = 8
-			blr[n+1] = byte(sqlscale)
-			n += 2
-		case fbproto.SQL_TYPE_SHORT:
-			blr[n] = 7
-			blr[n+1] = byte(sqlscale)
-			n += 2
-		case fbproto.SQL_TYPE_INT64:
-			blr[n] = 16
-			blr[n+1] = byte(sqlscale)
-			n += 2
-		case fbproto.SQL_TYPE_INT128:
-			blr[n] = 26
-			blr[n+1] = byte(sqlscale)
-			n += 2
-		case fbproto.SQL_TYPE_QUAD:
-			blr[n] = 9
-			blr[n+1] = byte(sqlscale)
-			n += 2
-		case fbproto.SQL_TYPE_DEC_FIXED: // OBSOLETED
-			blr[n] = 26
-			blr[n+1] = byte(sqlscale)
-			n += 2
-		case fbproto.SQL_TYPE_DOUBLE:
-			blr[n] = 27
-			n++
-		case fbproto.SQL_TYPE_FLOAT:
-			blr[n] = 10
-			n++
-		case fbproto.SQL_TYPE_D_FLOAT:
-			blr[n] = 11
-			n++
-		case fbproto.SQL_TYPE_DATE:
-			blr[n] = 12
-			n++
-		case fbproto.SQL_TYPE_TIME:
-			blr[n] = 13
-			n++
-		case fbproto.SQL_TYPE_TIMESTAMP:
-			blr[n] = 35
-			n++
-		case fbproto.SQL_TYPE_BLOB:
-			blr[n] = 9
-			blr[n+1] = 0
-			n += 2
-		case fbproto.SQL_TYPE_ARRAY:
-			blr[n] = 9
-			blr[n+1] = 0
-			n += 2
-		case fbproto.SQL_TYPE_BOOLEAN:
-			blr[n] = 23
-			n++
-		case fbproto.SQL_TYPE_DEC64:
-			blr[n] = 24
-			n++
-		case fbproto.SQL_TYPE_DEC128:
-			blr[n] = 25
-			n++
-		case fbproto.SQL_TYPE_TIME_TZ:
-			blr[n] = 28
-			n++
-		case fbproto.SQL_TYPE_TIMESTAMP_TZ:
-			blr[n] = 29
-			n++
-		case fbproto.SQL_TYPE_NULL:
-			blr[n] = 14
-			blr[n+1] = 0
-			blr[n+2] = 0
-			n += 3
-		default:
-			panic(fmt.Sprintf("unknown SQL type %d", x.Type))
-		}
-		// [blr_short, 0]
-		blr[n] = 7
-		blr[n+1] = 0
-		n += 2
-	}
-	// [blr_end, blr_eoc]
-	blr[n] = 255
-	blr[n+1] = 76
-	n += 2
-
-	return blr[:n]
+// GetParametersBlr generates a BLR buffer from ParametersDescriptors and a set of values.
+func (p *StatementInfo) GetParametersBlr(values [][]byte) ([]byte, error) {
+	return fbproto.CalculateBLR(p.ParametersDescriptors, values)
 }
 
 func (p *SQLCounts) parseInfo(buf []byte) error {

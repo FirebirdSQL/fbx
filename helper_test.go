@@ -4,9 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"regexp"
-	"strconv"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -18,12 +15,6 @@ import (
 )
 
 var defaultConnTestRunner fbxtest.ConnTestRunner
-
-var (
-	serverMajorVersionCheckOnce sync.Once
-	serverMajorVersionValue     int
-	engineMajorRegexp           = regexp.MustCompile(`\d+`)
-)
 
 func init() {
 	defaultConnTestRunner = fbxtest.DefaultConnTestRunner()
@@ -42,20 +33,9 @@ func mustConnectString(t testing.TB, connString string) *fbx.Conn {
 	return conn
 }
 
-func getServerMajorVersionForConn(ctx context.Context, t testing.TB, conn interface {
-	QueryRow(ctx context.Context, sql string, args ...any) fbx.Row
-}) int {
+func getServerMajorVersionForConn(ctx context.Context, t testing.TB, conn *fbx.Conn) int {
 	t.Helper()
-	serverMajorVersionCheckOnce.Do(func() {
-		var version string
-		err := conn.QueryRow(ctx, "select rdb$get_context('SYSTEM','ENGINE_VERSION') from rdb$database").Scan(&version)
-		require.NoError(t, err)
-
-		major, ok := parseEngineMajorVersion(version)
-		require.Truef(t, ok, "failed to parse engine version: %q", version)
-		serverMajorVersionValue = major
-	})
-	return serverMajorVersionValue
+	return conn.ServerVersion().Major
 }
 
 func skipIfBatchUnsupported(ctx context.Context, t testing.TB, conn *fbx.Conn) {
@@ -64,18 +44,6 @@ func skipIfBatchUnsupported(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 	if serverMajorVersion < 4 {
 		t.Skipf("batch is not supported by server engine version %d", serverMajorVersion)
 	}
-}
-
-func parseEngineMajorVersion(version string) (int, bool) {
-	match := engineMajorRegexp.FindString(version)
-	if match == "" {
-		return 0, false
-	}
-	major, err := strconv.Atoi(match)
-	if err != nil {
-		return 0, false
-	}
-	return major, true
 }
 
 func mustParseConfig(t testing.TB, connString string) *fbx.ConnConfig {
@@ -157,6 +125,7 @@ func assertConfigsEqual(t *testing.T, expected, actual *fbx.ConnConfig, testName
 	assert.Equalf(t, expected.Password, actual.Password, "%s - Password", testName)
 	assert.Equalf(t, expected.ConnectTimeout, actual.ConnectTimeout, "%s - ConnectTimeout", testName)
 	assert.Equalf(t, expected.FetchBatchSize, actual.FetchBatchSize, "%s - FetchBatchSize", testName)
+	assert.Equalf(t, expected.WireCompression, actual.WireCompression, "%s - WireCompression", testName)
 	assert.Equalf(t, expected.RuntimeParams, actual.RuntimeParams, "%s - RuntimeParams", testName)
 
 	// Can't test function equality, so just test that they are set or not.
