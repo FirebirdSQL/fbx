@@ -69,6 +69,7 @@ type FbConn struct {
 	bgReaderStarted  chan struct{}
 	writeInProgress  atomic.Bool
 	attachmentHandle int
+	attachmentID     uint64
 
 	customData map[string]any
 
@@ -288,7 +289,7 @@ func DropDatabaseConfig(ctx context.Context, config *Config) error {
 // When respond is false, the generated reply remains in authManager for the
 // following attach DPB instead of being sent in op_cont_auth.
 func (fbConn *FbConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *auth.AuthManager, respond bool) error {
-	if err := fbConn.handleAcceptMetadata(msg, authManager); err != nil {
+	if err := fbConn.handleAcceptMetadata(&msg.AcceptMetadata, msg.ServerKeys, authManager); err != nil {
 		return err
 	}
 
@@ -309,18 +310,23 @@ func (fbConn *FbConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *a
 
 // handleAcceptMetadata records the negotiated protocol version, wire-encryption
 // keys, and the server-supported authentication plugin list.
-func (fbConn *FbConn) handleAcceptMetadata(msg *fbproto.OpCondAccept, authManager *auth.AuthManager) error {
-	if msg.Version != 0 {
-		fbConn.protocolFeatures = ProtocolFeaturesForVersion(msg.Version)
-		fbConn.protocolVersion = msg.Version & fbproto.ProtocolMask
+func (fbConn *FbConn) handleAcceptMetadata(metadata *fbproto.AcceptMetadata, serverKeys []byte, authManager *auth.AuthManager) error {
+	if metadata.Version != 0 {
+		fbConn.protocolFeatures = ProtocolFeaturesForVersion(metadata.Version)
+		fbConn.protocolVersion = metadata.Version & fbproto.ProtocolMask
+	}
+	if metadata.Compress && !fbConn.client.CompressionEnabled() {
+		if err := fbConn.client.EnableCompression(); err != nil {
+			return fmt.Errorf("failed to enable wire compression: %w", err)
+		}
 	}
 
 	if fbConn.wireCrypt != nil {
-		if err := fbConn.wireCrypt.AddServerKeys(msg.ServerKeys); err != nil {
+		if err := fbConn.wireCrypt.AddServerKeys(serverKeys); err != nil {
 			return err
 		}
 	}
-	if err := authManager.RestrictToServerPlugins(msg.ServerKeys); err != nil {
+	if err := authManager.RestrictToServerPlugins(serverKeys); err != nil {
 		return err
 	}
 	return nil
@@ -400,7 +406,7 @@ func (fbConn *FbConn) finishAttachAuth(config *Config, authManager *auth.AuthMan
 			}
 			continue
 		case *fbproto.OpCondAccept:
-			if err := fbConn.handleAcceptMetadata(m, authManager); err != nil {
+			if err := fbConn.handleAcceptMetadata(&m.AcceptMetadata, m.ServerKeys, authManager); err != nil {
 				return fmt.Errorf("authentication failed: %w", err)
 			}
 			if err := fbConn.handlePostAttachAuthChallenge(authManager, m.PluginName, m.Data, nil); err != nil {
@@ -411,7 +417,7 @@ func (fbConn *FbConn) finishAttachAuth(config *Config, authManager *auth.AuthMan
 			}
 			continue
 		case *fbproto.OpDataAccept:
-			if err := fbConn.handleAcceptMetadata(&m.OpCondAccept, authManager); err != nil {
+			if err := fbConn.handleAcceptMetadata(&m.AcceptMetadata, m.ServerKeys, authManager); err != nil {
 				return fmt.Errorf("authentication failed: %w", err)
 			}
 			if m.AuthComplete {
@@ -465,6 +471,11 @@ func (fbConn *FbConn) enableWireCrypt(sessionKey []byte) (*wirecrypt.InitResult,
 	if err := fbConn.client.WriteMessage(&fbproto.OpCrypt{Plugin: initInfo.Identifier.Plugin, Encoding: fbConn.Encoding}); err != nil {
 		return nil, err
 	}
+	// op_crypt itself must use the current (compressed, but not encrypted) transport.
+	// Flush it all the way to the socket before installing the cipher below zlib.
+	if err := fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+		return nil, err
+	}
 	codec, err := wirecrypt.NewSymmetricCodec(initInfo.Identifier.Plugin, sessionKey, initInfo.Nonce)
 	if err != nil {
 		return nil, err
@@ -474,16 +485,6 @@ func (fbConn *FbConn) enableWireCrypt(sessionKey []byte) (*wirecrypt.InitResult,
 	fbConn.wireCrypt.ClearServerKeys()
 
 	return initInfo, nil
-}
-
-// shouldRespondToCondAccept reports whether authentication must continue with
-// op_cont_auth before attach. A challenge or wire-encryption key requires a
-// response; an empty known-plugins response can proceed to attach-through-DPB.
-func shouldRespondToCondAccept(msg *fbproto.OpCondAccept) bool {
-	if msg == nil {
-		return true
-	}
-	return len(msg.Data) > 0 || hasWireCryptKeys(msg.ServerKeys)
 }
 
 // shouldRespondToDataAccept reports whether op_accept_data requires another
@@ -756,6 +757,7 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 		AuthSpecificData: initialHandshake.SpecificData,
 		Options:          nil,
 		WireCrypt:        config.WireCrypt,
+		Compress:         config.WireCompression,
 		Encoding:         fbConn.Encoding,
 	}
 	if target == connectTargetDatabase && config.CreateDatabase {
@@ -785,6 +787,12 @@ connectLoop:
 		}
 
 		switch msg := msg.(type) {
+		case *fbproto.OpAccept:
+			if err := fbConn.handleAcceptMetadata(&msg.AcceptMetadata, nil, authManager); err != nil {
+				_ = fbConn.conn.Close()
+				return nil, newPerDialConnectError("authentication failed", err)
+			}
+			break connectLoop
 		case *fbproto.OpContAuth:
 			fake := &fbproto.OpCondAccept{Encoding: fbConn.Encoding}
 			fake.PluginName = msg.PluginName
@@ -796,13 +804,12 @@ connectLoop:
 			}
 			continue connectLoop
 		case *fbproto.OpCondAccept:
-			respond := shouldRespondToCondAccept(msg)
-			if err := fbConn.handleCondAccept(msg, authManager, respond); err != nil {
+			// op_cond_accept always requests an authentication continuation,
+			// including an empty challenge that selects another plugin. The
+			// exchange must finish here so wire encryption starts before attach.
+			if err := fbConn.handleCondAccept(msg, authManager, true); err != nil {
 				fbConn.conn.Close()
 				return nil, newPerDialConnectError("authentication failed", err)
-			}
-			if !respond {
-				break connectLoop
 			}
 			continue connectLoop
 		case *fbproto.OpResponse:
@@ -824,7 +831,7 @@ connectLoop:
 			break connectLoop
 		case *fbproto.OpDataAccept:
 			if msg.AuthComplete {
-				if err := fbConn.handleAcceptMetadata(&msg.OpCondAccept, authManager); err != nil {
+				if err := fbConn.handleAcceptMetadata(&msg.AcceptMetadata, msg.ServerKeys, authManager); err != nil {
 					fbConn.conn.Close()
 					return nil, newPerDialConnectError("authentication failed", err)
 				}
@@ -951,34 +958,11 @@ connectLoop:
 
 	fbConn.status = connStatusIdle
 
-	err = fbConn.getDatabaseInfo([]byte{fbproto.Isc_info_firebird_version, fbproto.Isc_info_end}, func(buf []byte) error {
-		r := NewServerInfoBufferReader(buf)
-		var item byte
-		var err error
-		for {
-			if item, err = r.ReadByte(); err != nil {
-				return err
-			}
-			switch item {
-			case fbproto.Isc_info_end:
-				return nil
-			case fbproto.Isc_info_firebird_version:
-				v, err := r.ReadStringValue()
-				if err != nil {
-					return err
-				}
-				fbConn.serverVersion, err = parseServerVersion(v)
-				if err != nil {
-					return err
-				}
-				fbConn.serverMajorVersion = fbConn.serverVersion.Major
-			case fbproto.Isc_info_truncated:
-				return InfoTruncationError{0}
-			default:
-				return fmt.Errorf("unknown database info item: %d", item)
-			}
-		}
-	})
+	err = fbConn.getDatabaseInfo([]byte{
+		fbproto.Isc_info_firebird_version,
+		fbproto.Isc_info_attachment_id,
+		fbproto.Isc_info_end,
+	}, fbConn.parseDatabaseInfo)
 
 	if err != nil {
 		fbConn.conn.Close()
@@ -997,6 +981,41 @@ connectLoop:
 	}
 
 	return fbConn, nil
+}
+
+func (fbConn *FbConn) parseDatabaseInfo(buf []byte) error {
+	r := NewServerInfoBufferReader(buf)
+	for {
+		item, err := r.ReadByte()
+		if err != nil {
+			return err
+		}
+
+		switch item {
+		case fbproto.Isc_info_end:
+			return nil
+		case fbproto.Isc_info_firebird_version:
+			v, err := r.ReadStringValue()
+			if err != nil {
+				return err
+			}
+			fbConn.serverVersion, err = parseServerVersion(v)
+			if err != nil {
+				return err
+			}
+			fbConn.serverMajorVersion = fbConn.serverVersion.Major
+		case fbproto.Isc_info_attachment_id:
+			attachmentID, err := r.ReadInt64Value()
+			if err != nil {
+				return err
+			}
+			fbConn.attachmentID = uint64(attachmentID)
+		case fbproto.Isc_info_truncated:
+			return InfoTruncationError{0}
+		default:
+			return fmt.Errorf("unknown database info item: %d", item)
+		}
+	}
 }
 
 // ReceiveMessage receives one wire protocol message from the server. It must only be used when the
@@ -1163,6 +1182,12 @@ func (fbConn *FbConn) Conn() net.Conn {
 	return fbConn.conn
 }
 
+// AttachmentID returns the server-side attachment identifier for this connection.
+// It is the same value exposed by MON$ATTACHMENT_ID and CURRENT_CONNECTION.
+func (fbConn *FbConn) AttachmentID() uint64 {
+	return fbConn.attachmentID
+}
+
 // ServerVersion returns the server version discovered while establishing the
 // connection. It does not perform a request to the server.
 func (fbConn *FbConn) ServerVersion() ServerVersion {
@@ -1184,6 +1209,11 @@ func (fbConn *FbConn) Client() *fbproto.Client {
 	return fbConn.client
 }
 
+// WireCompressionEnabled reports whether wire compression was negotiated with the server.
+func (fbConn *FbConn) WireCompressionEnabled() bool {
+	return fbConn != nil && fbConn.client != nil && fbConn.client.CompressionEnabled()
+}
+
 // Close closes a connection. It is safe to call Close on an already closed connection. Close attempts a clean close by
 // sending the exit message to Firebird/RedDatabase server. However, this could block so ctx is available to limit the time to wait. The
 // underlying net.Conn.Close() will always be called regardless of any other errors.
@@ -1201,6 +1231,7 @@ func (fbConn *FbConn) Close(ctx context.Context) (err error) {
 	defer fbConn.closeCleanupDone()
 	defer func() {
 		err = errors.Join(err, fbConn.conn.Close())
+		fbConn.client.WaitForCompressionRead()
 	}()
 
 	if ctx != context.Background() {
@@ -1213,12 +1244,17 @@ func (fbConn *FbConn) Close(ctx context.Context) (err error) {
 		defer fbConn.contextWatcher.Unwatch()
 	}
 
-	// Ignore any errors sending close messages; the underlying connection is closed below.
-	_ = fbConn.withWriteLockAndFlush(func() error {
-		if err := fbConn.client.WriteMessage(&fbproto.OpDetach{}); err != nil {
-			return err
+	// Ignore errors while terminating the protocol; the underlying connection
+	// is closed below regardless of whether the server accepted the messages.
+	_ = fbConn.withWriteLock(func() error {
+		terminateErr := fbConn.client.WriteMessage(&fbproto.OpDetach{})
+		if terminateErr == nil {
+			terminateErr = fbConn.client.WriteMessage(&fbproto.OpDisconnect{})
 		}
-		return fbConn.client.WriteMessage(&fbproto.OpDisconnect{})
+		if terminateErr == nil {
+			terminateErr = fbConn.flushWithPotentialWriteReadDeadlockLocked()
+		}
+		return errors.Join(terminateErr, fbConn.client.CloseCompression())
 	})
 	// Firebird replies to op_detach, but op_disconnect is terminal and has no response.
 	// Close is best-effort, so it closes the socket instead of waiting for detach acknowledgement.
@@ -1253,9 +1289,13 @@ func (fbConn *FbConn) DropDatabase(ctx context.Context) (err error) {
 		}
 		fbConn.status = connStatusClosed
 		fbConn.clearAllInlineBlobCache()
+		compressionErr := fbConn.withWriteLock(func() error {
+			return fbConn.client.CloseCompression()
+		})
 		closeErr := fbConn.conn.Close()
+		fbConn.client.WaitForCompressionRead()
 		fbConn.closeCleanupDone()
-		err = errors.Join(err, closeErr)
+		err = errors.Join(err, closeErr, compressionErr)
 	}()
 
 	dropStarted = true
@@ -1295,7 +1335,11 @@ func (fbConn *FbConn) asyncClose() {
 
 	go func() {
 		defer fbConn.closeCleanupDone()
-		defer fbConn.conn.Close()
+		_ = fbConn.conn.Close()
+		_ = fbConn.withWriteLock(func() error {
+			return fbConn.client.CloseCompression()
+		})
+		fbConn.client.WaitForCompressionRead()
 	}()
 }
 
@@ -2756,7 +2800,7 @@ func (fbConn *FbConn) exitPotentialWriteReadDeadlock() {
 func (fbConn *FbConn) flushWithPotentialWriteReadDeadlockLocked() error {
 	fbConn.enterPotentialWriteReadDeadlock()
 	defer fbConn.exitPotentialWriteReadDeadlock()
-	err := fbConn.writer.Flush()
+	err := fbConn.client.Flush()
 	return err
 }
 
@@ -2806,6 +2850,7 @@ func (fbConn *FbConn) CustomData() map[string]any {
 type HijackedConn struct {
 	Conn               net.Conn
 	DBHandle           int // server-side attachment handle
+	AttachmentID       uint64
 	TxStatus           byte
 	Client             *fbproto.Client    // reused as-is by Construct: holds active wire-crypt codec, lazyCounter and Encoding state
 	WireCrypt          *wirecrypt.Manager // wire-crypt plugin factory; not the active cipher (cipher lives inside Client)
@@ -2845,6 +2890,7 @@ func (fbConn *FbConn) Hijack() (*HijackedConn, error) {
 	return &HijackedConn{
 		Conn:               fbConn.conn,
 		DBHandle:           fbConn.attachmentHandle,
+		AttachmentID:       fbConn.attachmentID,
 		TxStatus:           fbConn.txStatus,
 		Client:             fbConn.client,
 		WireCrypt:          fbConn.wireCrypt,
@@ -2872,6 +2918,7 @@ func Construct(hc *HijackedConn) (*FbConn, error) {
 	fbConn := &FbConn{
 		conn:               hc.Conn,
 		attachmentHandle:   hc.DBHandle,
+		attachmentID:       hc.AttachmentID,
 		txStatus:           hc.TxStatus,
 		client:             hc.Client,
 		wireCrypt:          hc.WireCrypt,

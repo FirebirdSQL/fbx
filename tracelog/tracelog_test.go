@@ -168,6 +168,7 @@ func TestLogQuery(t *testing.T) {
 		logs := logger.FilterByMsg("Query")
 		require.Len(t, logs, 1)
 		require.Equal(t, tracelog.LogLevelInfo, logs[0].lvl)
+		require.Equal(t, conn.FbConn().AttachmentID(), logs[0].data["attachment_id"])
 
 		logger.Clear()
 
@@ -178,6 +179,7 @@ func TestLogQuery(t *testing.T) {
 		require.Len(t, logs, 1)
 		require.Equal(t, tracelog.LogLevelError, logs[0].lvl)
 		require.Equal(t, err, logs[0].data["err"])
+		require.Equal(t, conn.FbConn().AttachmentID(), logs[0].data["attachment_id"])
 	})
 }
 

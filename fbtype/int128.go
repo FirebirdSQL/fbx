@@ -236,6 +236,8 @@ func (Int128Codec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) Enco
 		return encodePlanInt128CodecBinaryBigIntPtr{}
 	case Int128Valuer:
 		return encodePlanInt128CodecBinaryValuer{}
+	case NumericValuer:
+		return encodePlanInt128CodecBinaryNumericValuer{}
 	case Int64Valuer:
 		return encodePlanInt128CodecBinaryInt64Valuer{}
 	}
@@ -374,6 +376,25 @@ func (encodePlanInt128CodecBinaryInt64Valuer) Encode(value any, buf []byte) ([]b
 		return nil, nil
 	}
 	return encodePlanInt128CodecBinaryInt64{}.Encode(n.Int64, buf)
+}
+
+type encodePlanInt128CodecBinaryNumericValuer struct{}
+
+func (encodePlanInt128CodecBinaryNumericValuer) Encode(value any, buf []byte) ([]byte, error) {
+	n, err := value.(NumericValuer).NumericValue()
+	if err != nil {
+		return nil, err
+	}
+	if !n.Valid {
+		return nil, nil
+	}
+
+	integer, err := n.toTruncatedBigInt()
+	if err != nil {
+		return nil, err
+	}
+
+	return appendInt128BinaryFromBig(buf, integer)
 }
 
 // PlanScan returns a scan plan for supported Firebird INT128 target values.

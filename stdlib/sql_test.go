@@ -1711,17 +1711,16 @@ func TestCheckIdleConn(t *testing.T) {
 	c, err := db.Conn(context.Background())
 	require.NoError(t, err)
 
-	var cPID uint32
+	var attachmentID uint64
 	err = c.Raw(func(driverConn any) error {
-		//FIXME: there is no pid in fbconn
-		//cPID = driverConn.(*stdlib.Conn).Conn().FbConn().PID()
+		attachmentID = driverConn.(*stdlib.Conn).Conn().FbConn().AttachmentID()
 		return nil
 	})
 	require.NoError(t, err)
 	err = c.Close()
 	require.NoError(t, err)
 
-	require.NotContains(t, ids, cPID)
+	require.NotContains(t, ids, attachmentID)
 }
 
 func TestOptionShouldPing_HookCalledOnReuse(t *testing.T) {

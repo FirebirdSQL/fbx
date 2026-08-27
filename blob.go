@@ -564,10 +564,7 @@ func (w *blobWriter) Write(p []byte) (int, error) {
 		batchBytes := 0
 		nextOffset := offset
 		for nextOffset < len(p) && len(batch) < putBatchSize {
-			n := len(p) - nextOffset
-			if n > segmentSize {
-				n = segmentSize
-			}
+			n := min(len(p)-nextOffset, segmentSize)
 			batch = append(batch, p[nextOffset:nextOffset+n])
 			batchBytes += n
 			nextOffset += n

@@ -10,9 +10,13 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
+
+	"rdb.red-soft.ru/fbx/fbproto"
 )
 
 var big10 *big.Int = big.NewInt(10)
+
+const maxNumericScale int32 = 38
 
 // NumericScanner scans a Firebird NUMERIC or DECIMAL value.
 type NumericScanner interface {
@@ -39,12 +43,21 @@ type Numeric struct {
 
 // ScanNumeric implements [NumericScanner].
 func (n *Numeric) ScanNumeric(v Numeric) error {
+	if err := validateNumericRepresentable(v); err != nil {
+		*n = Numeric{}
+		return err
+	}
+
 	*n = cloneNumeric(v)
 	return nil
 }
 
 // NumericValue implements [NumericValuer].
 func (n Numeric) NumericValue() (Numeric, error) {
+	if err := validateNumericRepresentable(n); err != nil {
+		return Numeric{}, err
+	}
+
 	return cloneNumeric(n), nil
 }
 
@@ -52,6 +65,9 @@ func (n Numeric) NumericValue() (Numeric, error) {
 func (n Numeric) Float64Value() (Float8, error) {
 	if !n.Valid {
 		return Float8{}, nil
+	}
+	if err := validateNumericRepresentable(n); err != nil {
+		return Float8{}, err
 	}
 
 	buf := make([]byte, 0, 32)
@@ -83,13 +99,13 @@ func (n *Numeric) ScanInt64(v Int8) error {
 	return nil
 }
 
-// Int64Value implements [Int64Valuer].
+// Int64Value implements [Int64Valuer]. It discards any fractional part toward zero.
 func (n Numeric) Int64Value() (Int8, error) {
 	if !n.Valid {
 		return Int8{}, nil
 	}
 
-	bi, err := n.toBigInt()
+	bi, err := n.toTruncatedBigInt()
 	if err != nil {
 		return Int8{}, err
 	}
@@ -101,7 +117,8 @@ func (n Numeric) Int64Value() (Int8, error) {
 	return Int8{Int64: bi.Int64(), Valid: true}, nil
 }
 
-// String returns the decimal representation of n, or an empty string for SQL NULL.
+// String returns the decimal representation of n, an empty string for SQL NULL,
+// or a diagnostic string when n cannot represent a Firebird NUMERIC value.
 func (n Numeric) String() string {
 	if !n.Valid {
 		return ""
@@ -109,7 +126,7 @@ func (n Numeric) String() string {
 
 	buf, err := encodeNumericText(n, nil)
 	if err != nil {
-		return ""
+		return fmt.Sprintf("<invalid Numeric: %v>", err)
 	}
 
 	return string(buf)
@@ -127,34 +144,22 @@ func (n *Numeric) ScanScientific(src string) error {
 }
 
 func (n *Numeric) toBigInt() (*big.Int, error) {
-	if n.Int == nil {
-		return big.NewInt(0), nil
+	if err := validateNumericRepresentable(*n); err != nil {
+		return nil, err
 	}
 
-	if n.Exp == 0 {
-		return n.Int, nil
-	}
-
-	num := &big.Int{}
-	num.Set(n.Int)
-	if n.Exp > 0 {
-		mul := &big.Int{}
-		mul.Exp(big10, big.NewInt(int64(n.Exp)), nil)
-		num.Mul(num, mul)
-		return num, nil
-	}
-
-	div := &big.Int{}
-	div.Exp(big10, big.NewInt(int64(-n.Exp)), nil)
-	remainder := &big.Int{}
-	num.DivMod(num, div, remainder)
-	if remainder.Sign() != 0 {
-		return nil, fmt.Errorf("cannot convert %v to integer", n)
-	}
-	return num, nil
+	return rescaleNumeric(*n, 0, numericExact)
 }
 
-func parseNumericString(str string) (n *big.Int, exp int32, err error) {
+func (n *Numeric) toTruncatedBigInt() (*big.Int, error) {
+	if err := validateNumericRepresentable(*n); err != nil {
+		return nil, err
+	}
+
+	return rescaleNumeric(*n, 0, numericTruncate)
+}
+
+func parseDecimalMantissa(str string) (n *big.Int, exp int32, err error) {
 	idx := strings.IndexByte(str, '.')
 
 	if idx == -1 {
@@ -170,6 +175,9 @@ func parseNumericString(str string) (n *big.Int, exp int32, err error) {
 	accum := &big.Int{}
 	if _, ok := accum.SetString(str, 10); !ok {
 		return nil, 0, fmt.Errorf("%s is not a number", str)
+	}
+	if idx == -1 && accum.Sign() == 0 {
+		exp = 0
 	}
 
 	return accum, exp, nil
@@ -206,6 +214,9 @@ func (n *Numeric) Scan(src any) error {
 		return nil
 	case float64:
 		parsed, err := float64ToNumeric(src)
+		if err == nil {
+			err = validateNumericRepresentable(parsed)
+		}
 		if err != nil {
 			*n = Numeric{}
 			return err
@@ -215,7 +226,12 @@ func (n *Numeric) Scan(src any) error {
 	case big.Int:
 		var z big.Int
 		z.Set(&src)
-		*n = Numeric{Int: &z, Valid: true}
+		parsed := Numeric{Int: &z, Valid: true}
+		if err := validateNumericRepresentable(parsed); err != nil {
+			*n = Numeric{}
+			return err
+		}
+		*n = parsed
 		return nil
 	case *big.Int:
 		if src == nil {
@@ -224,7 +240,12 @@ func (n *Numeric) Scan(src any) error {
 		}
 		var z big.Int
 		z.Set(src)
-		*n = Numeric{Int: &z, Valid: true}
+		parsed := Numeric{Int: &z, Valid: true}
+		if err := validateNumericRepresentable(parsed); err != nil {
+			*n = Numeric{}
+			return err
+		}
+		*n = parsed
 		return nil
 	}
 
@@ -251,7 +272,7 @@ func (n Numeric) MarshalJSON() ([]byte, error) {
 		return []byte("null"), nil
 	}
 
-	return n.numberTextBytes(), nil
+	return encodeNumericText(n, nil)
 }
 
 // UnmarshalJSON decodes a JSON number, JSON string, or null into n.
@@ -304,22 +325,22 @@ func (n Numeric) numberTextBytes() []byte {
 		buf.WriteByte('-')
 	}
 
-	exp := int(n.Exp)
+	exp := int64(n.Exp)
 	if exp > 0 {
 		buf.WriteString(intStr)
-		for i := 0; i < exp; i++ {
+		for i := int64(0); i < exp; i++ {
 			buf.WriteByte('0')
 		}
 	} else if exp < 0 {
-		if len(intStr) <= -exp {
+		if int64(len(intStr)) <= -exp {
 			buf.WriteString("0.")
-			leadingZeros := -exp - len(intStr)
-			for i := 0; i < leadingZeros; i++ {
+			leadingZeros := -exp - int64(len(intStr))
+			for i := int64(0); i < leadingZeros; i++ {
 				buf.WriteByte('0')
 			}
 			buf.WriteString(intStr)
-		} else if len(intStr) > -exp {
-			dpPos := len(intStr) + exp
+		} else if int64(len(intStr)) > -exp {
+			dpPos := int64(len(intStr)) + exp
 			buf.WriteString(intStr[:dpPos])
 			buf.WriteByte('.')
 			buf.WriteString(intStr[dpPos:])
@@ -334,42 +355,73 @@ func (n Numeric) numberTextBytes() []byte {
 // NumericCodec encodes and decodes Firebird NUMERIC and DECIMAL values.
 type NumericCodec struct{}
 
+func validateNumericTypeMetadata(typeMetadata TypeMetadata) error {
+	var expectedLength uint32
+	switch typeMetadata.TypeID {
+	case fbproto.SQL_TYPE_SHORT:
+		expectedLength = 2
+	case fbproto.SQL_TYPE_LONG:
+		expectedLength = 4
+	case fbproto.SQL_TYPE_INT64:
+		expectedLength = 8
+	case fbproto.SQL_TYPE_INT128:
+		expectedLength = 16
+	default:
+		return fmt.Errorf("unsupported numeric type ID: %d", typeMetadata.TypeID)
+	}
+
+	if typeMetadata.Length != expectedLength {
+		return fmt.Errorf(
+			"invalid storage length %d for numeric type ID %d: expected %d",
+			typeMetadata.Length, typeMetadata.TypeID, expectedLength,
+		)
+	}
+
+	return nil
+}
+
 // PlanEncode returns an encode plan for supported Firebird NUMERIC and DECIMAL input values.
 func (NumericCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	switch value.(type) {
 	case NumericValuer:
-		return encodePlanNumericCodecBinaryNumericValuer{scale: typeMetadata.Scale, length: typeMetadata.Length}
+		return encodePlanNumericCodecBinaryNumericValuer{typeMetadata: typeMetadata}
 	case Float64Valuer:
-		return encodePlanNumericCodecBinaryFloat64Valuer{scale: typeMetadata.Scale, length: typeMetadata.Length}
+		return encodePlanNumericCodecBinaryFloat64Valuer{typeMetadata: typeMetadata}
 	case Int64Valuer:
-		return encodePlanNumericCodecBinaryInt64Valuer{scale: typeMetadata.Scale, length: typeMetadata.Length}
+		return encodePlanNumericCodecBinaryInt64Valuer{typeMetadata: typeMetadata}
 	case string:
-		return encodePlanNumericCodecTextString{scale: typeMetadata.Scale, length: typeMetadata.Length}
+		return encodePlanNumericCodecTextString{typeMetadata: typeMetadata}
 	}
 
 	return nil
 }
 
 type encodePlanNumericCodecBinaryNumericValuer struct {
-	scale  int32
-	length uint32
+	typeMetadata TypeMetadata
 }
 
 func (p encodePlanNumericCodecBinaryNumericValuer) Encode(value any, buf []byte) ([]byte, error) {
+	if err := validateNumericTypeMetadata(p.typeMetadata); err != nil {
+		return nil, err
+	}
+
 	n, err := value.(NumericValuer).NumericValue()
 	if err != nil {
 		return nil, err
 	}
 
-	return EncodeNumericBinaryFB(buf, n, p.scale, p.length)
+	return EncodeNumericBinaryFB(buf, n, p.typeMetadata.Scale, p.typeMetadata.Length)
 }
 
 type encodePlanNumericCodecBinaryFloat64Valuer struct {
-	scale  int32
-	length uint32
+	typeMetadata TypeMetadata
 }
 
 func (p encodePlanNumericCodecBinaryFloat64Valuer) Encode(value any, buf []byte) ([]byte, error) {
+	if err := validateNumericTypeMetadata(p.typeMetadata); err != nil {
+		return nil, err
+	}
+
 	v, err := value.(Float64Valuer).Float64Value()
 	if err != nil {
 		return nil, err
@@ -384,15 +436,18 @@ func (p encodePlanNumericCodecBinaryFloat64Valuer) Encode(value any, buf []byte)
 	}
 	n.Valid = true
 
-	return EncodeNumericBinaryFBRoundHalfAwayFromZero(buf, n, p.scale, p.length)
+	return encodeNumericBinaryFBRoundHalfAwayFromZero(buf, n, p.typeMetadata.Scale, p.typeMetadata.Length)
 }
 
 type encodePlanNumericCodecBinaryInt64Valuer struct {
-	scale  int32
-	length uint32
+	typeMetadata TypeMetadata
 }
 
 func (p encodePlanNumericCodecBinaryInt64Valuer) Encode(value any, buf []byte) ([]byte, error) {
+	if err := validateNumericTypeMetadata(p.typeMetadata); err != nil {
+		return nil, err
+	}
+
 	v, err := value.(Int64Valuer).Int64Value()
 	if err != nil {
 		return nil, err
@@ -407,15 +462,18 @@ func (p encodePlanNumericCodecBinaryInt64Valuer) Encode(value any, buf []byte) (
 		Valid: true,
 	}
 
-	return EncodeNumericBinaryFB(buf, n, p.scale, p.length)
+	return EncodeNumericBinaryFB(buf, n, p.typeMetadata.Scale, p.typeMetadata.Length)
 }
 
 type encodePlanNumericCodecTextString struct {
-	scale  int32
-	length uint32
+	typeMetadata TypeMetadata
 }
 
 func (p encodePlanNumericCodecTextString) Encode(value any, buf []byte) ([]byte, error) {
+	if err := validateNumericTypeMetadata(p.typeMetadata); err != nil {
+		return nil, err
+	}
+
 	s := value.(string)
 
 	var n Numeric
@@ -424,12 +482,15 @@ func (p encodePlanNumericCodecTextString) Encode(value any, buf []byte) ([]byte,
 	}
 	n.Valid = true
 
-	return EncodeNumericBinaryFB(buf, n, p.scale, p.length)
+	return EncodeNumericBinaryFB(buf, n, p.typeMetadata.Scale, p.typeMetadata.Length)
 }
 
 func encodeNumericText(n Numeric, buf []byte) (newBuf []byte, err error) {
 	if !n.Valid {
 		return nil, nil
+	}
+	if err := validateNumericRepresentable(n); err != nil {
+		return nil, err
 	}
 
 	buf = append(buf, n.numberTextBytes()...)
@@ -441,53 +502,28 @@ func encodeNumericText(n Numeric, buf []byte) (newBuf []byte, err error) {
 func (NumericCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
 	switch target.(type) {
 	case *Numeric:
-		return scanPlanBinaryNumericToNumeric{
-			scale:  typeMetadata.Scale,
-			length: typeMetadata.Length,
-		}
+		return scanPlanBinaryNumericToNumeric{typeMetadata: typeMetadata}
 	case NumericScanner:
-		return scanPlanBinaryNumericToNumericScanner{
-			scale:  typeMetadata.Scale,
-			length: typeMetadata.Length,
-		}
+		return scanPlanBinaryNumericToNumericScanner{typeMetadata: typeMetadata}
 	case Float64Scanner:
-		return scanPlanBinaryNumericToFloat64Scanner{
-			scale:  typeMetadata.Scale,
-			length: typeMetadata.Length,
-		}
+		return scanPlanBinaryNumericToFloat64Scanner{typeMetadata: typeMetadata}
 	case Int64Scanner:
-		return scanPlanBinaryNumericToInt64Scanner{
-			scale:  typeMetadata.Scale,
-			length: typeMetadata.Length,
-		}
+		return scanPlanBinaryNumericToInt64Scanner{typeMetadata: typeMetadata}
 	case TextScanner:
-		return scanPlanBinaryNumericToTextScanner{
-			scale:  typeMetadata.Scale,
-			length: typeMetadata.Length,
-		}
+		return scanPlanBinaryNumericToTextScanner{typeMetadata: typeMetadata}
 	case *string:
-		return scanPlanBinaryNumericToString{
-			scale:  typeMetadata.Scale,
-			length: typeMetadata.Length,
-		}
+		return scanPlanBinaryNumericToString{typeMetadata: typeMetadata}
 	case *float64:
-		return scanPlanBinaryNumericToFloat64Ptr{
-			scale:  typeMetadata.Scale,
-			length: typeMetadata.Length,
-		}
+		return scanPlanBinaryNumericToFloat64Ptr{typeMetadata: typeMetadata}
 	case *int64:
-		return scanPlanBinaryNumericToInt64Ptr{
-			scale:  typeMetadata.Scale,
-			length: typeMetadata.Length,
-		}
+		return scanPlanBinaryNumericToInt64Ptr{typeMetadata: typeMetadata}
 	}
 
 	return nil
 }
 
 type scanPlanBinaryNumericToFloat64Ptr struct {
-	scale  int32
-	length uint32
+	typeMetadata TypeMetadata
 }
 
 func (p scanPlanBinaryNumericToFloat64Ptr) Scan(src []byte, dst any) error {
@@ -501,7 +537,7 @@ func (p scanPlanBinaryNumericToFloat64Ptr) Scan(src []byte, dst any) error {
 	}
 
 	var n Numeric
-	if err := DecodeNumericBinaryFB(&n, src, p.scale); err != nil {
+	if err := decodeNumericBinaryFBForScan(&n, src, p.typeMetadata); err != nil {
 		return err
 	}
 
@@ -515,8 +551,7 @@ func (p scanPlanBinaryNumericToFloat64Ptr) Scan(src []byte, dst any) error {
 }
 
 type scanPlanBinaryNumericToInt64Ptr struct {
-	scale  int32
-	length uint32
+	typeMetadata TypeMetadata
 }
 
 func (p scanPlanBinaryNumericToInt64Ptr) Scan(src []byte, dst any) error {
@@ -530,7 +565,7 @@ func (p scanPlanBinaryNumericToInt64Ptr) Scan(src []byte, dst any) error {
 	}
 
 	var n Numeric
-	if err := DecodeNumericBinaryFB(&n, src, p.scale); err != nil {
+	if err := decodeNumericBinaryFBForScan(&n, src, p.typeMetadata); err != nil {
 		return err
 	}
 
@@ -548,8 +583,7 @@ func (p scanPlanBinaryNumericToInt64Ptr) Scan(src []byte, dst any) error {
 }
 
 type scanPlanBinaryNumericToNumeric struct {
-	scale  int32
-	length uint32
+	typeMetadata TypeMetadata
 }
 
 func (p scanPlanBinaryNumericToNumeric) Scan(src []byte, dst any) error {
@@ -564,7 +598,7 @@ func (p scanPlanBinaryNumericToNumeric) Scan(src []byte, dst any) error {
 	}
 
 	var n Numeric
-	if err := DecodeNumericBinaryFB(&n, src, p.scale); err != nil {
+	if err := decodeNumericBinaryFBForScan(&n, src, p.typeMetadata); err != nil {
 		*nPtr = Numeric{}
 		return err
 	}
@@ -574,8 +608,7 @@ func (p scanPlanBinaryNumericToNumeric) Scan(src []byte, dst any) error {
 }
 
 type scanPlanBinaryNumericToNumericScanner struct {
-	scale  int32
-	length uint32
+	typeMetadata TypeMetadata
 }
 
 func (p scanPlanBinaryNumericToNumericScanner) Scan(src []byte, dst any) error {
@@ -589,7 +622,7 @@ func (p scanPlanBinaryNumericToNumericScanner) Scan(src []byte, dst any) error {
 	}
 
 	var n Numeric
-	if err := DecodeNumericBinaryFB(&n, src, p.scale); err != nil {
+	if err := decodeNumericBinaryFBForScan(&n, src, p.typeMetadata); err != nil {
 		return err
 	}
 
@@ -597,8 +630,7 @@ func (p scanPlanBinaryNumericToNumericScanner) Scan(src []byte, dst any) error {
 }
 
 type scanPlanBinaryNumericToFloat64Scanner struct {
-	scale  int32
-	length uint32
+	typeMetadata TypeMetadata
 }
 
 func (p scanPlanBinaryNumericToFloat64Scanner) Scan(src []byte, dst any) error {
@@ -612,7 +644,7 @@ func (p scanPlanBinaryNumericToFloat64Scanner) Scan(src []byte, dst any) error {
 	}
 
 	var n Numeric
-	if err := DecodeNumericBinaryFB(&n, src, p.scale); err != nil {
+	if err := decodeNumericBinaryFBForScan(&n, src, p.typeMetadata); err != nil {
 		return err
 	}
 
@@ -625,8 +657,7 @@ func (p scanPlanBinaryNumericToFloat64Scanner) Scan(src []byte, dst any) error {
 }
 
 type scanPlanBinaryNumericToInt64Scanner struct {
-	scale  int32
-	length uint32
+	typeMetadata TypeMetadata
 }
 
 func (p scanPlanBinaryNumericToInt64Scanner) Scan(src []byte, dst any) error {
@@ -640,7 +671,7 @@ func (p scanPlanBinaryNumericToInt64Scanner) Scan(src []byte, dst any) error {
 	}
 
 	var n Numeric
-	if err := DecodeNumericBinaryFB(&n, src, p.scale); err != nil {
+	if err := decodeNumericBinaryFBForScan(&n, src, p.typeMetadata); err != nil {
 		return err
 	}
 
@@ -657,8 +688,7 @@ func (p scanPlanBinaryNumericToInt64Scanner) Scan(src []byte, dst any) error {
 }
 
 type scanPlanBinaryNumericToTextScanner struct {
-	scale  int32
-	length uint32
+	typeMetadata TypeMetadata
 }
 
 func (p scanPlanBinaryNumericToTextScanner) Scan(src []byte, dst any) error {
@@ -672,7 +702,7 @@ func (p scanPlanBinaryNumericToTextScanner) Scan(src []byte, dst any) error {
 	}
 
 	var n Numeric
-	if err := DecodeNumericBinaryFB(&n, src, p.scale); err != nil {
+	if err := decodeNumericBinaryFBForScan(&n, src, p.typeMetadata); err != nil {
 		return err
 	}
 
@@ -685,8 +715,7 @@ func (p scanPlanBinaryNumericToTextScanner) Scan(src []byte, dst any) error {
 }
 
 type scanPlanBinaryNumericToString struct {
-	scale  int32
-	length uint32
+	typeMetadata TypeMetadata
 }
 
 func (p scanPlanBinaryNumericToString) Scan(src []byte, dst any) error {
@@ -700,7 +729,7 @@ func (p scanPlanBinaryNumericToString) Scan(src []byte, dst any) error {
 	}
 
 	var n Numeric
-	if err := DecodeNumericBinaryFB(&n, src, p.scale); err != nil {
+	if err := decodeNumericBinaryFBForScan(&n, src, p.typeMetadata); err != nil {
 		return err
 	}
 
@@ -752,6 +781,10 @@ func DecodeNumericBinaryFB(dst *Numeric, src []byte, scale int32) error {
 		*dst = Numeric{}
 		return nil
 	}
+	if err := validateNumericScale(scale); err != nil {
+		*dst = Numeric{}
+		return err
+	}
 
 	var bigInt *big.Int
 	switch len(src) {
@@ -764,9 +797,11 @@ func DecodeNumericBinaryFB(dst *Numeric, src []byte, scale int32) error {
 	case 16:
 		bigInt = new(big.Int)
 		if err := int128SetFromBinary(bigInt, src); err != nil {
+			*dst = Numeric{}
 			return err
 		}
 	default:
+		*dst = Numeric{}
 		return fmt.Errorf("unsupported numeric length: %d", len(src))
 	}
 
@@ -778,48 +813,61 @@ func DecodeNumericBinaryFB(dst *Numeric, src []byte, scale int32) error {
 	return nil
 }
 
+func decodeNumericBinaryFBForScan(dst *Numeric, src []byte, typeMetadata TypeMetadata) error {
+	if err := validateNumericTypeMetadata(typeMetadata); err != nil {
+		*dst = Numeric{}
+		return err
+	}
+
+	storageLength := typeMetadata.Length
+	expectedWireLength := int(storageLength)
+	switch storageLength {
+	case 2:
+		expectedWireLength = 4
+	case 4, 8, 16:
+	default:
+		*dst = Numeric{}
+		return fmt.Errorf("unsupported numeric storage length: %d", storageLength)
+	}
+
+	if len(src) != expectedWireLength {
+		*dst = Numeric{}
+		return fmt.Errorf(
+			"invalid wire length %d for numeric storage length %d: expected %d",
+			len(src), storageLength, expectedWireLength,
+		)
+	}
+
+	if err := DecodeNumericBinaryFB(dst, src, typeMetadata.Scale); err != nil {
+		return err
+	}
+
+	if storageLength == 2 {
+		coefficient := dst.Int.Int64()
+		if coefficient < math.MinInt16 || coefficient > math.MaxInt16 {
+			*dst = Numeric{}
+			return fmt.Errorf("numeric coefficient %d is out of range for SMALLINT storage", coefficient)
+		}
+	}
+
+	return nil
+}
+
 // EncodeNumericBinaryFB appends the Firebird binary encoding of n to buf.
 func EncodeNumericBinaryFB(buf []byte, n Numeric, scale int32, length uint32) ([]byte, error) {
 	if !n.Valid {
 		return nil, nil
 	}
-
-	expDiff := int64(n.Exp) - int64(scale)
-
-	var scaled big.Int
-	if n.Int != nil {
-		scaled.Set(n.Int)
+	if err := validateNumericRepresentable(n); err != nil {
+		return nil, err
 	}
 
-	if expDiff > 0 {
-		var pow big.Int
-		pow.Exp(big.NewInt(10), big.NewInt(expDiff), nil)
-		scaled.Mul(&scaled, &pow)
-	} else if expDiff < 0 {
-		var pow big.Int
-		pow.Exp(big.NewInt(10), big.NewInt(-expDiff), nil)
-		var rem big.Int
-		var q big.Int
-		q.QuoRem(&scaled, &pow, &rem)
-		if rem.Sign() != 0 {
-			return nil, fmt.Errorf("numeric value %v cannot be represented exactly with scale %d", &n, scale)
-		}
-		scaled.Set(&q)
+	scaled, err := rescaleNumeric(n, scale, numericExact)
+	if err != nil {
+		return nil, err
 	}
 
-	if scaled.IsInt64() {
-		val := scaled.Int64()
-		return appendFBScaledIntByLength(buf, val, length)
-	}
-
-	if length == 16 {
-		if err := checkInt128Range(&scaled); err != nil {
-			return nil, fmt.Errorf("numeric value %v is out of range for int128: %w", &n, err)
-		}
-		return appendInt128BinaryFromBig(buf, &scaled)
-	}
-
-	return nil, fmt.Errorf("numeric value %v is out of range for length %d", &n, length)
+	return appendScaledNumeric(buf, scaled, length)
 }
 
 func float64ToNumeric(f float64) (Numeric, error) {
@@ -874,54 +922,104 @@ func EncodeNumericBinaryFBRoundHalfAwayFromZero(buf []byte, n Numeric, scale int
 	if !n.Valid {
 		return nil, nil
 	}
+	if err := validateNumericRepresentable(n); err != nil {
+		return nil, err
+	}
+
+	return encodeNumericBinaryFBRoundHalfAwayFromZero(buf, n, scale, length)
+}
+
+func encodeNumericBinaryFBRoundHalfAwayFromZero(buf []byte, n Numeric, scale int32, length uint32) ([]byte, error) {
+	if !n.Valid {
+		return nil, nil
+	}
+
+	scaled, err := rescaleNumeric(n, scale, numericRoundHalfAwayFromZero)
+	if err != nil {
+		return nil, err
+	}
+
+	return appendScaledNumeric(buf, scaled, length)
+}
+
+type numericRoundingMode uint8
+
+const (
+	numericExact numericRoundingMode = iota
+	numericTruncate
+	numericRoundHalfAwayFromZero
+)
+
+func rescaleNumeric(n Numeric, scale int32, mode numericRoundingMode) (*big.Int, error) {
+	if err := validateNumericScale(scale); err != nil {
+		return nil, err
+	}
+
+	scaled := new(big.Int)
+	if n.Int == nil || n.Int.Sign() == 0 {
+		return scaled, nil
+	}
+	scaled.Set(n.Int)
 
 	expDiff := int64(n.Exp) - int64(scale)
-
-	var scaled big.Int
-	if n.Int != nil {
-		scaled.Set(n.Int)
-	}
-
 	if expDiff > 0 {
-		var pow big.Int
-		pow.Exp(big.NewInt(10), big.NewInt(expDiff), nil)
-		scaled.Mul(&scaled, &pow)
-	} else if expDiff < 0 {
-		var pow big.Int
-		pow.Exp(big.NewInt(10), big.NewInt(-expDiff), nil)
-
-		var rem big.Int
-		var q big.Int
-		q.QuoRem(&scaled, &pow, &rem)
-
-		if rem.Sign() != 0 {
-			absRem := new(big.Int).Abs(&rem)
-			twice := new(big.Int).Lsh(absRem, 1)
-			cmp := twice.Cmp(&pow)
-			if cmp >= 0 {
-				if scaled.Sign() >= 0 {
-					q.Add(&q, big.NewInt(1))
-				} else {
-					q.Sub(&q, big.NewInt(1))
-				}
-			}
+		if expDiff > int64(maxNumericScale) {
+			return nil, fmt.Errorf("numeric value is out of range at scale %d", scale)
 		}
-		scaled.Set(&q)
+
+		pow := new(big.Int).Exp(big10, big.NewInt(expDiff), nil)
+		return scaled.Mul(scaled, pow), nil
+	}
+	if expDiff == 0 {
+		return scaled, nil
 	}
 
+	divisorExp := -expDiff
+	if divisorExp > int64(decimalDigitCount(scaled)) {
+		if mode == numericExact {
+			return nil, fmt.Errorf("numeric value cannot be represented exactly with scale %d", scale)
+		}
+		return new(big.Int), nil
+	}
+
+	pow := new(big.Int).Exp(big10, big.NewInt(divisorExp), nil)
+	q := new(big.Int)
+	rem := new(big.Int)
+	q.QuoRem(scaled, pow, rem)
+	if rem.Sign() == 0 {
+		return q, nil
+	}
+	if mode == numericExact {
+		return nil, fmt.Errorf("numeric value cannot be represented exactly with scale %d", scale)
+	}
+	if mode == numericTruncate {
+		return q, nil
+	}
+
+	twiceRemainder := new(big.Int).Lsh(new(big.Int).Abs(rem), 1)
+	if twiceRemainder.Cmp(pow) >= 0 {
+		if scaled.Sign() > 0 {
+			q.Add(q, big.NewInt(1))
+		} else {
+			q.Sub(q, big.NewInt(1))
+		}
+	}
+	return q, nil
+}
+
+func appendScaledNumeric(buf []byte, scaled *big.Int, length uint32) ([]byte, error) {
 	if scaled.IsInt64() {
-		val := scaled.Int64()
-		return appendFBScaledIntByLength(buf, val, length)
+		return appendFBScaledIntByLength(buf, scaled.Int64(), length)
 	}
 
-	if length == 16 {
-		if err := checkInt128Range(&scaled); err != nil {
-			return nil, fmt.Errorf("numeric value %v is out of range for int128: %w", &n, err)
-		}
-		return appendInt128BinaryFromBig(buf, &scaled)
+	if length != 16 {
+		return nil, fmt.Errorf("numeric value is out of range for length %d", length)
+	}
+	if scaled.Cmp(int128Min) < 0 || scaled.Cmp(int128Max) > 0 {
+		return nil, fmt.Errorf("numeric value is out of range for int128")
 	}
 
-	return nil, fmt.Errorf("numeric value %v is out of range for length %d", &n, length)
+	return appendInt128BinaryFromBig(buf, scaled)
 }
 
 func appendFBScaledIntByLength(buf []byte, val int64, length uint32) ([]byte, error) {
@@ -967,11 +1065,11 @@ func parseNumericText(s string) (Numeric, error) {
 	s = strings.TrimSpace(s)
 	expIndex := strings.IndexAny(s, "eE")
 	if expIndex == -1 {
-		num, exp, err := parseNumericString(s)
+		num, exp, err := parseDecimalMantissa(s)
 		if err != nil {
 			return Numeric{}, err
 		}
-		return Numeric{Int: num, Exp: exp, Valid: true}, nil
+		return newParsedNumeric(num, int64(exp))
 	}
 
 	if expIndex != strings.LastIndexAny(s, "eE") {
@@ -981,22 +1079,88 @@ func parseNumericText(s string) (Numeric, error) {
 		return Numeric{}, fmt.Errorf("invalid scientific notation: %s", s)
 	}
 
-	num, exp, err := parseNumericString(s[:expIndex])
+	num, exp, err := parseDecimalMantissa(s[:expIndex])
 	if err != nil {
 		return Numeric{}, err
 	}
 
-	scientificExp, err := strconv.ParseInt(s[expIndex+1:], 10, 32)
+	scientificExp, err := strconv.ParseInt(s[expIndex+1:], 10, 64)
 	if err != nil {
 		return Numeric{}, fmt.Errorf("invalid scientific notation exponent %q: %w", s[expIndex+1:], err)
 	}
 
-	finalExp := int64(exp) + scientificExp
-	if finalExp < math.MinInt32 || finalExp > math.MaxInt32 {
-		return Numeric{}, fmt.Errorf("numeric exponent %d is out of int32 range", finalExp)
+	mantissaExp := int64(exp)
+	if scientificExp > 0 && mantissaExp > math.MaxInt64-scientificExp ||
+		scientificExp < 0 && mantissaExp < math.MinInt64-scientificExp {
+		return Numeric{}, fmt.Errorf("numeric exponent is out of range")
+	}
+	return newParsedNumeric(num, mantissaExp+scientificExp)
+}
+
+func newParsedNumeric(num *big.Int, exp int64) (Numeric, error) {
+	if exp < math.MinInt32 || exp > math.MaxInt32 {
+		return Numeric{}, fmt.Errorf("numeric exponent %d is out of int32 range", exp)
 	}
 
-	return Numeric{Int: num, Exp: int32(finalExp), Valid: true}, nil
+	n := Numeric{Int: num, Exp: int32(exp), Valid: true}
+	if err := validateNumericRepresentable(n); err != nil {
+		return Numeric{}, err
+	}
+	return n, nil
+}
+
+func validateNumericScale(scale int32) error {
+	if scale < -maxNumericScale || scale > 0 {
+		return fmt.Errorf("numeric scale %d is outside the Firebird range [-%d, 0]", scale, maxNumericScale)
+	}
+	return nil
+}
+
+func validateNumericRepresentable(n Numeric) error {
+	if !n.Valid {
+		return nil
+	}
+	if n.Int == nil || n.Int.Sign() == 0 {
+		if n.Exp < -maxNumericScale || n.Exp > maxNumericScale {
+			return fmt.Errorf("numeric exponent %d is outside the supported Firebird range", n.Exp)
+		}
+		return nil
+	}
+
+	coefficient, exp := normalizeNumeric(n.Int, int64(n.Exp))
+	if exp < -int64(maxNumericScale) || exp > int64(maxNumericScale) {
+		return fmt.Errorf("numeric exponent %d is outside the supported Firebird range", exp)
+	}
+
+	if exp > 0 {
+		pow := new(big.Int).Exp(big10, big.NewInt(exp), nil)
+		coefficient.Mul(coefficient, pow)
+	}
+	if coefficient.Cmp(int128Min) < 0 || coefficient.Cmp(int128Max) > 0 {
+		return fmt.Errorf("numeric value is out of range for int128")
+	}
+	return nil
+}
+
+func normalizeNumeric(coefficient *big.Int, exp int64) (*big.Int, int64) {
+	normalized := new(big.Int).Set(coefficient)
+	text := normalized.String()
+	trimmed := strings.TrimRight(text, "0")
+	trailingZeros := len(text) - len(trimmed)
+	if trailingZeros == 0 {
+		return normalized, exp
+	}
+
+	normalized.SetString(trimmed, 10)
+	return normalized, exp + int64(trailingZeros)
+}
+
+func decimalDigitCount(n *big.Int) int {
+	if n == nil || n.Sign() == 0 {
+		return 1
+	}
+
+	return len(new(big.Int).Abs(n).String())
 }
 
 func cloneNumeric(n Numeric) Numeric {

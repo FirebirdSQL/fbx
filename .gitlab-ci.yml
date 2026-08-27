@@ -1,16 +1,17 @@
-image: golang:1.25
+image: golang:1.26
 
 stages:
   - test
 
 variables:
-  RDB30_VERSION: 3.0.22
-  RDB51_VERSION: 5.1.4
-  RDB52_VERSION: 5.2.1
+  RDB30_VERSION: 3.0.23
+  RDB51_VERSION: 5.1.6
+  RDB52_VERSION: 5.2.5
+  RDB53_VERSION: 5.3.0
   RDB60_VERSION: 6.0.0-SNAPSHOT.1408
-  FB30_VERSION: 3.0.13.33818-0
-  FB40_VERSION: 4.0.6.3221-0
-  FB50_VERSION: 5.0.3.1683-0
+  FB30_VERSION: 3.0.14.33856-0
+  FB40_VERSION: 4.0.7.3271-0
+  FB50_VERSION: 5.0.4.1812-0
   FBX_TEST_DATABASE: database=employee host=localhost port=3050 user=sysdba password=masterkey
   GOLANGCI_LINT_VERSION: v2.12.2
 
@@ -80,6 +81,8 @@ test:rdb:
         RDB_DOWNLOAD_URL: "http://builds.red-soft.biz/release_hub/rdb50/${RDB51_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB51_VERSION}:bin"
       - RDB_VERSION: "${RDB52_VERSION}"
         RDB_DOWNLOAD_URL: "http://builds.red-soft.biz/release_hub/rdb50/${RDB52_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB52_VERSION}:bin"
+      - RDB_VERSION: "${RDB53_VERSION}"
+        RDB_DOWNLOAD_URL: "http://builds.red-soft.biz/release_hub/rdb50/${RDB53_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB53_VERSION}:bin"
       - RDB_VERSION: "6.0"
         RDB_DOWNLOAD_URL: "http://builds.red-soft.biz/release_hub/rdb60/${RDB60_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB60_VERSION}:bin"
 
