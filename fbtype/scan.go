@@ -748,12 +748,12 @@ type sqlScannerWrapper struct {
 }
 
 func (w *sqlScannerWrapper) Scan(src any) error {
-	_, err := getArrayDecodeType(w.v)
+	arrayTarget, err := getArrayDecodeType(w.v)
 	if err != nil {
 		return err
 	}
 	if src == nil {
-		return nil
+		return arrayTarget.SetDimensions(nil)
 	}
 	array, ok := src.(ArraySQLScanner)
 	if !ok {

@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -165,6 +166,70 @@ func TestConnectCustomDialer(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, dialed)
 	closeConn(t, conn)
+}
+
+func TestLocalBLRErrorDoesNotCloseConnection(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	connString := os.Getenv("FBX_TEST_DATABASE")
+	if connString == "" {
+		t.Skip("Skipping due to missing environment variable FBX_TEST_DATABASE")
+	}
+
+	conn, err := fbconn.Connect(ctx, connString)
+	require.NoError(t, err)
+	defer closeConn(t, conn)
+
+	statement, err := conn.Prepare(ctx, "select cast(? as integer) from rdb$database")
+	require.NoError(t, err)
+	require.Len(t, statement.Description.StatementInfo.ParametersDescriptors, 1)
+
+	// Force GetParametersBlr to fail before an execute message reaches the server.
+	statement.Description.StatementInfo.ParametersDescriptors[0].Type = 65000
+	result := statement.Exec(ctx, [][]byte{{0, 0, 0, 7}}).Read()
+	require.Error(t, result.Err)
+	require.False(t, conn.IsClosed())
+	require.NoError(t, conn.Ping(ctx))
+	require.NoError(t, statement.Deallocate(ctx))
+}
+
+type countCloseConn struct {
+	net.Conn
+	closeCalls atomic.Int64
+}
+
+func (c *countCloseConn) Close() error {
+	c.closeCalls.Add(1)
+	return c.Conn.Close()
+}
+
+func TestCloseClosesUnderlyingConnectionOnce(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	connString := os.Getenv("FBX_TEST_DATABASE")
+	if connString == "" {
+		t.Skip("Skipping due to missing environment variable FBX_TEST_DATABASE")
+	}
+	config, err := fbconn.ParseConfig(connString)
+	require.NoError(t, err)
+
+	var wireConn *countCloseConn
+	config.DialFunc = func(ctx context.Context, network, address string) (net.Conn, error) {
+		raw, err := (&net.Dialer{}).DialContext(ctx, network, address)
+		if err != nil {
+			return nil, err
+		}
+		wireConn = &countCloseConn{Conn: raw}
+		return wireConn, nil
+	}
+
+	conn, err := fbconn.ConnectConfig(ctx, config)
+	require.NoError(t, err)
+	require.NotNil(t, wireConn)
+	require.NoError(t, conn.Close(ctx))
+	require.Equal(t, int64(1), wireConn.closeCalls.Load())
 }
 
 func TestWireCompression(t *testing.T) {

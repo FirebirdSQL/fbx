@@ -279,8 +279,7 @@ func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *
 		execKind = fbproto.Op_execute2
 		rowBlr, err = st.Description.StatementInfo.GetRowBlr()
 		if err != nil {
-			st.conn.asyncClose()
-			rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(ctx, err))
+			rr.concludeCommand(QueryStatus{}, err)
 			rr.closed = true
 			return rr
 		}
@@ -290,8 +289,7 @@ func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *
 	if len(paramValues) > 0 {
 		sqlDataBlr, err = st.Description.StatementInfo.GetParametersBlr(paramValues)
 		if err != nil {
-			st.conn.asyncClose()
-			rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(ctx, err))
+			rr.concludeCommand(QueryStatus{}, err)
 			rr.closed = true
 			return rr
 		}

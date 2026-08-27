@@ -129,8 +129,7 @@ func (ps planScanArray) Scan(src []byte, dst any) error {
 	}
 
 	if src == nil {
-		array.SetDimensions(nil)
-		return nil
+		return array.SetDimensions(nil)
 	}
 
 	realIndexes, actualDims, err := getActualSliceDimensions(ps.arrayData.Dimensions, src, ps.arrayData.TypeId, ps.arrayData.Length)
@@ -388,6 +387,13 @@ func (ad *ArrayData) decodeBinary(m *Map, src []byte, array ArraySetter, realInd
 }
 
 func getArrayDecodeType(dst any) (ArraySetter, error) {
+	targetValue := reflect.ValueOf(dst)
+	if !targetValue.IsValid() || targetValue.Kind() != reflect.Ptr {
+		return nil, fmt.Errorf("unsupported argument type %T for array decode", dst)
+	}
+	if targetValue.IsNil() {
+		return nil, fmt.Errorf("cannot decode array into nil target %T", dst)
+	}
 
 	switch target := dst.(type) {
 	case *[]int16:
@@ -406,14 +412,8 @@ func getArrayDecodeType(dst any) (ArraySetter, error) {
 		return (*FlatArray[time.Time])(target), nil
 	}
 
-	targetType := reflect.TypeOf(dst)
-	if targetType.Kind() != reflect.Ptr {
-		return nil, fmt.Errorf("unsupported argument type %T for array decode", dst)
-	}
-
+	targetType := targetValue.Type()
 	targetElemType := targetType.Elem()
-
-	targetValue := reflect.ValueOf(dst)
 
 	if targetElemType.Kind() == reflect.Slice {
 		innerElement := targetElemType.Elem().Kind()
@@ -441,6 +441,13 @@ func getArrayDecodeType(dst any) (ArraySetter, error) {
 }
 
 func getArrayEncodeType(dst any) (ArrayGetter, error) {
+	targetValue := reflect.ValueOf(dst)
+	if !targetValue.IsValid() {
+		return nil, fmt.Errorf("unsupported argument type %T for array encode", dst)
+	}
+	if targetValue.Kind() == reflect.Ptr && targetValue.IsNil() {
+		return nil, fmt.Errorf("cannot encode array from nil target %T", dst)
+	}
 
 	switch target := dst.(type) {
 	case []int16:
@@ -459,9 +466,7 @@ func getArrayEncodeType(dst any) (ArrayGetter, error) {
 		return (FlatArray[time.Time])(target), nil
 	}
 
-	targetElemType := reflect.TypeOf(dst)
-
-	targetValue := reflect.ValueOf(dst)
+	targetElemType := targetValue.Type()
 
 	if targetElemType.Kind() == reflect.Slice {
 		innerElement := targetElemType.Elem().Kind()
