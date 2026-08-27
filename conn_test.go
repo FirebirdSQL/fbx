@@ -239,6 +239,12 @@ func TestParseConfigCreateDatabase(t *testing.T) {
 	assert.Empty(t, config.RuntimeParams["create_database"])
 }
 
+func TestParseConfigWireCompression(t *testing.T) {
+	config, err := fbx.ParseConfig("wire_compression=true")
+	require.NoError(t, err)
+	require.True(t, config.WireCompression)
+}
+
 func TestConfigCopyReturnsEqualConfig(t *testing.T) {
 	connString := "firebird://ivan:secret@localhost:3050/mydb?application_name=fbxtest&connect_timeout=5"
 	original, err := fbx.ParseConfig(connString)
