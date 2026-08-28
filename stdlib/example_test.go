@@ -16,6 +16,12 @@ import (
 	"rdb.red-soft.ru/fbx/stdlib"
 )
 
+func closeExample(closer io.Closer) {
+	if err := closer.Close(); err != nil {
+		panic(err)
+	}
+}
+
 func Example() {
 	ctx := context.Background()
 
@@ -23,7 +29,7 @@ func Example() {
 	if err != nil {
 		panic(err)
 	}
-	defer db.Close()
+	defer closeExample(db)
 
 	var firstName string
 	err = db.QueryRowContext(ctx, "select first_name from employee where emp_no = ?", 2).Scan(&firstName)
@@ -44,7 +50,7 @@ func ExampleOpenDB() {
 	connConfig.DefaultQueryExecMode = fbx.QueryExecModeExec
 
 	db := stdlib.OpenDB(*connConfig)
-	defer db.Close()
+	defer closeExample(db)
 
 	if err := db.PingContext(ctx); err != nil {
 		panic(err)
@@ -77,7 +83,7 @@ func ExampleOpenDB_withOptions() {
 			return nil
 		}),
 	)
-	defer db.Close()
+	defer closeExample(db)
 
 	if err := db.PingContext(ctx); err != nil {
 		panic(err)
@@ -94,7 +100,7 @@ func ExampleGetConnector() {
 
 	connector := stdlib.GetConnector(*connConfig)
 	db := sql.OpenDB(connector)
-	defer db.Close()
+	defer closeExample(db)
 
 	var one int
 	if err := db.QueryRowContext(ctx, "select 1 from rdb$database").Scan(&one); err != nil {
@@ -113,7 +119,7 @@ func ExampleRandomizeHostOrderFunc() {
 	db := stdlib.OpenDB(*connConfig,
 		stdlib.OptionBeforeConnect(stdlib.RandomizeHostOrderFunc),
 	)
-	defer db.Close()
+	defer closeExample(db)
 
 	db.SetConnMaxLifetime(10 * time.Minute)
 
@@ -132,7 +138,7 @@ func ExampleOpenDBFromPool() {
 	defer pool.Close()
 
 	db := stdlib.OpenDBFromPool(pool)
-	defer db.Close()
+	defer closeExample(db)
 
 	var one int
 	if err := db.QueryRowContext(ctx, "select 1 from rdb$database").Scan(&one); err != nil {
@@ -156,7 +162,7 @@ func ExampleRegisterConnConfig() {
 	if err != nil {
 		panic(err)
 	}
-	defer db.Close()
+	defer closeExample(db)
 
 	var one int
 	if err := db.QueryRowContext(ctx, "select 1 from rdb$database").Scan(&one); err != nil {
@@ -171,13 +177,13 @@ func ExampleConn_Conn() {
 	if err != nil {
 		panic(err)
 	}
-	defer db.Close()
+	defer closeExample(db)
 
 	sqlConn, err := db.Conn(ctx)
 	if err != nil {
 		panic(err)
 	}
-	defer sqlConn.Close()
+	defer closeExample(sqlConn)
 
 	err = sqlConn.Raw(func(driverConn any) error {
 		nativeConn := driverConn.(*stdlib.Conn).Conn()
@@ -197,7 +203,7 @@ func Example_firebirdTypes() {
 	if err != nil {
 		panic(err)
 	}
-	defer db.Close()
+	defer closeExample(db)
 
 	arrayInput := []int64{1, 2, 3}
 	_, err = db.ExecContext(ctx, "insert into array_example(id, values_array) values (?, ?)", 1, arrayInput)
@@ -223,7 +229,7 @@ func Example_firebirdTypes() {
 	if err != nil {
 		panic(err)
 	}
-	defer blob.Close()
+	defer closeExample(&blob)
 }
 
 func ExampleBlob_Text() {
@@ -233,7 +239,7 @@ func ExampleBlob_Text() {
 	if err != nil {
 		panic(err)
 	}
-	defer db.Close()
+	defer closeExample(db)
 
 	var blob stdlib.Blob
 	err = db.QueryRowContext(ctx, "select body from document_example where id = ?", 1).Scan(&blob)
@@ -256,14 +262,14 @@ func ExampleBlob_Read() {
 	if err != nil {
 		panic(err)
 	}
-	defer db.Close()
+	defer closeExample(db)
 
 	var blob stdlib.Blob
 	err = db.QueryRowContext(ctx, "select body from document_example where id = ?", 1).Scan(&blob)
 	if err != nil {
 		panic(err)
 	}
-	defer blob.Close()
+	defer closeExample(&blob)
 
 	data, err := io.ReadAll(blob)
 	if err != nil {

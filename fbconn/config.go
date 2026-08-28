@@ -760,7 +760,7 @@ func checkSessionAttrIsPrimary(ctx context.Context, fbConn *FbConn) (bool, error
 		return false, nil
 	}
 
-	return false, errors.New("Replication is not configured")
+	return false, errors.New("replication is not configured")
 }
 
 // ValidateConnectTargetSessionAttrsReplica is a [ValidateConnectFunc] that implements
@@ -773,7 +773,7 @@ func ValidateConnectTargetSessionAttrsReplica(ctx context.Context, fbConn *FbCon
 	}
 
 	if isPrimary {
-		return errors.New("Not replica")
+		return errors.New("not replica")
 	}
 
 	return nil
@@ -789,7 +789,7 @@ func ValidateConnectTargetSessionAttrsPrimary(ctx context.Context, fbConn *FbCon
 	}
 
 	if !isPrimary {
-		return errors.New("Not primary")
+		return errors.New("not primary")
 	}
 
 	return nil
@@ -805,7 +805,7 @@ func ValidateConnectTargetSessionAttrsPreferReplica(ctx context.Context, fbConn 
 	}
 
 	if isPrimary {
-		return &NotPreferredError{err: errors.New("Not replica")}
+		return &NotPreferredError{err: errors.New("not replica")}
 	}
 
 	return nil

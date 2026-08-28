@@ -102,9 +102,8 @@ type FbConn struct {
 	eventErrHandler func(error)
 
 	// Reusable / preallocated resources
-	contextWatcher    *ctxwatch.ContextWatcher
-	contextHandler    ctxwatch.Handler
-	fieldDescriptions [16]FieldDescription
+	contextWatcher *ctxwatch.ContextWatcher
+	contextHandler ctxwatch.Handler
 
 	cleanupDone         chan struct{}
 	Encoding            *fbproto.Encoding
@@ -225,7 +224,7 @@ func ConnectConfig(ctx context.Context, config *Config) (*FbConn, error) {
 	if config.AfterConnect != nil {
 		err := config.AfterConnect(ctx, fbConn)
 		if err != nil {
-			fbConn.conn.Close()
+			_ = fbConn.conn.Close()
 			return nil, &ConnectError{Config: config, err: fmt.Errorf("AfterConnect error: %w", err)}
 		}
 	}
@@ -731,12 +730,12 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 	userConfig := auth.UserConfig{User: config.User, Password: config.Password, Certificate: config.Certificate, CertificatePIN: config.CertificatePIN}
 	authManager, err := auth.NewAuthManager(userConfig, config.AuthPluginList)
 	if err != nil {
-		fbConn.conn.Close()
+		_ = fbConn.conn.Close()
 		return nil, newPerDialConnectError("authentication setup failed", err)
 	}
 	initialHandshake := authManager.BeginHandshake()
 	if initialHandshake == nil {
-		fbConn.conn.Close()
+		_ = fbConn.conn.Close()
 		return nil, newPerDialConnectError("authentication setup failed", fmt.Errorf("no authentication plugins available"))
 	}
 
@@ -765,7 +764,7 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 	}
 
 	if err = fbConn.client.WriteMessage(&opConnect); err != nil {
-		fbConn.conn.Close()
+		_ = fbConn.conn.Close()
 		return nil, newPerDialConnectError("failed to send opConnect", err)
 	}
 
@@ -776,13 +775,13 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 connectLoop:
 	for {
 		if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
-			fbConn.conn.Close()
+			_ = fbConn.conn.Close()
 			return nil, newPerDialConnectError("failed to flush opConnect", err)
 		}
 
 		msg, err := fbConn.receiveMessage()
 		if err != nil {
-			fbConn.conn.Close()
+			_ = fbConn.conn.Close()
 			return nil, newPerDialConnectError("authentication failed", err)
 		}
 
@@ -799,7 +798,7 @@ connectLoop:
 			fake.Data = msg.AuthData
 			fake.ServerKeys = msg.Keys
 			if err := fbConn.handleCondAccept(fake, authManager, true); err != nil {
-				fbConn.conn.Close()
+				_ = fbConn.conn.Close()
 				return nil, newPerDialConnectError("authentication failed", err)
 			}
 			continue connectLoop
@@ -808,19 +807,18 @@ connectLoop:
 			// including an empty challenge that selects another plugin. The
 			// exchange must finish here so wire encryption starts before attach.
 			if err := fbConn.handleCondAccept(msg, authManager, true); err != nil {
-				fbConn.conn.Close()
+				_ = fbConn.conn.Close()
 				return nil, newPerDialConnectError("authentication failed", err)
 			}
 			continue connectLoop
 		case *fbproto.OpResponse:
 			if pendingCryptAck {
 				// This is the ack for op_crypt; consume it and finish handshake
-				pendingCryptAck = false
 				break connectLoop
 			}
 			continueLoop, err := fbConn.handleAuthResponse(msg, config, authManager)
 			if err != nil {
-				fbConn.conn.Close()
+				_ = fbConn.conn.Close()
 				return nil, newPerDialConnectError("authentication failed", err)
 			}
 			if continueLoop {
@@ -832,7 +830,7 @@ connectLoop:
 		case *fbproto.OpDataAccept:
 			if msg.AuthComplete {
 				if err := fbConn.handleAcceptMetadata(&msg.AcceptMetadata, msg.ServerKeys, authManager); err != nil {
-					fbConn.conn.Close()
+					_ = fbConn.conn.Close()
 					return nil, newPerDialConnectError("authentication failed", err)
 				}
 				authManager.SetAuthComplete(true)
@@ -840,7 +838,7 @@ connectLoop:
 			}
 			respond := shouldRespondToDataAccept(msg)
 			if err := fbConn.handleCondAccept(&msg.OpCondAccept, authManager, respond); err != nil {
-				fbConn.conn.Close()
+				_ = fbConn.conn.Close()
 				return nil, newPerDialConnectError("authentication failed", err)
 			}
 			if !respond {
@@ -848,10 +846,10 @@ connectLoop:
 			}
 			continue connectLoop
 		case *fbproto.ErrorResponse:
-			fbConn.conn.Close()
+			_ = fbConn.conn.Close()
 			return nil, newPerDialConnectError("authentication failed", ErrorResponseToFbError(msg))
 		default:
-			fbConn.conn.Close()
+			_ = fbConn.conn.Close()
 			return nil, newPerDialConnectError("authentication failed", fmt.Errorf("unexpected message type %T", msg))
 		}
 	}
@@ -862,7 +860,7 @@ connectLoop:
 
 	if target == connectTargetService {
 		if err := fbConn.attachService(config, authManager); err != nil {
-			fbConn.conn.Close()
+			_ = fbConn.conn.Close()
 			return nil, newPerDialConnectError("opServiceAttach failed", err)
 		}
 		fbConn.status = connStatusIdle
@@ -947,12 +945,12 @@ connectLoop:
 	if err = fbConn.withWriteLockAndFlush(func() error {
 		return fbConn.client.WriteMessage(attachOrCreate)
 	}); err != nil {
-		fbConn.conn.Close()
+		_ = fbConn.conn.Close()
 		return nil, newPerDialConnectError("failed to flush "+attachAction, err)
 	}
 
 	if err := fbConn.finishAttachAuth(config, authManager, attachAction); err != nil {
-		fbConn.conn.Close()
+		_ = fbConn.conn.Close()
 		return nil, newPerDialConnectError(attachAction+" failed", err)
 	}
 
@@ -965,7 +963,7 @@ connectLoop:
 	}, fbConn.parseDatabaseInfo)
 
 	if err != nil {
-		fbConn.conn.Close()
+		_ = fbConn.conn.Close()
 		return nil, newPerDialConnectError("error while trying to get database info", err)
 	}
 
@@ -974,7 +972,7 @@ connectLoop:
 		err = config.ValidateConnect(ctx, fbConn)
 		if err != nil {
 			if _, ok := err.(*NotPreferredError); !ignoreNotPreferredErr || !ok {
-				fbConn.conn.Close()
+				_ = fbConn.conn.Close()
 				return nil, newPerDialConnectError("ValidateConnect failed", err)
 			}
 		}
@@ -1114,7 +1112,7 @@ func (fbConn *FbConn) peekMessage() (fbproto.ServerMessage, error) {
 		// Close on anything other than timeout error - everything else is fatal
 		var netErr net.Error
 		isNetErr := errors.As(err, &netErr)
-		if !(isNetErr && netErr.Timeout()) {
+		if !isNetErr || !netErr.Timeout() {
 			fbConn.asyncClose()
 		}
 
@@ -1792,7 +1790,7 @@ func (fbConn *FbConn) ExecImmediateTx(ctx context.Context, tx *FBTransaction, sq
 	}
 	fbConn.unlock()
 	if tx != nil && tx == fbConn.internalTransaction && fbConn.config.Autocommit && !fbConn.explicitTransaction {
-		tx.Commit(ctx)
+		return tx.Commit(ctx)
 	}
 
 	return nil
@@ -2691,7 +2689,7 @@ func (rr *ResultReader) concludeCommand(queryStatus QueryStatus, err error) {
 // EscapeString returns s with each single quote doubled for use inside a
 // Firebird string literal. It does not add the surrounding single quotes.
 func (fbConn *FbConn) EscapeString(s string) (string, error) {
-	return strings.Replace(s, "'", "''", -1), nil
+	return strings.ReplaceAll(s, "'", "''"), nil
 }
 
 // CheckConn checks the underlying connection without writing any bytes. This is currently implemented by doing a read
@@ -3068,11 +3066,15 @@ type DeadlineContextWatcherHandler struct {
 }
 
 func (h *DeadlineContextWatcherHandler) HandleCancel(ctx context.Context) {
-	h.Conn.SetDeadline(time.Now().Add(h.DeadlineDelay))
+	if err := h.Conn.SetDeadline(time.Now().Add(h.DeadlineDelay)); err != nil {
+		_ = h.Conn.Close()
+	}
 }
 
 func (h *DeadlineContextWatcherHandler) HandleUnwatchAfterCancel() {
-	h.Conn.SetDeadline(time.Time{})
+	if err := h.Conn.SetDeadline(time.Time{}); err != nil {
+		_ = h.Conn.Close()
+	}
 }
 
 // CancelRequestContextWatcherHandler manages cancel state around each watched request and handles canceled contexts by
@@ -3139,7 +3141,11 @@ func (h *CancelRequestContextWatcherHandler) HandleCancel(context.Context) {
 		// DeadlineDelay is zero or negative.
 		deadline = now.Add(100 * time.Millisecond)
 	}
-	h.Conn.conn.SetDeadline(deadline)
+	if err := h.Conn.conn.SetDeadline(deadline); err != nil {
+		close(h.cancelFinishedChan)
+		h.Conn.asyncClose()
+		return
+	}
 
 	go func() {
 		defer close(h.cancelFinishedChan)
@@ -3218,7 +3224,9 @@ func (h *CancelRequestContextWatcherHandler) HandleUnwatchAfterCancel() {
 		h.pendingCancelReset.Store(true)
 	}
 
-	h.Conn.conn.SetDeadline(time.Time{})
+	if err := h.Conn.conn.SetDeadline(time.Time{}); err != nil {
+		h.Conn.asyncClose()
+	}
 }
 
 func (h *CancelRequestContextWatcherHandler) sendCancelOperationWithTimeout(kind int) error {

@@ -258,7 +258,11 @@ func TestStmtCloseIsIdempotentWithSharedStatement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer nativeConn.Close(context.Background())
+	defer func() {
+		if err := nativeConn.Close(context.Background()); err != nil {
+			t.Errorf("close native connection: %v", err)
+		}
+	}()
 
 	conn := &Conn{
 		conn:        nativeConn,
@@ -343,7 +347,11 @@ func TestStmtCloseClearsReferenceAfterNonFatalDeallocateError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer nativeConn.Close(context.Background())
+	defer func() {
+		if err := nativeConn.Close(context.Background()); err != nil {
+			t.Errorf("close native connection: %v", err)
+		}
+	}()
 
 	conn := &Conn{
 		conn:        nativeConn,

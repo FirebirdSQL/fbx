@@ -131,12 +131,6 @@ func (dst *Int8) ScanInt64(n fbtype.Int8) error {
 		return nil
 	}
 
-	if n.Int64 < math.MinInt64 {
-		return fmt.Errorf("%d is less than minimum value for Int8", n.Int64)
-	}
-	if n.Int64 > math.MaxInt64 {
-		return fmt.Errorf("%d is greater than maximum value for Int8", n.Int64)
-	}
 	*dst = Int8(n.Int64)
 
 	return nil

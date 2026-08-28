@@ -628,7 +628,7 @@ func (a *anyMultiDimSliceArray) SetDimensions(dimensions []ArrayDimension) error
 		}
 
 		if sliceDimensionCount != len(dimensions) {
-			return fmt.Errorf("Firebird array has %d dimensions but slice has %d dimensions", len(dimensions), sliceDimensionCount)
+			return fmt.Errorf("firebird array has %d dimensions but slice has %d dimensions", len(dimensions), sliceDimensionCount)
 		}
 
 		elementCount := allElementsCount(dimensions)

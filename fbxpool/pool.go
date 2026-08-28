@@ -290,7 +290,9 @@ func NewWithConfig(ctx context.Context, config *Config) (*Pool, error) {
 				if p.afterConnect != nil {
 					err = p.afterConnect(ctx, conn)
 					if err != nil {
-						conn.Close(ctx)
+						// Preserve the callback error; the connection is unusable even if
+						// best-effort cleanup also fails.
+						_ = conn.Close(ctx)
 						return nil, err
 					}
 				}
@@ -314,7 +316,8 @@ func NewWithConfig(ctx context.Context, config *Config) (*Pool, error) {
 				if p.beforeClose != nil {
 					p.beforeClose(conn)
 				}
-				conn.Close(ctx)
+				// puddle destructors cannot return cleanup errors.
+				_ = conn.Close(ctx)
 				select {
 				case <-conn.FbConn().CleanupDone():
 				case <-ctx.Done():
@@ -330,7 +333,8 @@ func NewWithConfig(ctx context.Context, config *Config) (*Pool, error) {
 
 	go func() {
 		targetIdleResources := max(int(p.minConns), int(p.minIdleConns))
-		p.createIdleResources(ctx, targetIdleResources)
+		// Initial warm-up is best effort; the health check retries later.
+		_ = p.createIdleResources(ctx, targetIdleResources)
 		p.backgroundHealthCheck()
 	}()
 
@@ -367,8 +371,8 @@ func ParseConfig(connString string) (*Config, error) {
 		createdByParseConfig: true,
 	}
 
-	if s, ok := config.ConnConfig.Config.RuntimeParams["pool_max_conns"]; ok {
-		delete(connConfig.Config.RuntimeParams, "pool_max_conns")
+	if s, ok := config.ConnConfig.RuntimeParams["pool_max_conns"]; ok {
+		delete(connConfig.RuntimeParams, "pool_max_conns")
 		n, err := strconv.ParseInt(s, 10, 32)
 		if err != nil {
 			return nil, fbconn.NewParseConfigError(connString, "cannot parse pool_max_conns", err)
@@ -384,8 +388,8 @@ func ParseConfig(connString string) (*Config, error) {
 		}
 	}
 
-	if s, ok := config.ConnConfig.Config.RuntimeParams["pool_min_conns"]; ok {
-		delete(connConfig.Config.RuntimeParams, "pool_min_conns")
+	if s, ok := config.ConnConfig.RuntimeParams["pool_min_conns"]; ok {
+		delete(connConfig.RuntimeParams, "pool_min_conns")
 		n, err := strconv.ParseInt(s, 10, 32)
 		if err != nil {
 			return nil, fbconn.NewParseConfigError(connString, "cannot parse pool_min_conns", err)
@@ -395,8 +399,8 @@ func ParseConfig(connString string) (*Config, error) {
 		config.MinConns = defaultMinConns
 	}
 
-	if s, ok := config.ConnConfig.Config.RuntimeParams["pool_min_idle_conns"]; ok {
-		delete(connConfig.Config.RuntimeParams, "pool_min_idle_conns")
+	if s, ok := config.ConnConfig.RuntimeParams["pool_min_idle_conns"]; ok {
+		delete(connConfig.RuntimeParams, "pool_min_idle_conns")
 		n, err := strconv.ParseInt(s, 10, 32)
 		if err != nil {
 			return nil, fbconn.NewParseConfigError(connString, "cannot parse pool_min_idle_conns", err)
@@ -406,8 +410,8 @@ func ParseConfig(connString string) (*Config, error) {
 		config.MinIdleConns = defaultMinIdleConns
 	}
 
-	if s, ok := config.ConnConfig.Config.RuntimeParams["pool_max_conn_lifetime"]; ok {
-		delete(connConfig.Config.RuntimeParams, "pool_max_conn_lifetime")
+	if s, ok := config.ConnConfig.RuntimeParams["pool_max_conn_lifetime"]; ok {
+		delete(connConfig.RuntimeParams, "pool_max_conn_lifetime")
 		d, err := time.ParseDuration(s)
 		if err != nil {
 			return nil, fbconn.NewParseConfigError(connString, "cannot parse pool_max_conn_lifetime", err)
@@ -417,8 +421,8 @@ func ParseConfig(connString string) (*Config, error) {
 		config.MaxConnLifetime = defaultMaxConnLifetime
 	}
 
-	if s, ok := config.ConnConfig.Config.RuntimeParams["pool_max_conn_idle_time"]; ok {
-		delete(connConfig.Config.RuntimeParams, "pool_max_conn_idle_time")
+	if s, ok := config.ConnConfig.RuntimeParams["pool_max_conn_idle_time"]; ok {
+		delete(connConfig.RuntimeParams, "pool_max_conn_idle_time")
 		d, err := time.ParseDuration(s)
 		if err != nil {
 			return nil, fbconn.NewParseConfigError(connString, "cannot parse pool_max_conn_idle_time", err)
@@ -428,8 +432,8 @@ func ParseConfig(connString string) (*Config, error) {
 		config.MaxConnIdleTime = defaultMaxConnIdleTime
 	}
 
-	if s, ok := config.ConnConfig.Config.RuntimeParams["pool_health_check_period"]; ok {
-		delete(connConfig.Config.RuntimeParams, "pool_health_check_period")
+	if s, ok := config.ConnConfig.RuntimeParams["pool_health_check_period"]; ok {
+		delete(connConfig.RuntimeParams, "pool_health_check_period")
 		d, err := time.ParseDuration(s)
 		if err != nil {
 			return nil, fbconn.NewParseConfigError(connString, "cannot parse pool_health_check_period", err)
@@ -439,8 +443,8 @@ func ParseConfig(connString string) (*Config, error) {
 		config.HealthCheckPeriod = defaultHealthCheckPeriod
 	}
 
-	if s, ok := config.ConnConfig.Config.RuntimeParams["pool_max_conn_lifetime_jitter"]; ok {
-		delete(connConfig.Config.RuntimeParams, "pool_max_conn_lifetime_jitter")
+	if s, ok := config.ConnConfig.RuntimeParams["pool_max_conn_lifetime_jitter"]; ok {
+		delete(connConfig.RuntimeParams, "pool_max_conn_lifetime_jitter")
 		d, err := time.ParseDuration(s)
 		if err != nil {
 			return nil, fbconn.NewParseConfigError(connString, "cannot parse pool_max_conn_lifetime_jitter", err)

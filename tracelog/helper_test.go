@@ -34,7 +34,7 @@ func getServerEngineInfo(t testing.TB) serverEngineInfo {
 
 		conn, err := fbx.ConnectConfig(ctx, config)
 		require.NoError(t, err)
-		defer conn.Close(ctx)
+		defer func() { require.NoError(t, conn.Close(ctx)) }()
 
 		version := conn.ServerVersion()
 		serverEngineInfoValue = serverEngineInfo{

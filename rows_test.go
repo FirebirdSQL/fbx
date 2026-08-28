@@ -87,7 +87,9 @@ func TestRowsAffectedAggregatesSqlCounts(t *testing.T) {
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		_, err := conn.Exec(ctx, fmt.Sprintf(`recreate table %s (id int)`, "rows_counts_test"))
 		require.NoError(t, err)
-		defer conn.Exec(ctx, fmt.Sprintf(`drop table %s`, "rows_counts_test"))
+		defer func() {
+			_, _ = conn.Exec(ctx, fmt.Sprintf(`drop table %s`, "rows_counts_test"))
+		}()
 
 		_, err = conn.Exec(ctx, fmt.Sprintf(`insert into %s (id) values (1)`, "rows_counts_test"))
 		require.NoError(t, err)
@@ -158,7 +160,9 @@ func ExampleForEachRow() {
 		fmt.Printf("Unable to establish connection: %v", err)
 		return
 	}
-	defer conn.Close(context.Background())
+	defer func() {
+		_ = conn.Close(context.Background())
+	}()
 
 	rows, _ := conn.Query(
 		context.Background(),
@@ -224,7 +228,9 @@ func ExampleCollectRows() {
 		fmt.Printf("Unable to establish connection: %v", err)
 		return
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		_ = conn.Close(ctx)
+	}()
 
 	rows, _ := conn.Query(ctx, generateSeriesQuery("1", "5", ""))
 	numbers, err := fbx.CollectRows(rows, func(row fbx.CollectableRow) (int32, error) {
@@ -252,7 +258,9 @@ func ExampleCollectableRow() {
 		fmt.Printf("Unable to establish connection: %v", err)
 		return
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		_ = conn.Close(ctx)
+	}()
 
 	rows, _ := conn.Query(ctx, "select 'Joe' as name, 42 as age from rdb$database")
 	people, err := fbx.CollectRows(rows, func(row fbx.CollectableRow) (string, error) {
@@ -424,7 +432,9 @@ func ExampleRowTo() {
 		fmt.Printf("Unable to establish connection: %v", err)
 		return
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		_ = conn.Close(ctx)
+	}()
 
 	rows, _ := conn.Query(ctx, generateSeriesQuery("1", "5", ""))
 	numbers, err := fbx.CollectRows(rows, fbx.RowTo[int32])
@@ -461,7 +471,9 @@ func ExampleRowToAddrOf() {
 		fmt.Printf("Unable to establish connection: %v", err)
 		return
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		_ = conn.Close(ctx)
+	}()
 
 	rows, _ := conn.Query(ctx, generateSeriesQuery("1", "5", ""))
 	pNumbers, err := fbx.CollectRows(rows, fbx.RowToAddrOf[int32])
@@ -505,7 +517,9 @@ func ExampleRowToMap() {
 		fmt.Printf("Unable to establish connection: %v", err)
 		return
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		_ = conn.Close(ctx)
+	}()
 
 	rows, _ := conn.Query(ctx, "select 'Joe' as name, 42 as age from rdb$database")
 	people, err := fbx.CollectRows(rows, fbx.RowToMap)
@@ -575,8 +589,8 @@ func TestRowToStructByPosEmbeddedStruct(t *testing.T) {
 
 		assert.Len(t, slice, 10)
 		for i := range slice {
-			assert.Equal(t, "John", slice[i].Name.First)
-			assert.Equal(t, "Smith", slice[i].Name.Last)
+			assert.Equal(t, "John", slice[i].First)
+			assert.Equal(t, "Smith", slice[i].Last)
 			assert.EqualValues(t, i, slice[i].Age)
 		}
 	})
@@ -603,9 +617,9 @@ func TestRowToStructByPosMultipleEmbeddedStruct(t *testing.T) {
 
 		assert.Len(t, slice, 10)
 		for i := range slice {
-			assert.Equal(t, "Baguette", slice[i].Sandwich.Bread)
-			assert.Equal(t, "Lettuce", slice[i].Sandwich.Salad)
-			assert.EqualValues(t, i, slice[i].Drink.Ml)
+			assert.Equal(t, "Baguette", slice[i].Bread)
+			assert.Equal(t, "Lettuce", slice[i].Salad)
+			assert.EqualValues(t, i, slice[i].Ml)
 		}
 	})
 }
@@ -628,8 +642,8 @@ func TestRowToStructByPosEmbeddedUnexportedStruct(t *testing.T) {
 
 		assert.Len(t, slice, 10)
 		for i := range slice {
-			assert.Equal(t, "John", slice[i].name.First)
-			assert.Equal(t, "Smith", slice[i].name.Last)
+			assert.Equal(t, "John", slice[i].First)
+			assert.Equal(t, "Smith", slice[i].Last)
 			assert.EqualValues(t, i, slice[i].Age)
 		}
 	})
@@ -663,7 +677,9 @@ func ExampleRowToStructByPos() {
 		fmt.Printf("Unable to establish connection: %v", err)
 		return
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		_ = conn.Close(ctx)
+	}()
 
 	// Setup example schema and data.
 	_, err = conn.Exec(ctx, `
@@ -678,10 +694,17 @@ recreate table products (
 		return
 	}
 
-	conn.Exec(ctx, `insert into products (name, price) values ('Cheeseburger', 10)`)
-	conn.Exec(ctx, `insert into products (name, price) values ('Double Cheeseburger', 14)`)
-	conn.Exec(ctx, `insert into products (name, price) values ('Fries', 5)`)
-	conn.Exec(ctx, `insert into products (name, price) values ('Soft Drink', 3)`)
+	for _, sql := range []string{
+		`insert into products (name, price) values ('Cheeseburger', 10)`,
+		`insert into products (name, price) values ('Double Cheeseburger', 14)`,
+		`insert into products (name, price) values ('Fries', 5)`,
+		`insert into products (name, price) values ('Soft Drink', 3)`,
+	} {
+		if _, err = conn.Exec(ctx, sql); err != nil {
+			fmt.Printf("Unable to insert example data: %v", err)
+			return
+		}
+	}
 
 	type product struct {
 		ID    int32
@@ -813,8 +836,8 @@ func TestRowToStructByNameEmbeddedStruct(t *testing.T) {
 
 		assert.Len(t, slice, 10)
 		for i := range slice {
-			assert.Equal(t, "Smith", slice[i].Name.Last)
-			assert.Equal(t, "John", slice[i].Name.First)
+			assert.Equal(t, "Smith", slice[i].Last)
+			assert.Equal(t, "John", slice[i].First)
 			assert.EqualValues(t, i, slice[i].Age)
 		}
 
@@ -839,7 +862,9 @@ func ExampleRowToStructByName() {
 		fmt.Printf("Unable to establish connection: %v", err)
 		return
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		_ = conn.Close(ctx)
+	}()
 
 	// Setup example schema and data.
 	_, err = conn.Exec(ctx, `
@@ -854,10 +879,17 @@ recreate table products (
 		return
 	}
 
-	conn.Exec(ctx, `insert into products (name, price) values ('Cheeseburger', 10)`)
-	conn.Exec(ctx, `insert into products (name, price) values ('Double Cheeseburger', 14)`)
-	conn.Exec(ctx, `insert into products (name, price) values ('Fries', 5)`)
-	conn.Exec(ctx, `insert into products (name, price) values ('Soft Drink', 3)`)
+	for _, sql := range []string{
+		`insert into products (name, price) values ('Cheeseburger', 10)`,
+		`insert into products (name, price) values ('Double Cheeseburger', 14)`,
+		`insert into products (name, price) values ('Fries', 5)`,
+		`insert into products (name, price) values ('Soft Drink', 3)`,
+	} {
+		if _, err = conn.Exec(ctx, sql); err != nil {
+			fmt.Printf("Unable to insert example data: %v", err)
+			return
+		}
+	}
 
 	type product struct {
 		ID    int32
@@ -949,8 +981,8 @@ func TestRowToStructByNameLaxEmbeddedStruct(t *testing.T) {
 
 		assert.Len(t, slice, 10)
 		for i := range slice {
-			assert.Equal(t, "Smith", slice[i].Name.Last)
-			assert.Equal(t, "John", slice[i].Name.First)
+			assert.Equal(t, "Smith", slice[i].Last)
+			assert.Equal(t, "John", slice[i].First)
 			assert.EqualValues(t, i, slice[i].Age)
 		}
 
@@ -961,7 +993,7 @@ func TestRowToStructByNameLaxEmbeddedStruct(t *testing.T) {
 
 		assert.Len(t, slice, 10)
 		for i := range slice {
-			assert.Equal(t, "John", slice[i].Name.First)
+			assert.Equal(t, "John", slice[i].First)
 			assert.EqualValues(t, i, slice[i].Age)
 		}
 
@@ -991,7 +1023,9 @@ func ExampleRowToStructByNameLax() {
 		fmt.Printf("Unable to establish connection: %v", err)
 		return
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		_ = conn.Close(ctx)
+	}()
 
 	// Setup example schema and data.
 	_, err = conn.Exec(ctx, `
@@ -1004,13 +1038,16 @@ recreate table products (
 		fmt.Printf("Unable to setup example schema and data: %v", err)
 		return
 	}
-	_, err = conn.Exec(ctx, `insert into products (name, price) values('Cheeseburger', 10)`)
-	_, err = conn.Exec(ctx, `insert into products (name, price) values('Double Cheeseburger', 14)`)
-	_, err = conn.Exec(ctx, `insert into products (name, price) values('Fries', 5)`)
-	_, err = conn.Exec(ctx, `insert into products (name, price) values('Soft Drink', 3)`)
-	if err != nil {
-		fmt.Printf("Unable to setup example schema and data: %v", err)
-		return
+	for _, sql := range []string{
+		`insert into products (name, price) values('Cheeseburger', 10)`,
+		`insert into products (name, price) values('Double Cheeseburger', 14)`,
+		`insert into products (name, price) values('Fries', 5)`,
+		`insert into products (name, price) values('Soft Drink', 3)`,
+	} {
+		if _, err = conn.Exec(ctx, sql); err != nil {
+			fmt.Printf("Unable to insert example data: %v", err)
+			return
+		}
 	}
 
 	type product struct {

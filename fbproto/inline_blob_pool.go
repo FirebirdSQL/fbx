@@ -30,7 +30,7 @@ func (p *inlineBlobPool) Get(size int) []byte {
 		panic(fmt.Sprintf("inlineBlobPool.Get: invalid size %d", size))
 	}
 	if v := p.pool.Get(); v != nil {
-		buf := v.([]byte)
+		buf := *v.(*[]byte)
 		if cap(buf) >= size {
 			return buf[:size]
 		}
@@ -49,5 +49,6 @@ func (p *inlineBlobPool) Put(buf []byte) {
 	if p.maxSize > 0 && cap(buf) > p.maxSize {
 		return
 	}
-	p.pool.Put(buf[:0])
+	buf = buf[:0]
+	p.pool.Put(&buf)
 }

@@ -614,7 +614,7 @@ func (c *Conn) DeallocateAll(ctx context.Context) error {
 		c.statementCache = stmtcache.NewLRUCache(c.config.StatementCacheCapacity)
 	}
 
-	for name, _ := range c.preparedStatements {
+	for name := range c.preparedStatements {
 		if err := c.Deallocate(ctx, name); err != nil {
 			return err
 		}
@@ -642,7 +642,7 @@ func (c *Conn) die() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // force immediate hard cancel
-	c.fbConn.Close(ctx)
+	_ = c.fbConn.Close(ctx)
 }
 
 func quoteIdentifier(s string) string {
@@ -777,28 +777,14 @@ optionLoop:
 		defer func() {
 			cleanupCtx, cancel := cleanupContext(ctx)
 			defer cancel()
-			st.Deallocate(cleanupCtx)
+			if cleanupErr := st.Deallocate(cleanupCtx); cleanupErr != nil {
+				err = errors.Join(err, cleanupErr)
+			}
 		}()
 		return c.execPrepared(ctx, tx, st, arguments)
 	default:
 		return fbconn.QueryStatus{}, fmt.Errorf("unknown QueryExecMode: %v", mode)
 	}
-}
-
-func (c *Conn) execParams(ctx context.Context, tx *dbTx, sd *fbconn.StatementDescription, arguments []any) (fbconn.QueryStatus, error) {
-	err := c.eqb.Build(ctx, c, tx, c.typeMap, sd, arguments)
-	if err != nil {
-		return fbconn.QueryStatus{}, err
-	}
-
-	var result *fbconn.Result
-	if tx != nil {
-		result = c.fbConn.ExecParamsTx(ctx, tx.tx, sd.SQL, c.eqb.ParamValues).Read()
-	} else {
-		result = c.fbConn.ExecParams(ctx, sd.SQL, c.eqb.ParamValues).Read()
-	}
-	c.eqb.reset() // Allow c.eqb internal memory to be GC'ed as soon as possible.
-	return result.QueryStatus, result.Err
 }
 
 func (c *Conn) execPrepared(ctx context.Context, tx *dbTx, st *fbconn.Statement, arguments []any) (fbconn.QueryStatus, error) {
@@ -901,22 +887,6 @@ func (c *Conn) closePreparedBatchesForTx(ctx context.Context, tx *dbTx) error {
 		delete(c.preparedBatches, name)
 	}
 	return joinedErr
-}
-
-func (c *Conn) execSQLParams(ctx context.Context, tx *dbTx, sql string, args []any) (fbconn.QueryStatus, error) {
-	err := c.eqb.Build(ctx, c, tx, c.typeMap, nil, args)
-	if err != nil {
-		return fbconn.QueryStatus{}, err
-	}
-
-	var result *fbconn.Result
-	if tx != nil {
-		result = c.fbConn.ExecParamsTx(ctx, tx.tx, sql, c.eqb.ParamValues).Read()
-	} else {
-		result = c.fbConn.ExecParams(ctx, sql, c.eqb.ParamValues).Read()
-	}
-	c.eqb.reset() // Allow c.eqb internal memory to be GC'ed as soon as possible.
-	return result.QueryStatus, result.Err
 }
 
 func (c *Conn) getRows(ctx context.Context, sql string, args []any) *baseRows {
@@ -1040,7 +1010,7 @@ optionLoop:
 	}
 
 	var err error
-	st, _ := c.preparedStatements[sql]
+	st := c.preparedStatements[sql]
 	if st != nil || mode == QueryExecModeCacheStatement {
 		if st == nil {
 			st, err = c.internalPrepare(ctx, tx, sql, sql)
@@ -1080,7 +1050,9 @@ optionLoop:
 		err = c.eqb.Build(ctx, c, tx, c.typeMap, st.Description, args)
 		if err != nil {
 			cleanupCtx, cancel := cleanupContext(ctx)
-			st.Deallocate(cleanupCtx)
+			if cleanupErr := st.Deallocate(cleanupCtx); cleanupErr != nil {
+				err = errors.Join(err, cleanupErr)
+			}
 			cancel()
 			rows.fatal(err)
 			return rows, rows.err
