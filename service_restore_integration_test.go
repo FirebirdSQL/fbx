@@ -20,9 +20,7 @@ import (
 type restoreIntegrationServer struct {
 	profile string
 	kind    string
-	version string
-	major   int
-	minor   int
+	version fbx.ServerVersion
 }
 
 type restoreIntegrationCapabilities struct {
@@ -132,7 +130,7 @@ func TestServiceRestoreIntegration(t *testing.T) {
 
 	t.Run("include data", func(t *testing.T) {
 		if !capabilities.includeData {
-			if server.kind == "rdb" && server.major == 3 {
+			if server.kind == "rdb" && server.version.Major == 3 {
 				t.Skip("Red Database 3 requires the legacy KEEP_DATA tag, which RestoreOptions does not emit")
 			}
 			t.Skipf("include-data restore is not supported by %s %s", server.kind, server.version)
@@ -179,7 +177,7 @@ func TestServiceRestoreIntegration(t *testing.T) {
 
 	t.Run("parallel workers", func(t *testing.T) {
 		if !capabilities.parallelWorkers {
-			if server.kind == "rdb" && server.major == 3 {
+			if server.kind == "rdb" && server.version.Major == 3 {
 				t.Skip("Red Database 3 requires the legacy parallel-workers tag, which RestoreOptions does not emit")
 			}
 			t.Skipf("parallel restore is not supported by %s %s", server.kind, server.version)
@@ -229,36 +227,25 @@ func (server restoreIntegrationServer) capabilities() restoreIntegrationCapabili
 
 	switch server.kind {
 	case "firebird":
-		capabilities.includeData = server.atLeast(4, 0)
-		capabilities.replicaMode = server.atLeast(4, 0)
-		capabilities.encryption = server.atLeast(4, 0)
-		capabilities.directIO = server.atLeast(5, 0)
-		capabilities.parallelWorkers = server.atLeast(5, 0)
-		capabilities.schemaFilters = server.atLeast(6, 0)
+		capabilities.includeData = server.version.AtLeast(4, 0, 0)
+		capabilities.replicaMode = server.version.AtLeast(4, 0, 0)
+		capabilities.encryption = server.version.AtLeast(4, 0, 0)
+		capabilities.directIO = server.version.AtLeast(5, 0, 0)
+		capabilities.parallelWorkers = server.version.AtLeast(5, 0, 0)
+		capabilities.schemaFilters = server.version.AtLeast(6, 0, 0)
 	case "rdb":
-		capabilities.ignoreBLRErrors = server.atLeast(3, 0)
-		capabilities.includeData = server.atLeast(5, 0)
-		capabilities.replicaMode = server.atLeast(5, 0)
-		capabilities.encryption = server.atLeast(5, 0)
-		capabilities.directIO = server.atLeast(5, 0)
-		capabilities.parallelWorkers = server.atLeast(5, 0)
-		capabilities.schemaFilters = server.atLeast(6, 0)
-		capabilities.tablespaces = server.atLeast(5, 2) && !server.is(6, 0)
+		capabilities.ignoreBLRErrors = server.version.AtLeast(3, 0, 0)
+		capabilities.includeData = server.version.AtLeast(5, 0, 0)
+		capabilities.replicaMode = server.version.AtLeast(5, 0, 0)
+		capabilities.encryption = server.version.AtLeast(5, 0, 0)
+		capabilities.directIO = server.version.AtLeast(5, 0, 0)
+		capabilities.parallelWorkers = server.version.AtLeast(5, 0, 0)
+		capabilities.schemaFilters = server.version.AtLeast(6, 0, 0)
+		capabilities.tablespaces = server.version.AtLeast(5, 2, 0) &&
+			!(server.version.Major == 6 && server.version.Minor == 0)
 	}
 
 	return capabilities
-}
-
-func (server restoreIntegrationServer) atLeast(major int, minor int) bool {
-	return server.major > major || server.major == major && server.minor >= minor
-}
-
-func (server restoreIntegrationServer) after(major int, minor int) bool {
-	return server.major > major || server.major == major && server.minor > minor
-}
-
-func (server restoreIntegrationServer) is(major int, minor int) bool {
-	return server.major == major && server.minor == minor
 }
 
 func restoreIntegrationServerFromEnvironment(
@@ -268,67 +255,60 @@ func restoreIntegrationServerFromEnvironment(
 ) restoreIntegrationServer {
 	t.Helper()
 
-	server := restoreIntegrationServer{
-		profile: strings.TrimSpace(os.Getenv("TARGET")),
-		kind:    strings.ToLower(strings.TrimSpace(os.Getenv("DB_KIND"))),
-		version: strings.TrimSpace(os.Getenv("DB_VERSION")),
-	}
-	if server.kind == "" && server.version == "" {
+	profile := strings.TrimSpace(os.Getenv("TARGET"))
+	kind := strings.ToLower(strings.TrimSpace(os.Getenv("DB_KIND")))
+	declaredVersion := strings.TrimSpace(os.Getenv("DB_VERSION"))
+	if kind == "" && declaredVersion == "" {
 		rdbVersion := strings.TrimSpace(os.Getenv("RDB_VERSION"))
 		firebirdVersion := strings.TrimSpace(os.Getenv("FB_VERSION"))
 		switch {
 		case rdbVersion != "" && firebirdVersion != "":
 			t.Fatal("both RDB_VERSION and FB_VERSION are set")
 		case rdbVersion != "":
-			server.kind = "rdb"
-			server.version = rdbVersion
+			kind = "rdb"
+			declaredVersion = rdbVersion
 		case firebirdVersion != "":
-			server.kind = "firebird"
-			server.version = firebirdVersion
+			kind = "firebird"
+			declaredVersion = firebirdVersion
 		default:
 			t.Skip("service restore integration test requires DB_KIND/DB_VERSION, RDB_VERSION, or FB_VERSION")
 		}
 	}
-	if server.kind == "" || server.version == "" {
+	if kind == "" || declaredVersion == "" {
 		t.Fatal("database kind and version must be provided together")
 	}
-	if server.kind != "firebird" && server.kind != "rdb" {
-		t.Fatalf("unsupported DB_KIND %q", server.kind)
+	if kind != "firebird" && kind != "rdb" {
+		t.Fatalf("unsupported DB_KIND %q", kind)
 	}
 
-	declaredVersion := server.version
 	declaredMajor, declaredMinor := parseRestoreIntegrationVersion(t, declaredVersion)
 
 	conn, err := fbx.Connect(ctx, connString)
 	require.NoError(t, err)
 	defer closeConn(t, conn)
 
-	var engineVersion string
-	err = conn.QueryRow(
-		ctx,
-		"select rdb$get_context('SYSTEM', 'ENGINE_VERSION') from rdb$database",
-	).Scan(&engineVersion)
-	require.NoError(t, err)
-	engineMajor, engineMinor := parseRestoreIntegrationVersion(t, engineVersion)
+	serverVersion := conn.ServerVersion()
 	require.Equalf(
 		t,
 		declaredMajor,
-		engineMajor,
-		"DB_VERSION %q does not match server ENGINE_VERSION %q",
+		serverVersion.Major,
+		"declared database version %q does not match server version %q",
 		declaredVersion,
-		engineVersion,
+		serverVersion,
 	)
 	require.Equalf(
 		t,
 		declaredMinor,
-		engineMinor,
-		"DB_VERSION %q does not match server ENGINE_VERSION %q",
+		serverVersion.Minor,
+		"declared database version %q does not match server version %q",
 		declaredVersion,
-		engineVersion,
+		serverVersion,
 	)
-	server.version = engineVersion
-	server.major = engineMajor
-	server.minor = engineMinor
+	server := restoreIntegrationServer{
+		profile: profile,
+		kind:    kind,
+		version: serverVersion,
+	}
 	if server.profile == "" {
 		server.profile = fmt.Sprintf("%s-%s", server.kind, server.version)
 	}
