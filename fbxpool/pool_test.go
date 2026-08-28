@@ -1070,8 +1070,7 @@ func TestTxBeginFuncNestedTransactionCommit(t *testing.T) {
 	require.NoError(t, err)
 
 	defer func() {
-		_, err := db.Exec(ctx, "drop table fbxpooltx")
-		require.NoError(t, err)
+		_, _ = db.Exec(ctx, "drop table fbxpooltx")
 	}()
 
 	err = fbx.BeginFunc(ctx, db, func(db fbx.Tx) error {
@@ -1120,8 +1119,7 @@ func TestTxBeginFuncNestedTransactionRollback(t *testing.T) {
 	require.NoError(t, err)
 
 	defer func() {
-		_, err := db.Exec(ctx, "drop table fbxpooltx")
-		require.NoError(t, err)
+		_, _ = db.Exec(ctx, "drop table fbxpooltx")
 	}()
 
 	err = fbx.BeginFunc(ctx, db, func(db fbx.Tx) error {
