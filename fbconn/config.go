@@ -383,8 +383,6 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		"user":                          {},
 		"password":                      {},
 		"connect_timeout":               {},
-		"krbspn":                        {},
-		"krbsrvname":                    {},
 		"auth_plugin_list":              {},
 		"system_user":                   {},
 		"wire_crypt":                    {},
