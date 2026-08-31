@@ -163,9 +163,9 @@ func (c *Config) Copy() *Config {
 	return newConf
 }
 
-// SetPliginConstructorOptions allows to specify a list
+// SetPluginConstructorOptions allows to specify a list
 // of auth.ConstructorOptions for the specified authentication plugin.
-func (conf *Config) SetPliginConstructorOptions(plugin string, opts ...auth.ConstructorOption) {
+func (conf *Config) SetPluginConstructorOptions(plugin string, opts ...auth.ConstructorOption) {
 	if conf.ConstructorOptions == nil {
 		conf.ConstructorOptions = make(map[string][]auth.ConstructorOption)
 	}
