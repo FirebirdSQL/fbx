@@ -138,6 +138,12 @@ func (c *Config) Copy() *Config {
 			newConf.RuntimeParams[k] = v
 		}
 	}
+	if newConf.ConstructorOptions != nil {
+		newConf.ConstructorOptions = make(map[string][]auth.ConstructorOption, len(c.ConstructorOptions))
+		for k, v := range c.ConstructorOptions {
+			newConf.ConstructorOptions[k] = v
+		}
+	}
 	if len(newConf.AuthPluginList) > 0 {
 		newList := make([]string, len(c.AuthPluginList))
 		copy(newList, c.AuthPluginList)
