@@ -178,6 +178,7 @@ func (m *AuthManager) BuildList() string {
 // per-plugin handshake state from the previous attempt cannot leak into the new
 // authentication flow.
 func (m *AuthManager) SetCurrentPlugin(name string) (AuthPlugin, error) {
+	var expectedError *UnsupportedPluginError
 	if plugin := m.GetCurrentPlugin(); plugin != nil {
 		for _, advertised := range plugin.Advertise() {
 			if strings.EqualFold(advertised, name) {
@@ -193,7 +194,7 @@ func (m *AuthManager) SetCurrentPlugin(name string) (AuthPlugin, error) {
 				if err == nil {
 					plugin = fresh
 					m.plugins[idx] = fresh
-				} else if !errors.Is(err, &UnsupportedPluginError{}) {
+				} else if !errors.As(err, &expectedError) {
 					return nil, err
 				}
 				m.current = idx
