@@ -327,7 +327,18 @@ func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *
 	if st.Description.HaveSingletonResult() {
 		switch r := msg.(type) {
 		case *fbproto.OpSqlResponse:
-			row, dataResp, err := st.conn.receiveSQLData(st.Description.StatementInfo.FieldDescriptors)
+			var (
+				row      *fbproto.SQLData
+				dataResp fbproto.ServerMessage
+			)
+			switch r.Messages {
+			case 0:
+				dataResp, err = st.conn.receiveMessage()
+			case 1:
+				row, dataResp, err = st.conn.receiveSQLData(st.Description.StatementInfo.FieldDescriptors)
+			default:
+				err = fmt.Errorf("unexpected SQL response message count: %d", r.Messages)
+			}
 			if err != nil {
 				st.conn.asyncClose()
 				rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(ctx, err))
@@ -339,6 +350,11 @@ func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *
 				rr.singleton = row
 			case *fbproto.ErrorResponse:
 				rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(d))
+				rr.closed = true
+				return rr
+			default:
+				st.conn.asyncClose()
+				rr.concludeCommand(QueryStatus{}, fmt.Errorf("unexpected response type %T after SQL response", dataResp))
 				rr.closed = true
 				return rr
 			}

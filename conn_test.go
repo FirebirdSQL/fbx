@@ -387,6 +387,35 @@ func TestExecFailure(t *testing.T) {
 	})
 }
 
+func TestExecReturningConstraintErrorKeepsConnectionUsable(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		table := "fbx_returning_exec"
+		_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, name varchar(255) not null)")
+		require.NoError(t, err)
+		defer func() {
+			_, err := conn.Exec(ctx, "drop table "+table)
+			require.NoError(t, err)
+		}()
+
+		query := "insert into " + table + " (id, name) values (?, ?) returning name"
+		_, err = conn.Exec(ctx, query, int32(1), "first")
+		require.NoError(t, err)
+
+		_, err = conn.Exec(ctx, query, int32(1), "duplicate")
+		require.Error(t, err)
+		require.NotContains(t, err.Error(), "unknown opcode")
+
+		var fbErr *fbconn.FbError
+		require.ErrorAs(t, err, &fbErr)
+		require.Equal(t, "23000", fbErr.Code)
+		require.Contains(t, fbErr.GdsCodes, fbproto.Isc_unique_key_violation)
+		ensureConnValid(t, conn)
+	})
+}
+
 func TestExecFailureWithArguments(t *testing.T) {
 	t.Parallel()
 

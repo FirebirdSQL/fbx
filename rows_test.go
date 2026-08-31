@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbconn"
+	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbxtest"
 )
 
@@ -317,49 +318,46 @@ func TestCollectOneRowIgnoresExtraRows(t *testing.T) {
 }
 
 func TestCollectOneRowPrefersFirebirdSQLErrorOverErrNoRows(t *testing.T) {
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
-		_, err := conn.Exec(ctx, `recreate table "+t.Name()+" (name varchar(255) not null)`)
-		require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
 
-		var name string
-		rows, _ := conn.Query(ctx, `insert into "+t.Name()+" (name) values ('foo1') returning name`)
-		name, err = fbx.CollectOneRow(rows, func(row fbx.CollectableRow) (string, error) {
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		table := "fbx_returning_row"
+		_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, name varchar(255) not null)")
+		require.NoError(t, err)
+		defer func() {
+			_, err := conn.Exec(ctx, "drop table "+table)
+			require.NoError(t, err)
+		}()
+
+		query := "insert into " + table + " (id, name) values (?, ?) returning name"
+		rows, err := conn.Query(ctx, query, int32(1), "foo")
+		require.NoError(t, err)
+		name, err := fbx.CollectOneRow(rows, func(row fbx.CollectableRow) (string, error) {
 			var n string
 			err := row.Scan(&n)
 			return n, err
 		})
 		require.NoError(t, err)
-		require.Equal(t, "foo1", name)
+		require.Equal(t, "foo", name)
 
-		rows, _ = conn.Query(ctx, `insert into "+t.Name()+" (name) values ('foo1') returning name`)
+		rows, err = conn.Query(ctx, query, int32(1), "duplicate")
+		require.NoError(t, err)
 		name, err = fbx.CollectOneRow(rows, func(row fbx.CollectableRow) (string, error) {
 			var n string
 			err := row.Scan(&n)
 			return n, err
 		})
-		require.NoError(t, err)
-		require.Equal(t, "foo1", name)
+		require.Error(t, err)
+		require.NotErrorIs(t, err, fbx.ErrNoRows)
+		require.Empty(t, name)
+		require.NotContains(t, err.Error(), "unknown opcode")
 
-		rows, _ = conn.Query(ctx, `insert into "+t.Name()+" (name) values ('foo1') returning name`)
-		name, err = fbx.CollectOneRow(rows, func(row fbx.CollectableRow) (string, error) {
-			var n string
-			err := row.Scan(&n)
-			return n, err
-		})
-		require.NoError(t, err)
-		require.Equal(t, "foo1", name)
-
-		//rows, _ = conn.Query(ctx, `insert into "+t.Name()+" (name) values ('foo2') returning name`)
-		//name, err = fbx.CollectOneRow(rows, func(row fbx.CollectableRow) (string, error) {
-		//	var n string
-		//	err := row.Scan(&n)
-		//	return n, err
-		//})
-		//require.Error(t, err)
-		//var fbErr *fbconn.FbError
-		//require.ErrorAs(t, err, &fbErr)
-		//require.Equal(t, "23505", fbErr.SqlCode)
-		//require.Equal(t, "", name)
+		var fbErr *fbconn.FbError
+		require.ErrorAs(t, err, &fbErr)
+		require.Equal(t, "23000", fbErr.Code)
+		require.Contains(t, fbErr.GdsCodes, fbproto.Isc_unique_key_violation)
+		ensureConnValid(t, conn)
 	})
 }
 
