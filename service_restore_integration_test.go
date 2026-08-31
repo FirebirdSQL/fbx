@@ -242,7 +242,7 @@ func (server restoreIntegrationServer) capabilities() restoreIntegrationCapabili
 		capabilities.parallelWorkers = server.version.AtLeast(5, 0, 0)
 		capabilities.schemaFilters = server.version.AtLeast(6, 0, 0)
 		capabilities.tablespaces = server.version.AtLeast(5, 2, 0) &&
-			!(server.version.Major == 6 && server.version.Minor == 0)
+			(server.version.Major != 6 || server.version.Minor != 0)
 	}
 
 	return capabilities
