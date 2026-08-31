@@ -54,7 +54,7 @@ type Config struct {
 	MaxBlobCacheSize           int
 	FetchBatchSize             int
 
-	// ConstructorOptions allows to pass methods for setting parameters to authentication plugins.
+	// ConstructorOptions allows to pass callbacks for setting parameters to authentication plugins.
 	ConstructorOptions map[string][]auth.ConstructorOption
 
 	// BuildContextWatcherHandler is called to create a ContextWatcherHandler for a connection. The handler is called
@@ -164,7 +164,7 @@ func (c *Config) Copy() *Config {
 }
 
 // SetPluginConstructorOptions allows to specify a list
-// of auth.ConstructorOptions for the specified authentication plugin.
+// of [auth.ConstructorOptions] for the specified authentication plugin.
 func (conf *Config) SetPluginConstructorOptions(plugin string, opts ...auth.ConstructorOption) {
 	if conf.ConstructorOptions == nil {
 		conf.ConstructorOptions = make(map[string][]auth.ConstructorOption)

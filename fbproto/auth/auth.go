@@ -6,12 +6,21 @@ import (
 	"strings"
 )
 
+// ConstructorOption is a functional option for configuring AuthPlugin.
+// It takes an AuthPlugin and returns an error if the configuration fails.
 type ConstructorOption func(AuthPlugin) error
 
 // PluginConfig contains settings for authentication plugins.
 type PluginConfig struct {
-	User               string
-	Password           string
+	// User is the username used for authentication.
+	User string
+	// Password is the password of user.
+	Password string
+	// ConstructorOptions maps plugin names to their configuration options.
+	// The key is the plugin identifier in lower case without spaces.
+	// The value is a slice of ConstructorOption functions that will be
+	// applied to the plugin during initialization.
+	// Options are called each time the plugin constructor is called.
 	ConstructorOptions map[string][]ConstructorOption
 }
 
@@ -345,6 +354,8 @@ func (m *AuthManager) pluginNames() []string {
 	return names
 }
 
+// The method creates an authentication plugin if such a name exists
+// in pluginConstructors and applies functional options to this plugin.
 func createAuthPlugin(name string, conf PluginConfig) (AuthPlugin, error) {
 	key := strings.ToLower(strings.TrimSpace(name))
 	constructor, ok := pluginConstructors[key]
