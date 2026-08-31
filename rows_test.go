@@ -361,6 +361,33 @@ func TestCollectOneRowPrefersFirebirdSQLErrorOverErrNoRows(t *testing.T) {
 	})
 }
 
+func TestQueryRowReturningNoMatchByServerVersion(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		table := "fbx_returning_empty"
+		_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, name varchar(255))")
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, conn.DeallocateAll(ctx))
+			_, err := conn.Exec(ctx, "drop table "+table)
+			require.NoError(t, err)
+		}()
+
+		var name *string
+		err = conn.QueryRow(ctx, "update "+table+" set name = ? where id = ? returning name", "missing", int32(1)).Scan(&name)
+		if conn.ServerVersion().Major <= 4 {
+			require.NoError(t, err)
+			require.Nil(t, name)
+		} else {
+			require.ErrorIs(t, err, fbx.ErrNoRows)
+			require.Nil(t, name)
+		}
+		ensureConnValid(t, conn)
+	})
+}
+
 func TestCollectExactlyOneRow(t *testing.T) {
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		rows, _ := conn.Query(ctx, `select 42 from rdb$database`)
