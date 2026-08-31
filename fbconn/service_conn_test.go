@@ -19,7 +19,7 @@ func TestBuildServiceAttachSPB(t *testing.T) {
 	config.Role = "RDB$ADMIN"
 	config.ClientVersion = "fbx-test"
 
-	authManager, err := auth.NewAuthManager(auth.PluginsConfig{
+	authManager, err := auth.NewAuthManager(auth.PluginConfig{
 		User:     config.User,
 		Password: config.Password,
 	}, []string{"Legacy_Auth"})

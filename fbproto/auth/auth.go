@@ -8,8 +8,8 @@ import (
 
 type ConstructorOption func(AuthPlugin) error
 
-// PluginsConfig contains settings for authentication plugins.
-type PluginsConfig struct {
+// PluginConfig contains settings for authentication plugins.
+type PluginConfig struct {
 	User               string
 	Password           string
 	ConstructorOptions map[string][]ConstructorOption
@@ -58,13 +58,13 @@ var defaultPluginSequence = []string{
 	"Legacy_Auth",
 }
 
-var pluginConstructors = map[string]func(conf PluginsConfig) AuthPlugin{
-	"srp":    func(PluginsConfig) AuthPlugin { return NewSrpAuthPlugin() },
-	"srp256": func(PluginsConfig) AuthPlugin { return NewSrp256AuthPlugin() },
-	"srp224": func(PluginsConfig) AuthPlugin { return NewSrp224AuthPlugin() },
-	"srp384": func(PluginsConfig) AuthPlugin { return NewSrp384AuthPlugin() },
-	"srp512": func(PluginsConfig) AuthPlugin { return NewSrp512AuthPlugin() },
-	"legacy_auth": func(conf PluginsConfig) AuthPlugin {
+var pluginConstructors = map[string]func(conf PluginConfig) AuthPlugin{
+	"srp":    func(PluginConfig) AuthPlugin { return NewSrpAuthPlugin() },
+	"srp256": func(PluginConfig) AuthPlugin { return NewSrp256AuthPlugin() },
+	"srp224": func(PluginConfig) AuthPlugin { return NewSrp224AuthPlugin() },
+	"srp384": func(PluginConfig) AuthPlugin { return NewSrp384AuthPlugin() },
+	"srp512": func(PluginConfig) AuthPlugin { return NewSrp512AuthPlugin() },
+	"legacy_auth": func(conf PluginConfig) AuthPlugin {
 		return NewLegacyAuthPlugin(conf.Password)
 	},
 }
@@ -82,7 +82,7 @@ func DefaultPluginListString() string {
 // AuthManager coordinates plugin selection and state across the wire protocol
 // authentication exchange. An AuthManager is not safe for concurrent use.
 type AuthManager struct {
-	pluginsConfig    PluginsConfig
+	pluginConfig     PluginConfig
 	plugins          []AuthPlugin
 	current          int
 	lastAuthSpecific []byte
@@ -100,7 +100,7 @@ type SpecificDataChunk struct {
 // RegisterAuthPlugin allows to register custom authentication plugins.
 // To register it, you need to pass the name of the plugin and its constructor.
 // Constructor must be like in pluginConstructors map.
-func RegisterAuthPlugin(name string, constructor func(PluginsConfig) AuthPlugin) error {
+func RegisterAuthPlugin(name string, constructor func(PluginConfig) AuthPlugin) error {
 	lowerName := strings.ToLower(name)
 	if _, ok := pluginConstructors[lowerName]; !ok {
 		defaultPluginSequence = append(defaultPluginSequence, strings.TrimSpace(name))
@@ -113,7 +113,7 @@ func RegisterAuthPlugin(name string, constructor func(PluginsConfig) AuthPlugin)
 // NewAuthManager creates an authentication manager for user and password.
 // pluginNames defines client preference order; an empty list uses
 // [DefaultPluginSequence]. Duplicate names are ignored.
-func NewAuthManager(conf PluginsConfig, pluginNames []string) (*AuthManager, error) {
+func NewAuthManager(conf PluginConfig, pluginNames []string) (*AuthManager, error) {
 	order := pluginNames
 	if len(order) == 0 {
 		order = DefaultPluginSequence()
@@ -147,9 +147,9 @@ func NewAuthManager(conf PluginsConfig, pluginNames []string) (*AuthManager, err
 	}
 
 	return &AuthManager{
-		pluginsConfig: conf,
-		plugins:       plugins,
-		current:       0,
+		pluginConfig: conf,
+		plugins:      plugins,
+		current:      0,
 	}, nil
 }
 
@@ -189,7 +189,7 @@ func (m *AuthManager) SetCurrentPlugin(name string) (AuthPlugin, error) {
 	for idx, plugin := range m.plugins {
 		for _, advertised := range plugin.Advertise() {
 			if strings.EqualFold(advertised, name) {
-				fresh, err := createAuthPlugin(plugin.Name(), m.pluginsConfig)
+				fresh, err := createAuthPlugin(plugin.Name(), m.pluginConfig)
 				if err == nil {
 					plugin = fresh
 					m.plugins[idx] = fresh
@@ -280,7 +280,7 @@ func (m *AuthManager) HandleServerChallenge(pluginName string, data []byte) (*Au
 	if err != nil {
 		return nil, err
 	}
-	step, err = plugin.HandleServerData(m.pluginsConfig.User, m.pluginsConfig.Password, pluginName, data)
+	step, err = plugin.HandleServerData(m.pluginConfig.User, m.pluginConfig.Password, pluginName, data)
 	if err != nil {
 		return nil, err
 	}
@@ -344,7 +344,7 @@ func (m *AuthManager) pluginNames() []string {
 	return names
 }
 
-func createAuthPlugin(name string, conf PluginsConfig) (AuthPlugin, error) {
+func createAuthPlugin(name string, conf PluginConfig) (AuthPlugin, error) {
 	key := strings.ToLower(strings.TrimSpace(name))
 	constructor, ok := pluginConstructors[key]
 	if !ok {
