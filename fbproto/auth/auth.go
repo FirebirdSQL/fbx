@@ -352,10 +352,14 @@ func createAuthPlugin(name string, conf PluginConfig) (AuthPlugin, error) {
 		return nil, &UnsupportedPluginError{Name: name}
 	}
 	plugin := constructor(conf)
-	for _, opt := range conf.ConstructorOptions[key] {
-		err := opt(plugin)
-		if err != nil {
-			return nil, err
+	for k, v := range conf.ConstructorOptions {
+		if strings.ToLower(strings.TrimSpace(k)) == key {
+			for _, opt := range v {
+				err := opt(plugin)
+				if err != nil {
+					return nil, err
+				}
+			}
 		}
 	}
 	return plugin, nil
