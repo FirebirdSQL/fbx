@@ -42,8 +42,8 @@ func TestConnect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("QueryRow Scan unexpectedly failed: %v", err)
 	}
-	if currentDB != config.Config.Database {
-		t.Errorf("Did not connect to specified database (%v)", config.Config.Database)
+	if currentDB != config.Database {
+		t.Errorf("Did not connect to specified database (%v)", config.Database)
 	}
 
 	var user string
@@ -51,8 +51,8 @@ func TestConnect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("QueryRow Scan unexpectedly failed: %v", err)
 	}
-	if user != strings.ToUpper(config.Config.User) {
-		t.Errorf("Did not connect as specified user (%v)", config.Config.User)
+	if user != strings.ToUpper(config.User) {
+		t.Errorf("Did not connect as specified user (%v)", config.User)
 	}
 
 	err = conn.Close(context.Background())
@@ -221,7 +221,7 @@ func newCreateDatabaseTestConfig(t testing.TB, filename string) *fbx.ConnConfig 
 func TestConnectConfigRequiresConnConfigFromParseConfig(t *testing.T) {
 	config := &fbx.ConnConfig{}
 	require.PanicsWithValue(t, "config must be created by ParseConfig", func() {
-		fbx.ConnectConfig(context.Background(), config)
+		_, _ = fbx.ConnectConfig(context.Background(), config)
 	})
 }
 
@@ -610,7 +610,9 @@ func TestPrepareBatchUpdateAndDelete(t *testing.T) {
 
 		pbUpdate, err := conn.PrepareBatch(ctx, "update "+table+" set note = ? where id = ?")
 		require.NoError(t, err)
-		defer pbUpdate.Close(ctx)
+		defer func() {
+			require.NoError(t, pbUpdate.Close(ctx))
+		}()
 
 		require.NoError(t, pbUpdate.Add("one-updated", 1))
 		require.NoError(t, pbUpdate.Add("two-updated", 2))
@@ -621,7 +623,9 @@ func TestPrepareBatchUpdateAndDelete(t *testing.T) {
 
 		pbDelete, err := conn.PrepareBatch(ctx, "delete from "+table+" where id = ?")
 		require.NoError(t, err)
-		defer pbDelete.Close(ctx)
+		defer func() {
+			require.NoError(t, pbDelete.Close(ctx))
+		}()
 
 		require.NoError(t, pbDelete.Add(3))
 		require.NoError(t, pbDelete.Add(4))
@@ -957,7 +961,9 @@ func TestFatalTxError(t *testing.T) {
 			defer closeConn(t, conn)
 
 			otherConn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
-			defer otherConn.Close(context.Background())
+			defer func() {
+				_ = otherConn.Close(context.Background())
+			}()
 
 			if err = conn.FbConn().Disconnect(context.Background()); err != nil {
 				t.Fatalf("Unable to disconnect: %v", err)
@@ -1193,12 +1199,12 @@ func TestConnDeallocateAllAfterSetSearch_path(t *testing.T) {
 			t.Skip("schemas are supported only in Firebird/RedDatabase 6+")
 		}
 
-		_, err := conn.Exec(ctx, "drop table if exists test1.test")
-		_, err = conn.Exec(ctx, "drop table if exists test2.test")
-		_, err = conn.Exec(ctx, "drop schema if exists test1")
-		_, err = conn.Exec(ctx, "drop schema if exists test2")
+		_, _ = conn.Exec(ctx, "drop table if exists test1.test")
+		_, _ = conn.Exec(ctx, "drop table if exists test2.test")
+		_, _ = conn.Exec(ctx, "drop schema if exists test1")
+		_, _ = conn.Exec(ctx, "drop schema if exists test2")
 
-		_, err = conn.Exec(ctx, "create schema test1")
+		_, err := conn.Exec(ctx, "create schema test1")
 		require.NoError(t, err)
 		_, err = conn.Exec(ctx, "create schema test2")
 		require.NoError(t, err)
@@ -1256,7 +1262,9 @@ func TestConnectWithTimezone(t *testing.T) {
 		conn, err := fbx.ConnectConfig(ctx, config)
 		require.NoError(t, err, i)
 		require.NotNil(t, conn, i)
-		defer conn.Close(ctx)
+		defer func() {
+			require.NoError(t, conn.Close(ctx), i)
+		}()
 		if getServerMajorVersionForConn(ctx, t, conn) < 4 {
 			t.Skip("timezone is supported only in Firebird 4+/RedDatabase 5+")
 		}

@@ -585,7 +585,11 @@ func (t *tracer) writeTrace(sender byte, msgType string, writeDetails func()) {
 	}
 
 	t.buf.WriteByte('\n')
-	t.buf.WriteTo(t.w)
+	if _, err := t.buf.WriteTo(t.w); err != nil {
+		// Trace callbacks cannot return an error. Stop writing after the first
+		// failure instead of repeatedly invoking a broken writer.
+		t.w = io.Discard
+	}
 }
 
 func traceSingleQuotedString(buf []byte) string {

@@ -25,14 +25,13 @@ type fbEventHandler struct {
 	state       eventHandlerState
 }
 
+// The zero value represents a handler that exists locally but has not yet been
+// registered on the server.
 type eventHandlerState uint8
 
 const (
-	// eventHandlerStateCreated means handler exists locally but is not registered
-	// on the server yet.
-	eventHandlerStateCreated eventHandlerState = iota
 	// eventHandlerStateRegistering means a queue/register call is in progress.
-	eventHandlerStateRegistering
+	eventHandlerStateRegistering eventHandlerState = iota + 1
 	// eventHandlerStateRegistered means server-side registration is active.
 	eventHandlerStateRegistered
 	// eventHandlerStateCancelling means cancel call is in progress.

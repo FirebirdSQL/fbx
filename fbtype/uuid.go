@@ -144,32 +144,6 @@ func (UUIDCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) Encode
 	return encodePlanUUIDCodecTextUUIDValuer{}
 }
 
-type encodePlanUUIDCodecBinaryUUIDValuer struct{}
-
-func (encodePlanUUIDCodecBinaryUUIDValuer) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	uuid, err := value.(UUIDValuer).UUIDValue()
-	if err != nil {
-		return nil, err
-	}
-
-	if !uuid.Valid {
-		return nil, nil
-	}
-
-	return append(buf, uuid.Bytes[:]...), nil
-}
-
-type encodePlanUUIDCodecBinaryString struct{}
-
-func (encodePlanUUIDCodecBinaryString) Encode(value any, buf []byte) ([]byte, error) {
-	str := value.(string)
-	uuid, err := parseUUID(str)
-	if err != nil {
-		return nil, err
-	}
-	return append(buf, uuid[:]...), nil
-}
-
 type encodePlanUUIDCodecTextUUIDValuer struct{}
 
 func (encodePlanUUIDCodecTextUUIDValuer) Encode(value any, buf []byte) (newBuf []byte, err error) {
@@ -232,23 +206,6 @@ func (scanPlanBinaryUUIDToTextScanner) Scan(src []byte, dst any) error {
 	copy(buf[:], src)
 
 	return scanner.ScanText(Text{String: encodeUUID(buf), Valid: true})
-}
-
-type scanPlanTextAnyToUUIDScanner struct{}
-
-func (scanPlanTextAnyToUUIDScanner) Scan(src []byte, dst any) error {
-	scanner := (dst).(UUIDScanner)
-
-	if src == nil {
-		return scanner.ScanUUID(UUID{})
-	}
-
-	buf, err := parseUUID(string(src))
-	if err != nil {
-		return err
-	}
-
-	return scanner.ScanUUID(UUID{Bytes: buf, Valid: true})
 }
 
 func (c UUIDCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {

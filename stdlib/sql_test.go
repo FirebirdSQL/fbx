@@ -38,7 +38,7 @@ func getServerMajorVersion(t testing.TB, db *sql.DB) int {
 	t.Helper()
 	conn, err := db.Conn(context.Background())
 	require.NoError(t, err)
-	defer conn.Close()
+	defer closeResource(t, conn)
 
 	var major int
 	err = conn.Raw(func(driverConn any) error {
@@ -52,6 +52,11 @@ func getServerMajorVersion(t testing.TB, db *sql.DB) int {
 func closeDB(t testing.TB, db *sql.DB) {
 	err := db.Close()
 	require.NoError(t, err)
+}
+
+func closeResource(t testing.TB, closer interface{ Close() error }) {
+	t.Helper()
+	require.NoError(t, closer.Close())
 }
 
 func testWithAllQueryExecModes(t *testing.T, f func(t *testing.T, db *sql.DB)) {
@@ -86,11 +91,11 @@ func ensureDBValid(t testing.TB, db *sql.DB) {
 
 	rows, err := db.Query(generateSeriesQuery("1", "?", ""), 10)
 	require.NoError(t, err)
-	defer rows.Close()
+	defer closeResource(t, rows)
 
 	for rows.Next() {
 		var n int32
-		rows.Scan(&n)
+		require.NoError(t, rows.Scan(&n))
 		sum += n
 		rowCount++
 	}
@@ -162,7 +167,7 @@ func TestStdlibBlobBinary(t *testing.T) {
 		var blob stdlib.Blob
 		err = rows.Scan(&blob)
 		require.NoError(t, err)
-		rows.Close()
+		closeResource(t, rows)
 		require.NoError(t, rows.Err())
 
 		got, err := blob.Bytes()
@@ -249,7 +254,7 @@ func TestStdlibBlobWithArray(t *testing.T) {
 		m := fbtype.NewMap()
 		err = rows.Scan(&blob, m.SQLScanner(&numbers))
 		require.NoError(t, err)
-		rows.Close()
+		closeResource(t, rows)
 		require.NoError(t, rows.Err())
 
 		gotBlob, err := blob.Bytes()
@@ -296,7 +301,7 @@ func TestStdlibBlobText(t *testing.T) {
 				var blob stdlib.Blob
 				err = rows.Scan(&blob)
 				require.NoError(t, err)
-				rows.Close()
+				closeResource(t, rows)
 				require.NoError(t, rows.Err())
 
 				got, err := blob.Text()
@@ -317,7 +322,7 @@ func TestSQLOpenFromPool(t *testing.T) {
 	db := stdlib.OpenDBFromPool(pool)
 	ensureDBValid(t, db)
 
-	db.Close()
+	closeDB(t, db)
 }
 
 func TestNormalLifeCycle(t *testing.T) {
@@ -675,7 +680,7 @@ func TestConnQueryScanGoArrayNullClearsDestination(t *testing.T) {
 
 		rows, err := db.Query("select array from scan_go_array_null_test order by id")
 		require.NoError(t, err)
-		defer rows.Close()
+		defer closeResource(t, rows)
 
 		m := fbtype.NewMap()
 		actual := []int64{99}
@@ -715,7 +720,7 @@ func TestConnQueryArrayDriverValueOwnsFetchBuffer(t *testing.T) {
 
 	rows, err := db.Query("select array from scan_array_buffer_lifetime order by id")
 	require.NoError(t, err)
-	defer rows.Close()
+	defer closeResource(t, rows)
 
 	require.True(t, rows.Next())
 	var firstRaw any
@@ -903,7 +908,7 @@ func TestConnBeginTxIsolation(t *testing.T) {
 					t.Errorf("%d. BeginTx failed: %v", i, err)
 					return
 				}
-				defer tx.Rollback()
+				defer func() { require.NoError(t, tx.Rollback()) }()
 
 				var fbIso int
 				err = tx.QueryRow("select mon$isolation_mode from mon$transactions where mon$transaction_id = current_transaction").Scan(&fbIso)
@@ -927,7 +932,7 @@ func TestConnBeginTxIsolation(t *testing.T) {
 			tx, err := db.BeginTx(context.Background(), &sql.TxOptions{Isolation: tt.sqlIso})
 			if err == nil {
 				t.Errorf("%d. BeginTx should have failed", i)
-				tx.Rollback()
+				require.NoError(t, tx.Rollback())
 			}
 		}
 	})
@@ -937,7 +942,7 @@ func TestConnBeginTxReadOnly(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
 		tx, err := db.BeginTx(context.Background(), &sql.TxOptions{ReadOnly: true})
 		require.NoError(t, err)
-		defer tx.Rollback()
+		defer func() { require.NoError(t, tx.Rollback()) }()
 
 		var ro int
 		err = tx.QueryRow("select mon$read_only from mon$transactions where mon$transaction_id = current_transaction").Scan(&ro)
@@ -1043,7 +1048,7 @@ func TestStmtCloseAfterDeallocateFailureIsIdempotent(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
 		sqlConn, err := db.Conn(context.Background())
 		require.NoError(t, err)
-		defer sqlConn.Close()
+		defer closeResource(t, sqlConn)
 
 		err = sqlConn.Raw(func(driverConn any) error {
 			conn := driverConn.(*stdlib.Conn)
@@ -1113,7 +1118,7 @@ func TestStmtExecContextSuccess(t *testing.T) {
 
 	stmt, err := db.Prepare("insert into t(id) values(cast(? as int))")
 	require.NoError(t, err)
-	defer stmt.Close()
+	defer closeStmt(t, stmt)
 
 	_, err = stmt.ExecContext(context.Background(), 42)
 	require.NoError(t, err)
@@ -1133,7 +1138,7 @@ func TestStmtExecContextCancel(t *testing.T) {
 
 	stmt, err := db.Prepare("insert into t(id) select cast(? as smallint) from fbsleep(5)")
 	require.NoError(t, err)
-	defer stmt.Close()
+	defer closeStmt(t, stmt)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
@@ -1152,7 +1157,7 @@ func TestStmtQueryContextSuccess(t *testing.T) {
 
 	stmt, err := db.Prepare(generateSeriesQuery("1", "?", "n"))
 	require.NoError(t, err)
-	defer stmt.Close()
+	defer closeStmt(t, stmt)
 
 	rows, err := stmt.QueryContext(context.Background(), 5)
 	require.NoError(t, err)
@@ -1184,7 +1189,7 @@ func TestStmtLegacyExecAndQuery(t *testing.T) {
 
 	sqlConn, err := db.Conn(context.Background())
 	require.NoError(t, err)
-	defer sqlConn.Close()
+	defer closeResource(t, sqlConn)
 
 	err = sqlConn.Raw(func(driverConn any) error {
 		conn := driverConn.(*stdlib.Conn)
@@ -1193,8 +1198,9 @@ func TestStmtLegacyExecAndQuery(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		defer insert.Close()
+		defer closeResource(t, insert)
 
+		//nolint:staticcheck // This test intentionally exercises the legacy driver.Stmt API.
 		result, err := insert.Exec([]driver.Value{int64(73)})
 		if err != nil {
 			return err
@@ -1211,13 +1217,14 @@ func TestStmtLegacyExecAndQuery(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		defer query.Close()
+		defer closeResource(t, query)
 
+		//nolint:staticcheck // This test intentionally exercises the legacy driver.Stmt API.
 		rows, err := query.Query([]driver.Value{int64(73)})
 		if err != nil {
 			return err
 		}
-		defer rows.Close()
+		defer closeResource(t, rows)
 
 		values := make([]driver.Value, len(rows.Columns()))
 		if err := rows.Next(values); err != nil {
@@ -1414,7 +1421,7 @@ func TestRowsColumnTypeNullable(t *testing.T) {
 
 		rows, err := db.Query("select id, required_value, optional_value from stdlib_column_nullable")
 		require.NoError(t, err)
-		defer rows.Close()
+		defer closeResource(t, rows)
 
 		columns, err := rows.ColumnTypes()
 		require.NoError(t, err)
@@ -1610,7 +1617,7 @@ func TestRandomizeHostOrderFunc(t *testing.T) {
 	// If we don't succeed within this many iterations, something is certainly wrong
 	for i := 0; i < 100000; i++ {
 		connCopy := *config
-		stdlib.RandomizeHostOrderFunc(context.Background(), &connCopy)
+		require.NoError(t, stdlib.RandomizeHostOrderFunc(context.Background(), &connCopy))
 
 		delete(hostsNotSeenYet, connCopy.Host)
 		if len(hostsNotSeenYet) == 0 {
@@ -1787,6 +1794,6 @@ func TestOptionAfterConnect_ErrorClosesConnection(t *testing.T) {
 	err := db.Ping()
 	require.ErrorIs(t, err, callbackErr)
 	require.NotNil(t, connected)
-	defer connected.Close(context.Background())
+	defer func() { require.NoError(t, connected.Close(context.Background())) }()
 	require.True(t, connected.IsClosed())
 }

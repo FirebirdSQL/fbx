@@ -78,7 +78,7 @@ func readStatusVector(x *XDRReader, encoding *Encoding) (statusVectorResult, err
 	var (
 		sv             statusVectorResult
 		err            error
-		currentMsgPtr  *string = &sv.Message
+		currentMsgPtr  = &sv.Message
 		numArg         int
 		gdsCode        int
 		firstSeen      = true
@@ -158,10 +158,11 @@ func readStatusVector(x *XDRReader, encoding *Encoding) (statusVectorResult, err
 			}
 			numArg++
 			*currentMsgPtr = strings.Replace(*currentMsgPtr, "@"+strconv.Itoa(numArg), strconv.Itoa(num), 1)
-			if readLineColState == 1 {
+			switch readLineColState {
+			case 1:
 				sv.Line = num
 				readLineColState = 2
-			} else if readLineColState == 2 {
+			case 2:
 				sv.Position = num
 				readLineColState = 0
 			}

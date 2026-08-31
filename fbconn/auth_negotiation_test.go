@@ -430,11 +430,11 @@ func TestConnectConfigPassesCertificateToPluginConstructor(t *testing.T) {
 	wantPIN := "123"
 
 	var constructed *certificateCapturePlugin
-	auth.RegisterAuthPlugin(pluginName, func(conf auth.UserConfig) auth.AuthPlugin {
+	require.NoError(t, auth.RegisterAuthPlugin(pluginName, func(conf auth.UserConfig) auth.AuthPlugin {
 		plugin := &certificateCapturePlugin{certificate: conf.Certificate, certificatePIN: conf.CertificatePIN}
 		constructed = plugin
 		return plugin
-	})
+	}))
 
 	config, err := ParseConfig("")
 	require.NoError(t, err)
@@ -454,10 +454,13 @@ func TestUserConfigPassedToPluginWhenSetCurrentPluginReused(t *testing.T) {
 	pluginList := []string{pluginName, srpPluginName}
 	wantCert := []byte{0x01, 0x02, 0x03}
 	wantPIN := "123"
-	auth.RegisterAuthPlugin(pluginName, func(conf auth.UserConfig) auth.AuthPlugin {
+	registerErr := auth.RegisterAuthPlugin(pluginName, func(conf auth.UserConfig) auth.AuthPlugin {
 		plugin := &certificateCapturePlugin{certificate: conf.Certificate, certificatePIN: conf.CertificatePIN}
 		return plugin
 	})
+	if registerErr != nil {
+		require.EqualError(t, registerErr, "plugin already exists")
+	}
 	userConfig := auth.UserConfig{Certificate: wantCert, CertificatePIN: wantPIN}
 	m, err := auth.NewAuthManager(userConfig, pluginList)
 	require.NoError(t, err)

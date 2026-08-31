@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"math"
 	"net"
@@ -142,7 +141,7 @@ func TestConnectWithConnectionRefused(t *testing.T) {
 	// Presumably nothing is listening on 127.0.0.1:1
 	conn, err := fbconn.Connect(ctx, "host=127.0.0.1 port=1")
 	if err == nil {
-		conn.Close(ctx)
+		_ = conn.Close(ctx)
 		t.Fatal("Expected error establishing connection to bad port")
 	}
 }
@@ -418,7 +417,7 @@ func TestConnectWithValidateConnectTargetSessionAttrsReadWrite(t *testing.T) {
 
 	conn, err := fbconn.ConnectConfig(ctx, config)
 	if !assert.NotNil(t, err) {
-		conn.Close(ctx)
+		_ = conn.Close(ctx)
 	}
 }
 
@@ -455,7 +454,7 @@ func TestConnectConfigRequiresConfigFromParseConfig(t *testing.T) {
 
 	config := &fbconn.Config{}
 
-	require.PanicsWithValue(t, "config must be created by ParseConfig", func() { fbconn.ConnectConfig(ctx, config) })
+	require.PanicsWithValue(t, "config must be created by ParseConfig", func() { _, _ = fbconn.ConnectConfig(ctx, config) })
 }
 
 func TestConnPrepareSyntaxError(t *testing.T) {
@@ -1137,16 +1136,6 @@ func TestConnExecBatch(t *testing.T) {
 	//assert.Equal(t, "SELECT 1", results[2].QueryStatus.String())
 }
 
-type mockConnection struct {
-	net.Conn
-	writeLatency *time.Duration
-}
-
-func (m mockConnection) Write(b []byte) (n int, err error) {
-	time.Sleep(*m.writeLatency)
-	return m.Conn.Write(b)
-}
-
 //func TestConnExecBatchWriteError(t *testing.T) {
 //	t.Skip("need implementation")
 //	t.Parallel()
@@ -1496,16 +1485,6 @@ func TestConnWaitForNotificationTimeout(t *testing.T) {
 	//assert.ErrorIs(t, err, context.DeadlineExceeded)
 	//
 	//ensureConnValid(t, fbConn)
-}
-
-type delayedReader struct {
-	r io.Reader
-}
-
-func (d delayedReader) Read(p []byte) (int, error) {
-	// W/o sleep test passes, with sleep it fails.
-	time.Sleep(time.Millisecond)
-	return d.r.Read(p)
 }
 
 func TestConnEscapeString(t *testing.T) {
@@ -1865,7 +1844,7 @@ func TestConnCloseWhileCancellableQueryInProgress(t *testing.T) {
 
 	closeCtx, closeCancel := context.WithCancel(ctx)
 	defer closeCancel()
-	fbConn.Close(closeCtx)
+	require.NoError(t, fbConn.Close(closeCtx))
 	select {
 	case <-fbConn.CleanupDone():
 	case <-time.After(5 * time.Second):
@@ -1883,7 +1862,7 @@ func TestConnCheckConn(t *testing.T) {
 
 	c1, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
-	defer c1.Close(ctx)
+	defer func() { _ = c1.Close(ctx) }()
 
 	err = c1.CheckConn()
 	require.NoError(t, err)
@@ -1906,7 +1885,7 @@ func TestConnPing(t *testing.T) {
 
 	c1, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
-	defer c1.Close(ctx)
+	defer func() { _ = c1.Close(ctx) }()
 
 	_, err = c1.Exec(ctx, "select * from rdb$database").Close()
 	require.NoError(t, err)
@@ -2097,7 +2076,7 @@ func Example() {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	defer fbConn.Close(ctx)
+	defer func() { _ = fbConn.Close(ctx) }()
 
 	result := fbConn.ExecParams(ctx, generateSeriesQuery(1, 3, ""), nil).Read()
 	if result.Err != nil {
@@ -2119,30 +2098,6 @@ func Example() {
 func GetSSLPassword(ctx context.Context) string {
 	connString := os.Getenv("FBX_SSL_PASSWORD")
 	return connString
-}
-
-// prefixConn implements a net.Conn that prepends some data to the first Read
-type prefixConn struct {
-	net.Conn
-	prefixData     []byte
-	prefixConsumed bool
-}
-
-func (c *prefixConn) Read(b []byte) (n int, err error) {
-	if !c.prefixConsumed && len(c.prefixData) > 0 {
-		n = copy(b, c.prefixData)
-		c.prefixData = c.prefixData[n:]
-		c.prefixConsumed = len(c.prefixData) == 0
-		return n, nil
-	}
-	return c.Conn.Read(b)
-}
-
-func mustEncode(buf []byte, err error) []byte {
-	if err != nil {
-		panic(err)
-	}
-	return buf
 }
 
 func TestDeadlineContextWatcherHandler(t *testing.T) {

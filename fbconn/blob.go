@@ -617,64 +617,6 @@ func (b *remoteBlob) lockConn(ctx context.Context) (func(), error) {
 	return func() { b.conn.unlock() }, nil
 }
 
-func decodeSegmentBuffer(buf []byte) ([]byte, error) {
-	if len(buf) == 0 {
-		return nil, nil
-	}
-	total := 0
-	for pos := 0; pos < len(buf); {
-		if pos+2 > len(buf) {
-			return nil, fmt.Errorf("invalid blob segment buffer length")
-		}
-		segLen := vax.Integer2(buf, pos)
-		pos += 2
-		if pos+segLen > len(buf) {
-			return nil, fmt.Errorf("invalid blob segment length %d at %d", segLen, pos)
-		}
-		total += segLen
-		pos += segLen
-	}
-
-	out := make([]byte, total)
-	outPos := 0
-	for pos := 0; pos < len(buf); {
-		segLen := vax.Integer2(buf, pos)
-		pos += 2
-		copy(out[outPos:], buf[pos:pos+segLen])
-		pos += segLen
-		outPos += segLen
-	}
-	return out, nil
-}
-
-func copySegmentBufferInto(dst []byte, segmentBuffer []byte) (int, error) {
-	if len(dst) == 0 || len(segmentBuffer) == 0 {
-		return 0, nil
-	}
-	outPos := 0
-	for pos := 0; pos < len(segmentBuffer) && outPos < len(dst); {
-		if pos+2 > len(segmentBuffer) {
-			return outPos, fmt.Errorf("invalid blob segment buffer length")
-		}
-		segLen := vax.Integer2(segmentBuffer, pos)
-		pos += 2
-		if pos+segLen > len(segmentBuffer) {
-			return outPos, fmt.Errorf("invalid blob segment length %d at %d", segLen, pos)
-		}
-		if segLen == 0 {
-			continue
-		}
-		n := segLen
-		if n > len(dst)-outPos {
-			n = len(dst) - outPos
-		}
-		copy(dst[outPos:], segmentBuffer[pos:pos+n])
-		outPos += n
-		pos += segLen
-	}
-	return outPos, nil
-}
-
 func inlineInfo(items []byte, totalLength int, bufferLength int) []byte {
 	if len(items) == 0 {
 		return []byte{fbproto.Isc_info_end}

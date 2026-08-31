@@ -217,7 +217,9 @@ func TestTraceConnect(t *testing.T) {
 
 	conn1, err := fbx.ConnectConfig(context.Background(), config)
 	require.NoError(t, err)
-	defer conn1.Close(context.Background())
+	defer func() {
+		require.NoError(t, conn1.Close(context.Background()))
+	}()
 	require.True(t, traceConnectStartCalled)
 	require.True(t, traceConnectEndCalled)
 
@@ -265,7 +267,9 @@ func TestTraceWithinTx(t *testing.T) {
 
 		tx, err := conn.Begin(ctx)
 		require.NoError(t, err)
-		defer tx.Rollback(ctx)
+		defer func() {
+			_ = tx.Rollback(ctx)
+		}()
 		_, err = tx.Exec(ctx, `select cast(? as varchar(255)) from rdb$database`, "testing")
 		require.NoError(t, err)
 		err = tx.Commit(ctx)

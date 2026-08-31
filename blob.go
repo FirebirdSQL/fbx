@@ -330,12 +330,16 @@ func (b *blob) Length(ctx context.Context) (int64, error) {
 	return b.handle.TotalLength(ctx)
 }
 
-func (b *blob) GetBytes(ctx context.Context) ([]byte, error) {
+func (b *blob) GetBytes(ctx context.Context) (data []byte, err error) {
 	reader, err := b.Reader(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer reader.Close()
+	defer func() {
+		if closeErr := reader.Close(); closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
+	}()
 
 	var buf bytes.Buffer
 	if length, err := b.Length(ctx); err == nil && length > 0 && length < int64(int(^uint(0)>>1)) {

@@ -42,7 +42,7 @@ func testQuery(t *testing.T, ctx context.Context, db queryer) {
 
 	for rows.Next() {
 		var n int32
-		rows.Scan(&n)
+		require.NoError(t, rows.Scan(&n))
 		sum += n
 		rowCount++
 	}

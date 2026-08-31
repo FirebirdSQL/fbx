@@ -166,19 +166,25 @@ func TestTxCommitSerializationFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unable to create temporary table: %v", err)
 	}
-	defer c1.Exec(ctx, `drop table `+t.Name())
+	defer func() {
+		_, _ = c1.Exec(ctx, `drop table `+t.Name())
+	}()
 
 	tx1, err := c1.BeginTx(ctx, fbx.TxOptions{IsoLevel: fbx.Serializable})
 	if err != nil {
 		t.Fatalf("Begin failed: %v", err)
 	}
-	defer tx1.Rollback(ctx)
+	defer func() {
+		_ = tx1.Rollback(ctx)
+	}()
 
 	tx2, err := c2.BeginTx(ctx, fbx.TxOptions{IsoLevel: fbx.Serializable})
 	if err != nil {
 		t.Fatalf("Begin failed: %v", err)
 	}
-	defer tx2.Rollback(ctx)
+	defer func() {
+		_ = tx2.Rollback(ctx)
+	}()
 
 	_, err = tx1.Exec(ctx, `insert into `+t.Name()+`(num) select cast(sum(num) as int) from `+t.Name())
 	if err != nil {
@@ -374,7 +380,9 @@ func TestBeginReadOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("conn.Begin failed: %v", err)
 	}
-	defer tx.Rollback(context.Background())
+	defer func() {
+		_ = tx.Rollback(context.Background())
+	}()
 
 	_, err = conn.Exec(context.Background(), "recreate table "+t.Name()+"(id int primary key)")
 	if fbErr, ok := err.(*fbconn.FbError); !ok || fbErr.Code != "25006" {
@@ -390,7 +398,9 @@ func TestBeginLockTimeout(t *testing.T) {
 
 	tx, err := conn.BeginTx(context.Background(), fbx.TxOptions{LockTimeout: 7 * time.Second})
 	require.NoError(t, err)
-	defer tx.Rollback(context.Background())
+	defer func() {
+		_ = tx.Rollback(context.Background())
+	}()
 
 	var lockTimeout int
 	err = tx.QueryRow(
@@ -409,7 +419,9 @@ func TestBeginLockTimeoutPreservesDefaultTxMode(t *testing.T) {
 
 	defaultTx, err := conn.BeginTx(context.Background(), fbx.TxOptions{})
 	require.NoError(t, err)
-	defer defaultTx.Rollback(context.Background())
+	defer func() {
+		_ = defaultTx.Rollback(context.Background())
+	}()
 
 	var defaultIso int
 	var defaultReadOnly int
@@ -423,7 +435,9 @@ func TestBeginLockTimeoutPreservesDefaultTxMode(t *testing.T) {
 
 	tx, err := conn.BeginTx(context.Background(), fbx.TxOptions{LockTimeout: 7 * time.Second})
 	require.NoError(t, err)
-	defer tx.Rollback(context.Background())
+	defer func() {
+		_ = tx.Rollback(context.Background())
+	}()
 
 	var iso int
 	var readOnly int
@@ -453,7 +467,9 @@ func TestBeginCustomTPB(t *testing.T) {
 
 	tx, err := conn.BeginTxTPB(context.Background(), customTPB.Bytes())
 	require.NoError(t, err)
-	defer tx.Rollback(context.Background())
+	defer func() {
+		_ = tx.Rollback(context.Background())
+	}()
 
 	var iso int
 	var readOnly int

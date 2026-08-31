@@ -388,7 +388,7 @@ func (ad *ArrayData) decodeBinary(m *Map, src []byte, array ArraySetter, realInd
 
 func getArrayDecodeType(dst any) (ArraySetter, error) {
 	targetValue := reflect.ValueOf(dst)
-	if !targetValue.IsValid() || targetValue.Kind() != reflect.Ptr {
+	if !targetValue.IsValid() || targetValue.Kind() != reflect.Pointer {
 		return nil, fmt.Errorf("unsupported argument type %T for array decode", dst)
 	}
 	if targetValue.IsNil() {
@@ -445,7 +445,7 @@ func getArrayEncodeType(dst any) (ArrayGetter, error) {
 	if !targetValue.IsValid() {
 		return nil, fmt.Errorf("unsupported argument type %T for array encode", dst)
 	}
-	if targetValue.Kind() == reflect.Ptr && targetValue.IsNil() {
+	if targetValue.Kind() == reflect.Pointer && targetValue.IsNil() {
 		return nil, fmt.Errorf("cannot encode array from nil target %T", dst)
 	}
 

@@ -87,7 +87,9 @@ func ensureConnValid(t testing.TB, conn *fbx.Conn) {
 
 	for rows.Next() {
 		var n int32
-		rows.Scan(&n)
+		if err := rows.Scan(&n); err != nil {
+			t.Fatalf("rows.Scan unexpectedly failed: %v", err)
+		}
 		sum += n
 		rowCount++
 	}

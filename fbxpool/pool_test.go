@@ -49,8 +49,8 @@ func TestParseConfigExtractsPoolArguments(t *testing.T) {
 	assert.EqualValues(t, 42, config.MaxConns)
 	assert.EqualValues(t, 1, config.MinConns)
 	assert.EqualValues(t, 2, config.MinIdleConns)
-	assert.NotContains(t, config.ConnConfig.Config.RuntimeParams, "pool_max_conns")
-	assert.NotContains(t, config.ConnConfig.Config.RuntimeParams, "pool_min_conns")
+	assert.NotContains(t, config.ConnConfig.RuntimeParams, "pool_max_conns")
+	assert.NotContains(t, config.ConnConfig.RuntimeParams, "pool_min_conns")
 }
 
 func TestConstructorIgnoresContext(t *testing.T) {
@@ -84,7 +84,9 @@ func TestConnectConfigRequiresConnConfigFromParseConfig(t *testing.T) {
 
 	config := &fbxpool.Config{}
 
-	require.PanicsWithValue(t, "config must be created by ParseConfig", func() { fbxpool.NewWithConfig(context.Background(), config) })
+	require.PanicsWithValue(t, "config must be created by ParseConfig", func() {
+		_, _ = fbxpool.NewWithConfig(context.Background(), config)
+	})
 }
 
 func TestConfigCopyReturnsEqualConfig(t *testing.T) {
@@ -140,7 +142,7 @@ func TestPoolAcquireAndConnHijack(t *testing.T) {
 	connsBeforeHijack := pool.Stat().TotalConns()
 
 	conn := c.Hijack()
-	defer conn.Close(ctx)
+	defer func() { require.NoError(t, conn.Close(ctx)) }()
 
 	connsAfterHijack := pool.Stat().TotalConns()
 	require.Equal(t, connsBeforeHijack-1, connsAfterHijack)
@@ -159,7 +161,7 @@ func TestPoolAcquireChecksIdleConns(t *testing.T) {
 
 	controllerConn, err := fbx.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
-	defer controllerConn.Close(ctx)
+	defer func() { require.NoError(t, controllerConn.Close(ctx)) }()
 
 	pool, err := fbxpool.New(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
@@ -216,7 +218,7 @@ func TestPoolAcquireChecksIdleConnsWithShouldPing(t *testing.T) {
 
 	controllerConn, err := fbx.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
-	defer controllerConn.Close(ctx)
+	defer func() { require.NoError(t, controllerConn.Close(ctx)) }()
 
 	config, err := fbxpool.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
@@ -313,7 +315,7 @@ func TestPoolBeforeConnect(t *testing.T) {
 	require.NoError(t, err)
 
 	config.BeforeConnect = func(ctx context.Context, cfg *fbx.ConnConfig) error {
-		cfg.Config.RuntimeParams["application_name"] = "app_before_connect"
+		cfg.RuntimeParams["application_name"] = "app_before_connect"
 		return nil
 	}
 
@@ -745,7 +747,7 @@ func TestPoolBackgroundChecksMinConns(t *testing.T) {
 	defer db.Close()
 
 	stats := db.Stat()
-	for !(stats.IdleConns() == 2 && stats.MaxLifetimeDestroyCount() == 0 && stats.NewConnsCount() == 2) && ctx.Err() == nil {
+	for (stats.IdleConns() != 2 || stats.MaxLifetimeDestroyCount() != 0 || stats.NewConnsCount() != 2) && ctx.Err() == nil {
 		time.Sleep(50 * time.Millisecond)
 		stats = db.Stat()
 	}
@@ -766,7 +768,7 @@ func TestPoolBackgroundChecksMinConns(t *testing.T) {
 	c.Release()
 
 	stats = db.Stat()
-	for !(stats.IdleConns() == 2 && stats.MaxIdleDestroyCount() == 0 && stats.NewConnsCount() == 3) && ctx.Err() == nil {
+	for (stats.IdleConns() != 2 || stats.MaxIdleDestroyCount() != 0 || stats.NewConnsCount() != 3) && ctx.Err() == nil {
 		time.Sleep(50 * time.Millisecond)
 		stats = db.Stat()
 	}
@@ -864,7 +866,7 @@ func TestPoolQueryRowScanPanicReleasesConnection(t *testing.T) {
 
 	require.Panics(t, func() {
 		var greeting *string
-		pool.QueryRow(ctx, "select 'Hello, world!' from rdb$database").Scan(greeting) // Note lack of &. This means that a typed nil is passed to Scan.
+		_ = pool.QueryRow(ctx, "select 'Hello, world!' from rdb$database").Scan(greeting) // Note lack of &. This means that a typed nil is passed to Scan.
 	})
 
 	// If the connection is not released this will block forever in the defer pool.Close().
@@ -1068,7 +1070,7 @@ func TestTxBeginFuncNestedTransactionCommit(t *testing.T) {
 	require.NoError(t, err)
 
 	defer func() {
-		db.Exec(ctx, "drop table fbxpooltx")
+		_, _ = db.Exec(ctx, "drop table fbxpooltx")
 	}()
 
 	err = fbx.BeginFunc(ctx, db, func(db fbx.Tx) error {
@@ -1117,7 +1119,7 @@ func TestTxBeginFuncNestedTransactionRollback(t *testing.T) {
 	require.NoError(t, err)
 
 	defer func() {
-		db.Exec(ctx, "drop table fbxpooltx")
+		_, _ = db.Exec(ctx, "drop table fbxpooltx")
 	}()
 
 	err = fbx.BeginFunc(ctx, db, func(db fbx.Tx) error {

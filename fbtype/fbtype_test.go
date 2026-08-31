@@ -130,7 +130,7 @@ func (arraySetterScanCodec) PlanEncode(m *fbtype.Map, typeMetadata fbtype.TypeMe
 
 func (c arraySetterScanCodec) PlanScan(m *fbtype.Map, typeMetadata fbtype.TypeMetadata, target any) fbtype.ScanPlan {
 	if _, ok := target.(fbtype.ArraySetter); ok {
-		return arraySetterScanPlan{dimensions: c.dimensions, values: c.values}
+		return arraySetterScanPlan(c)
 	}
 	return nil
 }
@@ -160,7 +160,7 @@ func (p arraySetterScanPlan) Scan(src []byte, target any) error {
 
 	for i, value := range p.values {
 		dst := reflect.ValueOf(setter.ScanIndex(i))
-		if dst.Kind() != reflect.Ptr || dst.IsNil() {
+		if dst.Kind() != reflect.Pointer || dst.IsNil() {
 			return fmt.Errorf("array scan target %d is %T, not a non-nil pointer", i, setter.ScanIndex(i))
 		}
 

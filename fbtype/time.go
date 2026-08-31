@@ -232,31 +232,6 @@ func (encodePlanTimeCodecBinaryString) Encode(value any, buf []byte) ([]byte, er
 	return buf, nil
 }
 
-type encodePlanTimeCodecText struct{}
-
-func (encodePlanTimeCodecText) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	t, err := value.(TimeValuer).TimeValue()
-	if err != nil {
-		return nil, err
-	}
-
-	if !t.Valid {
-		return nil, nil
-	}
-
-	usec := t.Microseconds
-	hours := usec / microsecondsPerHour
-	usec -= hours * microsecondsPerHour
-	minutes := usec / microsecondsPerMinute
-	usec -= minutes * microsecondsPerMinute
-	seconds := usec / microsecondsPerSecond
-	usec -= seconds * microsecondsPerSecond
-
-	s := fmt.Sprintf("%02d:%02d:%02d.%06d", hours, minutes, seconds, usec)
-
-	return append(buf, s...), nil
-}
-
 type encodePlanTimeCodecBinaryTime struct{}
 
 func (encodePlanTimeCodecBinaryTime) Encode(value any, buf []byte) ([]byte, error) {

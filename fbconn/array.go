@@ -52,7 +52,7 @@ func NewArray(table, field string, dims []map[string]int, length uint32, scale i
 }
 
 func (arr Array) getSliceLength() int {
-	var elements int = 1
+	elements := 1
 	for _, elem := range arr.CurrentDimensions {
 		elements *= elem["Upper"] - elem["Lower"] + 1
 	}
