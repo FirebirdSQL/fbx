@@ -380,13 +380,23 @@ func TestTimestampCodecEncodeRejectsDateOutOfRange(t *testing.T) {
 	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TIMESTAMP, 0, 0, 0)
 	codec := &fbtype.TimestampCodec{}
 
-	in := fbtype.Timestamp{
-		Time:  time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC),
-		Valid: true,
+	hugeDate := time.Date(11761246, time.January, 22, 10, 0, 0, 0, time.UTC)
+	tests := []any{
+		fbtype.Timestamp{
+			Time:  time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC),
+			Valid: true,
+		},
+		fbtype.Timestamp{
+			Time:  hugeDate,
+			Valid: true,
+		},
+		hugeDate,
 	}
 
-	_, err := codec.PlanEncode(nil, typeMetadata, in).Encode(in, nil)
-	assert.Error(t, err)
+	for _, in := range tests {
+		_, err := codec.PlanEncode(nil, typeMetadata, in).Encode(in, nil)
+		assert.Error(t, err)
+	}
 }
 
 func TestTimestampMarshalJSON(t *testing.T) {

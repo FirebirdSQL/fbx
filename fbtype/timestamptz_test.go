@@ -467,6 +467,67 @@ func TestDecodeTimestamptzBinaryRejectsInvalidInput(t *testing.T) {
 	if _, err := decodeTimestamptzBinary(src); err == nil {
 		t.Fatalf("decodeTimestamptzBinary expected time-of-day range error, got nil")
 	}
+
+	src = make([]byte, 12)
+	binary.BigEndian.PutUint32(src[0:4], uint32(1<<31-1))
+	if _, err := decodeTimestamptzBinary(src); err == nil {
+		t.Fatalf("decodeTimestamptzBinary expected date range error, got nil")
+	}
+}
+
+func TestTimestamptzCodecEncodeRejectsUTCDateOutOfRange(t *testing.T) {
+	var c TimestamptzCodec
+	typeMetadata := NewTypeMetadata(fbproto.SQL_TYPE_TIMESTAMP_TZ, 0, 0, 0)
+
+	locPlus14 := time.FixedZone("+14:00", 14*60*60)
+	locMinus12 := time.FixedZone("-12:00", -12*60*60)
+	hugeDate := time.Date(11761246, time.January, 22, 10, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name  string
+		input any
+	}{
+		{
+			name:  "huge time.Time",
+			input: hugeDate,
+		},
+		{
+			name: "huge Timestamptz",
+			input: Timestamptz{
+				Time:  hugeDate,
+				Valid: true,
+			},
+		},
+		{
+			name:  "minimum date crosses below UTC range",
+			input: time.Date(1, time.January, 1, 0, 0, 0, 0, locPlus14),
+		},
+		{
+			name:  "maximum date crosses above UTC range",
+			input: time.Date(9999, time.December, 31, 23, 59, 59, 999900000, locMinus12),
+		},
+		{
+			name:  "minimum string crosses below UTC range",
+			input: "0001-01-01 00:00:00 +14:00",
+		},
+		{
+			name:  "maximum string crosses above UTC range",
+			input: "9999-12-31 23:59:59.9999 -12:00",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			planEnc := c.PlanEncode(nil, typeMetadata, tt.input)
+			if planEnc == nil {
+				t.Fatalf("PlanEncode returned nil for %T", tt.input)
+			}
+
+			if _, err := planEnc.Encode(tt.input, nil); err == nil {
+				t.Fatalf("Encode expected date range error, got nil")
+			}
+		})
+	}
 }
 
 func TestTimestamptzMarshalJSON(t *testing.T) {

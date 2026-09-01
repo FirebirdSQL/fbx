@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -165,24 +166,21 @@ func (encodePlanDateCodecBinary) Encode(value any, buf []byte) (newBuf []byte, e
 		return nil, nil
 	}
 
-	t, err := normalizeFirebirdDate(date.Time)
+	days, err := firebirdDateDayOffset(date.Time)
 	if err != nil {
 		return nil, err
 	}
 
-	days := int32((t.Unix() - firebirdDateEpoch.Unix()) / secondsPerDay)
 	return fbio.AppendInt32BE(buf, days), nil
 }
 
 type encodePlanDateCodecBinaryTime struct{}
 
 func (encodePlanDateCodecBinaryTime) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	t, err := normalizeFirebirdDate(value.(time.Time))
+	days, err := firebirdDateDayOffset(value.(time.Time))
 	if err != nil {
 		return nil, err
 	}
-
-	days := int32((t.Unix() - firebirdDateEpoch.Unix()) / secondsPerDay)
 
 	return fbio.AppendInt32BE(buf, days), nil
 }
@@ -195,7 +193,10 @@ func (encodePlanDateCodecBinaryString) Encode(value any, buf []byte) (newBuf []b
 		return nil, err
 	}
 
-	days := int32((t.Unix() - firebirdDateEpoch.Unix()) / secondsPerDay)
+	days, err := firebirdDateDayOffset(t)
+	if err != nil {
+		return nil, err
+	}
 
 	return fbio.AppendInt32BE(buf, days), nil
 }
@@ -231,8 +232,10 @@ func (scanPlanBinaryDateToDateScanner) Scan(src []byte, dst any) error {
 	}
 
 	dayOffset := int32(binary.BigEndian.Uint32(src))
-
-	t := firebirdDateEpoch.AddDate(0, 0, int(dayOffset))
+	t, err := firebirdDateFromDayOffset(dayOffset)
+	if err != nil {
+		return err
+	}
 
 	return scanner.ScanDate(Date{Time: t, Valid: true})
 }
@@ -254,7 +257,12 @@ func (scanPlanBinaryDateToTime) Scan(src []byte, dst any) error {
 	}
 
 	dayOffset := int32(binary.BigEndian.Uint32(src))
-	*t = firebirdDateEpoch.AddDate(0, 0, int(dayOffset))
+	date, err := firebirdDateFromDayOffset(dayOffset)
+	if err != nil {
+		return err
+	}
+
+	*t = date
 
 	return nil
 }
@@ -276,7 +284,10 @@ func (scanPlanBinaryDateToString) Scan(src []byte, dst any) error {
 	}
 
 	dayOffset := int32(binary.BigEndian.Uint32(src))
-	date := firebirdDateEpoch.AddDate(0, 0, int(dayOffset))
+	date, err := firebirdDateFromDayOffset(dayOffset)
+	if err != nil {
+		return err
+	}
 
 	formatted, err := formatDateString(date)
 	if err != nil {
@@ -349,6 +360,27 @@ func normalizeFirebirdDate(t time.Time) (time.Time, error) {
 	}
 
 	return t, nil
+}
+
+func firebirdDateDayOffset(t time.Time) (int32, error) {
+	t, err := normalizeFirebirdDate(t)
+	if err != nil {
+		return 0, err
+	}
+
+	days := (t.Unix() - firebirdDateEpoch.Unix()) / secondsPerDay
+	if days < math.MinInt32 || days > math.MaxInt32 {
+		return 0, fmt.Errorf(
+			"date out of Firebird wire range: %04d-%02d-%02d",
+			t.Year(), t.Month(), t.Day(),
+		)
+	}
+
+	return int32(days), nil
+}
+
+func firebirdDateFromDayOffset(dayOffset int32) (time.Time, error) {
+	return normalizeFirebirdDate(firebirdDateEpoch.AddDate(0, 0, int(dayOffset)))
 }
 
 func formatDateString(t time.Time) (string, error) {

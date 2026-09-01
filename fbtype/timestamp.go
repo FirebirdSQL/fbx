@@ -281,11 +281,10 @@ func (c *TimestampCodec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []by
 }
 
 func encodeTimestampBinary(t time.Time, buf []byte) ([]byte, error) {
-	tMidnightUTC, err := normalizeFirebirdDate(t)
+	days, err := firebirdDateDayOffset(t)
 	if err != nil {
 		return nil, err
 	}
-	days := int32((tMidnightUTC.Unix() - firebirdDateEpoch.Unix()) / secondsPerDay)
 
 	usec := timeOfDayMicroseconds(t)
 	if usec < 0 || usec >= microsecondsPerDay {
@@ -308,7 +307,7 @@ func decodeTimestampBinary(src []byte, location *time.Location) (time.Time, erro
 	dayOffset := int32(binary.BigEndian.Uint32(src[0:4]))
 	ticks := binary.BigEndian.Uint32(src[4:8])
 
-	tDate, err := normalizeFirebirdDate(firebirdDateEpoch.AddDate(0, 0, int(dayOffset)))
+	tDate, err := firebirdDateFromDayOffset(dayOffset)
 	if err != nil {
 		return time.Time{}, err
 	}

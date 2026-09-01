@@ -304,9 +304,10 @@ func encodeTimestamptzBinary(buf []byte, ts Timestamptz) ([]byte, error) {
 
 	utc := ts.Time.In(time.UTC)
 
-	tMidnightUTC := time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC)
-
-	days := int32((tMidnightUTC.Unix() - firebirdDateEpoch.Unix()) / secondsPerDay)
+	days, err := firebirdDateDayOffset(utc)
+	if err != nil {
+		return nil, err
+	}
 
 	usec := timeOfDayMicroseconds(utc)
 	if usec < 0 || usec >= microsecondsPerDay {
@@ -334,7 +335,10 @@ func decodeTimestamptzBinary(src []byte) (Timestamptz, error) {
 	ticks := binary.BigEndian.Uint32(src[4:8])
 	tzVal := binary.BigEndian.Uint32(src[8:12])
 
-	tDate := firebirdDateEpoch.AddDate(0, 0, int(days))
+	tDate, err := firebirdDateFromDayOffset(days)
+	if err != nil {
+		return Timestamptz{}, err
+	}
 
 	usec := int64(ticks) * 100
 	if usec < 0 || usec >= microsecondsPerDay {
