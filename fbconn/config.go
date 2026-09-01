@@ -141,7 +141,9 @@ func (c *Config) Copy() *Config {
 	if newConf.ConstructorOptions != nil {
 		newConf.ConstructorOptions = make(map[string][]auth.ConstructorOption, len(c.ConstructorOptions))
 		for k, v := range c.ConstructorOptions {
-			newConf.ConstructorOptions[k] = v
+			newSlice := make([]auth.ConstructorOption, len(v))
+			copy(newSlice, v)
+			newConf.ConstructorOptions[k] = newSlice
 		}
 	}
 	if len(newConf.AuthPluginList) > 0 {
