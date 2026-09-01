@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 )
@@ -146,6 +145,10 @@ func NewAuthManager(conf PluginConfig, pluginNames []string) (*AuthManager, erro
 		if err != nil {
 			return nil, err
 		}
+		err = applyAuthPluginsOptions(plugin, conf.ConstructorOptions)
+		if err != nil {
+			return nil, err
+		}
 
 		plugins = append(plugins, plugin)
 		seen[key] = struct{}{}
@@ -187,7 +190,6 @@ func (m *AuthManager) BuildList() string {
 // per-plugin handshake state from the previous attempt cannot leak into the new
 // authentication flow.
 func (m *AuthManager) SetCurrentPlugin(name string) (AuthPlugin, error) {
-	var expectedError *UnsupportedPluginError
 	if plugin := m.GetCurrentPlugin(); plugin != nil {
 		for _, advertised := range plugin.Advertise() {
 			if strings.EqualFold(advertised, name) {
@@ -203,8 +205,10 @@ func (m *AuthManager) SetCurrentPlugin(name string) (AuthPlugin, error) {
 				if err == nil {
 					plugin = fresh
 					m.plugins[idx] = fresh
-				} else if !errors.As(err, &expectedError) {
-					return nil, err
+					err = applyAuthPluginsOptions(plugin, m.pluginConfig.ConstructorOptions)
+					if err != nil {
+						return nil, err
+					}
 				}
 				m.current = idx
 				return plugin, nil
@@ -354,29 +358,32 @@ func (m *AuthManager) pluginNames() []string {
 	return names
 }
 
-// The method creates an authentication plugin if such a name exists
-// in pluginConstructors and applies functional options to this plugin.
+// The method creates an authentication plugin if such a name exists in pluginConstructors.
 func createAuthPlugin(name string, conf PluginConfig) (AuthPlugin, error) {
 	key := strings.ToLower(strings.TrimSpace(name))
 	constructor, ok := pluginConstructors[key]
 	if !ok {
 		return nil, &UnsupportedPluginError{Name: name}
 	}
-	plugin := constructor(conf)
-	for k, v := range conf.ConstructorOptions {
-		if strings.ToLower(strings.TrimSpace(k)) == key {
+	return constructor(conf), nil
+}
+
+// applyAuthPluginsOptions applies functional options to plugin
+func applyAuthPluginsOptions(plugin AuthPlugin, opts map[string][]ConstructorOption) error {
+	for k, v := range opts {
+		if strings.EqualFold(strings.ToLower(strings.TrimSpace(k)), strings.ToLower(plugin.Name())) {
 			for _, opt := range v {
 				if opt == nil {
-					return nil, fmt.Errorf("option function of plugin %s is nil", name)
+					return fmt.Errorf("option function of plugin %s is nil", plugin.Name())
 				}
 				err := opt(plugin)
 				if err != nil {
-					return nil, err
+					return err
 				}
 			}
 		}
 	}
-	return plugin, nil
+	return nil
 }
 
 // UnsupportedPluginError reports a server-selected authentication plugin that
