@@ -636,7 +636,7 @@ func parseDecFloatString(s string, typeName string) (parsedDecFloat, error) {
 		}
 	}
 
-	coefficient, exponent, err := parseNumericString(mantissa)
+	coefficient, exponent, err := parseDecimalMantissa(mantissa)
 	if err != nil {
 		return parsedDecFloat{}, fmt.Errorf("cannot parse %s from %q: %w", typeName, original, err)
 	}

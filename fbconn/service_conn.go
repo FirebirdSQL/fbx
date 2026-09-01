@@ -181,18 +181,23 @@ func (c *ServiceConn) Close(ctx context.Context) error {
 		defer fbConn.contextWatcher.Unwatch()
 	}
 
-	detachErr := fbConn.withWriteLockAndFlush(func() error {
-		if err := fbConn.client.WriteMessage(&fbproto.OpServiceDetach{
+	detachErr := fbConn.withWriteLock(func() error {
+		terminateErr := fbConn.client.WriteMessage(&fbproto.OpServiceDetach{
 			ServiceHandle: fbConn.attachmentHandle,
-		}); err != nil {
-			return err
+		})
+		if terminateErr == nil {
+			terminateErr = fbConn.client.WriteMessage(&fbproto.OpDisconnect{})
 		}
-		return fbConn.client.WriteMessage(&fbproto.OpDisconnect{})
+		if terminateErr == nil {
+			terminateErr = fbConn.flushWithPotentialWriteReadDeadlockLocked()
+		}
+		return errors.Join(terminateErr, fbConn.client.CloseCompression())
 	})
 	if detachErr != nil {
 		detachErr = fmt.Errorf("detach from service manager: %w", detachErr)
 	}
 	closeErr := fbConn.conn.Close()
+	fbConn.client.WaitForCompressionRead()
 	if closeErr != nil {
 		closeErr = fmt.Errorf("close service manager connection: %w", closeErr)
 	}

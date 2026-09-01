@@ -20,6 +20,10 @@ import (
 
 var defaultConnTestRunner fbxtest.ConnTestRunner
 
+type testContextKey string
+
+const ctxDataKey testContextKey = "ctxdata"
+
 func init() {
 	defaultConnTestRunner = fbxtest.DefaultConnTestRunner()
 	defaultConnTestRunner.CreateConfig = func(ctx context.Context, t testing.TB) *fbx.ConnConfig {
@@ -45,7 +49,7 @@ func (l *testLogger) Log(ctx context.Context, level tracelog.LogLevel, msg strin
 	l.mux.Lock()
 	defer l.mux.Unlock()
 
-	data["ctxdata"] = ctx.Value("ctxdata")
+	data["ctxdata"] = ctx.Value(ctxDataKey)
 	l.logs = append(l.logs, testLog{lvl: level, msg: msg, data: data})
 }
 
@@ -91,7 +95,7 @@ func TestContextGetsPassedToLogMethod(t *testing.T) {
 	fbxtest.RunWithQueryExecModes(ctx, t, ctr, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		logger.Clear() // Clear any logs written when establishing connection
 
-		ctx = context.WithValue(ctx, "ctxdata", "foo")
+		ctx = context.WithValue(ctx, ctxDataKey, "foo")
 		_, err := conn.Exec(ctx, `select 1 from rdb$database`)
 		require.NoError(t, err)
 		require.NotEmpty(t, logger.logs)
@@ -126,7 +130,7 @@ func TestLoggerFunc(t *testing.T) {
 
 	conn, err := fbx.ConnectConfig(ctx, config)
 	require.NoError(t, err)
-	defer conn.Close(ctx)
+	defer func() { require.NoError(t, conn.Close(ctx)) }()
 
 	buf.Reset() // Clear logs written when establishing connection
 
@@ -168,6 +172,7 @@ func TestLogQuery(t *testing.T) {
 		logs := logger.FilterByMsg("Query")
 		require.Len(t, logs, 1)
 		require.Equal(t, tracelog.LogLevelInfo, logs[0].lvl)
+		require.Equal(t, conn.FbConn().AttachmentID(), logs[0].data["attachment_id"])
 
 		logger.Clear()
 
@@ -178,6 +183,7 @@ func TestLogQuery(t *testing.T) {
 		require.Len(t, logs, 1)
 		require.Equal(t, tracelog.LogLevelError, logs[0].lvl)
 		require.Equal(t, err, logs[0].data["err"])
+		require.Equal(t, conn.FbConn().AttachmentID(), logs[0].data["attachment_id"])
 	})
 }
 
@@ -246,7 +252,7 @@ func TestLogConnect(t *testing.T) {
 
 	conn1, err := fbx.ConnectConfig(ctx, config)
 	require.NoError(t, err)
-	defer conn1.Close(ctx)
+	defer func() { require.NoError(t, conn1.Close(ctx)) }()
 	require.Len(t, logger.logs, 1)
 	require.Equal(t, "Connect", logger.logs[0].msg)
 	require.Equal(t, tracelog.LogLevelInfo, logger.logs[0].lvl)

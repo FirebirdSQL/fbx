@@ -15,6 +15,28 @@ func tagLengthValue(tag byte, value int) []byte {
 	return append(buf, data...)                     // data
 }
 
+func tagBufferValue(tag byte, value []byte) []byte {
+	buf := []byte{tag}
+	buf = fbio.AppendInt16LE(buf, int16(len(value)))
+	return append(buf, value...)
+}
+
+func TestParseDatabaseInfo(t *testing.T) {
+	attachmentID := uint64(1<<63 + 42)
+
+	buf := tagBufferValue(fbproto.Isc_info_firebird_version, []byte("WI-V6.0.0"))
+	buf = append(buf, tagBufferValue(
+		fbproto.Isc_info_attachment_id,
+		fbio.AppendInt64LE(nil, int64(attachmentID)),
+	)...)
+	buf = append(buf, fbproto.Isc_info_end)
+
+	conn := &FbConn{}
+	require.NoError(t, conn.parseDatabaseInfo(buf))
+	require.Equal(t, 6, conn.serverMajorVersion)
+	require.Equal(t, attachmentID, conn.AttachmentID())
+}
+
 func createDescriptorBlock(index int) []byte {
 	buf := []byte{}
 

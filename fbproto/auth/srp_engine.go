@@ -53,7 +53,6 @@ import (
 	crand "crypto/rand"
 	"crypto/sha1"
 	"fmt"
-	"hash"
 	"io"
 	"math/big"
 
@@ -288,7 +287,7 @@ func (e *srpEngine) ClientProof(user string, salt []byte, A, B *big.Int, K []byt
 	n3 := mathutil.ModPowBigInt(n1, n2, e.prime)
 	n4 := srpStringHash(user)
 
-	var digest hash.Hash = e.variant.hashFunc()
+	digest := e.variant.hashFunc()
 	toBytes := func(b *big.Int) []byte { return b.Bytes() }
 	digest.Write(toBytes(n3))
 	digest.Write(toBytes(n4))

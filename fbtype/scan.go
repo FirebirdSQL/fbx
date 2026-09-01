@@ -213,9 +213,9 @@ func (plan *pointerPointerScanPlan) Scan(src []byte, dst any) error {
 // TryPointerPointerScanPlan handles a pointer to a pointer by setting the
 // target to nil for SQL NULL and allocating and scanning for non-NULL.
 func TryPointerPointerScanPlan(target any) (plan WrappedScanPlanNextSetter, nextTarget any, ok bool) {
-	if dstValue := reflect.ValueOf(target); dstValue.Kind() == reflect.Ptr {
+	if dstValue := reflect.ValueOf(target); dstValue.Kind() == reflect.Pointer {
 		elemValue := dstValue.Elem()
-		if elemValue.Kind() == reflect.Ptr {
+		if elemValue.Kind() == reflect.Pointer {
 			plan = &pointerPointerScanPlan{}
 			return plan, reflect.Zero(elemValue.Type()).Interface(), true
 		}
@@ -272,7 +272,7 @@ func TryFindUnderlyingTypeScanPlan(dst any) (plan WrappedScanPlanNextSetter, nex
 
 	dstValue := reflect.ValueOf(dst)
 
-	if dstValue.Kind() == reflect.Ptr {
+	if dstValue.Kind() == reflect.Pointer {
 		var elemValue reflect.Value
 		if dstValue.IsNil() {
 			elemValue = reflect.New(dstValue.Type().Elem()).Elem()
@@ -518,7 +518,7 @@ func TryWrapPtrSliceScanPlan(target any) (plan WrappedScanPlanNextSetter, nextVa
 	}
 
 	targetType := reflect.TypeOf(target)
-	if targetType.Kind() != reflect.Ptr {
+	if targetType.Kind() != reflect.Pointer {
 		return nil, nil, false
 	}
 
@@ -566,7 +566,7 @@ func (plan *wrapPtrSliceReflectScanPlan) Scan(src []byte, target any) error {
 // value.
 func TryWrapPtrMultiDimSliceScanPlan(target any) (plan WrappedScanPlanNextSetter, nextValue any, ok bool) {
 	targetValue := reflect.ValueOf(target)
-	if targetValue.Kind() != reflect.Ptr {
+	if targetValue.Kind() != reflect.Pointer {
 		return nil, nil, false
 	}
 
@@ -600,7 +600,7 @@ func (plan *wrapPtrMultiDimSliceScanPlan) Scan(src []byte, target any) error {
 // resized or cleared when scanning.
 func TryWrapPtrArrayScanPlan(target any) (plan WrappedScanPlanNextSetter, nextValue any, ok bool) {
 	targetValue := reflect.ValueOf(target)
-	if targetValue.Kind() != reflect.Ptr {
+	if targetValue.Kind() != reflect.Pointer {
 		return nil, nil, false
 	}
 

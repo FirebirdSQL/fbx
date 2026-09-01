@@ -193,26 +193,6 @@ func (encodePlanTimestampCodecBinaryString) Encode(value any, buf []byte) ([]byt
 	return encodeTimestampBinary(t, buf)
 }
 
-type encodePlanTimestampCodecText struct{}
-
-func (encodePlanTimestampCodecText) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	ts, err := value.(TimestampValuer).TimestampValue()
-	if err != nil {
-		return nil, err
-	}
-
-	if !ts.Valid {
-		return nil, nil
-	}
-
-	t := ts.Time.In(time.UTC).Truncate(time.Microsecond)
-	s := t.Format(firebirdTimestampFormat)
-
-	buf = append(buf, s...)
-
-	return buf, nil
-}
-
 // PlanScan returns a scan plan for supported Firebird TIMESTAMP target values.
 func (c *TimestampCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
 	switch target.(type) {

@@ -42,7 +42,7 @@ func testQuery(t *testing.T, ctx context.Context, db queryer) {
 
 	for rows.Next() {
 		var n int32
-		rows.Scan(&n)
+		require.NoError(t, rows.Scan(&n))
 		sum += n
 		rowCount++
 	}
@@ -111,6 +111,7 @@ func assertConnConfigsEqual(t *testing.T, expected, actual *fbx.ConnConfig, test
 	assert.Equalf(t, expected.Password, actual.Password, "%s - Password", testName)
 	assert.Equalf(t, expected.ConnectTimeout, actual.ConnectTimeout, "%s - ConnectTimeout", testName)
 	assert.Equalf(t, expected.FetchBatchSize, actual.FetchBatchSize, "%s - FetchBatchSize", testName)
+	assert.Equalf(t, expected.WireCompression, actual.WireCompression, "%s - WireCompression", testName)
 	assert.Equalf(t, expected.RuntimeParams, actual.RuntimeParams, "%s - RuntimeParams", testName)
 
 	// Can't test function equality, so just test that they are set or not.

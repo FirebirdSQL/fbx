@@ -66,8 +66,7 @@ func (c *DenselyPackedDecimalCodec) DecodeValue(signum Signum, firstDigit int, d
 		b0 := uint16(uint8(decBytes[firstByteIndex]))
 		b1 := uint16(uint8(decBytes[firstByteIndex-1]))
 
-		var dpdGroupBits uint16
-		dpdGroupBits = ((b0 >> uint(firstByteBitOffset)) |
+		dpdGroupBits := ((b0 >> uint(firstByteBitOffset)) |
 			(b1 << uint(dpdBitsPerByte-firstByteBitOffset))) & 0x03FF
 
 		if dpdGroupBits != 0 {

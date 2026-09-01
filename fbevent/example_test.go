@@ -24,14 +24,14 @@ func ExampleManager_WaitForEvent() {
 	if err != nil {
 		return
 	}
-	defer manager.Close(context.Background())
+	defer func() { _ = manager.Close(context.Background()) }()
 
 	notifier, err := fbx.Connect(ctx, dsn)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	defer notifier.Close(ctx)
+	defer func() { _ = notifier.Close(ctx) }()
 
 	eventName := "FBX_EXAMPLE_WAIT"
 	postErr := make(chan error, 1)
@@ -66,14 +66,14 @@ func ExampleManager_Subscribe() {
 	if err != nil {
 		return
 	}
-	defer manager.Close(context.Background())
+	defer func() { _ = manager.Close(context.Background()) }()
 
 	notifier, err := fbx.Connect(ctx, dsn)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	defer notifier.Close(ctx)
+	defer func() { _ = notifier.Close(ctx) }()
 
 	eventName := "FBX_EXAMPLE_SUBSCRIBE"
 	sub, err := manager.Subscribe(eventName, 16)
@@ -81,7 +81,7 @@ func ExampleManager_Subscribe() {
 		fmt.Println(err)
 		return
 	}
-	defer sub.Close()
+	defer func() { _ = sub.Close() }()
 
 	if err := postEvent(ctx, notifier, eventName); err != nil {
 		fmt.Println(err)
@@ -108,21 +108,21 @@ func ExampleManager_WaitForNotification() {
 	if err != nil {
 		return
 	}
-	defer manager.Close(context.Background())
+	defer func() { _ = manager.Close(context.Background()) }()
 
 	notifier, err := fbx.Connect(ctx, dsn)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	defer notifier.Close(ctx)
+	defer func() { _ = notifier.Close(ctx) }()
 
 	eventName := "FBX_EXAMPLE_NOTIFICATION"
 	if err := manager.Listen(ctx, eventName); err != nil {
 		fmt.Println(err)
 		return
 	}
-	defer manager.Unlisten(eventName)
+	defer func() { _ = manager.Unlisten(eventName) }()
 
 	if err := postEvent(ctx, notifier, eventName); err != nil {
 		fmt.Println(err)
@@ -148,14 +148,14 @@ func ExampleManager_AddEventListener() {
 	if err != nil {
 		return
 	}
-	defer manager.Close(context.Background())
+	defer func() { _ = manager.Close(context.Background()) }()
 
 	notifier, err := fbx.Connect(ctx, dsn)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	defer notifier.Close(ctx)
+	defer func() { _ = notifier.Close(ctx) }()
 
 	events := make(chan fbevent.DatabaseEvent, 1)
 	listener := fbevent.EventListenerFunc(func(event fbevent.DatabaseEvent) {
@@ -168,7 +168,7 @@ func ExampleManager_AddEventListener() {
 		fmt.Println(err)
 		return
 	}
-	defer listenerCloser.Close()
+	defer func() { _ = listenerCloser.Close() }()
 
 	if err := postEvent(ctx, notifier, eventName); err != nil {
 		fmt.Println(err)

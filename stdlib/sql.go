@@ -678,8 +678,8 @@ type Stmt struct {
 
 var errStmtClosed = errors.New("stdlib: statement is closed")
 
-// Close implements [driver.Stmt]. The shared native statement is deallocated
-// after the last Stmt that references it is closed.
+// Close implements [driver.Stmt]. It releases this Stmt's reference and attempts
+// to deallocate the shared native statement after the last reference is closed.
 func (s *Stmt) Close() error {
 	if s.closed {
 		return nil
@@ -699,17 +699,10 @@ func (s *Stmt) Close() error {
 		return nil
 	}
 
-	if err := s.conn.conn.Deallocate(ctx, s.sd.SQL); err != nil {
-		if s.conn.conn.IsClosed() {
-			delete(s.conn.psRefCounts, s.sd)
-			s.closed = true
-		}
-		return err
-	}
-
+	err := s.conn.conn.Deallocate(ctx, s.sd.SQL)
 	delete(s.conn.psRefCounts, s.sd)
 	s.closed = true
-	return nil
+	return err
 }
 
 // NumInput implements [driver.Stmt] and reports the number of positional
@@ -949,31 +942,21 @@ func (r *Rows) Close() error {
 	return r.rows.Err()
 }
 
-// scanBlobReaders scans BLOB columns into lazy readers and skips other columns.
-func scanBlobReaders(rows fbx.Rows, blobColumns []bool) ([]io.ReadCloser, error) {
-	readers := make([]io.ReadCloser, len(blobColumns))
+// scanBlobValues materializes BLOB columns while rows still owns the connection.
+func scanBlobValues(rows fbx.Rows, blobColumns []bool) ([][]byte, error) {
+	values := make([][]byte, len(blobColumns))
 	scanTargets := make([]any, len(blobColumns))
 	for i, isBlob := range blobColumns {
 		if isBlob {
-			scanTargets[i] = &readers[i]
+			scanTargets[i] = &values[i]
 		}
 	}
 
 	if err := rows.Scan(scanTargets...); err != nil {
-		closeBlobReaders(readers)
 		return nil, err
 	}
 
-	return readers, nil
-}
-
-// closeBlobReaders closes any BLOB readers that were not returned to database/sql.
-func closeBlobReaders(readers []io.ReadCloser) {
-	for _, reader := range readers {
-		if reader != nil {
-			_ = reader.Close()
-		}
-	}
+	return values, nil
 }
 
 // Next implements [driver.Rows].
@@ -1108,7 +1091,7 @@ func (r *Rows) Next(dest []driver.Value) (err error) {
 
 					var array fbtype.ArraySQLScanner
 					var err error
-					array.ArrayBuffer = src
+					array.ArrayBuffer = slices.Clone(src)
 					array.ArrayData, err = fbtype.NewArrayData(fd.ArrayData.TypeId,
 						fd.ArrayData.SubType,
 						fd.ArrayData.Length,
@@ -1154,29 +1137,18 @@ func (r *Rows) Next(dest []driver.Value) (err error) {
 		}
 	}
 
-	var blobReaders []io.ReadCloser
-	var keepBlobReaders bool
+	var blobValues [][]byte
 	if r.hasBlobCols {
-		blobReaders, err = scanBlobReaders(r.rows, r.blobColumns)
+		blobValues, err = scanBlobValues(r.rows, r.blobColumns)
 		if err != nil {
 			return err
 		}
-		defer func() {
-			if !keepBlobReaders {
-				closeBlobReaders(blobReaders)
-			}
-		}()
 	}
 
 	for i, rv := range r.rows.RawValues() {
 		if rv != nil {
 			if r.blobColumns[i] {
-				reader := blobReaders[i]
-				if reader == nil {
-					dest[i] = nil
-					continue
-				}
-				blobValue, err := buildBlobValue(reader, &fieldDescriptions[i], r.conn)
+				blobValue, err := buildBlobValue(blobValues[i], &fieldDescriptions[i])
 				if err != nil {
 					return err
 				}
@@ -1193,7 +1165,6 @@ func (r *Rows) Next(dest []driver.Value) (err error) {
 		}
 	}
 
-	keepBlobReaders = true
 	return nil
 }
 

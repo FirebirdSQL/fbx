@@ -3,7 +3,11 @@ package fbconn
 import (
 	"context"
 	"encoding/binary"
+	"errors"
+	"io"
+	"net"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx/fbproto"
@@ -89,6 +93,87 @@ func TestWriteServiceOutputChecksContextBeforeWrite(t *testing.T) {
 
 	require.Error(t, err)
 	require.Zero(t, output.calls)
+}
+
+func TestMalformedServiceOutputClosesConnection(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	serverDone := make(chan error, 1)
+	go func() {
+		defer func() { _ = serverConn.Close() }()
+		serverDone <- runMalformedServiceOutputProbeServer(serverConn)
+	}()
+
+	config, err := ParseConfig("firebird://sysdba:masterkey@mock/employee")
+	require.NoError(t, err)
+	config.AuthPluginList = []string{"Legacy_Auth"}
+	config.LookupFunc = func(context.Context, string) ([]string, error) {
+		return []string{"127.0.0.1"}, nil
+	}
+	config.DialFunc = func(context.Context, string, string) (net.Conn, error) {
+		return clientConn, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	conn, err := ConnectServiceConfig(ctx, testServiceConfig(config))
+	require.NoError(t, err)
+
+	err = conn.Backup(
+		context.Background(),
+		"/data/employee.fdb",
+		"/backup/employee.fbk",
+		BackupOptions{},
+	)
+
+	require.ErrorContains(t, err, "parse service output")
+	require.ErrorContains(t, err, "unexpected service output item")
+	require.True(t, conn.conn.IsClosed())
+	select {
+	case <-conn.conn.CleanupDone():
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	require.NoError(t, <-serverDone)
+	require.NoError(t, conn.Close(context.Background()))
+}
+
+func runMalformedServiceOutputProbeServer(conn net.Conn) error {
+	encoding, err := fbproto.NewEncoding("UTF8")
+	if err != nil {
+		return err
+	}
+	r := fbproto.NewXDRReader(conn)
+	w := fbproto.NewXDRWriter(conn)
+	if err := readProbeConnect(r); err != nil {
+		return err
+	}
+	if err := writeAuthenticatedProbeAccept(w, encoding); err != nil {
+		return err
+	}
+	if err := readProbeServiceAttach(r, encoding); err != nil {
+		return err
+	}
+	if err := writeProbeResponse(w, 42); err != nil {
+		return err
+	}
+	if _, err := readProbeServiceStart(r, 42); err != nil {
+		return err
+	}
+	if err := writeProbeResponse(w, 0); err != nil {
+		return err
+	}
+	if _, _, _, err := readProbeServiceInfo(r, 42); err != nil {
+		return err
+	}
+	if err := writeProbeResponseData(w, 0, []byte{255}); err != nil {
+		return err
+	}
+
+	_, err = r.ReadInt32()
+	if !errors.Is(err, io.EOF) {
+		return errors.New("client did not close after malformed service output")
+	}
+	return nil
 }
 
 func serviceOutputResponse(data []byte) []byte {

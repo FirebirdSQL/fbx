@@ -3,6 +3,7 @@ package fbx
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 )
 
@@ -114,7 +115,7 @@ type batchInsert struct {
 	rowSrc      BatchInsertRowsSource
 }
 
-func (b *batchInsert) run(ctx context.Context) (int64, error) {
+func (b *batchInsert) run(ctx context.Context) (affected int64, err error) {
 	quotedTableName := b.tableName.Sanitize()
 	cbuf := &bytes.Buffer{}
 	pbuf := &bytes.Buffer{}
@@ -133,7 +134,11 @@ func (b *batchInsert) run(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer batch.Close(ctx)
+	defer func() {
+		if closeErr := batch.Close(ctx); closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
+	}()
 
 	for b.rowSrc.Next() {
 		values, err := b.rowSrc.Values()
@@ -146,7 +151,7 @@ func (b *batchInsert) run(ctx context.Context) (int64, error) {
 		}
 
 		if batch.PendingBytes() > b.conn.config.BatchInsertPendingSize {
-			if batch.Flush(ctx) != nil {
+			if err := batch.Flush(ctx); err != nil {
 				return 0, err
 			}
 		}

@@ -5,8 +5,10 @@ import (
 	"database/sql/driver"
 	"encoding/binary"
 	"errors"
+	"net"
 	"os"
 	"reflect"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -256,7 +258,11 @@ func TestStmtCloseIsIdempotentWithSharedStatement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer nativeConn.Close(context.Background())
+	defer func() {
+		if err := nativeConn.Close(context.Background()); err != nil {
+			t.Errorf("close native connection: %v", err)
+		}
+	}()
 
 	conn := &Conn{
 		conn:        nativeConn,
@@ -295,6 +301,122 @@ func TestStmtCloseIsIdempotentWithSharedStatement(t *testing.T) {
 	}
 	if _, ok := conn.psRefCounts[first.sd]; ok {
 		t.Fatal("reference count remains after the final Close")
+	}
+}
+
+type blockNextWriteConn struct {
+	net.Conn
+
+	blockNext     atomic.Bool
+	writeStarted  chan struct{}
+	continueWrite chan struct{}
+}
+
+func (c *blockNextWriteConn) Write(p []byte) (int, error) {
+	if c.blockNext.CompareAndSwap(true, false) {
+		close(c.writeStarted)
+		<-c.continueWrite
+	}
+	return c.Conn.Write(p)
+}
+
+func TestStmtCloseClearsReferenceAfterNonFatalDeallocateError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	config, err := fbx.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalDial := config.DialFunc
+	var wireConn *blockNextWriteConn
+	config.DialFunc = func(ctx context.Context, network, address string) (net.Conn, error) {
+		conn, err := originalDial(ctx, network, address)
+		if err != nil {
+			return nil, err
+		}
+		wireConn = &blockNextWriteConn{
+			Conn:          conn,
+			writeStarted:  make(chan struct{}),
+			continueWrite: make(chan struct{}),
+		}
+		return wireConn, nil
+	}
+
+	nativeConn, err := fbx.ConnectConfig(ctx, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := nativeConn.Close(context.Background()); err != nil {
+			t.Errorf("close native connection: %v", err)
+		}
+	}()
+
+	conn := &Conn{
+		conn:        nativeConn,
+		psRefCounts: make(map[*fbconn.StatementDescription]int),
+	}
+	const query = "select 42 from rdb$database"
+	driverStmt, err := conn.PrepareContext(ctx, query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stmt := driverStmt.(*Stmt)
+
+	wireConn.blockNext.Store(true)
+	pingErr := make(chan error, 1)
+	go func() {
+		pingErr <- nativeConn.Ping(ctx)
+	}()
+
+	select {
+	case <-wireConn.writeStarted:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	writeReleased := false
+	defer func() {
+		if !writeReleased {
+			close(wireConn.continueWrite)
+		}
+	}()
+
+	if err := stmt.Close(); err == nil {
+		t.Fatal("Close succeeded while the connection was busy")
+	}
+	if nativeConn.IsClosed() {
+		t.Fatal("non-fatal Deallocate error closed the connection")
+	}
+	if !stmt.closed {
+		t.Fatal("Stmt remains open after Deallocate error")
+	}
+	if _, ok := conn.psRefCounts[stmt.sd]; ok {
+		t.Fatal("reference count remains after Deallocate error")
+	}
+	if err := stmt.Close(); err != nil {
+		t.Fatalf("repeated Close returned an error: %v", err)
+	}
+	if _, err := stmt.Query(nil); !errors.Is(err, errStmtClosed) {
+		t.Fatalf("Query after failed Close error = %v, want %v", err, errStmtClosed)
+	}
+
+	close(wireConn.continueWrite)
+	writeReleased = true
+	if err := <-pingErr; err != nil {
+		t.Fatal(err)
+	}
+
+	retryDriverStmt, err := conn.PrepareContext(ctx, query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retryStmt := retryDriverStmt.(*Stmt)
+	if got := conn.psRefCounts[retryStmt.sd]; got != 1 {
+		t.Fatalf("retry reference count = %d, want 1", got)
+	}
+	if err := retryStmt.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
 

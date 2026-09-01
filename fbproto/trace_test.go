@@ -460,7 +460,7 @@ func TestTrace(t *testing.T) {
 
 	conn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
-	defer conn.Close(ctx)
+	defer func() { _ = conn.Close(ctx) }()
 
 	serverEngineVersionNumber := getServerEngineVersionNumber(t, conn)
 	expectedSnapshots := getExpectedTraceSnapshotsForServerEngineVersion(t, serverEngineVersionNumber)
@@ -477,7 +477,8 @@ func TestTrace(t *testing.T) {
 	require.NoError(t, result.Err)
 
 	out := traceOutput.String()
-	fmt.Fprint(os.Stdout, out)
+	_, err = fmt.Fprint(os.Stdout, out)
+	require.NoError(t, err)
 
 	require.Equal(t, expectedSnapshots.trace, out)
 }
@@ -490,7 +491,7 @@ func TestFullLogTrace(t *testing.T) {
 
 	conn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
-	defer conn.Close(ctx)
+	defer func() { _ = conn.Close(ctx) }()
 
 	serverEngineVersionNumber := getServerEngineVersionNumber(t, conn)
 	expectedSnapshots := getExpectedTraceSnapshotsForServerEngineVersion(t, serverEngineVersionNumber)
@@ -507,7 +508,8 @@ func TestFullLogTrace(t *testing.T) {
 	require.NoError(t, result.Err)
 
 	out := traceOutput.String()
-	fmt.Fprint(os.Stdout, out)
+	_, err = fmt.Fprint(os.Stdout, out)
+	require.NoError(t, err)
 	require.Equal(t, expectedSnapshots.fullLog, out)
 }
 
@@ -519,7 +521,7 @@ func TestTrace_SuccessCTE(t *testing.T) {
 
 	conn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
-	defer conn.Close(ctx)
+	defer func() { _ = conn.Close(ctx) }()
 
 	var buf bytes.Buffer
 	conn.Client().Trace(&buf, fbproto.TracerOptions{
@@ -551,7 +553,7 @@ func TestTrace_ErrorPath(t *testing.T) {
 
 	conn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
-	defer conn.Close(ctx)
+	defer func() { _ = conn.Close(ctx) }()
 
 	var buf bytes.Buffer
 	conn.Client().Trace(&buf, fbproto.TracerOptions{

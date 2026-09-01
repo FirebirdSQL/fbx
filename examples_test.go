@@ -20,7 +20,9 @@ func ExampleConnect() {
 		fmt.Println(err)
 		return
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		_ = conn.Close(ctx)
+	}()
 
 	var firstName, lastName string
 	if err := conn.QueryRow(ctx, "select first_name, last_name from employee where emp_no=?", 2).Scan(&firstName, &lastName); err != nil {
@@ -49,7 +51,9 @@ func ExampleConnectConfig() {
 		fmt.Println(err)
 		return
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		_ = conn.Close(ctx)
+	}()
 
 	var count int
 	if err := conn.QueryRow(ctx, "select count(*) from employee").Scan(&count); err != nil {
@@ -69,7 +73,9 @@ func ExampleCreateDatabase() {
 	if err != nil {
 		return
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		_ = conn.Close(ctx)
+	}()
 
 	if err := conn.DropDatabase(ctx); err != nil {
 		return
@@ -93,14 +99,18 @@ func ExampleConn_Prepare() {
 		fmt.Println(err)
 		return
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		_ = conn.Close(ctx)
+	}()
 
 	_, err = conn.Prepare(ctx, "employee_by_id", "select first_name from employee where emp_no=?")
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	defer conn.Deallocate(ctx, "employee_by_id")
+	defer func() {
+		_ = conn.Deallocate(ctx, "employee_by_id")
+	}()
 
 	var s string
 	if err := conn.QueryRow(ctx, "employee_by_id", 2).Scan(&s); err != nil {
@@ -122,7 +132,9 @@ func ExampleConn_PrepareBatch() {
 		fmt.Println(err)
 		return
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		_ = conn.Close(ctx)
+	}()
 
 	if !exampleBatchSupported(ctx, conn) {
 		fmt.Println("rows: 2")
@@ -148,7 +160,9 @@ func ExampleConn_PrepareBatch() {
 		fmt.Println(err)
 		return
 	}
-	defer pb.Close(ctx)
+	defer func() {
+		_ = pb.Close(ctx)
+	}()
 
 	for _, row := range rows {
 		if err := pb.Add(row.ID, row.Note); err != nil {
@@ -189,7 +203,9 @@ func ExampleConn_ExecBatch() {
 		fmt.Println(err)
 		return
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		_ = conn.Close(ctx)
+	}()
 
 	if !exampleBatchSupported(ctx, conn) {
 		fmt.Println("rows: 2")
@@ -207,7 +223,9 @@ func ExampleConn_ExecBatch() {
 		fmt.Println(err)
 		return
 	}
-	defer conn.Deallocate(ctx, "audit_batch")
+	defer func() {
+		_ = conn.Deallocate(ctx, "audit_batch")
+	}()
 
 	_, err = conn.Exec(ctx, "audit_batch", int64(1), "one")
 	if err != nil {
@@ -246,7 +264,9 @@ func ExampleNamedArgs() {
 		fmt.Println(err)
 		return
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		_ = conn.Close(ctx)
+	}()
 
 	row := conn.QueryRow(
 		ctx,
@@ -322,7 +342,9 @@ func ExampleConn_BeginTx() {
 		fmt.Println(err)
 		return
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		_ = conn.Close(ctx)
+	}()
 
 	tx, err := conn.BeginTx(ctx, fbx.TxOptions{
 		IsoLevel:    fbx.ReadCommitted,
@@ -333,7 +355,9 @@ func ExampleConn_BeginTx() {
 		fmt.Println(err)
 		return
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
 
 	var count int
 	if err := tx.QueryRow(ctx, "select count(*) from employee").Scan(&count); err != nil {
@@ -360,7 +384,9 @@ func ExampleConn_Exec_blob() {
 		fmt.Println(err)
 		return
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		_ = conn.Close(ctx)
+	}()
 
 	_, err = conn.Exec(ctx, "recreate table fbx_example_files(id integer not null primary key, data blob sub_type 0)")
 	if err != nil {
@@ -394,7 +420,9 @@ func ExampleConn_QueryRow_typeMapping() {
 		fmt.Println(err)
 		return
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		_ = conn.Close(ctx)
+	}()
 
 	var (
 		id     fbtype.Int128
@@ -423,7 +451,9 @@ func ExampleConn_Exec_array() {
 		fmt.Println(err)
 		return
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		_ = conn.Close(ctx)
+	}()
 
 	_, err = conn.Exec(ctx, "recreate table fbx_example_samples(id integer not null primary key, nums smallint[1:3])")
 	if err != nil {
@@ -462,7 +492,9 @@ func ExampleCollectRows_structByName() {
 		fmt.Println(err)
 		return
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		_ = conn.Close(ctx)
+	}()
 
 	rows, err := conn.Query(ctx, "select emp_no, first_name from employee where emp_no = ?", 144)
 	if err != nil {
@@ -501,7 +533,9 @@ func ExampleConnectConfig_tracing() {
 		fmt.Println(err)
 		return
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		_ = conn.Close(ctx)
+	}()
 
 	var firstName string
 	if err := conn.QueryRow(ctx, "select first_name from employee where emp_no=?", 2).Scan(&firstName); err != nil {

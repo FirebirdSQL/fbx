@@ -134,6 +134,9 @@ type encodePlanTextCodecByteSlice struct {
 func (e encodePlanTextCodecByteSlice) Encode(value any, buf []byte) (newBuf []byte, err error) {
 	s := string(value.([]byte))
 	res, err := encodeFBString(s, e.length, e.encoding)
+	if err != nil {
+		return nil, err
+	}
 	buf = append(buf, res...)
 	return buf, nil
 }
