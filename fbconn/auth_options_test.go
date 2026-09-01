@@ -51,7 +51,7 @@ func withName(name string) auth.ConstructorOption {
 }
 
 func registerPlugin() {
-	auth.RegisterAuthPlugin(constructorTestPluginName, func(auth.PluginConfig) auth.AuthPlugin {
+	_ = auth.RegisterAuthPlugin(constructorTestPluginName, func(auth.PluginConfig) auth.AuthPlugin {
 		return &testPlugin{}
 	})
 }

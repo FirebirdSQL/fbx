@@ -35,7 +35,7 @@ func withData(data []byte) ConstructorOption {
 }
 
 func registerPlugin(name string) {
-	RegisterAuthPlugin(name, func(PluginConfig) AuthPlugin {
+	_ = RegisterAuthPlugin(name, func(PluginConfig) AuthPlugin {
 		return &testPlugin{name: name}
 	})
 }
