@@ -15,7 +15,9 @@ func TestNewDecimalFormatRejectsInvalidParameters(t *testing.T) {
 		{name: "zero bit length", formatBitLength: 0, coefficientDigits: 16},
 		{name: "non-byte bit length", formatBitLength: 63, coefficientDigits: 16},
 		{name: "invalid coefficient digits", formatBitLength: 64, coefficientDigits: 15},
+		{name: "coefficient precision above decimal128", formatBitLength: 128, coefficientDigits: 37},
 		{name: "insufficient exponent bits", formatBitLength: 8, coefficientDigits: 4},
+		{name: "exponent width above portable limit", formatBitLength: 80, coefficientDigits: 4},
 	}
 
 	for _, tt := range tests {
@@ -28,6 +30,16 @@ func TestNewDecimalFormatRejectsInvalidParameters(t *testing.T) {
 
 			NewDecimalFormat(tt.formatBitLength, tt.coefficientDigits)
 		})
+	}
+}
+
+func TestNewDecimalFormatAcceptsPortableBoundary(t *testing.T) {
+	format := NewDecimalFormat(144, 34)
+	if format.exponentContinuationBits != 28 {
+		t.Fatalf("exponentContinuationBits=%d want=28", format.exponentContinuationBits)
+	}
+	if err := format.validate(); err != nil {
+		t.Fatalf("boundary format is invalid: %v", err)
 	}
 }
 

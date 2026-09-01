@@ -22,8 +22,10 @@ type DecimalFormat struct {
 }
 
 const (
-	signBits        = 1
-	combinationBits = 5
+	signBits                             = 1
+	combinationBits                      = 5
+	maxSupportedCoefficientDigits        = 34
+	maxSupportedExponentContinuationBits = 29
 )
 
 var (
@@ -35,8 +37,10 @@ var (
 
 // NewDecimalFormat constructs an IEEE-754 decimal format description.
 //
-// coefficientDigits must have the form n*3+1 for n greater than zero, and the
-// resulting format must leave at least two exponent-continuation bits.
+// coefficientDigits must have the form n*3+1 for n greater than zero and must
+// not exceed 34, the precision of IEEE-754 decimal128. The resulting format
+// must leave between 2 and 29 exponent-continuation bits so all exponent
+// calculations fit int32 and are portable to 32-bit systems.
 // NewDecimalFormat panics when these requirements are not met.
 func NewDecimalFormat(formatBitLength int, coefficientDigits int) DecimalFormat {
 	if formatBitLength <= 0 || formatBitLength%dpdBitsPerByte != 0 {
@@ -44,6 +48,9 @@ func NewDecimalFormat(formatBitLength int, coefficientDigits int) DecimalFormat 
 	}
 	if coefficientDigits/dpdDigitsPerGroup <= 0 || coefficientDigits%dpdDigitsPerGroup != 1 {
 		panic(fmt.Sprintf("decfloat: coefficient digits must have form n*3+1 with n > 0, was %d", coefficientDigits))
+	}
+	if coefficientDigits > maxSupportedCoefficientDigits {
+		panic(fmt.Sprintf("decfloat: coefficient digits must not exceed %d, was %d", maxSupportedCoefficientDigits, coefficientDigits))
 	}
 
 	f := DecimalFormat{
@@ -55,6 +62,10 @@ func NewDecimalFormat(formatBitLength int, coefficientDigits int) DecimalFormat 
 	f.exponentContinuationBits = calculateExponentContinuationBits(formatBitLength, f.coefficientContinuationBits)
 	if f.exponentContinuationBits < 2 {
 		panic(fmt.Sprintf("decfloat: format leaves %d exponent-continuation bits, need at least 2", f.exponentContinuationBits))
+	}
+	if f.exponentContinuationBits > maxSupportedExponentContinuationBits {
+		panic(fmt.Sprintf("decfloat: format leaves %d exponent-continuation bits, maximum supported is %d",
+			f.exponentContinuationBits, maxSupportedExponentContinuationBits))
 	}
 	f.eLimit = calculateExponentLimit(f.exponentContinuationBits)
 
@@ -103,12 +114,13 @@ func (f DecimalFormat) ValidateFiniteCoefficientAndExponent(coefficient *big.Int
 
 	abs := new(big.Int).Abs(coefficient)
 	if abs.Cmp(f.maxCoefficient) > 0 {
-		return fmt.Errorf("decfloat: coefficient out of range for this format (digits=%d): %s", f.coefficientDigits, coefficient.String())
+		return fmt.Errorf("decfloat: coefficient out of range for this format (maximum %d decimal digits)", f.coefficientDigits)
 	}
 
-	biased := f.BiasedExponent(exponent)
-	if biased < 0 || biased > f.eLimit {
-		return fmt.Errorf("decfloat: exponent out of range: exp=%d biased=%d allowed[0..%d]", exponent, biased, f.eLimit)
+	minExponent := -f.exponentBias
+	maxExponent := f.eLimit - f.exponentBias
+	if exponent < minExponent || exponent > maxExponent {
+		return fmt.Errorf("decfloat: exponent out of range: exp=%d allowed[%d..%d]", exponent, minExponent, maxExponent)
 	}
 	return nil
 }
@@ -117,7 +129,13 @@ func (f DecimalFormat) validate() error {
 	if f.formatBitLength <= 0 || f.formatBitLength%dpdBitsPerByte != 0 ||
 		f.formatByteLength != f.formatBitLength/dpdBitsPerByte ||
 		f.coefficientDigits/dpdDigitsPerGroup <= 0 || f.coefficientDigits%dpdDigitsPerGroup != 1 ||
-		f.exponentContinuationBits < 2 || f.maxCoefficient == nil {
+		f.coefficientDigits > maxSupportedCoefficientDigits ||
+		f.exponentContinuationBits < 2 || f.exponentContinuationBits > maxSupportedExponentContinuationBits ||
+		f.coefficientContinuationBits != calculateCoefficientContinuationBits(f.coefficientDigits) ||
+		f.exponentContinuationBits != calculateExponentContinuationBits(f.formatBitLength, f.coefficientContinuationBits) ||
+		f.eLimit != calculateExponentLimit(f.exponentContinuationBits) ||
+		f.exponentBias != f.eLimit/2+f.coefficientDigits-1 ||
+		f.maxCoefficient == nil {
 		return fmt.Errorf("decfloat: invalid DecimalFormat")
 	}
 	return nil

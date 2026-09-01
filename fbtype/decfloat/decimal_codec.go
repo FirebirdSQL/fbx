@@ -2,6 +2,7 @@ package decfloat
 
 import (
 	"fmt"
+	"math"
 	"math/big"
 )
 
@@ -75,7 +76,11 @@ func (c *DecimalCodec) ParseBytes(decBytes []byte) (DecodedDecimal, error) {
 	expBitsRemaining := c.Format.exponentContinuationBits - 2
 	expAndBias := decodeExponent(decBytes, exponentMSB, expBitsRemaining)
 
-	exponent := int32(c.Format.UnbiasedExponent(expAndBias))
+	unbiasedExponent := c.Format.UnbiasedExponent(expAndBias)
+	if unbiasedExponent < math.MinInt32 || unbiasedExponent > math.MaxInt32 {
+		return DecodedDecimal{}, fmt.Errorf("decfloat: decoded exponent %d is out of int32 range", unbiasedExponent)
+	}
+	exponent := int32(unbiasedExponent)
 
 	lsbIndex := len(decBytes) - 1
 	coeff := c.CoefficientCoder.DecodeValue(signum, firstDigit, decBytes, lsbIndex)

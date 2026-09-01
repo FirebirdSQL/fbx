@@ -11,7 +11,10 @@ const (
 	dpdBitsPerByte    = 8
 )
 
-var bigOneThousand = big.NewInt(1000)
+var (
+	bigNine        = big.NewInt(9)
+	bigOneThousand = big.NewInt(1000)
+)
 
 // Signum identifies the sign of an IEEE-754 decimal value, including zero and
 // special values.
@@ -30,12 +33,16 @@ type DenselyPackedDecimalCodec struct {
 
 // NewDenselyPackedDecimalCodec constructs a DPD codec for numberOfDigits.
 //
-// numberOfDigits must have the form n*3+1 for n greater than zero. The most
-// significant digit is handled separately from the n three-digit DPD groups.
-// NewDenselyPackedDecimalCodec panics when numberOfDigits is invalid.
+// numberOfDigits must have the form n*3+1 for n greater than zero and must not
+// exceed 34. The most significant digit is handled separately from the n
+// three-digit DPD groups. NewDenselyPackedDecimalCodec panics when
+// numberOfDigits is invalid.
 func NewDenselyPackedDecimalCodec(numberOfDigits int) *DenselyPackedDecimalCodec {
 	if numberOfDigits/dpdDigitsPerGroup <= 0 || numberOfDigits%dpdDigitsPerGroup != 1 {
 		panic(fmt.Sprintf("decfloat: number of digits must have form n*3+1 with n > 0, was %d", numberOfDigits))
+	}
+	if numberOfDigits > maxSupportedCoefficientDigits {
+		panic(fmt.Sprintf("decfloat: number of digits must not exceed %d, was %d", maxSupportedCoefficientDigits, numberOfDigits))
 	}
 
 	return &DenselyPackedDecimalCodec{
@@ -93,6 +100,9 @@ func (c *DenselyPackedDecimalCodec) DecodeValue(signum Signum, firstDigit int, d
 // has more than the configured number of digits.
 func (c *DenselyPackedDecimalCodec) EncodeValue(value *big.Int, decBytes []byte, lsbIndex int) int {
 	c.validateLsbIndex(lsbIndex, len(decBytes))
+	if value == nil {
+		panic("decfloat: value must not be nil")
+	}
 
 	remaining := new(big.Int).Abs(value)
 	var q, r big.Int
@@ -112,11 +122,10 @@ func (c *DenselyPackedDecimalCodec) EncodeValue(value *big.Int, decBytes []byte,
 		decBytes[firstByteIndex-1] |= byte(currentGroup >> uint(dpdBitsPerByte-firstByteBitOffset))
 	}
 
-	msd := int(remaining.Int64())
-	if msd < 0 || msd > 9 {
-		panic(fmt.Sprintf("decfloat: mostSignificantDigit out of range, was %d", msd))
+	if remaining.Cmp(bigNine) > 0 {
+		panic(fmt.Sprintf("decfloat: coefficient has more than %d decimal digits", c.numberOfDigits))
 	}
-	return msd
+	return int(remaining.Int64())
 }
 
 func (c *DenselyPackedDecimalCodec) validateLsbIndex(lsbIndex int, decBytesLen int) {
