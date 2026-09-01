@@ -150,10 +150,10 @@ func buildBackupActionSPB(database string, backupFile string, options BackupOpti
 }
 
 func putServiceActionString(spb *fbproto.XPBWriter, tag byte, value string) error {
-	valueBytes := []byte(value)
-	if len(valueBytes) > maxServiceActionStringLength {
-		return fmt.Errorf("value is %d bytes; maximum is %d", len(valueBytes), maxServiceActionStringLength)
+	if len(value) > maxServiceActionStringLength {
+		return fmt.Errorf("value is %d bytes; maximum is %d", len(value), maxServiceActionStringLength)
 	}
+	valueBytes := []byte(value)
 	spb.AppendByte(tag)
 	spb.AppendInt16(int16(len(valueBytes)))
 	spb.AppendBytes(valueBytes)

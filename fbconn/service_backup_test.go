@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -64,13 +65,14 @@ func TestBuildBackupActionSPB(t *testing.T) {
 }
 
 func TestBuildBackupActionSPBValidation(t *testing.T) {
-	tests := []struct {
+	type testCase struct {
 		name       string
 		database   string
 		backupFile string
 		options    BackupOptions
 		wantError  string
-	}{
+	}
+	tests := []testCase{
 		{
 			name:       "empty database",
 			backupFile: "/backup/employee.fbk",
@@ -101,15 +103,18 @@ func TestBuildBackupActionSPBValidation(t *testing.T) {
 			options:    BackupOptions{ParallelWorkers: -1},
 			wantError:  "backup parallel workers must be between",
 		},
-		{
+	}
+	if strconv.IntSize > 32 {
+		aboveMaxInt32 := int64(maxServiceActionInt32) + 1
+		tests = append(tests, testCase{
 			name:       "parallel workers overflow",
 			database:   "/data/employee.fdb",
 			backupFile: "/backup/employee.fbk",
 			options: BackupOptions{
-				ParallelWorkers: int(int64(maxServiceActionInt32) + 1),
+				ParallelWorkers: int(aboveMaxInt32),
 			},
 			wantError: "backup parallel workers must be between",
-		},
+		})
 	}
 
 	for _, test := range tests {
@@ -122,10 +127,10 @@ func TestBuildBackupActionSPBValidation(t *testing.T) {
 
 func TestServiceConnBackup(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
-	resultCh := make(chan backupProbeResult, 1)
+	resultCh := make(chan serviceActionProbeResult, 1)
 	go func() {
 		defer func() { _ = serverConn.Close() }()
-		resultCh <- runBackupProbeServer(serverConn)
+		resultCh <- runServiceActionProbeServer(serverConn)
 	}()
 
 	config, err := ParseConfig("firebird://sysdba:masterkey@mock/employee")
@@ -209,7 +214,7 @@ func TestServiceConnBackupReturnsOutputError(t *testing.T) {
 	require.NoError(t, <-serverDone)
 }
 
-type backupProbeResult struct {
+type serviceActionProbeResult struct {
 	actionSPB      []byte
 	sendItems      []byte
 	receiveItems   []byte
@@ -219,32 +224,32 @@ type backupProbeResult struct {
 	err            error
 }
 
-func runBackupProbeServer(conn net.Conn) backupProbeResult {
+func runServiceActionProbeServer(conn net.Conn) serviceActionProbeResult {
 	encoding, err := fbproto.NewEncoding("UTF8")
 	if err != nil {
-		return backupProbeResult{err: err}
+		return serviceActionProbeResult{err: err}
 	}
 	r := fbproto.NewXDRReader(conn)
 	w := fbproto.NewXDRWriter(conn)
 	if err := readProbeConnect(r); err != nil {
-		return backupProbeResult{err: err}
+		return serviceActionProbeResult{err: err}
 	}
 	if err := writeAuthenticatedProbeAccept(w, encoding); err != nil {
-		return backupProbeResult{err: err}
+		return serviceActionProbeResult{err: err}
 	}
 	if err := readProbeServiceAttach(r, encoding); err != nil {
-		return backupProbeResult{err: err}
+		return serviceActionProbeResult{err: err}
 	}
 	if err := writeProbeResponse(w, 42); err != nil {
-		return backupProbeResult{err: err}
+		return serviceActionProbeResult{err: err}
 	}
 
 	actionSPB, err := readProbeServiceStart(r, 42)
 	if err != nil {
-		return backupProbeResult{err: err}
+		return serviceActionProbeResult{err: err}
 	}
 	if err := writeProbeResponse(w, 0); err != nil {
-		return backupProbeResult{err: err}
+		return serviceActionProbeResult{err: err}
 	}
 
 	responses := [][]byte{
@@ -253,21 +258,21 @@ func runBackupProbeServer(conn net.Conn) backupProbeResult {
 		serviceOutputResponse([]byte("gbak: writing data\n")),
 		{fbproto.Isc_info_svc_to_eof, 0, 0, fbproto.Isc_info_end},
 	}
-	result := backupProbeResult{actionSPB: actionSPB}
+	result := serviceActionProbeResult{actionSPB: actionSPB}
 	for _, response := range responses {
 		sendItems, receiveItems, bufferLength, err := readProbeServiceInfo(r, 42)
 		if err != nil {
-			return backupProbeResult{err: err}
+			return serviceActionProbeResult{err: err}
 		}
 		if result.sendItems == nil {
 			result.sendItems = sendItems
 			result.receiveItems = receiveItems
 		} else if !bytes.Equal(result.sendItems, sendItems) || !bytes.Equal(result.receiveItems, receiveItems) {
-			return backupProbeResult{err: errors.New("service info items changed between requests")}
+			return serviceActionProbeResult{err: errors.New("service info items changed between requests")}
 		}
 		result.bufferLengths = append(result.bufferLengths, bufferLength)
 		if err := writeProbeResponseData(w, 0, response); err != nil {
-			return backupProbeResult{err: err}
+			return serviceActionProbeResult{err: err}
 		}
 	}
 

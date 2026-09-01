@@ -285,7 +285,9 @@ func TestPreparedBatchExecCanceledCleanupDoesNotReexecute(t *testing.T) {
 
 	pb, err := conn.PrepareBatch(ctx, "update "+table+" set n = n + 1 where id = ?")
 	require.NoError(t, err)
-	defer pb.Close(ctx)
+	defer func() {
+		require.NoError(t, pb.Close(ctx))
+	}()
 
 	require.NoError(t, pb.Add(1))
 	require.NoError(t, pb.Flush(ctx))
@@ -324,7 +326,9 @@ func TestPreparedBatchFlushCanceledCanRetry(t *testing.T) {
 
 	pb, err := conn.PrepareBatch(ctx, "insert into "+table+" (id, note) values (?, ?)")
 	require.NoError(t, err)
-	defer pb.Close(ctx)
+	defer func() {
+		require.NoError(t, pb.Close(ctx))
+	}()
 
 	require.NoError(t, pb.Add(1, "first"))
 	require.NoError(t, pb.Flush(ctx))

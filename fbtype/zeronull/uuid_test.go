@@ -60,6 +60,7 @@ func TestUUIDtoFB(t *testing.T) {
 		err = conn.QueryRow(ctx, "select uuid_to_char(u), cast(? as varchar(36)) from u", &u).Scan(&s2, &u2)
 		require.NoError(t, err)
 		uv2, err := u2.UUIDValue()
+		require.NoError(t, err)
 		assert.Equal(t, uv2.String(), strings.ToLower(s2))
 	})
 }

@@ -87,7 +87,9 @@ func ensureConnValid(t testing.TB, conn *fbx.Conn) {
 
 	for rows.Next() {
 		var n int32
-		rows.Scan(&n)
+		if err := rows.Scan(&n); err != nil {
+			t.Fatalf("rows.Scan unexpectedly failed: %v", err)
+		}
 		sum += n
 		rowCount++
 	}
@@ -125,6 +127,7 @@ func assertConfigsEqual(t *testing.T, expected, actual *fbx.ConnConfig, testName
 	assert.Equalf(t, expected.Password, actual.Password, "%s - Password", testName)
 	assert.Equalf(t, expected.ConnectTimeout, actual.ConnectTimeout, "%s - ConnectTimeout", testName)
 	assert.Equalf(t, expected.FetchBatchSize, actual.FetchBatchSize, "%s - FetchBatchSize", testName)
+	assert.Equalf(t, expected.WireCompression, actual.WireCompression, "%s - WireCompression", testName)
 	assert.Equalf(t, expected.RuntimeParams, actual.RuntimeParams, "%s - RuntimeParams", testName)
 
 	// Can't test function equality, so just test that they are set or not.

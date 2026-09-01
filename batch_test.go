@@ -32,7 +32,9 @@ func TestTxPrepareBatchUpdateDeleteCommit(t *testing.T) {
 
 	pbUpdate, err := tx.PrepareBatch(ctx, "update "+table+" set note = ? where id = ?")
 	require.NoError(t, err)
-	defer pbUpdate.Close(ctx)
+	defer func() {
+		require.NoError(t, pbUpdate.Close(ctx))
+	}()
 
 	require.NoError(t, pbUpdate.Add("one-tx", 1))
 	require.NoError(t, pbUpdate.Add("two-tx", 2))
@@ -43,7 +45,9 @@ func TestTxPrepareBatchUpdateDeleteCommit(t *testing.T) {
 
 	pbDelete, err := tx.PrepareBatch(ctx, "delete from "+table+" where id = ?")
 	require.NoError(t, err)
-	defer pbDelete.Close(ctx)
+	defer func() {
+		require.NoError(t, pbDelete.Close(ctx))
+	}()
 
 	require.NoError(t, pbDelete.Add(3))
 	require.NoError(t, pbDelete.Add(4))
@@ -89,7 +93,9 @@ func TestTxPrepareBatchUpdateDeleteRollback(t *testing.T) {
 
 	pbUpdate, err := tx.PrepareBatch(ctx, "update "+table+" set note = ? where id = ?")
 	require.NoError(t, err)
-	defer pbUpdate.Close(ctx)
+	defer func() {
+		require.NoError(t, pbUpdate.Close(ctx))
+	}()
 
 	require.NoError(t, pbUpdate.Add("one-rb", 1))
 	require.NoError(t, pbUpdate.Add("two-rb", 2))
@@ -100,7 +106,9 @@ func TestTxPrepareBatchUpdateDeleteRollback(t *testing.T) {
 
 	pbDelete, err := tx.PrepareBatch(ctx, "delete from "+table+" where id = ?")
 	require.NoError(t, err)
-	defer pbDelete.Close(ctx)
+	defer func() {
+		require.NoError(t, pbDelete.Close(ctx))
+	}()
 
 	require.NoError(t, pbDelete.Add(3))
 	require.NoError(t, pbDelete.Add(4))
@@ -217,7 +225,9 @@ func TestPreparedBatchExecWithoutRows(t *testing.T) {
 
 	pb, err := conn.PrepareBatch(ctx, "insert into "+table+" (id, note) values (?, ?)")
 	require.NoError(t, err)
-	defer pb.Close(ctx)
+	defer func() {
+		require.NoError(t, pb.Close(ctx))
+	}()
 
 	result, err := pb.Exec(ctx)
 	require.NoError(t, err)
@@ -240,7 +250,9 @@ func TestPreparedBatchPendingBytes(t *testing.T) {
 
 	pb, err := conn.PrepareBatch(ctx, "insert into "+table+" (id, note) values (?, ?)")
 	require.NoError(t, err)
-	defer pb.Close(ctx)
+	defer func() {
+		require.NoError(t, pb.Close(ctx))
+	}()
 
 	require.Equal(t, 0, pb.PendingBytes())
 
@@ -275,7 +287,9 @@ func TestPreparedBatchPendingBytesClearPending(t *testing.T) {
 
 	pb, err := conn.PrepareBatch(ctx, "insert into "+table+" (id, note) values (?, ?)")
 	require.NoError(t, err)
-	defer pb.Close(ctx)
+	defer func() {
+		require.NoError(t, pb.Close(ctx))
+	}()
 
 	require.NoError(t, pb.Add(1, "drop me"))
 	require.Greater(t, pb.PendingBytes(), 0)
@@ -310,7 +324,9 @@ func TestPrepareBatchWithOptionsDefaultBehavior(t *testing.T) {
 
 	pb, err := conn.PrepareBatchWithOptions(ctx, "insert into "+table+" (id, note) values (?, ?)", fbx.BatchOptions{})
 	require.NoError(t, err)
-	defer pb.Close(ctx)
+	defer func() {
+		require.NoError(t, pb.Close(ctx))
+	}()
 
 	require.NoError(t, pb.Add(1, "one"))
 	require.NoError(t, pb.Add(2, "two"))
@@ -342,7 +358,9 @@ func TestPrepareBatchWithOptionsBufferBytes(t *testing.T) {
 		BufferBytes: 4096,
 	})
 	require.NoError(t, err)
-	defer pb.Close(ctx)
+	defer func() {
+		require.NoError(t, pb.Close(ctx))
+	}()
 
 	require.NoError(t, pb.Add("one-buffered", 1))
 
@@ -377,7 +395,9 @@ func TestPrepareBatchWithOptionsBufferBytesOverflow(t *testing.T) {
 		BufferBytes: 4096,
 	})
 	require.NoError(t, err)
-	defer pb.Close(ctx)
+	defer func() {
+		require.NoError(t, pb.Close(ctx))
+	}()
 
 	require.NoError(t, pb.Add(1, strings.Repeat("a", 2048)))
 	require.NoError(t, pb.Add(2, strings.Repeat("b", 2048)))
@@ -414,7 +434,9 @@ func TestTxPrepareBatchWithOptionsBufferBytesCommit(t *testing.T) {
 		BufferBytes: 2048,
 	})
 	require.NoError(t, err)
-	defer pb.Close(ctx)
+	defer func() {
+		require.NoError(t, pb.Close(ctx))
+	}()
 
 	require.NoError(t, pb.Add(1, "inside tx / one"))
 	require.NoError(t, pb.Add(2, "inside tx / two"))
@@ -524,7 +546,9 @@ func TestPreparedBatchReuseUpdateDelete(t *testing.T) {
 
 	pbUpdate, err := conn.PrepareBatch(ctx, "update "+table+" set note = ? where id = ?")
 	require.NoError(t, err)
-	defer pbUpdate.Close(ctx)
+	defer func() {
+		require.NoError(t, pbUpdate.Close(ctx))
+	}()
 
 	require.NoError(t, pbUpdate.Add("one-reuse", 1))
 	updateResult, err := pbUpdate.Exec(ctx)
@@ -538,7 +562,9 @@ func TestPreparedBatchReuseUpdateDelete(t *testing.T) {
 
 	pbDelete, err := conn.PrepareBatch(ctx, "delete from "+table+" where id = ?")
 	require.NoError(t, err)
-	defer pbDelete.Close(ctx)
+	defer func() {
+		require.NoError(t, pbDelete.Close(ctx))
+	}()
 
 	require.NoError(t, pbDelete.Add(3))
 	deleteResult, err := pbDelete.Exec(ctx)
@@ -667,7 +693,9 @@ func TestPreparedBatchFlushUpdateDelete(t *testing.T) {
 
 	pbUpdate, err := conn.PrepareBatch(ctx, "update "+table+" set note = ? where id = ?")
 	require.NoError(t, err)
-	defer pbUpdate.Close(ctx)
+	defer func() {
+		require.NoError(t, pbUpdate.Close(ctx))
+	}()
 
 	require.NoError(t, pbUpdate.Add("one-flush", 1))
 	require.NoError(t, pbUpdate.Flush(ctx))
@@ -695,7 +723,9 @@ func TestPreparedBatchFlushUpdateDelete(t *testing.T) {
 
 	pbDelete, err := tx.PrepareBatch(ctx, "delete from "+table+" where id = ?")
 	require.NoError(t, err)
-	defer pbDelete.Close(ctx)
+	defer func() {
+		require.NoError(t, pbDelete.Close(ctx))
+	}()
 
 	require.NoError(t, pbDelete.Add(4))
 	require.NoError(t, pbDelete.Flush(ctx))
@@ -769,7 +799,9 @@ func TestPreparedBatchPartialFailureUpdateDelete(t *testing.T) {
 
 	pbUpdate, err := conn.PrepareBatch(ctx, "update "+updateTable+" set note = ? where id = ?")
 	require.NoError(t, err)
-	defer pbUpdate.Close(ctx)
+	defer func() {
+		require.NoError(t, pbUpdate.Close(ctx))
+	}()
 
 	require.NoError(t, pbUpdate.Add("same-note", 1))
 	require.NoError(t, pbUpdate.Add("same-note", 2))
@@ -808,7 +840,9 @@ func TestPreparedBatchPartialFailureUpdateDelete(t *testing.T) {
 
 	pbDelete, err := conn.PrepareBatch(ctx, "delete from "+deleteParentTable+" where id = ?")
 	require.NoError(t, err)
-	defer pbDelete.Close(ctx)
+	defer func() {
+		require.NoError(t, pbDelete.Close(ctx))
+	}()
 
 	require.NoError(t, pbDelete.Add(1))
 	require.NoError(t, pbDelete.Add(2))
@@ -848,7 +882,9 @@ func TestPreparedBatchContinueOnErrorReportsAllRowErrors(t *testing.T) {
 		ContinueOnError: true,
 	})
 	require.NoError(t, err)
-	defer pb.Close(ctx)
+	defer func() {
+		require.NoError(t, pb.Close(ctx))
+	}()
 
 	require.NoError(t, pb.Add("same-note", 1))
 	require.NoError(t, pb.Add("same-note", 2))
@@ -911,7 +947,9 @@ func TestTxNestedPrepareBatchCommitAndRollback(t *testing.T) {
 
 	pbUpdate, err := nestedUpdate.PrepareBatch(ctx, "update "+table+" set note = ? where id = ?")
 	require.NoError(t, err)
-	defer pbUpdate.Close(ctx)
+	defer func() {
+		require.NoError(t, pbUpdate.Close(ctx))
+	}()
 
 	require.NoError(t, pbUpdate.Add("one-nested", 1))
 	updateResult, err := pbUpdate.Exec(ctx)
@@ -924,7 +962,9 @@ func TestTxNestedPrepareBatchCommitAndRollback(t *testing.T) {
 
 	pbDelete, err := nestedDelete.PrepareBatch(ctx, "delete from "+table+" where id = ?")
 	require.NoError(t, err)
-	defer pbDelete.Close(ctx)
+	defer func() {
+		require.NoError(t, pbDelete.Close(ctx))
+	}()
 
 	require.NoError(t, pbDelete.Add(4))
 	deleteResult, err := pbDelete.Exec(ctx)
@@ -957,7 +997,9 @@ func TestPreparedBatchCancelDiscardsFlushedRowsAndAllowsReuse(t *testing.T) {
 
 	pb, err := conn.PrepareBatch(ctx, "insert into "+table+" (id, note) values (?, ?)")
 	require.NoError(t, err)
-	defer pb.Close(ctx)
+	defer func() {
+		require.NoError(t, pb.Close(ctx))
+	}()
 
 	require.NoError(t, pb.Add(1, "first"))
 	require.NoError(t, pb.Add(2, "second"))
@@ -996,7 +1038,9 @@ func TestPreparedBatchCancelWithoutFlushOnlyClearsLocalQueue(t *testing.T) {
 
 	pb, err := conn.PrepareBatch(ctx, "insert into "+table+" (id, note) values (?, ?)")
 	require.NoError(t, err)
-	defer pb.Close(ctx)
+	defer func() {
+		require.NoError(t, pb.Close(ctx))
+	}()
 
 	require.NoError(t, pb.Add(1, "local-only"))
 	require.Greater(t, pb.PendingBytes(), 0)
@@ -1151,7 +1195,9 @@ func TestPreparedBatchAutocommitRollsBackOnRowError(t *testing.T) {
 
 	pb, err := conn.PrepareBatch(ctx, "insert into "+table+" (id, note) values (?, ?)")
 	require.NoError(t, err)
-	defer pb.Close(ctx)
+	defer func() {
+		require.NoError(t, pb.Close(ctx))
+	}()
 
 	require.NoError(t, pb.Add(1, "one"))
 	require.NoError(t, pb.Add(2, nil))

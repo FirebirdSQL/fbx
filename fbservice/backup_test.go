@@ -23,7 +23,7 @@ func TestManagerBackupWithoutOptions(t *testing.T) {
 	require.Equal(t, "/data/employee.fdb", connection.expectedDatabase)
 	require.Equal(t, "/data/employee.fdb", connection.database)
 	require.Equal(t, "/backup/employee.fbk", connection.backupFile)
-	require.Equal(t, fbconn.BackupOptions{}, connection.options)
+	require.Equal(t, fbconn.BackupOptions{}, connection.backupOptions)
 }
 
 func TestManagerBackupMapsOptions(t *testing.T) {
@@ -72,7 +72,7 @@ func TestManagerBackupMapsOptions(t *testing.T) {
 		NoDatabaseTriggers:    true,
 		Zip:                   true,
 		Compressor:            "zstd:3:1",
-	}, connection.options)
+	}, connection.backupOptions)
 }
 
 func TestManagerBackupRejectsMultipleOptions(t *testing.T) {
@@ -121,26 +121,26 @@ func TestManagerBackupValidatesRequestBeforeOpeningConnection(t *testing.T) {
 			errText:    "backup parallel workers must be between 0",
 		},
 		"database exceeds SPB limit": {
-			database:   strings.Repeat("d", maxBackupOptionStringLength+1),
+			database:   strings.Repeat("d", maxServiceActionStringLength+1),
 			backupFile: "/backup/employee.fbk",
 			errText:    "backup database is 65536 bytes; maximum is 65535",
 		},
 		"backup file exceeds SPB limit": {
 			database:   "/data/employee.fdb",
-			backupFile: strings.Repeat("b", maxBackupOptionStringLength+1),
+			backupFile: strings.Repeat("b", maxServiceActionStringLength+1),
 			errText:    "backup file is 65536 bytes; maximum is 65535",
 		},
 		"compressor exceeds SPB limit": {
 			database:   "/data/employee.fdb",
 			backupFile: "/backup/employee.fbk",
 			options: BackupOptions{
-				Compressor: strings.Repeat("c", maxBackupOptionStringLength+1),
+				Compressor: strings.Repeat("c", maxServiceActionStringLength+1),
 			},
 			errText: "backup compressor is 65536 bytes; maximum is 65535",
 		},
 	}
 	if strconv.IntSize > 32 {
-		aboveMaxInt32 := int64(maxBackupOptionInt32)
+		aboveMaxInt32 := int64(maxServiceActionInt32)
 		aboveMaxInt32++
 		tests["factor exceeds int32"] = testCase{
 			database:   "/data/employee.fdb",
@@ -304,15 +304,19 @@ func newTestManager(t *testing.T) (*Manager, *fakeServiceConnection) {
 }
 
 type fakeServiceConnection struct {
-	opened           bool
-	closed           bool
-	expectedDatabase string
-	database         string
-	backupFile       string
-	options          fbconn.BackupOptions
-	connectionConfig *fbconn.Config
-	backupErr        error
-	closeErr         error
+	opened            bool
+	closed            bool
+	expectedDatabase  string
+	database          string
+	backupFile        string
+	backupOptions     fbconn.BackupOptions
+	restoreBackupFile string
+	restoreDatabase   string
+	restoreOptions    fbconn.RestoreOptions
+	connectionConfig  *fbconn.Config
+	backupErr         error
+	restoreErr        error
+	closeErr          error
 }
 
 func (c *fakeServiceConnection) Backup(
@@ -323,8 +327,20 @@ func (c *fakeServiceConnection) Backup(
 ) error {
 	c.database = database
 	c.backupFile = backupFile
-	c.options = options
+	c.backupOptions = options
 	return c.backupErr
+}
+
+func (c *fakeServiceConnection) Restore(
+	_ context.Context,
+	backupFile string,
+	database string,
+	options fbconn.RestoreOptions,
+) error {
+	c.restoreBackupFile = backupFile
+	c.restoreDatabase = database
+	c.restoreOptions = options
+	return c.restoreErr
 }
 
 func (c *fakeServiceConnection) Close(context.Context) error {

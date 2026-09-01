@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
+	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
 )
@@ -110,6 +111,22 @@ func TestInt128Transcode(t *testing.T) {
 			{Param: makeInt128(int64Max), Result: new(fbtype.Int128), Test: isExpectedInt128(int64Max, true)},
 			{Param: makeInt128(int64Min), Result: new(fbtype.Int128), Test: isExpectedInt128(int64Min, true)},
 			{Param: makeInt128(uint64Max), Result: new(fbtype.Int128), Test: isExpectedInt128(uint64Max, true)},
+			{
+				Param:  mustParseNumeric(t, "9223372036854775808.999"),
+				Result: new(big.Int),
+				Test:   isExpectedInt128(mustBigInt(t, "9223372036854775808"), true),
+			},
+			{
+				Param:  mustParseNumeric(t, "-9223372036854775809.999"),
+				Result: new(big.Int),
+				Test:   isExpectedInt128(mustBigInt(t, "-9223372036854775809"), true),
+			},
+			{
+				Param:  mustParseNumeric(t, "-0.999"),
+				Result: new(big.Int),
+				Test:   isExpectedInt128(big.NewInt(0), true),
+			},
+			{Param: fbtype.Numeric{}, Result: new(fbtype.Int128), Test: isExpectedInt128(nil, false)},
 			{Param: nil, Result: new(fbtype.Int128), Test: isExpectedInt128(nil, false)},
 		},
 	)
@@ -227,6 +244,247 @@ func TestInt128_ParseErrors(t *testing.T) {
 
 	_, err = fbtype.ParseInt128("")
 	require.Error(t, err)
+}
+
+func TestInt128CodecEncodeIntegerInputs(t *testing.T) {
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_INT128, 0, 16, 0)
+
+	tests := []struct {
+		name  string
+		value any
+		want  string
+	}{
+		{name: "int8", value: int8(-5), want: "-5"},
+		{name: "uint8", value: uint8(math.MaxUint8), want: "255"},
+		{name: "uint16", value: uint16(math.MaxUint16), want: "65535"},
+		{name: "uint32", value: uint32(math.MaxUint32), want: "4294967295"},
+		{name: "uint64", value: uint64(math.MaxUint64), want: "18446744073709551615"},
+		{name: "uint", value: uint(math.MaxUint), want: new(big.Int).SetUint64(uint64(math.MaxUint)).String()},
+		{name: "Int64Valuer", value: fbtype.Int8{Int64: math.MinInt64, Valid: true}, want: "-9223372036854775808"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf, err := m.Encode(typeMetadata, tt.value, nil)
+			require.NoError(t, err)
+			require.Len(t, buf, 16)
+
+			var got big.Int
+			err = m.Scan(typeMetadata, buf, &got)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got.String())
+		})
+	}
+
+	buf, err := m.Encode(typeMetadata, fbtype.Int8{}, nil)
+	require.NoError(t, err)
+	require.Nil(t, buf)
+}
+
+func TestInt128CodecEncodesNumericWithTruncation(t *testing.T) {
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_INT128, 0, 16, 0)
+
+	tests := []struct {
+		name  string
+		value fbtype.Numeric
+		want  string
+	}{
+		{name: "above int64", value: mustParseNumeric(t, "9223372036854775808.999"), want: "9223372036854775808"},
+		{name: "negative above int64", value: mustParseNumeric(t, "-9223372036854775809.999"), want: "-9223372036854775809"},
+		{name: "positive below one", value: mustParseNumeric(t, "0.999"), want: "0"},
+		{name: "negative above minus one", value: mustParseNumeric(t, "-0.999"), want: "0"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf, err := m.Encode(typeMetadata, tt.value, nil)
+			require.NoError(t, err)
+
+			var got big.Int
+			err = m.Scan(typeMetadata, buf, &got)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got.String())
+		})
+	}
+
+	buf, err := m.Encode(typeMetadata, fbtype.Numeric{}, nil)
+	require.NoError(t, err)
+	require.Nil(t, buf)
+}
+
+func TestInt128ArrayEncodingRejectsTypedNilValuerElements(t *testing.T) {
+	m := fbtype.NewMap()
+	arrayData, err := fbtype.NewArrayData(
+		fbproto.SQL_TYPE_INT128,
+		0,
+		16,
+		0,
+		[]map[string]int{{"Lower": 1, "Upper": 2}},
+	)
+	require.NoError(t, err)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_ARRAY, 0, 16, 0)
+	typeMetadata.SetArrayMetadata(arrayData)
+
+	validInt128 := fbtype.Int128{Int: *big.NewInt(42), Valid: true}
+	validNumeric := mustParseNumeric(t, "84")
+	validInt8 := fbtype.Int8{Int64: 126, Valid: true}
+	tests := []struct {
+		name  string
+		value any
+	}{
+		{name: "Int128Valuer", value: []*fbtype.Int128{&validInt128, nil}},
+		{name: "NumericValuer", value: []*fbtype.Numeric{&validNumeric, nil}},
+		{name: "Int64Valuer", value: []*fbtype.Int8{&validInt8, nil}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := m.Encode(typeMetadata, tt.value, nil)
+			require.ErrorContains(t, err, "cannot encode NULL array element at index 1")
+		})
+	}
+}
+
+func TestInt128ScanClearsDestinationOnError(t *testing.T) {
+	tooLarge := new(big.Int).Lsh(big.NewInt(1), 127)
+
+	tests := []struct {
+		name string
+		scan func(*fbtype.Int128) error
+	}{
+		{name: "invalid string", scan: func(dst *fbtype.Int128) error {
+			return dst.Scan("not-a-number")
+		}},
+		{name: "string out of range", scan: func(dst *fbtype.Int128) error {
+			return dst.Scan("170141183460469231731687303715884105728")
+		}},
+		{name: "big.Int out of range", scan: func(dst *fbtype.Int128) error {
+			return dst.Scan(tooLarge)
+		}},
+		{name: "*big.Int out of range", scan: func(dst *fbtype.Int128) error {
+			return dst.Scan(new(big.Int).Set(tooLarge))
+		}},
+		{name: "Int128 out of range", scan: func(dst *fbtype.Int128) error {
+			return dst.ScanInt128(makeInt128(tooLarge))
+		}},
+		{name: "unsupported source type", scan: func(dst *fbtype.Int128) error {
+			return dst.Scan(3.14)
+		}},
+		{name: "invalid JSON", scan: func(dst *fbtype.Int128) error {
+			return json.Unmarshal([]byte(`"not-a-number"`), dst)
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := makeInt128(big.NewInt(42))
+			err := tt.scan(&got)
+			require.Error(t, err)
+			require.False(t, got.Valid)
+			require.Equal(t, "0", got.Int.String())
+		})
+	}
+}
+
+func TestInt128RejectsOutOfRangeStructValues(t *testing.T) {
+	tooLarge := makeInt128(new(big.Int).Lsh(big.NewInt(1), 127))
+
+	_, err := tooLarge.Int128Value()
+	require.Error(t, err)
+
+	_, err = tooLarge.Value()
+	require.Error(t, err)
+
+	_, err = tooLarge.MarshalJSON()
+	require.Error(t, err)
+
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_INT128, 0, 16, 0)
+	_, err = m.Encode(typeMetadata, tooLarge, nil)
+	require.Error(t, err)
+}
+
+func TestInt128UnmarshalJSONWhitespaceNull(t *testing.T) {
+	got := makeInt128(big.NewInt(42))
+	err := json.Unmarshal([]byte(" null "), &got)
+	require.NoError(t, err)
+	require.False(t, got.Valid)
+}
+
+func TestInt128ScanPlansReportTargetTypeChanged(t *testing.T) {
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_INT128, 0, 16, 0)
+	src, err := m.Encode(typeMetadata, int64(42), nil)
+	require.NoError(t, err)
+
+	for _, tt := range []struct {
+		name   string
+		target any
+	}{
+		{name: "int8", target: new(int8)},
+		{name: "int16", target: new(int16)},
+		{name: "int32", target: new(int32)},
+		{name: "int64", target: new(int64)},
+		{name: "int", target: new(int)},
+		{name: "uint8", target: new(uint8)},
+		{name: "uint16", target: new(uint16)},
+		{name: "uint32", target: new(uint32)},
+		{name: "uint64", target: new(uint64)},
+		{name: "uint", target: new(uint)},
+		{name: "string", target: new(string)},
+		{name: "big.Int", target: new(big.Int)},
+		{name: "Int128Scanner", target: new(fbtype.Int128)},
+		{name: "TextScanner", target: new(fbtype.Text)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			plan := m.PlanScan(typeMetadata, tt.target)
+			require.NotNil(t, plan)
+
+			var wrongTarget float64
+			err := plan.Scan(src, &wrongTarget)
+			require.ErrorIs(t, err, fbtype.ErrScanTargetTypeChanged)
+		})
+	}
+}
+
+func TestInt128ScanNullErrorsUseTargetType(t *testing.T) {
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_INT128, 0, 16, 0)
+
+	var i32 int32
+	err := m.PlanScan(typeMetadata, &i32).Scan(nil, &i32)
+	require.ErrorContains(t, err, "cannot scan NULL into *int32")
+	require.NotContains(t, err.Error(), "*int64")
+
+	var u32 uint32
+	err = m.PlanScan(typeMetadata, &u32).Scan(nil, &u32)
+	require.ErrorContains(t, err, "cannot scan NULL into *uint32")
+	require.NotContains(t, err.Error(), "*uint64")
+}
+
+func TestInt128ScanRangeErrorsUseTargetType(t *testing.T) {
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_INT128, 0, 16, 0)
+
+	huge := new(big.Int).Lsh(big.NewInt(1), 100)
+	src, err := m.Encode(typeMetadata, makeInt128(huge), nil)
+	require.NoError(t, err)
+
+	var i32 int32
+	err = m.Scan(typeMetadata, src, &i32)
+	require.ErrorContains(t, err, "value is out of range for int32")
+	require.NotContains(t, err.Error(), "int64")
+
+	negativeOne := big.NewInt(-1)
+	src, err = m.Encode(typeMetadata, makeInt128(negativeOne), nil)
+	require.NoError(t, err)
+
+	var u32 uint32
+	err = m.Scan(typeMetadata, src, &u32)
+	require.ErrorContains(t, err, "value is out of range for uint32")
+	require.NotContains(t, err.Error(), "uint64")
 }
 
 func isExpectedInt128(expected *big.Int, valid bool) func(any) bool {

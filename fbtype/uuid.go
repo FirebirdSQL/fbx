@@ -144,32 +144,6 @@ func (UUIDCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) Encode
 	return encodePlanUUIDCodecTextUUIDValuer{}
 }
 
-type encodePlanUUIDCodecBinaryUUIDValuer struct{}
-
-func (encodePlanUUIDCodecBinaryUUIDValuer) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	uuid, err := value.(UUIDValuer).UUIDValue()
-	if err != nil {
-		return nil, err
-	}
-
-	if !uuid.Valid {
-		return nil, nil
-	}
-
-	return append(buf, uuid.Bytes[:]...), nil
-}
-
-type encodePlanUUIDCodecBinaryString struct{}
-
-func (encodePlanUUIDCodecBinaryString) Encode(value any, buf []byte) ([]byte, error) {
-	str := value.(string)
-	uuid, err := parseUUID(str)
-	if err != nil {
-		return nil, err
-	}
-	return append(buf, uuid[:]...), nil
-}
-
 type encodePlanUUIDCodecTextUUIDValuer struct{}
 
 func (encodePlanUUIDCodecTextUUIDValuer) Encode(value any, buf []byte) (newBuf []byte, err error) {

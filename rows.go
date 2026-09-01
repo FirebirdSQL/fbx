@@ -120,10 +120,13 @@ func (r *connRow) Scan(dest ...any) (err error) {
 
 	rows.fieldDescs = append(rows.fieldDescs[:0], rows.FieldDescriptions()...)
 	values := rows.values
-	rows.Scan(dest...)
+	scanErr := rows.Scan(dest...)
 	rows.Close()
 	rows.resultReader = nil
 	rows.values = values
+	if scanErr != nil {
+		return scanErr
+	}
 	return rows.Err()
 }
 
@@ -170,16 +173,6 @@ func (rows *baseRows) Close() {
 		return
 	}
 
-	if rows.boundStatement != nil {
-		if rows.ownsStatement {
-			ctx, cancel := cleanupContext(rows.ctx)
-			defer cancel()
-			defer rows.boundStatement.Deallocate(ctx)
-		} else {
-			defer rows.boundStatement.CloseCursor(rows.ctx)
-		}
-	}
-
 	rows.closed = true
 
 	if rows.resultReader != nil {
@@ -191,6 +184,20 @@ func (rows *baseRows) Close() {
 		if rows.err == nil {
 			rows.err = closeErr
 		}
+	}
+
+	var statementErr error
+	if rows.boundStatement != nil {
+		if rows.ownsStatement {
+			ctx, cancel := cleanupContext(rows.ctx)
+			statementErr = rows.boundStatement.Deallocate(ctx)
+			cancel()
+		} else {
+			statementErr = rows.boundStatement.CloseCursor(rows.ctx)
+		}
+	}
+	if rows.err == nil {
+		rows.err = statementErr
 	}
 
 	if rows.err != nil && rows.conn != nil && rows.sql != "" {

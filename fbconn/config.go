@@ -28,21 +28,24 @@ const DefaultFetchBatchSize = 400
 // Config contains settings used to establish a connection to a Firebird/RedDatabase server. It must be created by [ParseConfig] (or ParseConfigWithOptions). A
 // manually initialized Config will cause ConnectConfig to panic.
 type Config struct {
-	Host                       string
-	Port                       uint16
-	Database                   string
-	CreateDatabase             bool
-	User                       string
-	Role                       string
-	SystemUser                 string
-	SystemHost                 string
-	Password                   string
-	ConnectTimeout             time.Duration
-	DialFunc                   DialFunc   // e.g. net.Dialer.DialContext
-	LookupFunc                 LookupFunc // e.g. net.Resolver.LookupHost
-	BuildFrontend              BuildFrontendFunc
-	AuthPluginList             []string
-	WireCrypt                  bool
+	Host           string
+	Port           uint16
+	Database       string
+	CreateDatabase bool
+	User           string
+	Role           string
+	SystemUser     string
+	SystemHost     string
+	Password       string
+	ConnectTimeout time.Duration
+	DialFunc       DialFunc   // e.g. net.Dialer.DialContext
+	LookupFunc     LookupFunc // e.g. net.Resolver.LookupHost
+	BuildFrontend  BuildFrontendFunc
+	AuthPluginList []string
+	WireCrypt      bool
+	// WireCompression requests zlib wire compression.
+	// The connection remains uncompressed if the server declines the request.
+	WireCompression            bool
 	Encoding                   string
 	DPB                        []byte
 	ClientVersion              string
@@ -119,6 +122,8 @@ var connStringKeyAliases = map[string]string{
 	"max_blob_cache_size":          "max_blob_cache_size",
 	"isc_dpb_max_inline_blob_size": "max_inline_blob_size",
 	"isc_dpb_max_blob_cache_size":  "max_blob_cache_size",
+	"wire_compress":                "wire_compression",
+	"wireCompression":              "wire_compression",
 }
 
 func canonicalConnStringKey(k string) string {
@@ -234,7 +239,7 @@ func NetworkAddress(host string, port uint16) (network, address string) {
 // ParseConfig recognizes the following environment variables (and their equivalents in the connection string):
 //
 //	FBHOST, FBPORT, FBDATABASE, FBUSER, FBPASSWORD
-//	FBAPPNAME, FBTZ, FBCONNECT_TIMEOUT, FBFETCH_BATCH_SIZE
+//	FBAPPNAME, FBTZ, FBCONNECT_TIMEOUT, FBFETCH_BATCH_SIZE, FBWIRECOMPRESSION
 //	FBTARGETSESSIONATTRS, FBOPTIONS
 //
 // Any unrecognized options are preserved in Config.RuntimeParams.
@@ -309,6 +314,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		OnFbError:                  defaultOnFbError,
 		AuthPluginList:             pluginList,
 		WireCrypt:                  convertToBool(settings["wire_crypt"], true),
+		WireCompression:            convertToBool(settings["wire_compression"], false),
 		SystemUser:                 settings["system_user"],
 		SystemHost:                 settings["system_host"],
 		ClientVersion:              settings["client_version"],
@@ -381,6 +387,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		"auth_plugin_list":              {},
 		"system_user":                   {},
 		"wire_crypt":                    {},
+		"wire_compression":              {},
 		"system_host":                   {},
 		"client_version":                {},
 		"encoding":                      {},
@@ -485,6 +492,7 @@ func parseEnvSettings() map[string]string {
 		"FBCONNECT_TIMEOUT":    "connect_timeout",
 		"FBTARGETSESSIONATTRS": "target_session_attrs",
 		"FBFETCH_BATCH_SIZE":   "fetch_batch_size",
+		"FBWIRECOMPRESSION":    "wire_compression",
 		"FBTZ":                 "timezone",
 		"FBOPTIONS":            "options",
 		"FBSEARCHPATH":         "search_path",
@@ -752,7 +760,7 @@ func checkSessionAttrIsPrimary(ctx context.Context, fbConn *FbConn) (bool, error
 		return false, nil
 	}
 
-	return false, errors.New("Replication is not configured")
+	return false, errors.New("replication is not configured")
 }
 
 // ValidateConnectTargetSessionAttrsReplica is a [ValidateConnectFunc] that implements
@@ -765,7 +773,7 @@ func ValidateConnectTargetSessionAttrsReplica(ctx context.Context, fbConn *FbCon
 	}
 
 	if isPrimary {
-		return errors.New("Not replica")
+		return errors.New("not replica")
 	}
 
 	return nil
@@ -781,7 +789,7 @@ func ValidateConnectTargetSessionAttrsPrimary(ctx context.Context, fbConn *FbCon
 	}
 
 	if !isPrimary {
-		return errors.New("Not primary")
+		return errors.New("not primary")
 	}
 
 	return nil
@@ -797,7 +805,7 @@ func ValidateConnectTargetSessionAttrsPreferReplica(ctx context.Context, fbConn 
 	}
 
 	if isPrimary {
-		return &NotPreferredError{err: errors.New("Not replica")}
+		return &NotPreferredError{err: errors.New("not replica")}
 	}
 
 	return nil

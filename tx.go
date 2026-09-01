@@ -30,13 +30,15 @@ const (
 	ReadOnly  TxAccessMode = "read only"
 )
 
-// TxOptions are transaction modes within a transaction block
+// TxOptions configures the modes used to start a transaction.
 type TxOptions struct {
 	IsoLevel   TxIsoLevel
 	AccessMode TxAccessMode
 	// LockTimeout controls lock wait timeout for WAIT transactions.
-	// Zero means server/database default behavior.
-	// Value must be a positive whole number of seconds in range [1..32767].
+	// Zero means no explicit lock timeout is encoded.
+	// When other options require a TPB, GetTPB still encodes WAIT because it is
+	// the Firebird/RDB default lock resolution mode.
+	// Non-zero values must be positive whole seconds in range [1..32767].
 	LockTimeout time.Duration
 }
 
@@ -83,6 +85,12 @@ func (c *Conn) beginTxTPB(ctx context.Context, tpb []byte) (Tx, error) {
 	}, nil
 }
 
+// GetTPB returns a Firebird transaction parameter block for txOptions.
+//
+// Empty TxOptions returns nil, allowing the server to use its default
+// transaction characteristics: READ WRITE, WAIT, and SNAPSHOT isolation.
+// Specifying only AccessMode preserves the default isolation level. Specifying
+// only IsoLevel uses READ WRITE, matching the Firebird/RDB default access mode.
 func (txOptions TxOptions) GetTPB() ([]byte, error) {
 	lockTimeoutSeconds, err := normalizeTxLockTimeout(txOptions.LockTimeout)
 	if err != nil {
@@ -96,26 +104,22 @@ func (txOptions TxOptions) GetTPB() ([]byte, error) {
 	}
 
 	tpb := fbproto.NewTPBWriterV3()
-	mode := txOptions.AccessMode
-	level := txOptions.IsoLevel
-	if mode == "" {
-		mode = ReadWrite
-	}
-	if level == "" {
-		level = ReadCommitted
-	}
-
-	if txOptions.AccessMode != "" || txOptions.IsoLevel != "" {
-		switch mode {
+	if txOptions.AccessMode != "" {
+		switch txOptions.AccessMode {
 		case ReadOnly:
 			tpb.PutTag(fbproto.Isc_tpb_read)
 		case ReadWrite:
 			tpb.PutTag(fbproto.Isc_tpb_write)
 		default:
-			return nil, fmt.Errorf("unknown transaction access mode: %s", mode)
+			return nil, fmt.Errorf("unknown transaction access mode: %s", txOptions.AccessMode)
 		}
+	} else if txOptions.IsoLevel != "" {
+		// Preserve the established isolation-only behavior.
+		tpb.PutTag(fbproto.Isc_tpb_write)
+	}
 
-		switch level {
+	if txOptions.IsoLevel != "" {
+		switch txOptions.IsoLevel {
 		case Serializable:
 			tpb.PutTag(fbproto.Isc_tpb_consistency)
 		case RepeatableRead:
@@ -128,7 +132,7 @@ func (txOptions TxOptions) GetTPB() ([]byte, error) {
 				tpb.PutTag(fbproto.Isc_tpb_rec_version)
 			}
 		default:
-			return nil, fmt.Errorf("unknown transaction iso level: %s", level)
+			return nil, fmt.Errorf("unknown transaction iso level: %s", txOptions.IsoLevel)
 		}
 	}
 

@@ -156,7 +156,7 @@ func TryWrapDerefPointerEncodePlan(value any) (plan WrappedEncodePlanNextSetter,
 		return nil, nil, false
 	}
 
-	if valueType := reflect.TypeOf(value); valueType != nil && valueType.Kind() == reflect.Ptr {
+	if valueType := reflect.TypeOf(value); valueType != nil && valueType.Kind() == reflect.Pointer {
 		return &derefPointerEncodePlan{}, reflect.New(valueType.Elem()).Elem().Interface(), true
 	}
 
@@ -650,6 +650,20 @@ func (m *Map) Encode(typeMetadata TypeMetadata, value any, buf []byte) (newBuf [
 
 var valuerReflectType = reflect.TypeFor[driver.Valuer]()
 
+func isNilValue(value any) bool {
+	if value == nil {
+		return true
+	}
+
+	refVal := reflect.ValueOf(value)
+	switch refVal.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Map, reflect.Pointer, reflect.UnsafePointer, reflect.Interface, reflect.Slice:
+		return refVal.IsNil()
+	default:
+		return false
+	}
+}
+
 // isNilDriverValuer reports whether value is nil and whether a nil
 // driver.Valuer should still have Value called.
 func isNilDriverValuer(value any) (isNil bool, callNilDriverValuer bool) {
@@ -660,13 +674,13 @@ func isNilDriverValuer(value any) (isNil bool, callNilDriverValuer bool) {
 	refVal := reflect.ValueOf(value)
 	kind := refVal.Kind()
 	switch kind {
-	case reflect.Chan, reflect.Func, reflect.Map, reflect.Ptr, reflect.UnsafePointer, reflect.Interface, reflect.Slice:
+	case reflect.Chan, reflect.Func, reflect.Map, reflect.Pointer, reflect.UnsafePointer, reflect.Interface, reflect.Slice:
 		if !refVal.IsNil() {
 			return false, false
 		}
 
 		if _, ok := value.(driver.Valuer); ok {
-			if kind == reflect.Ptr {
+			if kind == reflect.Pointer {
 				// Call Value only when driver.Valuer is implemented on *T.
 				return true, !refVal.Type().Elem().Implements(valuerReflectType)
 			} else {

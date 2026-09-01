@@ -24,6 +24,33 @@ Pass BackupOptions to request verbose output or change backup behavior:
 		ParallelWorkers: 4,
 	})
 
+Restore a server-side backup into a new database:
+
+	err = manager.Restore(ctx, backupFile, database, fbservice.RestoreOptions{
+		Output:  os.Stdout,
+		Verbose: true,
+	})
+
+Service output can also be captured in memory:
+
+	var output bytes.Buffer
+	err = manager.Restore(ctx, backupFile, database, fbservice.RestoreOptions{
+		Output:  &output,
+		Verbose: true,
+	})
+
+Set Replace explicitly to replace an existing database:
+
+	err = manager.Restore(ctx, backupFile, database, fbservice.RestoreOptions{
+		Replace: true,
+	})
+
+Set AccessMode to override the access mode recorded in the backup:
+
+	err = manager.Restore(ctx, backupFile, database, fbservice.RestoreOptions{
+		AccessMode: fbservice.RestoreAccessModeReadOnly,
+	})
+
 Manager does not write to standard output unless an operation explicitly
 receives os.Stdout as its output.
 */

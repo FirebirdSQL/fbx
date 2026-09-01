@@ -253,10 +253,12 @@ func (m *AuthManager) BeginHandshake() *HandshakeRequest {
 	if plugin == nil {
 		return nil
 	}
+	initialData := plugin.InitialClientData()
+	m.lastAuthSpecific = cloneBytes(initialData)
 	return &HandshakeRequest{
 		PluginName:   plugin.Name(),
 		PluginList:   m.pluginNames(),
-		SpecificData: splitSpecificData(plugin.InitialClientData()),
+		SpecificData: splitSpecificData(initialData),
 	}
 }
 

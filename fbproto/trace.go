@@ -107,6 +107,8 @@ func (t *tracer) traceResponse(sender byte, msg ServerMessage) {
 		t.writeTrace(sender, "Reject", nil)
 	case *OpContAuth:
 		t.traceContAuthMessage(sender, msg)
+	case *OpAccept:
+		t.tracePlainAcceptMessage(sender, msg)
 	case *OpCondAccept:
 		t.traceCondAcceptMessage(sender, msg)
 	case *OpDataAccept:
@@ -411,6 +413,13 @@ func (t *tracer) traceCondAcceptMessage(sender byte, op *OpCondAccept) {
 	t.traceAcceptMessage(sender, "CondAccept", op)
 }
 
+func (t *tracer) tracePlainAcceptMessage(sender byte, op *OpAccept) {
+	t.writeTrace(sender, "Accept", func() {
+		fmt.Fprintf(t.buf, " ver=%d arch=%d type=0x%x", op.Version, op.Architecture, op.Type)
+		fmt.Fprintf(t.buf, " compress=%t", op.Compress)
+	})
+}
+
 func (t *tracer) traceDataAcceptMessage(sender byte, op *OpDataAccept) {
 	t.traceAcceptMessage(sender, "DataAccept", &op.OpCondAccept)
 }
@@ -576,7 +585,11 @@ func (t *tracer) writeTrace(sender byte, msgType string, writeDetails func()) {
 	}
 
 	t.buf.WriteByte('\n')
-	t.buf.WriteTo(t.w)
+	if _, err := t.buf.WriteTo(t.w); err != nil {
+		// Trace callbacks cannot return an error. Stop writing after the first
+		// failure instead of repeatedly invoking a broken writer.
+		t.w = io.Discard
+	}
 }
 
 func traceSingleQuotedString(buf []byte) string {

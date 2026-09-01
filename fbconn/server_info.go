@@ -23,7 +23,7 @@ func (s InfoTruncationError) Error() string {
 	if s.Index > 0 {
 		return fmt.Sprintf("info truncated at field with index %d", s.Index)
 	}
-	return fmt.Sprintf("info truncated")
+	return "info truncated"
 }
 
 func NewServerInfoBufferReader(buf []byte) *ServerInfoBufferReader {

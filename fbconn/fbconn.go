@@ -102,9 +102,8 @@ type FbConn struct {
 	eventErrHandler func(error)
 
 	// Reusable / preallocated resources
-	contextWatcher    *ctxwatch.ContextWatcher
-	contextHandler    ctxwatch.Handler
-	fieldDescriptions [16]FieldDescription
+	contextWatcher *ctxwatch.ContextWatcher
+	contextHandler ctxwatch.Handler
 
 	cleanupDone         chan struct{}
 	Encoding            *fbproto.Encoding
@@ -225,7 +224,7 @@ func ConnectConfig(ctx context.Context, config *Config) (*FbConn, error) {
 	if config.AfterConnect != nil {
 		err := config.AfterConnect(ctx, fbConn)
 		if err != nil {
-			fbConn.conn.Close()
+			_ = fbConn.conn.Close()
 			return nil, &ConnectError{Config: config, err: fmt.Errorf("AfterConnect error: %w", err)}
 		}
 	}
@@ -289,7 +288,7 @@ func DropDatabaseConfig(ctx context.Context, config *Config) error {
 // When respond is false, the generated reply remains in authManager for the
 // following attach DPB instead of being sent in op_cont_auth.
 func (fbConn *FbConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *auth.AuthManager, respond bool) error {
-	if err := fbConn.handleAcceptMetadata(msg, authManager); err != nil {
+	if err := fbConn.handleAcceptMetadata(&msg.AcceptMetadata, msg.ServerKeys, authManager); err != nil {
 		return err
 	}
 
@@ -310,18 +309,23 @@ func (fbConn *FbConn) handleCondAccept(msg *fbproto.OpCondAccept, authManager *a
 
 // handleAcceptMetadata records the negotiated protocol version, wire-encryption
 // keys, and the server-supported authentication plugin list.
-func (fbConn *FbConn) handleAcceptMetadata(msg *fbproto.OpCondAccept, authManager *auth.AuthManager) error {
-	if msg.Version != 0 {
-		fbConn.protocolFeatures = ProtocolFeaturesForVersion(msg.Version)
-		fbConn.protocolVersion = msg.Version & fbproto.ProtocolMask
+func (fbConn *FbConn) handleAcceptMetadata(metadata *fbproto.AcceptMetadata, serverKeys []byte, authManager *auth.AuthManager) error {
+	if metadata.Version != 0 {
+		fbConn.protocolFeatures = ProtocolFeaturesForVersion(metadata.Version)
+		fbConn.protocolVersion = metadata.Version & fbproto.ProtocolMask
+	}
+	if metadata.Compress && !fbConn.client.CompressionEnabled() {
+		if err := fbConn.client.EnableCompression(); err != nil {
+			return fmt.Errorf("failed to enable wire compression: %w", err)
+		}
 	}
 
 	if fbConn.wireCrypt != nil {
-		if err := fbConn.wireCrypt.AddServerKeys(msg.ServerKeys); err != nil {
+		if err := fbConn.wireCrypt.AddServerKeys(serverKeys); err != nil {
 			return err
 		}
 	}
-	if err := authManager.RestrictToServerPlugins(msg.ServerKeys); err != nil {
+	if err := authManager.RestrictToServerPlugins(serverKeys); err != nil {
 		return err
 	}
 	return nil
@@ -401,7 +405,7 @@ func (fbConn *FbConn) finishAttachAuth(config *Config, authManager *auth.AuthMan
 			}
 			continue
 		case *fbproto.OpCondAccept:
-			if err := fbConn.handleAcceptMetadata(m, authManager); err != nil {
+			if err := fbConn.handleAcceptMetadata(&m.AcceptMetadata, m.ServerKeys, authManager); err != nil {
 				return fmt.Errorf("authentication failed: %w", err)
 			}
 			if err := fbConn.handlePostAttachAuthChallenge(authManager, m.PluginName, m.Data, nil); err != nil {
@@ -412,7 +416,7 @@ func (fbConn *FbConn) finishAttachAuth(config *Config, authManager *auth.AuthMan
 			}
 			continue
 		case *fbproto.OpDataAccept:
-			if err := fbConn.handleAcceptMetadata(&m.OpCondAccept, authManager); err != nil {
+			if err := fbConn.handleAcceptMetadata(&m.AcceptMetadata, m.ServerKeys, authManager); err != nil {
 				return fmt.Errorf("authentication failed: %w", err)
 			}
 			if m.AuthComplete {
@@ -466,6 +470,11 @@ func (fbConn *FbConn) enableWireCrypt(sessionKey []byte) (*wirecrypt.InitResult,
 	if err := fbConn.client.WriteMessage(&fbproto.OpCrypt{Plugin: initInfo.Identifier.Plugin, Encoding: fbConn.Encoding}); err != nil {
 		return nil, err
 	}
+	// op_crypt itself must use the current (compressed, but not encrypted) transport.
+	// Flush it all the way to the socket before installing the cipher below zlib.
+	if err := fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+		return nil, err
+	}
 	codec, err := wirecrypt.NewSymmetricCodec(initInfo.Identifier.Plugin, sessionKey, initInfo.Nonce)
 	if err != nil {
 		return nil, err
@@ -475,16 +484,6 @@ func (fbConn *FbConn) enableWireCrypt(sessionKey []byte) (*wirecrypt.InitResult,
 	fbConn.wireCrypt.ClearServerKeys()
 
 	return initInfo, nil
-}
-
-// shouldRespondToCondAccept reports whether authentication must continue with
-// op_cont_auth before attach. A challenge or wire-encryption key requires a
-// response; an empty known-plugins response can proceed to attach-through-DPB.
-func shouldRespondToCondAccept(msg *fbproto.OpCondAccept) bool {
-	if msg == nil {
-		return true
-	}
-	return len(msg.Data) > 0 || hasWireCryptKeys(msg.ServerKeys)
 }
 
 // shouldRespondToDataAccept reports whether op_accept_data requires another
@@ -731,12 +730,12 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 	userConfig := auth.UserConfig{User: config.User, Password: config.Password, Certificate: config.Certificate, CertificatePIN: config.CertificatePIN}
 	authManager, err := auth.NewAuthManager(userConfig, config.AuthPluginList)
 	if err != nil {
-		fbConn.conn.Close()
+		_ = fbConn.conn.Close()
 		return nil, newPerDialConnectError("authentication setup failed", err)
 	}
 	initialHandshake := authManager.BeginHandshake()
 	if initialHandshake == nil {
-		fbConn.conn.Close()
+		_ = fbConn.conn.Close()
 		return nil, newPerDialConnectError("authentication setup failed", fmt.Errorf("no authentication plugins available"))
 	}
 
@@ -757,6 +756,7 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 		AuthSpecificData: initialHandshake.SpecificData,
 		Options:          nil,
 		WireCrypt:        config.WireCrypt,
+		Compress:         config.WireCompression,
 		Encoding:         fbConn.Encoding,
 	}
 	if target == connectTargetDatabase && config.CreateDatabase {
@@ -764,7 +764,7 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 	}
 
 	if err = fbConn.client.WriteMessage(&opConnect); err != nil {
-		fbConn.conn.Close()
+		_ = fbConn.conn.Close()
 		return nil, newPerDialConnectError("failed to send opConnect", err)
 	}
 
@@ -775,46 +775,50 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 connectLoop:
 	for {
 		if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
-			fbConn.conn.Close()
+			_ = fbConn.conn.Close()
 			return nil, newPerDialConnectError("failed to flush opConnect", err)
 		}
 
 		msg, err := fbConn.receiveMessage()
 		if err != nil {
-			fbConn.conn.Close()
+			_ = fbConn.conn.Close()
 			return nil, newPerDialConnectError("authentication failed", err)
 		}
 
 		switch msg := msg.(type) {
+		case *fbproto.OpAccept:
+			if err := fbConn.handleAcceptMetadata(&msg.AcceptMetadata, nil, authManager); err != nil {
+				_ = fbConn.conn.Close()
+				return nil, newPerDialConnectError("authentication failed", err)
+			}
+			break connectLoop
 		case *fbproto.OpContAuth:
 			fake := &fbproto.OpCondAccept{Encoding: fbConn.Encoding}
 			fake.PluginName = msg.PluginName
 			fake.Data = msg.AuthData
 			fake.ServerKeys = msg.Keys
 			if err := fbConn.handleCondAccept(fake, authManager, true); err != nil {
-				fbConn.conn.Close()
+				_ = fbConn.conn.Close()
 				return nil, newPerDialConnectError("authentication failed", err)
 			}
 			continue connectLoop
 		case *fbproto.OpCondAccept:
-			respond := shouldRespondToCondAccept(msg)
-			if err := fbConn.handleCondAccept(msg, authManager, respond); err != nil {
-				fbConn.conn.Close()
+			// op_cond_accept always requests an authentication continuation,
+			// including an empty challenge that selects another plugin. The
+			// exchange must finish here so wire encryption starts before attach.
+			if err := fbConn.handleCondAccept(msg, authManager, true); err != nil {
+				_ = fbConn.conn.Close()
 				return nil, newPerDialConnectError("authentication failed", err)
-			}
-			if !respond {
-				break connectLoop
 			}
 			continue connectLoop
 		case *fbproto.OpResponse:
 			if pendingCryptAck {
 				// This is the ack for op_crypt; consume it and finish handshake
-				pendingCryptAck = false
 				break connectLoop
 			}
 			continueLoop, err := fbConn.handleAuthResponse(msg, config, authManager)
 			if err != nil {
-				fbConn.conn.Close()
+				_ = fbConn.conn.Close()
 				return nil, newPerDialConnectError("authentication failed", err)
 			}
 			if continueLoop {
@@ -825,8 +829,8 @@ connectLoop:
 			break connectLoop
 		case *fbproto.OpDataAccept:
 			if msg.AuthComplete {
-				if err := fbConn.handleAcceptMetadata(&msg.OpCondAccept, authManager); err != nil {
-					fbConn.conn.Close()
+				if err := fbConn.handleAcceptMetadata(&msg.AcceptMetadata, msg.ServerKeys, authManager); err != nil {
+					_ = fbConn.conn.Close()
 					return nil, newPerDialConnectError("authentication failed", err)
 				}
 				authManager.SetAuthComplete(true)
@@ -834,7 +838,7 @@ connectLoop:
 			}
 			respond := shouldRespondToDataAccept(msg)
 			if err := fbConn.handleCondAccept(&msg.OpCondAccept, authManager, respond); err != nil {
-				fbConn.conn.Close()
+				_ = fbConn.conn.Close()
 				return nil, newPerDialConnectError("authentication failed", err)
 			}
 			if !respond {
@@ -842,10 +846,10 @@ connectLoop:
 			}
 			continue connectLoop
 		case *fbproto.ErrorResponse:
-			fbConn.conn.Close()
+			_ = fbConn.conn.Close()
 			return nil, newPerDialConnectError("authentication failed", ErrorResponseToFbError(msg))
 		default:
-			fbConn.conn.Close()
+			_ = fbConn.conn.Close()
 			return nil, newPerDialConnectError("authentication failed", fmt.Errorf("unexpected message type %T", msg))
 		}
 	}
@@ -856,7 +860,7 @@ connectLoop:
 
 	if target == connectTargetService {
 		if err := fbConn.attachService(config, authManager); err != nil {
-			fbConn.conn.Close()
+			_ = fbConn.conn.Close()
 			return nil, newPerDialConnectError("opServiceAttach failed", err)
 		}
 		fbConn.status = connStatusIdle
@@ -941,12 +945,12 @@ connectLoop:
 	if err = fbConn.withWriteLockAndFlush(func() error {
 		return fbConn.client.WriteMessage(attachOrCreate)
 	}); err != nil {
-		fbConn.conn.Close()
+		_ = fbConn.conn.Close()
 		return nil, newPerDialConnectError("failed to flush "+attachAction, err)
 	}
 
 	if err := fbConn.finishAttachAuth(config, authManager, attachAction); err != nil {
-		fbConn.conn.Close()
+		_ = fbConn.conn.Close()
 		return nil, newPerDialConnectError(attachAction+" failed", err)
 	}
 
@@ -959,7 +963,7 @@ connectLoop:
 	}, fbConn.parseDatabaseInfo)
 
 	if err != nil {
-		fbConn.conn.Close()
+		_ = fbConn.conn.Close()
 		return nil, newPerDialConnectError("error while trying to get database info", err)
 	}
 
@@ -968,7 +972,7 @@ connectLoop:
 		err = config.ValidateConnect(ctx, fbConn)
 		if err != nil {
 			if _, ok := err.(*NotPreferredError); !ignoreNotPreferredErr || !ok {
-				fbConn.conn.Close()
+				_ = fbConn.conn.Close()
 				return nil, newPerDialConnectError("ValidateConnect failed", err)
 			}
 		}
@@ -1108,7 +1112,7 @@ func (fbConn *FbConn) peekMessage() (fbproto.ServerMessage, error) {
 		// Close on anything other than timeout error - everything else is fatal
 		var netErr net.Error
 		isNetErr := errors.As(err, &netErr)
-		if !(isNetErr && netErr.Timeout()) {
+		if !isNetErr || !netErr.Timeout() {
 			fbConn.asyncClose()
 		}
 
@@ -1203,10 +1207,15 @@ func (fbConn *FbConn) Client() *fbproto.Client {
 	return fbConn.client
 }
 
+// WireCompressionEnabled reports whether wire compression was negotiated with the server.
+func (fbConn *FbConn) WireCompressionEnabled() bool {
+	return fbConn != nil && fbConn.client != nil && fbConn.client.CompressionEnabled()
+}
+
 // Close closes a connection. It is safe to call Close on an already closed connection. Close attempts a clean close by
 // sending the exit message to Firebird/RedDatabase server. However, this could block so ctx is available to limit the time to wait. The
 // underlying net.Conn.Close() will always be called regardless of any other errors.
-func (fbConn *FbConn) Close(ctx context.Context) error {
+func (fbConn *FbConn) Close(ctx context.Context) (err error) {
 	fbConn.statusMu.Lock()
 	if fbConn.status == connStatusClosed {
 		fbConn.statusMu.Unlock()
@@ -1218,7 +1227,10 @@ func (fbConn *FbConn) Close(ctx context.Context) error {
 	fbConn.closeEventChannel()
 
 	defer fbConn.closeCleanupDone()
-	defer fbConn.conn.Close()
+	defer func() {
+		err = errors.Join(err, fbConn.conn.Close())
+		fbConn.client.WaitForCompressionRead()
+	}()
 
 	if ctx != context.Background() {
 		// Close may be called while a cancellable query is in progress. This will most often be triggered by panic when
@@ -1230,16 +1242,21 @@ func (fbConn *FbConn) Close(ctx context.Context) error {
 		defer fbConn.contextWatcher.Unwatch()
 	}
 
-	// Ignore any errors sending close messages; the underlying connection is closed below.
-	_ = fbConn.withWriteLockAndFlush(func() error {
-		if err := fbConn.client.WriteMessage(&fbproto.OpDetach{}); err != nil {
-			return err
+	// Ignore errors while terminating the protocol; the underlying connection
+	// is closed below regardless of whether the server accepted the messages.
+	_ = fbConn.withWriteLock(func() error {
+		terminateErr := fbConn.client.WriteMessage(&fbproto.OpDetach{})
+		if terminateErr == nil {
+			terminateErr = fbConn.client.WriteMessage(&fbproto.OpDisconnect{})
 		}
-		return fbConn.client.WriteMessage(&fbproto.OpDisconnect{})
+		if terminateErr == nil {
+			terminateErr = fbConn.flushWithPotentialWriteReadDeadlockLocked()
+		}
+		return errors.Join(terminateErr, fbConn.client.CloseCompression())
 	})
 	// Firebird replies to op_detach, but op_disconnect is terminal and has no response.
 	// Close is best-effort, so it closes the socket instead of waiting for detach acknowledgement.
-	return fbConn.conn.Close()
+	return nil
 }
 
 // DropDatabase drops the currently attached database and closes the connection.
@@ -1270,9 +1287,13 @@ func (fbConn *FbConn) DropDatabase(ctx context.Context) (err error) {
 		}
 		fbConn.status = connStatusClosed
 		fbConn.clearAllInlineBlobCache()
+		compressionErr := fbConn.withWriteLock(func() error {
+			return fbConn.client.CloseCompression()
+		})
 		closeErr := fbConn.conn.Close()
+		fbConn.client.WaitForCompressionRead()
 		fbConn.closeCleanupDone()
-		err = errors.Join(err, closeErr)
+		err = errors.Join(err, closeErr, compressionErr)
 	}()
 
 	dropStarted = true
@@ -1312,7 +1333,11 @@ func (fbConn *FbConn) asyncClose() {
 
 	go func() {
 		defer fbConn.closeCleanupDone()
-		defer fbConn.conn.Close()
+		_ = fbConn.conn.Close()
+		_ = fbConn.withWriteLock(func() error {
+			return fbConn.client.CloseCompression()
+		})
+		fbConn.client.WaitForCompressionRead()
 	}()
 }
 
@@ -1765,7 +1790,7 @@ func (fbConn *FbConn) ExecImmediateTx(ctx context.Context, tx *FBTransaction, sq
 	}
 	fbConn.unlock()
 	if tx != nil && tx == fbConn.internalTransaction && fbConn.config.Autocommit && !fbConn.explicitTransaction {
-		tx.Commit(ctx)
+		return tx.Commit(ctx)
 	}
 
 	return nil
@@ -2664,7 +2689,7 @@ func (rr *ResultReader) concludeCommand(queryStatus QueryStatus, err error) {
 // EscapeString returns s with each single quote doubled for use inside a
 // Firebird string literal. It does not add the surrounding single quotes.
 func (fbConn *FbConn) EscapeString(s string) (string, error) {
-	return strings.Replace(s, "'", "''", -1), nil
+	return strings.ReplaceAll(s, "'", "''"), nil
 }
 
 // CheckConn checks the underlying connection without writing any bytes. This is currently implemented by doing a read
@@ -2773,7 +2798,7 @@ func (fbConn *FbConn) exitPotentialWriteReadDeadlock() {
 func (fbConn *FbConn) flushWithPotentialWriteReadDeadlockLocked() error {
 	fbConn.enterPotentialWriteReadDeadlock()
 	defer fbConn.exitPotentialWriteReadDeadlock()
-	err := fbConn.writer.Flush()
+	err := fbConn.client.Flush()
 	return err
 }
 
@@ -3041,11 +3066,15 @@ type DeadlineContextWatcherHandler struct {
 }
 
 func (h *DeadlineContextWatcherHandler) HandleCancel(ctx context.Context) {
-	h.Conn.SetDeadline(time.Now().Add(h.DeadlineDelay))
+	if err := h.Conn.SetDeadline(time.Now().Add(h.DeadlineDelay)); err != nil {
+		_ = h.Conn.Close()
+	}
 }
 
 func (h *DeadlineContextWatcherHandler) HandleUnwatchAfterCancel() {
-	h.Conn.SetDeadline(time.Time{})
+	if err := h.Conn.SetDeadline(time.Time{}); err != nil {
+		_ = h.Conn.Close()
+	}
 }
 
 // CancelRequestContextWatcherHandler manages cancel state around each watched request and handles canceled contexts by
@@ -3112,7 +3141,11 @@ func (h *CancelRequestContextWatcherHandler) HandleCancel(context.Context) {
 		// DeadlineDelay is zero or negative.
 		deadline = now.Add(100 * time.Millisecond)
 	}
-	h.Conn.conn.SetDeadline(deadline)
+	if err := h.Conn.conn.SetDeadline(deadline); err != nil {
+		close(h.cancelFinishedChan)
+		h.Conn.asyncClose()
+		return
+	}
 
 	go func() {
 		defer close(h.cancelFinishedChan)
@@ -3191,7 +3224,9 @@ func (h *CancelRequestContextWatcherHandler) HandleUnwatchAfterCancel() {
 		h.pendingCancelReset.Store(true)
 	}
 
-	h.Conn.conn.SetDeadline(time.Time{})
+	if err := h.Conn.conn.SetDeadline(time.Time{}); err != nil {
+		h.Conn.asyncClose()
+	}
 }
 
 func (h *CancelRequestContextWatcherHandler) sendCancelOperationWithTimeout(kind int) error {

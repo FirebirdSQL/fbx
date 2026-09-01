@@ -23,6 +23,7 @@ Firebird values, tracing hooks, and modern Red Database / Firebird features.
 - Transactions with Firebird TPB support, isolation/access mode options, lock timeout, raw TPB mode, helper functions, and pseudo-nested transactions via savepoints.
 - Streaming and lazy BLOB support, text and binary BLOB handling, configurable segment buffer size, stream BLOB mode, inline BLOB size, and inline BLOB cache settings.
 - Configurable fetch batch size for result sets.
+- Optional zlib wire compression for protocol 13 and newer, including combined use with wire encryption.
 - Firebird type mapping through `fbtype`, including `DATE`, `TIME`, `TIMESTAMP`, `TIMESTAMP WITH TIME ZONE`, `CHAR`, `VARCHAR`, OCTETS, BOOLEAN, integer types, `INT128`, NUMERIC/DECIMAL, `DECFLOAT(16)`, `DECFLOAT(34)`, arrays, NULL wrappers, and zero-null helpers.
 - Advanced type support in the `database/sql` layer, including BLOBs, arrays, `TIME`, `INT128`, NUMERIC/DECIMAL, DECFLOAT, OCTETS, and timestamp with time zone values.
 - Firebird array support, including reading, writing, and scanning array values through the native API and the `database/sql` compatibility layer.
@@ -75,3 +76,6 @@ func main() {
 ```
 
 See documentation and more usage examples at https://pkg.go.dev/rdb.red-soft.ru/fbx
+
+Wire compression is disabled by default. Enable it with `wire_compression=true` in the connection string
+(`wire_compress` and `wireCompression` are accepted aliases) or with `FBWIRECOMPRESSION=true`.
