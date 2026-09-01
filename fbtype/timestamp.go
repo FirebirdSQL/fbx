@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"rdb.red-soft.ru/fbx/internal/fbio"
@@ -29,10 +30,12 @@ type TimestampValuer interface {
 
 // Timestamp represents the Firebird TIMESTAMP type.
 //
-// Firebird TIMESTAMP stores a date and time of day without time zone. Valid is false when the value represents SQL NULL.
+// Firebird TIMESTAMP stores a date and time of day without time zone. Time is
+// interpreted as wall-clock date/time when encoding; its location is not
+// converted to UTC. Valid is false when the value represents SQL NULL.
 type Timestamp struct {
-	Time  time.Time // Time contains the timestamp value; its time zone is ignored when encoding to Firebird.
-	Valid bool      // Valid is false when the value represents SQL NULL.
+	Time  time.Time
+	Valid bool
 }
 
 // ScanTimestamp implements [TimestampScanner].
@@ -55,12 +58,19 @@ func (ts *Timestamp) Scan(src any) error {
 
 	switch src := src.(type) {
 	case string:
-		return (&scanPlanTextTimestampToTimestampScanner{}).Scan([]byte(src), ts)
+		t, err := parseTimestampString(src, nil)
+		if err != nil {
+			*ts = Timestamp{}
+			return err
+		}
+		*ts = Timestamp{Time: t, Valid: true}
+		return nil
 	case time.Time:
 		*ts = Timestamp{Time: src, Valid: true}
 		return nil
 	}
 
+	*ts = Timestamp{}
 	return fmt.Errorf("cannot scan %T", src)
 }
 
@@ -98,32 +108,24 @@ func (ts *Timestamp) UnmarshalJSON(b []byte) error {
 
 	tss := *s
 
-	if tim, err := time.Parse(time.RFC3339Nano, tss); err == nil {
+	tim, err := parseTimestampString(tss, nil)
+	if err == nil {
 		*ts = Timestamp{Time: tim, Valid: true}
 		return nil
 	}
 
-	if tim, err := time.ParseInLocation(jsonTimestampFormat, tss, time.UTC); err == nil {
-		*ts = Timestamp{Time: tim, Valid: true}
-		return nil
-	}
-
-	if tim, err := time.ParseInLocation(firebirdTimestampFormat, tss, time.UTC); err == nil {
-		*ts = Timestamp{Time: tim, Valid: true}
-		return nil
-	}
-
-	ts.Valid = false
+	*ts = Timestamp{}
 	return fmt.Errorf(
-		"cannot unmarshal %s to timestamp with layout %s or %s or %s",
-		*s, time.RFC3339Nano, jsonTimestampFormat, firebirdTimestampFormat,
+		"cannot unmarshal %s to timestamp: %w",
+		*s, err,
 	)
 }
 
 // TimestampCodec encodes and decodes Firebird TIMESTAMP values.
 type TimestampCodec struct {
-	// ScanLocation is the location that the time is assumed to be in for scanning. This is different from
-	// TimestamptzCodec.ScanLocation in that this setting does change the instant in time that the timestamp represents.
+	// ScanLocation is the location assigned to decoded TIMESTAMP values. Because
+	// Firebird TIMESTAMP has no time zone, a non-nil ScanLocation preserves the
+	// stored wall-clock fields but changes the instant represented by time.Time.
 	ScanLocation *time.Location
 }
 
@@ -165,29 +167,9 @@ func (encodePlanTimestampCodecBinaryTime) Encode(value any, buf []byte) ([]byte,
 type encodePlanTimestampCodecBinaryString struct{}
 
 func (encodePlanTimestampCodecBinaryString) Encode(value any, buf []byte) ([]byte, error) {
-	str := value.(string)
-
-	// Try multiple formats
-	var t time.Time
-	var err error
-
-	// Try RFC3339Nano first (ISO format with timezone)
-	t, err = time.Parse(time.RFC3339Nano, str)
+	t, err := parseTimestampString(value.(string), nil)
 	if err != nil {
-		// Try RFC3339
-		t, err = time.Parse(time.RFC3339, str)
-		if err != nil {
-			// Try jsonTimestampFormat
-			t, err = time.ParseInLocation(jsonTimestampFormat, str, time.UTC)
-			if err != nil {
-				// Try firebirdTimestampFormat
-				t, err = time.ParseInLocation(firebirdTimestampFormat, str, time.UTC)
-				if err != nil {
-					return nil, fmt.Errorf("cannot parse %q as timestamp (tried RFC3339, %s, %s)",
-						str, jsonTimestampFormat, firebirdTimestampFormat)
-				}
-			}
-		}
+		return nil, err
 	}
 
 	return encodeTimestampBinary(t, buf)
@@ -210,7 +192,10 @@ func (c *TimestampCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any)
 type scanPlanBinaryTimestampToTimestampScanner struct{ location *time.Location }
 
 func (plan *scanPlanBinaryTimestampToTimestampScanner) Scan(src []byte, dst any) error {
-	scanner := dst.(TimestampScanner)
+	scanner, ok := dst.(TimestampScanner)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
 
 	if src == nil {
 		return scanner.ScanTimestamp(Timestamp{})
@@ -226,7 +211,10 @@ func (plan *scanPlanBinaryTimestampToTimestampScanner) Scan(src []byte, dst any)
 type scanPlanBinaryTimestampToTime struct{ location *time.Location }
 
 func (plan *scanPlanBinaryTimestampToTime) Scan(src []byte, dst any) error {
-	target := dst.(*time.Time)
+	target, ok := dst.(*time.Time)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
 
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into *time.Time")
@@ -243,7 +231,10 @@ func (plan *scanPlanBinaryTimestampToTime) Scan(src []byte, dst any) error {
 type scanPlanBinaryTimestampToString struct{ location *time.Location }
 
 func (plan *scanPlanBinaryTimestampToString) Scan(src []byte, dst any) error {
-	target := dst.(*string)
+	target, ok := dst.(*string)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
 
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into *string")
@@ -254,35 +245,9 @@ func (plan *scanPlanBinaryTimestampToString) Scan(src []byte, dst any) error {
 		return err
 	}
 
-	*target = t.In(time.UTC).Format(firebirdTimestampFormat)
+	*target = formatTimestampString(t)
 
 	return nil
-}
-
-type scanPlanTextTimestampToTimestampScanner struct{ location *time.Location }
-
-func (plan *scanPlanTextTimestampToTimestampScanner) Scan(src []byte, dst any) error {
-	scanner := dst.(TimestampScanner)
-
-	if src == nil {
-		return scanner.ScanTimestamp(Timestamp{})
-	}
-
-	s := string(src)
-	loc := time.UTC
-	if plan.location != nil {
-		loc = plan.location
-	}
-
-	t, err := time.ParseInLocation("2006-01-02 15:04:05.999999", s, loc)
-	if err != nil {
-		t, err = time.ParseInLocation("2006-01-02 15:04:05", s, loc)
-		if err != nil {
-			return err
-		}
-	}
-
-	return scanner.ScanTimestamp(Timestamp{Time: t, Valid: true})
 }
 
 // DecodeDatabaseSQLValue decodes src into a database/sql driver value.
@@ -316,8 +281,10 @@ func (c *TimestampCodec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []by
 }
 
 func encodeTimestampBinary(t time.Time, buf []byte) ([]byte, error) {
-	tMidnightUTC := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
-	days := int32((tMidnightUTC.Unix() - firebirdDateEpoch.Unix()) / secondsPerDay)
+	days, err := firebirdDateDayOffset(t)
+	if err != nil {
+		return nil, err
+	}
 
 	usec := timeOfDayMicroseconds(t)
 	if usec < 0 || usec >= microsecondsPerDay {
@@ -340,7 +307,10 @@ func decodeTimestampBinary(src []byte, location *time.Location) (time.Time, erro
 	dayOffset := int32(binary.BigEndian.Uint32(src[0:4]))
 	ticks := binary.BigEndian.Uint32(src[4:8])
 
-	tDate := firebirdDateEpoch.AddDate(0, 0, int(dayOffset))
+	tDate, err := firebirdDateFromDayOffset(dayOffset)
+	if err != nil {
+		return time.Time{}, err
+	}
 
 	usec := int64(ticks) * 100
 	if usec < 0 || usec >= microsecondsPerDay {
@@ -353,4 +323,57 @@ func decodeTimestampBinary(src []byte, location *time.Location) (time.Time, erro
 	}
 
 	return timeFromMicroseconds(usec, tDate, loc), nil
+}
+
+func parseTimestampString(s string, location *time.Location) (time.Time, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}, fmt.Errorf("invalid TIMESTAMP format: empty string")
+	}
+
+	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+		return t, nil
+	}
+
+	datePart, timePart, err := splitTimestampString(s)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	date, err := parseDateString(datePart)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("cannot parse TIMESTAMP date from %q: %w", s, err)
+	}
+
+	usec, err := parseTimeString(timePart)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("cannot parse TIMESTAMP time from %q: %w", s, err)
+	}
+
+	loc := time.UTC
+	if location != nil {
+		loc = location
+	}
+
+	return timeFromMicroseconds(usec, date, loc), nil
+}
+
+func splitTimestampString(s string) (datePart string, timePart string, err error) {
+	if strings.Count(s, "T") == 1 && !strings.ContainsAny(s, " \t\r\n") {
+		parts := strings.SplitN(s, "T", 2)
+		if parts[0] != "" && parts[1] != "" {
+			return parts[0], parts[1], nil
+		}
+	}
+
+	fields := strings.Fields(s)
+	if len(fields) != 2 {
+		return "", "", fmt.Errorf("invalid TIMESTAMP format: %q (expected <date> <time>, e.g. YYYY-MM-DD HH:MM[:SS[.ffffff]])", s)
+	}
+
+	return fields[0], fields[1], nil
+}
+
+func formatTimestampString(t time.Time) string {
+	return t.Format(firebirdTimestampFormat)
 }

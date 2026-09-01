@@ -2,11 +2,12 @@ package fbtype_test
 
 import (
 	"context"
+	"encoding/binary"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx"
+	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
 )
@@ -58,29 +59,123 @@ func TestDateScanTimeNormalizes(t *testing.T) {
 	require.Equal(t, time.Date(2026, 3, 20, 0, 0, 0, 0, time.UTC), d.Time)
 }
 
+func TestDateValueNormalizes(t *testing.T) {
+	src := fbtype.Date{
+		Time:  time.Date(2026, 3, 20, 15, 4, 5, 123456789, time.FixedZone("UTC+3", 3*60*60)),
+		Valid: true,
+	}
+
+	v, err := src.Value()
+	require.NoError(t, err)
+	require.Equal(t, time.Date(2026, 3, 20, 0, 0, 0, 0, time.UTC), v)
+}
+
+func TestDateCodecScanNullToStringReturnsError(t *testing.T) {
+	var c fbtype.DateCodec
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_DATE, 0, 0, 0)
+
+	var got string
+	planScan := c.PlanScan(nil, typeMetadata, &got)
+	require.NotNil(t, planScan)
+
+	err := planScan.Scan(nil, &got)
+	require.ErrorContains(t, err, "cannot scan NULL into *string")
+}
+
+func TestDateCodecScanNullToNullableTargets(t *testing.T) {
+	var c fbtype.DateCodec
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_DATE, 0, 0, 0)
+
+	var gotDate fbtype.Date
+	planScan := c.PlanScan(nil, typeMetadata, &gotDate)
+	require.NotNil(t, planScan)
+	require.NoError(t, planScan.Scan(nil, &gotDate))
+	require.False(t, gotDate.Valid)
+
+	m := fbtype.NewMap()
+
+	var gotTimePtr *time.Time
+	planScan = m.PlanScan(typeMetadata, &gotTimePtr)
+	require.NotNil(t, planScan)
+	require.NoError(t, planScan.Scan(nil, &gotTimePtr))
+	require.Nil(t, gotTimePtr)
+
+	var gotStringPtr *string
+	planScan = m.PlanScan(typeMetadata, &gotStringPtr)
+	require.NotNil(t, planScan)
+	require.NoError(t, planScan.Scan(nil, &gotStringPtr))
+	require.Nil(t, gotStringPtr)
+
+	var gotAny any
+	planScan = m.PlanScan(typeMetadata, &gotAny)
+	require.NotNil(t, planScan)
+	require.NoError(t, planScan.Scan(nil, &gotAny))
+	require.Nil(t, gotAny)
+}
+
 func TestDateCodecRejectsUnsupportedStringFormats(t *testing.T) {
-	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
-		tb.Helper()
+	var c fbtype.DateCodec
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_DATE, 0, 0, 0)
 
-		sql := "select cast(? as date) from rdb$database"
-		tests := []string{
-			"not-a-date",
-			"2026-13-01",
-			"2026-02-30",
-			"2023-02-29",
-			"20/03/2026",
-			"03-20-2026",
-			"",
-			"0000-12-31",
-			"10000-01-01",
-		}
+	tests := []string{
+		"not-a-date",
+		"2026-13-01",
+		"2026-02-30",
+		"2023-02-29",
+		"20/03/2026",
+		"03-20-2026",
+		"",
+		"0000-12-31",
+		"10000-01-01",
+	}
 
-		for i, input := range tests {
-			var got time.Time
-			err := conn.QueryRow(ctx, sql, input).Scan(&got)
-			require.Error(tb, err, "%d: input=%q", i, input)
-		}
-	})
+	for i, input := range tests {
+		planEncode := c.PlanEncode(nil, typeMetadata, input)
+		require.NotNil(t, planEncode, "%d: input=%q", i, input)
+
+		_, err := planEncode.Encode(input, nil)
+		require.Error(t, err, "%d: input=%q", i, input)
+	}
+}
+
+func TestDateCodecEncodeRejectsDateOutOfRange(t *testing.T) {
+	var c fbtype.DateCodec
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_DATE, 0, 0, 0)
+
+	hugeDate := time.Date(11761246, time.January, 22, 0, 0, 0, 0, time.UTC)
+	tests := []any{
+		hugeDate,
+		fbtype.Date{Time: hugeDate, Valid: true},
+	}
+
+	for _, input := range tests {
+		planEncode := c.PlanEncode(nil, typeMetadata, input)
+		require.NotNil(t, planEncode)
+
+		_, err := planEncode.Encode(input, nil)
+		require.ErrorContains(t, err, "date out of Firebird range")
+	}
+}
+
+func TestDateCodecDecodeRejectsDateOutOfRange(t *testing.T) {
+	var c fbtype.DateCodec
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_DATE, 0, 0, 0)
+	src := dateWireBytes(1<<31 - 1)
+
+	var gotDate fbtype.Date
+	planScan := c.PlanScan(nil, typeMetadata, &gotDate)
+	require.NotNil(t, planScan)
+	require.ErrorContains(t, planScan.Scan(src, &gotDate), "date out of Firebird range")
+
+	var gotTime time.Time
+	planScan = c.PlanScan(nil, typeMetadata, &gotTime)
+	require.NotNil(t, planScan)
+	require.ErrorContains(t, planScan.Scan(src, &gotTime), "date out of Firebird range")
+
+	var gotString string
+	planScan = c.PlanScan(nil, typeMetadata, &gotString)
+	require.NotNil(t, planScan)
+	require.ErrorContains(t, planScan.Scan(src, &gotString), "date out of Firebird range")
 }
 
 func TestDateMarshalJSON(t *testing.T) {
@@ -105,6 +200,12 @@ func TestDateMarshalJSON(t *testing.T) {
 	}
 }
 
+func dateWireBytes(dayOffset int32) []byte {
+	buf := make([]byte, 4)
+	binary.BigEndian.PutUint32(buf, uint32(dayOffset))
+	return buf
+}
+
 func TestDateUnmarshalJSON(t *testing.T) {
 	successfulTests := []struct {
 		source string
@@ -112,8 +213,6 @@ func TestDateUnmarshalJSON(t *testing.T) {
 	}{
 		{source: "null", result: fbtype.Date{}},
 		{source: "\"2012-03-29\"", result: fbtype.Date{Time: time.Date(2012, 3, 29, 0, 0, 0, 0, time.UTC), Valid: true}},
-		{source: "\"2012-03-29\"", result: fbtype.Date{Time: time.Date(2012, 3, 29, 10, 5, 45, 0, time.FixedZone("", -6*60*60)), Valid: true}},
-		{source: "\"2012-03-29\"", result: fbtype.Date{Time: time.Date(2012, 3, 29, 10, 5, 45, 555*1000*1000, time.FixedZone("", -6*60*60)), Valid: true}},
 	}
 	for i, tt := range successfulTests {
 		var r fbtype.Date
@@ -122,7 +221,7 @@ func TestDateUnmarshalJSON(t *testing.T) {
 			t.Errorf("%d: %v", i, err)
 		}
 
-		if r.Time.Year() != tt.result.Time.Year() || r.Time.Month() != tt.result.Time.Month() || r.Time.Day() != tt.result.Time.Day() || r.Valid != tt.result.Valid {
+		if r != tt.result {
 			t.Errorf("%d: expected %v to convert to %v, but it was %v", i, tt.source, tt.result, r)
 		}
 	}
