@@ -119,6 +119,8 @@ func TestDecFloat34Codec_RoundTrip_DB(t *testing.T) {
 
 	testsData := []tc{
 		{"zero", fbtype.DecFloat34{Int: big.NewInt(0), Exp: 0, Valid: true, Special: fbtype.SpecialNone}, "0", 0, false},
+		{"zero_with_scale", fbtype.DecFloat34{Int: big.NewInt(0), Exp: -2, Valid: true, Special: fbtype.SpecialNone}, "0.00", 0, false},
+		{"zero_with_positive_exponent", fbtype.DecFloat34{Int: big.NewInt(0), Exp: 5, Valid: true, Special: fbtype.SpecialNone}, "0E+5", 0, false},
 		{"one", fbtype.DecFloat34{Int: big.NewInt(1), Exp: 0, Valid: true, Special: fbtype.SpecialNone}, "1", 1, false},
 		{"minus_one", fbtype.DecFloat34{Int: big.NewInt(-1), Exp: 0, Valid: true, Special: fbtype.SpecialNone}, "-1", -1, false},
 
@@ -218,6 +220,12 @@ func TestDecFloat34Codec_RoundTrip_DB(t *testing.T) {
 		{"negative_zero",
 			fbtype.DecFloat34{Int: big.NewInt(0), Exp: 0, Valid: true, Special: fbtype.SpecialNone, NegativeZero: true},
 			"-0",
+			math.Copysign(0, -1),
+			false,
+		},
+		{"negative_zero_with_scale",
+			fbtype.DecFloat34{Int: big.NewInt(0), Exp: -2, Valid: true, Special: fbtype.SpecialNone, NegativeZero: true},
+			"-0.00",
 			math.Copysign(0, -1),
 			false,
 		},
@@ -517,25 +525,27 @@ func TestDecFloat34_Overflow(t *testing.T) {
 	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_DEC128, 0, 16, 0)
 
 	for _, tt := range []struct {
-		name           string
-		input          string
-		expectEncodeOK bool
+		name        string
+		input       string
+		wantScanErr bool
 	}{
-		{"34 digits", "1234567890123456789012345678901234", true},
-		{"35 digits", "12345678901234567890123456789012345", false},
+		{"34 digits", "1234567890123456789012345678901234", false},
+		{"35 digits", "12345678901234567890123456789012345", true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var d fbtype.DecFloat34
-			require.NoError(t, d.Scan(tt.input))
+			err := d.Scan(tt.input)
+			if tt.wantScanErr {
+				require.ErrorContains(t, err, "coefficient out of range")
+				require.False(t, d.Valid)
+				return
+			}
+			require.NoError(t, err)
 			require.True(t, d.Valid)
 
 			encoded, err := m.Encode(typeMetadata, d, nil)
-			if tt.expectEncodeOK {
-				require.NoError(t, err)
-				require.Len(t, encoded, 16)
-			} else {
-				require.ErrorContains(t, err, "coefficient out of range")
-			}
+			require.NoError(t, err)
+			require.Len(t, encoded, 16)
 		})
 	}
 }

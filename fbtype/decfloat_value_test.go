@@ -119,8 +119,13 @@ func TestDecFloatParsingRejectsCombinedExponentOverflow(t *testing.T) {
 			scan:  func(s string) error { var d DecFloat16; return d.Scan(s) },
 		},
 		{
+			name:  "DecFloat16 negative zero overflow",
+			input: "-0.0E-2147483648",
+			scan:  func(s string) error { var d DecFloat16; return d.Scan(s) },
+		},
+		{
 			name:  "DecFloat16 positive overflow",
-			input: "10E+2147483647",
+			input: "1E+2147483648",
 			scan:  func(s string) error { var d DecFloat16; return d.Scan(s) },
 		},
 		{
@@ -129,8 +134,13 @@ func TestDecFloatParsingRejectsCombinedExponentOverflow(t *testing.T) {
 			scan:  func(s string) error { var d DecFloat34; return d.Scan(s) },
 		},
 		{
+			name:  "DecFloat34 negative zero overflow",
+			input: "-0.0E-2147483648",
+			scan:  func(s string) error { var d DecFloat34; return d.Scan(s) },
+		},
+		{
 			name:  "DecFloat34 positive overflow",
-			input: "10E+2147483647",
+			input: "1E+2147483648",
 			scan:  func(s string) error { var d DecFloat34; return d.Scan(s) },
 		},
 	}
@@ -145,6 +155,249 @@ func TestDecFloatParsingRejectsCombinedExponentOverflow(t *testing.T) {
 				t.Fatalf("Scan(%q) error = %v", tt.input, err)
 			}
 		})
+	}
+}
+
+func TestDecFloatParsingRejectsInt64ExponentOverflow(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		scan func(string) error
+	}{
+		{name: "DecFloat16", scan: func(s string) error { var d DecFloat16; return d.Scan(s) }},
+		{name: "DecFloat34", scan: func(s string) error { var d DecFloat34; return d.Scan(s) }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.scan("1.0E-9223372036854775808")
+			if err == nil || !strings.Contains(err.Error(), "int64 range") {
+				t.Fatalf("Scan error = %v, want int64 range error", err)
+			}
+		})
+	}
+}
+
+func TestDecFloatParsingBoundsCoefficientWork(t *testing.T) {
+	oversized := strings.Repeat("9", 100_000)
+	leadingZeros := strings.Repeat("0", 100_000) + "1"
+	oversizedExponent := "1E+" + strings.Repeat("9", 100_000)
+
+	t.Run("DecFloat16", func(t *testing.T) {
+		var d DecFloat16
+		err := d.Scan(oversized)
+		if err == nil || !strings.Contains(err.Error(), "more than 16 decimal digits") {
+			t.Fatalf("Scan oversized coefficient error = %v", err)
+		}
+		if len(err.Error()) > 512 {
+			t.Fatalf("oversized coefficient error contains unbounded input: %d bytes", len(err.Error()))
+		}
+		err = d.Scan(oversizedExponent)
+		if err == nil || !strings.Contains(err.Error(), "int64 range") {
+			t.Fatalf("Scan oversized exponent error = %v", err)
+		}
+		if len(err.Error()) > 512 {
+			t.Fatalf("oversized exponent error contains unbounded input: %d bytes", len(err.Error()))
+		}
+
+		if err := d.Scan(leadingZeros); err != nil {
+			t.Fatal(err)
+		}
+		assertDecFloat16Representation(t, d, "1", 0, false)
+	})
+
+	t.Run("DecFloat34", func(t *testing.T) {
+		var d DecFloat34
+		err := d.Scan(oversized)
+		if err == nil || !strings.Contains(err.Error(), "more than 34 decimal digits") {
+			t.Fatalf("Scan oversized coefficient error = %v", err)
+		}
+		if len(err.Error()) > 512 {
+			t.Fatalf("oversized coefficient error contains unbounded input: %d bytes", len(err.Error()))
+		}
+		err = d.Scan(oversizedExponent)
+		if err == nil || !strings.Contains(err.Error(), "int64 range") {
+			t.Fatalf("Scan oversized exponent error = %v", err)
+		}
+		if len(err.Error()) > 512 {
+			t.Fatalf("oversized exponent error contains unbounded input: %d bytes", len(err.Error()))
+		}
+
+		if err := d.Scan(leadingZeros); err != nil {
+			t.Fatal(err)
+		}
+		assertDecFloat34Representation(t, d, "1", 0, false)
+	})
+}
+
+func TestDecFloatTextRoundTripPreservesRepresentation(t *testing.T) {
+	tests := []struct {
+		name         string
+		input        string
+		coefficient  string
+		exponent     int32
+		negativeZero bool
+		canonical    string
+	}{
+		{name: "positive zero", input: "0", coefficient: "0", canonical: "0"},
+		{name: "negative zero", input: "-0", coefficient: "0", negativeZero: true, canonical: "-0"},
+		{name: "zero with scale", input: "0.00", coefficient: "0", exponent: -2, canonical: "0.00"},
+		{name: "negative zero with scale", input: "-0.00", coefficient: "0", exponent: -2, negativeZero: true, canonical: "-0.00"},
+		{name: "zero with positive exponent", input: "0E+5", coefficient: "0", exponent: 5, canonical: "0E+5"},
+		{name: "negative zero with minimum decimal64 exponent", input: "-0E-398", coefficient: "0", exponent: -398, negativeZero: true, canonical: "-0E-398"},
+		{name: "integer trailing zero", input: "120", coefficient: "120", canonical: "120"},
+		{name: "positive exponent", input: "1.2E+6", coefficient: "12", exponent: 5, canonical: "1.2E+6"},
+		{name: "trailing coefficient zero", input: "1230E-2", coefficient: "1230", exponent: -2, canonical: "12.30"},
+		{name: "positive exponent from fraction", input: "0.001E+6", coefficient: "1", exponent: 3, canonical: "1E+3"},
+		{name: "positive exponent with scale", input: "123.0E+2", coefficient: "1230", exponent: 1, canonical: "1.230E+4"},
+		{name: "plain notation boundary", input: "0.000001", coefficient: "1", exponent: -6, canonical: "0.000001"},
+		{name: "scientific notation boundary", input: "0.0000001", coefficient: "1", exponent: -7, canonical: "1E-7"},
+	}
+
+	t.Run("DecFloat16", func(t *testing.T) {
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				var value DecFloat16
+				if err := value.Scan(tt.input); err != nil {
+					t.Fatal(err)
+				}
+				assertDecFloat16Representation(t, value, tt.coefficient, tt.exponent, tt.negativeZero)
+				if got := value.String(); got != tt.canonical {
+					t.Fatalf("String() = %q, want %q", got, tt.canonical)
+				}
+
+				driverValue, err := value.Value()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if driverValue != tt.canonical {
+					t.Fatalf("Value() = %q, want %q", driverValue, tt.canonical)
+				}
+
+				jsonValue, err := json.Marshal(value)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var decoded DecFloat16
+				if err := json.Unmarshal(jsonValue, &decoded); err != nil {
+					t.Fatal(err)
+				}
+				assertDecFloat16Representation(t, decoded, tt.coefficient, tt.exponent, tt.negativeZero)
+			})
+		}
+	})
+
+	t.Run("DecFloat34", func(t *testing.T) {
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				var value DecFloat34
+				if err := value.Scan(tt.input); err != nil {
+					t.Fatal(err)
+				}
+				assertDecFloat34Representation(t, value, tt.coefficient, tt.exponent, tt.negativeZero)
+				if got := value.String(); got != tt.canonical {
+					t.Fatalf("String() = %q, want %q", got, tt.canonical)
+				}
+
+				driverValue, err := value.Value()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if driverValue != tt.canonical {
+					t.Fatalf("Value() = %q, want %q", driverValue, tt.canonical)
+				}
+
+				jsonValue, err := json.Marshal(value)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var decoded DecFloat34
+				if err := json.Unmarshal(jsonValue, &decoded); err != nil {
+					t.Fatal(err)
+				}
+				assertDecFloat34Representation(t, decoded, tt.coefficient, tt.exponent, tt.negativeZero)
+			})
+		}
+	})
+}
+
+func TestFormatDecFloatUsesInt64AdjustedExponent(t *testing.T) {
+	if got := formatDecFloat(big.NewInt(10), math.MaxInt32, false); got != "1.0E+2147483648" {
+		t.Fatalf("formatDecFloat adjusted exponent = %q", got)
+	}
+}
+
+func TestDecFloatPublicAPIsRejectUnrepresentableFiniteValues(t *testing.T) {
+	coefficient16, _ := new(big.Int).SetString("12345678901234567", 10)
+	coefficient34, _ := new(big.Int).SetString("12345678901234567890123456789012345", 10)
+
+	t.Run("DecFloat16", func(t *testing.T) {
+		for _, invalid := range []DecFloat16{
+			{Int: coefficient16, Valid: true},
+			{Int: big.NewInt(1), Exp: 370, Valid: true},
+		} {
+			var scanned DecFloat16
+			if err := scanned.ScanDec16(invalid); err == nil {
+				t.Fatalf("ScanDec16 accepted %+v", invalid)
+			}
+			if scanned.Valid {
+				t.Fatalf("ScanDec16 left a valid value: %+v", scanned)
+			}
+
+			checks := []func() error{
+				func() error { _, err := invalid.Dec16Value(); return err },
+				func() error { _, err := invalid.Value(); return err },
+				func() error { _, err := json.Marshal(invalid); return err },
+				func() error { _, err := decFloat16ToFloat64(invalid); return err },
+				func() error { _, err := encodeDecFloat16Binary(nil, invalid); return err },
+			}
+			for i, check := range checks {
+				if err := check(); err == nil {
+					t.Fatalf("DecFloat16 check %d accepted %+v", i, invalid)
+				}
+			}
+		}
+	})
+
+	t.Run("DecFloat34", func(t *testing.T) {
+		for _, invalid := range []DecFloat34{
+			{Int: coefficient34, Valid: true},
+			{Int: big.NewInt(1), Exp: 6112, Valid: true},
+		} {
+			var scanned DecFloat34
+			if err := scanned.ScanDec34(invalid); err == nil {
+				t.Fatalf("ScanDec34 accepted %+v", invalid)
+			}
+			if scanned.Valid {
+				t.Fatalf("ScanDec34 left a valid value: %+v", scanned)
+			}
+
+			checks := []func() error{
+				func() error { _, err := invalid.Dec34Value(); return err },
+				func() error { _, err := invalid.Value(); return err },
+				func() error { _, err := json.Marshal(invalid); return err },
+				func() error { _, err := decFloat34ToFloat64(invalid); return err },
+				func() error { _, err := encodeDecFloat34Binary(nil, invalid); return err },
+			}
+			for i, check := range checks {
+				if err := check(); err == nil {
+					t.Fatalf("DecFloat34 check %d accepted %+v", i, invalid)
+				}
+			}
+		}
+	})
+}
+
+func assertDecFloat16Representation(t *testing.T, value DecFloat16, coefficient string, exponent int32, negativeZero bool) {
+	t.Helper()
+	if !value.Valid || value.Special != SpecialNone || value.Int == nil || value.Int.String() != coefficient ||
+		value.Exp != exponent || value.NegativeZero != negativeZero {
+		t.Fatalf("DecFloat16 = %+v, want coefficient=%s exponent=%d negativeZero=%t", value, coefficient, exponent, negativeZero)
+	}
+}
+
+func assertDecFloat34Representation(t *testing.T, value DecFloat34, coefficient string, exponent int32, negativeZero bool) {
+	t.Helper()
+	if !value.Valid || value.Special != SpecialNone || value.Int == nil || value.Int.String() != coefficient ||
+		value.Exp != exponent || value.NegativeZero != negativeZero {
+		t.Fatalf("DecFloat34 = %+v, want coefficient=%s exponent=%d negativeZero=%t", value, coefficient, exponent, negativeZero)
 	}
 }
 
@@ -285,6 +538,64 @@ func TestDecFloatBinaryDecodeClearsDestinationOnError(t *testing.T) {
 	}
 }
 
+func TestDecFloatBinaryZeroExponentText(t *testing.T) {
+	t.Run("DecFloat16", func(t *testing.T) {
+		values := []DecFloat16{
+			{Int: big.NewInt(0), Exp: -2, Valid: true},
+			{Int: big.NewInt(0), Exp: 5, Valid: true},
+			{Int: big.NewInt(0), Exp: -398, Valid: true, NegativeZero: true},
+		}
+		for _, value := range values {
+			encoded, err := encodeDecFloat16Binary(nil, value)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var decoded DecFloat16
+			if err := decodeDecFloat16Binary(encoded, &decoded); err != nil {
+				t.Fatal(err)
+			}
+			assertDecFloat16Representation(t, decoded, "0", value.Exp, value.NegativeZero)
+
+			var text string
+			if err := (scanPlanBinaryDecFloat16ToString{}).Scan(encoded, &text); err != nil {
+				t.Fatal(err)
+			}
+			if text != value.String() {
+				t.Fatalf("binary string = %q, want %q", text, value.String())
+			}
+		}
+	})
+
+	t.Run("DecFloat34", func(t *testing.T) {
+		values := []DecFloat34{
+			{Int: big.NewInt(0), Exp: -2, Valid: true},
+			{Int: big.NewInt(0), Exp: 5, Valid: true},
+			{Int: big.NewInt(0), Exp: -6176, Valid: true, NegativeZero: true},
+		}
+		for _, value := range values {
+			encoded, err := encodeDecFloat34Binary(nil, value)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var decoded DecFloat34
+			if err := decodeDecFloat34Binary(encoded, &decoded); err != nil {
+				t.Fatal(err)
+			}
+			assertDecFloat34Representation(t, decoded, "0", value.Exp, value.NegativeZero)
+
+			var text string
+			if err := (scanPlanBinaryDecFloat34ToString{}).Scan(encoded, &text); err != nil {
+				t.Fatal(err)
+			}
+			if text != value.String() {
+				t.Fatalf("binary string = %q, want %q", text, value.String())
+			}
+		}
+	})
+}
+
 func TestFloat64ToDecFloat16RejectsUnrepresentableValue(t *testing.T) {
 	value := math.Nextafter(1, 2)
 	if _, err := Float64ToDecFloat16(value); err == nil || !strings.Contains(err.Error(), "coefficient out of range") {
@@ -293,6 +604,24 @@ func TestFloat64ToDecFloat16RejectsUnrepresentableValue(t *testing.T) {
 
 	if _, err := Float64ToDecFloat34(value); err != nil {
 		t.Fatalf("Float64ToDecFloat34(%g) error = %v", value, err)
+	}
+
+	d16, err := Float64ToDecFloat16(1e20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDecFloat16Representation(t, d16, "1", 20, false)
+	if got := d16.String(); got != "1E+20" {
+		t.Fatalf("Float64ToDecFloat16(1e20).String() = %q", got)
+	}
+
+	d34, err := Float64ToDecFloat34(1e20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDecFloat34Representation(t, d34, "1", 20, false)
+	if got := d34.String(); got != "1E+20" {
+		t.Fatalf("Float64ToDecFloat34(1e20).String() = %q", got)
 	}
 }
 

@@ -88,9 +88,13 @@ func TestDecFloat16Codec_RoundTrip_DB(t *testing.T) {
 
 	values := []tv{
 		{"0", "0"},
+		{"0.00", "0.00"},
+		{"0E+5", "0E+5"},
 		{"1", "1"},
 		{"-1", "-1"},
 		{"-0", "-0"},
+		{"-0.00", "-0.00"},
+		{"-0E-398", "-0E-398"},
 
 		{"0.1", "0.1"},
 		{"0.00001", "0.00001"},
@@ -110,11 +114,11 @@ func TestDecFloat16Codec_RoundTrip_DB(t *testing.T) {
 		{"1E-20", "1E-20"},
 		{"1.234567890123456E+20", "1.234567890123456E+20"},
 		{"9.999999999999999E-20", "9.999999999999999E-20"},
-		{"1.2E+6", "1200000"},
+		{"1.2E+6", "1.2E+6"},
 		{"0.123E+3", "123"},
-		{"1230E-2", "12.3"},
-		{"0.001E+6", "1000"},
-		{"123.0E+2", "12300"},
+		{"1230E-2", "12.30"},
+		{"0.001E+6", "1E+3"},
+		{"123.0E+2", "1.230E+4"},
 
 		{"9999999999999999", "9999999999999999"},
 		{"-9999999999999999", "-9999999999999999"},
@@ -508,24 +512,23 @@ func TestDecFloat16_Overflow(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name           string
-		input          string
-		expectEncodeOK bool
+		name        string
+		input       string
+		wantScanErr bool
 	}{
 		{
-			name:           "16 digits OK",
-			input:          "1234567890123456",
-			expectEncodeOK: true,
+			name:  "16 digits OK",
+			input: "1234567890123456",
 		},
 		{
-			name:           "17 digits - scan OK, encode fail",
-			input:          "12345678901234567",
-			expectEncodeOK: false,
+			name:        "17 digits",
+			input:       "12345678901234567",
+			wantScanErr: true,
 		},
 		{
-			name:           "20 digits - too many",
-			input:          "12345678901234567890",
-			expectEncodeOK: false,
+			name:        "20 digits",
+			input:       "12345678901234567890",
+			wantScanErr: true,
 		},
 	}
 	m := fbtype.NewMap()
@@ -534,16 +537,18 @@ func TestDecFloat16_Overflow(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var d fbtype.DecFloat16
-			require.NoError(t, d.Scan(tt.input))
+			err := d.Scan(tt.input)
+			if tt.wantScanErr {
+				require.ErrorContains(t, err, "coefficient out of range")
+				require.False(t, d.Valid)
+				return
+			}
+			require.NoError(t, err)
 			require.True(t, d.Valid)
 
 			encoded, err := m.Encode(typeMetadata, d, nil)
-			if tt.expectEncodeOK {
-				require.NoError(t, err)
-				require.Len(t, encoded, 8)
-			} else {
-				require.ErrorContains(t, err, "coefficient out of range")
-			}
+			require.NoError(t, err)
+			require.Len(t, encoded, 8)
 		})
 	}
 }
@@ -552,9 +557,9 @@ func TestDecFloat16_ExponentBoundaries(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name          string
-		input         string
-		wantEncodeErr bool
+		name        string
+		input       string
+		wantScanErr bool
 	}{
 		{"min_exponent", "1E-398", false},
 		{"max_exponent", "9.999999999999999E+369", false},
@@ -570,16 +575,18 @@ func TestDecFloat16_ExponentBoundaries(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var d fbtype.DecFloat16
-			require.NoError(t, d.Scan(tt.input))
+			err := d.Scan(tt.input)
+			if tt.wantScanErr {
+				require.ErrorContains(t, err, "exponent out of range")
+				require.False(t, d.Valid)
+				return
+			}
+			require.NoError(t, err)
 			require.True(t, d.Valid)
 
 			encoded, err := m.Encode(typeMetadata, d, nil)
-			if tt.wantEncodeErr {
-				require.ErrorContains(t, err, "exponent out of range")
-			} else {
-				require.NoError(t, err)
-				require.Len(t, encoded, 8)
-			}
+			require.NoError(t, err)
+			require.Len(t, encoded, 8)
 		})
 	}
 }

@@ -28,8 +28,9 @@ const (
 )
 
 const (
-	dec16MaxIntDigitsPlain    = 16
-	dec16MaxLeadingZerosPlain = 6
+	decFloat16CoefficientDigits = 16
+	decFloat34CoefficientDigits = 34
+	maxDecFloatErrorInputBytes  = 128
 )
 
 // String returns the canonical textual representation of s.
@@ -150,8 +151,9 @@ func (d DecFloat16) Value() (driver.Value, error) {
 	return d.String(), nil
 }
 
-// String returns the decimal representation of d, or an empty string for SQL
-// NULL.
+// String returns the canonical decimal representation of d, or an empty string
+// for SQL NULL. For finite values, the representation preserves the coefficient,
+// exponent, and sign of zero.
 func (d DecFloat16) String() string {
 	if !d.Valid {
 		return ""
@@ -160,11 +162,7 @@ func (d DecFloat16) String() string {
 	if d.Special != SpecialNone {
 		return d.Special.String()
 	}
-	if d.IsNegativeZero() {
-		return "-0"
-	}
-
-	return formatDecFloat16General(d.Int, d.Exp)
+	return formatDecFloat(d.Int, d.Exp, d.IsNegativeZero())
 }
 
 // MarshalJSON encodes d as a JSON string or null.
@@ -218,7 +216,10 @@ func (d DecFloat16) IsNegativeZero() bool {
 }
 
 func (d DecFloat16) validate() error {
-	return validateDecFloat("DecFloat16", d.Int, d.Valid, d.Special, d.NegativeZero)
+	if err := validateDecFloat("DecFloat16", d.Int, d.Valid, d.Special, d.NegativeZero); err != nil {
+		return err
+	}
+	return validateFiniteDecFloat("DecFloat16", d.Int, d.Valid, d.Special, d.Exp, decfloat.Decimal64)
 }
 
 func validateDecFloat(typeName string, coefficient *big.Int, valid bool, special SpecialValue, negativeZero bool) error {
@@ -230,6 +231,19 @@ func validateDecFloat(typeName string, coefficient *big.Int, valid bool, special
 	}
 	if negativeZero && (special != SpecialNone || coefficient != nil && coefficient.Sign() != 0) {
 		return fmt.Errorf("fbtype: %s NegativeZero requires a finite zero", typeName)
+	}
+	return nil
+}
+
+func validateFiniteDecFloat(typeName string, coefficient *big.Int, valid bool, special SpecialValue, exponent int32, format decfloat.DecimalFormat) error {
+	if !valid || special != SpecialNone {
+		return nil
+	}
+	if coefficient == nil {
+		coefficient = new(big.Int)
+	}
+	if err := format.ValidateFiniteCoefficientAndExponent(coefficient, int(exponent)); err != nil {
+		return fmt.Errorf("fbtype: invalid %s: %w", typeName, err)
 	}
 	return nil
 }
@@ -532,7 +546,7 @@ func Float64ToDecFloat16(f float64) (DecFloat16, error) {
 		}, nil
 	}
 
-	s := strconv.FormatFloat(f, 'f', -1, 64)
+	s := strconv.FormatFloat(f, 'g', -1, 64)
 
 	var d DecFloat16
 	if err := parseDecFloat16String(s, &d); err != nil {
@@ -568,7 +582,7 @@ func decFloat16ToFloat64(d DecFloat16) (float64, error) {
 		return math.Copysign(0, -1), nil
 	}
 
-	s := formatDecFloatScientific(d.Int, d.Exp)
+	s := formatDecFloat(d.Int, d.Exp, false)
 
 	f, err := strconv.ParseFloat(s, 64)
 	if err != nil {
@@ -587,7 +601,7 @@ func decFloat16ToFloat64(d DecFloat16) (float64, error) {
 // parseDecFloat16String parses a textual DECFLOAT(16), including scientific
 // notation, into dst.
 func parseDecFloat16String(s string, dst *DecFloat16) error {
-	parsed, err := parseDecFloatString(s, "DecFloat16")
+	parsed, err := parseDecFloatString(s, "DecFloat16", decFloat16CoefficientDigits, decfloat.Decimal64)
 	if err != nil {
 		*dst = DecFloat16{}
 		return err
@@ -610,173 +624,200 @@ type parsedDecFloat struct {
 	negativeZero bool
 }
 
-func parseDecFloatString(s string, typeName string) (parsedDecFloat, error) {
+func parseDecFloatString(s string, typeName string, coefficientDigits int, format decfloat.DecimalFormat) (parsedDecFloat, error) {
 	original := strings.TrimSpace(s)
 	if special, ok := parseSpecialValue(original); ok {
 		return parsedDecFloat{special: special}, nil
 	}
+	quotedOriginal := quoteDecFloatInput(original)
 
 	mantissa := original
 	var scientificExponent int64
 	if exponentIndex := strings.IndexAny(original, "eE"); exponentIndex >= 0 {
 		if exponentIndex != strings.LastIndexAny(original, "eE") {
-			return parsedDecFloat{}, fmt.Errorf("cannot parse %s from %q: multiple exponents", typeName, original)
+			return parsedDecFloat{}, fmt.Errorf("cannot parse %s from %s: multiple exponents", typeName, quotedOriginal)
 		}
 
 		mantissa = strings.TrimSpace(original[:exponentIndex])
 		exponentText := strings.TrimSpace(original[exponentIndex+1:])
 		if exponentText == "" {
-			return parsedDecFloat{}, fmt.Errorf("cannot parse %s from %q: missing exponent", typeName, original)
+			return parsedDecFloat{}, fmt.Errorf("cannot parse %s from %s: missing exponent", typeName, quotedOriginal)
 		}
 
 		var err error
-		scientificExponent, err = strconv.ParseInt(exponentText, 10, 32)
+		scientificExponent, err = strconv.ParseInt(exponentText, 10, 64)
 		if err != nil {
-			return parsedDecFloat{}, fmt.Errorf("cannot parse %s from %q: bad exponent %q: %w", typeName, original, exponentText, err)
+			if errors.Is(err, strconv.ErrRange) {
+				return parsedDecFloat{}, fmt.Errorf("cannot parse %s from %s: exponent %s is out of int64 range",
+					typeName, quotedOriginal, quoteDecFloatInput(exponentText))
+			}
+			return parsedDecFloat{}, fmt.Errorf("cannot parse %s from %s: bad exponent %s",
+				typeName, quotedOriginal, quoteDecFloatInput(exponentText))
 		}
 	}
 
-	coefficient, exponent, err := parseDecimalMantissa(mantissa)
+	coefficient, exponent, err := parseDecFloatMantissa(mantissa, coefficientDigits)
 	if err != nil {
-		return parsedDecFloat{}, fmt.Errorf("cannot parse %s from %q: %w", typeName, original, err)
+		return parsedDecFloat{}, fmt.Errorf("cannot parse %s from %s: %w", typeName, quotedOriginal, err)
 	}
 
 	negativeZero := coefficient.Sign() == 0 && strings.HasPrefix(mantissa, "-")
-	if coefficient.Sign() == 0 {
-		return parsedDecFloat{coefficient: coefficient, negativeZero: negativeZero}, nil
+	if scientificExponent > 0 && exponent > math.MaxInt64-scientificExponent ||
+		scientificExponent < 0 && exponent < math.MinInt64-scientificExponent {
+		return parsedDecFloat{}, fmt.Errorf("cannot parse %s from %s: exponent is out of int64 range", typeName, quotedOriginal)
 	}
-
-	combinedExponent := int64(exponent) + scientificExponent
+	combinedExponent := exponent + scientificExponent
 	if combinedExponent < math.MinInt32 || combinedExponent > math.MaxInt32 {
-		return parsedDecFloat{}, fmt.Errorf("cannot parse %s from %q: exponent %d is out of int32 range", typeName, original, combinedExponent)
+		return parsedDecFloat{}, fmt.Errorf("cannot parse %s from %s: exponent %d is out of int32 range", typeName, quotedOriginal, combinedExponent)
+	}
+	if err := format.ValidateFiniteCoefficientAndExponent(coefficient, int(combinedExponent)); err != nil {
+		return parsedDecFloat{}, fmt.Errorf("cannot parse %s from %s: %w", typeName, quotedOriginal, err)
 	}
 
 	return parsedDecFloat{
-		coefficient: coefficient,
-		exponent:    int32(combinedExponent),
+		coefficient:  coefficient,
+		exponent:     int32(combinedExponent),
+		negativeZero: negativeZero,
 	}, nil
 }
 
+func parseDecFloatMantissa(s string, maxCoefficientDigits int) (*big.Int, int64, error) {
+	if s == "" {
+		return nil, 0, fmt.Errorf("mantissa is empty")
+	}
+
+	negative := false
+	start := 0
+	if s[0] == '+' || s[0] == '-' {
+		negative = s[0] == '-'
+		start++
+	}
+	if start == len(s) {
+		return nil, 0, fmt.Errorf("mantissa has no digits")
+	}
+
+	digits := make([]byte, 0, maxCoefficientDigits)
+	decimalPointSeen := false
+	digitSeen := false
+	nonzeroSeen := false
+	var fractionalDigits int64
+	for i := start; i < len(s); i++ {
+		ch := s[i]
+		switch {
+		case ch == '.':
+			if decimalPointSeen {
+				return nil, 0, fmt.Errorf("mantissa contains multiple decimal points")
+			}
+			decimalPointSeen = true
+		case ch >= '0' && ch <= '9':
+			digitSeen = true
+			if decimalPointSeen {
+				fractionalDigits++
+			}
+			if ch != '0' || nonzeroSeen {
+				nonzeroSeen = true
+				if len(digits) == maxCoefficientDigits {
+					return nil, 0, fmt.Errorf("coefficient out of range: more than %d decimal digits", maxCoefficientDigits)
+				}
+				digits = append(digits, ch)
+			}
+		default:
+			return nil, 0, fmt.Errorf("mantissa contains invalid character %q", ch)
+		}
+	}
+	if !digitSeen {
+		return nil, 0, fmt.Errorf("mantissa has no digits")
+	}
+	if !nonzeroSeen {
+		return new(big.Int), -fractionalDigits, nil
+	}
+
+	coefficient := new(big.Int)
+	if _, ok := coefficient.SetString(string(digits), 10); !ok {
+		return nil, 0, fmt.Errorf("cannot parse decimal coefficient")
+	}
+	if negative {
+		coefficient.Neg(coefficient)
+	}
+	return coefficient, -fractionalDigits, nil
+}
+
 func parseSpecialValue(s string) (SpecialValue, bool) {
-	switch strings.ToLower(s) {
-	case "+infinity", "+inf", "infinity", "inf":
+	switch {
+	case strings.EqualFold(s, "+infinity"), strings.EqualFold(s, "+inf"),
+		strings.EqualFold(s, "infinity"), strings.EqualFold(s, "inf"):
 		return SpecialPosInf, true
-	case "-infinity", "-inf":
+	case strings.EqualFold(s, "-infinity"), strings.EqualFold(s, "-inf"):
 		return SpecialNegInf, true
-	case "nan", "+nan":
+	case strings.EqualFold(s, "nan"), strings.EqualFold(s, "+nan"):
 		return SpecialQuietNaN, true
-	case "-nan":
+	case strings.EqualFold(s, "-nan"):
 		return SpecialNegQuietNaN, true
-	case "snan", "+snan":
+	case strings.EqualFold(s, "snan"), strings.EqualFold(s, "+snan"):
 		return SpecialSignalingNaN, true
-	case "-snan":
+	case strings.EqualFold(s, "-snan"):
 		return SpecialNegSignalingNaN, true
 	default:
 		return SpecialNone, false
 	}
 }
 
-// formatDecimal renders as a plain decimal string without scientific notation.
-func formatDecimal(coef *big.Int, exp int32) string {
-	if coef == nil {
-		return "0"
+func quoteDecFloatInput(s string) string {
+	if len(s) <= maxDecFloatErrorInputBytes {
+		return strconv.Quote(s)
+	}
+	return fmt.Sprintf("%s... (%d bytes)", strconv.Quote(s[:maxDecFloatErrorInputBytes]), len(s))
+}
+
+// formatDecFloat returns a one-to-one textual representation of a finite
+// decimal coefficient and exponent, following the canonical BigDecimal form.
+func formatDecFloat(coefficient *big.Int, exponent int32, negativeZero bool) string {
+	negative := negativeZero
+	digits := "0"
+	if coefficient != nil && coefficient.Sign() != 0 {
+		negative = coefficient.Sign() < 0
+		digits = new(big.Int).Abs(coefficient).String()
 	}
 
-	intStr := coef.String()
-	negative := false
-	if strings.HasPrefix(intStr, "-") {
-		negative = true
-		intStr = intStr[1:]
-	}
-
+	adjustedExponent := int64(exponent) + int64(len(digits)-1)
 	var result strings.Builder
 	if negative {
 		result.WriteByte('-')
 	}
 
-	if exp == 0 {
-		result.WriteString(intStr)
-		return result.String()
-	}
-
-	if exp > 0 {
-		result.WriteString(intStr)
-		for i := int32(0); i < exp; i++ {
-			result.WriteByte('0')
+	if exponent <= 0 && adjustedExponent >= -6 {
+		scale := -int64(exponent)
+		if scale == 0 {
+			result.WriteString(digits)
+			return result.String()
 		}
-		return result.String()
-	}
-
-	absExp := -int64(exp)
-	if int64(len(intStr)) <= absExp {
-		result.WriteString("0.")
-		for i := int64(0); i < absExp-int64(len(intStr)); i++ {
-			result.WriteByte('0')
+		if int64(len(digits)) <= scale {
+			result.WriteString("0.")
+			for i := int64(0); i < scale-int64(len(digits)); i++ {
+				result.WriteByte('0')
+			}
+			result.WriteString(digits)
+			return result.String()
 		}
-		result.WriteString(intStr)
-	} else {
-		dpPos := len(intStr) - int(absExp)
-		result.WriteString(intStr[:dpPos])
+
+		decimalPoint := len(digits) - int(scale)
+		result.WriteString(digits[:decimalPoint])
 		result.WriteByte('.')
-		result.WriteString(intStr[dpPos:])
+		result.WriteString(digits[decimalPoint:])
+		return result.String()
 	}
 
+	result.WriteByte(digits[0])
+	if len(digits) > 1 {
+		result.WriteByte('.')
+		result.WriteString(digits[1:])
+	}
+	result.WriteByte('E')
+	if adjustedExponent >= 0 {
+		result.WriteByte('+')
+	}
+	result.WriteString(strconv.FormatInt(adjustedExponent, 10))
 	return result.String()
-}
-
-// formatDecFloat16General formats a finite DecFloat16 using general rules:
-// plain form when short, otherwise scientific.
-func formatDecFloat16General(coef *big.Int, exp int32) string {
-	if coef == nil || coef.Sign() == 0 {
-		return "0"
-	}
-
-	abs := new(big.Int).Abs(coef)
-	digits := abs.String()
-	digitsCount := len(digits)
-
-	digitsToLeft := int64(digitsCount) + int64(exp)
-
-	if exp == 0 {
-		return formatDecimal(coef, exp)
-	}
-	if digitsToLeft > 0 && digitsToLeft <= int64(dec16MaxIntDigitsPlain) {
-		return formatDecimal(coef, exp)
-	}
-	if digitsToLeft <= 0 {
-		leadingZeros := -digitsToLeft
-		if leadingZeros <= int64(dec16MaxLeadingZerosPlain) {
-			return formatDecimal(coef, exp)
-		}
-	}
-
-	return formatDecFloatScientific(coef, exp)
-}
-
-// formatDecFloatScientific formats as normalized scientific notation with one digit before the dot.
-func formatDecFloatScientific(coef *big.Int, exp int32) string {
-	if coef == nil || coef.Sign() == 0 {
-		return "0"
-	}
-
-	neg := coef.Sign() < 0
-	abs := new(big.Int).Abs(coef)
-	digits := abs.String()
-	dc := len(digits)
-
-	k := int64(exp) + int64(dc-1)
-
-	var mant string
-	if dc == 1 {
-		mant = digits
-	} else {
-		mant = digits[:1] + "." + digits[1:]
-	}
-	if neg {
-		mant = "-" + mant
-	}
-
-	return fmt.Sprintf("%sE%+d", mant, k)
 }
 
 // encodeDecFloat16Binary encodes DecFloat16 into IEEE-754 decimal64.

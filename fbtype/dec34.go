@@ -12,11 +12,6 @@ import (
 	"rdb.red-soft.ru/fbx/fbtype/decfloat"
 )
 
-const (
-	dec34MaxIntDigitsPlain    = 34
-	dec34MaxLeadingZerosPlain = 6
-)
-
 // Dec34Scanner scans a Firebird DECFLOAT(34) value.
 type Dec34Scanner interface {
 	// ScanDec34 scans v into the receiver.
@@ -93,8 +88,9 @@ func (d DecFloat34) Value() (driver.Value, error) {
 	return d.String(), nil
 }
 
-// String returns the decimal representation of d, or an empty string for SQL
-// NULL.
+// String returns the canonical decimal representation of d, or an empty string
+// for SQL NULL. For finite values, the representation preserves the coefficient,
+// exponent, and sign of zero.
 func (d DecFloat34) String() string {
 	if !d.Valid {
 		return ""
@@ -102,10 +98,7 @@ func (d DecFloat34) String() string {
 	if d.Special != SpecialNone {
 		return d.Special.String()
 	}
-	if d.IsNegativeZero() {
-		return "-0"
-	}
-	return formatDecFloat34General(d.Int, d.Exp)
+	return formatDecFloat(d.Int, d.Exp, d.IsNegativeZero())
 }
 
 // MarshalJSON encodes d as a JSON string or null.
@@ -156,7 +149,10 @@ func (d DecFloat34) IsNegativeZero() bool {
 }
 
 func (d DecFloat34) validate() error {
-	return validateDecFloat("DecFloat34", d.Int, d.Valid, d.Special, d.NegativeZero)
+	if err := validateDecFloat("DecFloat34", d.Int, d.Valid, d.Special, d.NegativeZero); err != nil {
+		return err
+	}
+	return validateFiniteDecFloat("DecFloat34", d.Int, d.Valid, d.Special, d.Exp, decfloat.Decimal128)
 }
 
 func cloneDecFloat34(d DecFloat34) DecFloat34 {
@@ -435,7 +431,7 @@ func Float64ToDecFloat34(f float64) (DecFloat34, error) {
 		}, nil
 	}
 
-	s := strconv.FormatFloat(f, 'f', -1, 64)
+	s := strconv.FormatFloat(f, 'g', -1, 64)
 
 	var d DecFloat34
 	if err := parseDecFloat34String(s, &d); err != nil {
@@ -470,7 +466,7 @@ func decFloat34ToFloat64(d DecFloat34) (float64, error) {
 		return math.Copysign(0, -1), nil
 	}
 
-	s := formatDecFloatScientific(d.Int, d.Exp)
+	s := formatDecFloat(d.Int, d.Exp, false)
 
 	f, err := strconv.ParseFloat(s, 64)
 	if err != nil {
@@ -489,7 +485,7 @@ func decFloat34ToFloat64(d DecFloat34) (float64, error) {
 // parseDecFloat34String parses a textual DECFLOAT(34), including scientific
 // notation, into dst.
 func parseDecFloat34String(s string, dst *DecFloat34) error {
-	parsed, err := parseDecFloatString(s, "DecFloat34")
+	parsed, err := parseDecFloatString(s, "DecFloat34", decFloat34CoefficientDigits, decfloat.Decimal128)
 	if err != nil {
 		*dst = DecFloat34{}
 		return err
@@ -503,33 +499,6 @@ func parseDecFloat34String(s string, dst *DecFloat34) error {
 		NegativeZero: parsed.negativeZero,
 	}
 	return nil
-}
-
-// formatDecFloat34General formats a finite DecFloat34 using general rules:
-// plain form when short, otherwise scientific.
-func formatDecFloat34General(coef *big.Int, exp int32) string {
-	if coef == nil || coef.Sign() == 0 {
-		return "0"
-	}
-
-	abs := new(big.Int).Abs(coef)
-	digits := abs.String()
-	digitsCount := len(digits)
-	digitsToLeft := int64(digitsCount) + int64(exp)
-
-	if exp == 0 {
-		return formatDecimal(coef, exp)
-	}
-	if digitsToLeft > 0 && digitsToLeft <= int64(dec34MaxIntDigitsPlain) {
-		return formatDecimal(coef, exp)
-	}
-	if digitsToLeft <= 0 {
-		leadingZeros := -digitsToLeft
-		if leadingZeros <= int64(dec34MaxLeadingZerosPlain) {
-			return formatDecimal(coef, exp)
-		}
-	}
-	return formatDecFloatScientific(coef, exp)
 }
 
 // encodeDecFloat34Binary encodes DecFloat34 into IEEE-754 decimal128.
