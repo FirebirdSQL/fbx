@@ -366,6 +366,9 @@ func createAuthPlugin(name string, conf PluginConfig) (AuthPlugin, error) {
 	for k, v := range conf.ConstructorOptions {
 		if strings.ToLower(strings.TrimSpace(k)) == key {
 			for _, opt := range v {
+				if opt == nil {
+					return nil, fmt.Errorf("option function of plugin %s is nil", name)
+				}
 				err := opt(plugin)
 				if err != nil {
 					return nil, err

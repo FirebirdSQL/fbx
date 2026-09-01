@@ -165,11 +165,20 @@ func (c *Config) Copy() *Config {
 
 // SetPluginConstructorOptions allows to specify a list
 // of [auth.ConstructorOptions] for the specified authentication plugin.
-func (conf *Config) SetPluginConstructorOptions(plugin string, opts ...auth.ConstructorOption) {
+// If the option is nil, the method will return an error.
+func (conf *Config) SetPluginConstructorOptions(plugin string, opts ...auth.ConstructorOption) error {
 	if conf.ConstructorOptions == nil {
 		conf.ConstructorOptions = make(map[string][]auth.ConstructorOption)
 	}
-	conf.ConstructorOptions[strings.ToLower(strings.TrimSpace(plugin))] = opts
+	newOpts := make([]auth.ConstructorOption, 0, len(opts))
+	for _, opt := range opts {
+		if opt == nil {
+			return fmt.Errorf("plugin option must not be nil")
+		}
+		newOpts = append(newOpts, opt)
+	}
+	conf.ConstructorOptions[strings.ToLower(strings.TrimSpace(plugin))] = newOpts
+	return nil
 }
 
 // FallbackConfig contains additional host/port pairs to try when the primary address fails
