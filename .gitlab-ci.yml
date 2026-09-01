@@ -149,8 +149,9 @@ lint:
   image: golangci/golangci-lint:$GOLANGCI_LINT_VERSION
   stage: test
   script:
-    - golangci-lint run --issues-exit-code 0 --output.code-climate.path gl-code-quality-report.json --output.text.path stdout
+    - golangci-lint run --output.code-climate.path gl-code-quality-report.json --output.text.path stdout
   artifacts:
+    when: always
     reports:
       codequality: gl-code-quality-report.json
     paths:
