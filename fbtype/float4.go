@@ -23,11 +23,7 @@ func float64ToFloat32(n float64) (float32, error) {
 	if !math.IsNaN(n) && !math.IsInf(n, 0) && (n > math.MaxFloat32 || n < -math.MaxFloat32) {
 		return 0, fmt.Errorf("%v overflows float32", n)
 	}
-	f32 := float32(n)
-	if f32 == 0 && n != 0 {
-		return 0, fmt.Errorf("%v underflows float32", n)
-	}
-	return f32, nil
+	return float32(n), nil
 }
 
 // ScanFloat64 implements [Float64Scanner].
@@ -74,8 +70,9 @@ func (f Float4) Int64Value() (Int8, error) {
 
 // Scan implements the [database/sql.Scanner] interface.
 func (f *Float4) Scan(src any) error {
+	*f = Float4{}
+
 	if src == nil {
-		*f = Float4{}
 		return nil
 	}
 
@@ -83,7 +80,6 @@ func (f *Float4) Scan(src any) error {
 	case float64:
 		f32, err := float64ToFloat32(src)
 		if err != nil {
-			*f = Float4{}
 			return err
 		}
 		*f = Float4{Float32: f32, Valid: true}
@@ -118,6 +114,8 @@ func (f Float4) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON decodes a JSON number or null into f.
 func (f *Float4) UnmarshalJSON(b []byte) error {
+	*f = Float4{}
+
 	var n *float32
 	err := json.Unmarshal(b, &n)
 	if err != nil {
@@ -125,10 +123,9 @@ func (f *Float4) UnmarshalJSON(b []byte) error {
 	}
 
 	if n == nil {
-		*f = Float4{}
-	} else {
-		*f = Float4{Float32: *n, Valid: true}
+		return nil
 	}
+	*f = Float4{Float32: *n, Valid: true}
 
 	return nil
 }

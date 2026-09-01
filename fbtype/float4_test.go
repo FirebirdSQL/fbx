@@ -130,18 +130,11 @@ func TestFloat4RejectsFiniteFloat64Overflow(t *testing.T) {
 	if err := dst.Scan(math.MaxFloat64); err == nil || !strings.Contains(err.Error(), "overflows float32") {
 		t.Fatalf("Scan error = %v, want float32 overflow", err)
 	}
-	if err := dst.Scan(float64(math.SmallestNonzeroFloat32) / 4); err == nil || !strings.Contains(err.Error(), "underflows float32") {
-		t.Fatalf("Scan error = %v, want float32 underflow", err)
-	}
 
 	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_FLOAT, 0, 4, 0)
 	_, err := fbtype.NewMap().Encode(typeMetadata, math.MaxFloat64, nil)
 	if err == nil || !strings.Contains(err.Error(), "overflows float32") {
 		t.Fatalf("Encode error = %v, want float32 overflow", err)
-	}
-	_, err = fbtype.NewMap().Encode(typeMetadata, float64(math.SmallestNonzeroFloat32)/4, nil)
-	if err == nil || !strings.Contains(err.Error(), "underflows float32") {
-		t.Fatalf("Encode error = %v, want float32 underflow", err)
 	}
 
 	buf, err := fbtype.NewMap().Encode(typeMetadata, math.Inf(1), nil)
@@ -150,6 +143,85 @@ func TestFloat4RejectsFiniteFloat64Overflow(t *testing.T) {
 	}
 	if got, want := binary.BigEndian.Uint32(buf), math.Float32bits(float32(math.Inf(1))); got != want {
 		t.Fatalf("Encode +Inf bytes = %08x, want %08x", got, want)
+	}
+}
+
+func TestFloat4UnderflowUsesIEEE754Rounding(t *testing.T) {
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_FLOAT, 0, 4, 0)
+	smallest := float64(math.SmallestNonzeroFloat32)
+	tests := []struct {
+		name     string
+		value    float64
+		wantBits uint32
+	}{
+		{name: "positive rounds to zero", value: smallest / 4, wantBits: 0},
+		{name: "negative rounds to zero", value: -smallest / 4, wantBits: 1 << 31},
+		{name: "positive rounds to smallest subnormal", value: smallest * 3 / 4, wantBits: 1},
+		{name: "negative rounds to smallest subnormal", value: -smallest * 3 / 4, wantBits: 1<<31 | 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var scanned fbtype.Float4
+			if err := scanned.Scan(tt.value); err != nil {
+				t.Fatalf("Scan failed: %v", err)
+			}
+			if !scanned.Valid || math.Float32bits(scanned.Float32) != tt.wantBits {
+				t.Fatalf("Scan bits = %08x valid=%t, want %08x", math.Float32bits(scanned.Float32), scanned.Valid, tt.wantBits)
+			}
+
+			var scannedValue fbtype.Float4
+			if err := scannedValue.ScanFloat64(fbtype.Float8{Float64: tt.value, Valid: true}); err != nil {
+				t.Fatalf("ScanFloat64 failed: %v", err)
+			}
+			if got := math.Float32bits(scannedValue.Float32); got != tt.wantBits {
+				t.Fatalf("ScanFloat64 bits = %08x, want %08x", got, tt.wantBits)
+			}
+
+			for _, input := range []any{tt.value, fbtype.Float8{Float64: tt.value, Valid: true}} {
+				buf, err := fbtype.NewMap().Encode(typeMetadata, input, nil)
+				if err != nil {
+					t.Fatalf("Encode(%T) failed: %v", input, err)
+				}
+				if got := binary.BigEndian.Uint32(buf); got != tt.wantBits {
+					t.Fatalf("Encode(%T) bits = %08x, want %08x", input, got, tt.wantBits)
+				}
+			}
+		})
+	}
+
+	for _, tt := range []struct {
+		text     string
+		wantBits uint32
+	}{
+		{text: "1e-100", wantBits: 0},
+		{text: "-1e-100", wantBits: 1 << 31},
+	} {
+		t.Run("text "+tt.text, func(t *testing.T) {
+			var scanned fbtype.Float4
+			if err := scanned.Scan(tt.text); err != nil {
+				t.Fatalf("Scan failed: %v", err)
+			}
+			if !scanned.Valid || math.Float32bits(scanned.Float32) != tt.wantBits {
+				t.Fatalf("Scan bits = %08x valid=%t, want %08x", math.Float32bits(scanned.Float32), scanned.Valid, tt.wantBits)
+			}
+
+			var decoded fbtype.Float4
+			if err := decoded.UnmarshalJSON([]byte(tt.text)); err != nil {
+				t.Fatalf("UnmarshalJSON failed: %v", err)
+			}
+			if !decoded.Valid || math.Float32bits(decoded.Float32) != tt.wantBits {
+				t.Fatalf("UnmarshalJSON bits = %08x valid=%t, want %08x", math.Float32bits(decoded.Float32), decoded.Valid, tt.wantBits)
+			}
+
+			buf, err := fbtype.NewMap().Encode(typeMetadata, tt.text, nil)
+			if err != nil {
+				t.Fatalf("Encode failed: %v", err)
+			}
+			if got := binary.BigEndian.Uint32(buf); got != tt.wantBits {
+				t.Fatalf("Encode bits = %08x, want %08x", got, tt.wantBits)
+			}
+		})
 	}
 }
 
@@ -171,8 +243,33 @@ func TestFloat32ScanFromDoubleRejectsFiniteOverflow(t *testing.T) {
 
 	binary.BigEndian.PutUint64(src, math.Float64bits(float64(math.SmallestNonzeroFloat32)/4))
 	err = plan.Scan(src, &dst)
-	if err == nil || !strings.Contains(err.Error(), "underflows float32") {
-		t.Fatalf("Scan error = %v, want float32 underflow", err)
+	if err != nil {
+		t.Fatalf("Scan underflow failed: %v", err)
+	}
+	if got := math.Float32bits(dst); got != 0 {
+		t.Fatalf("Scan underflow bits = %08x, want positive zero", got)
+	}
+}
+
+func TestFloat4ScanAndUnmarshalJSONClearDestinationOnError(t *testing.T) {
+	for _, input := range []any{"not-a-number", math.MaxFloat64, struct{}{}} {
+		got := fbtype.Float4{Float32: 42, Valid: true}
+		if err := got.Scan(input); err == nil {
+			t.Fatalf("Scan(%T) succeeded", input)
+		}
+		if got != (fbtype.Float4{}) {
+			t.Fatalf("Scan(%T) left stale value: %+v", input, got)
+		}
+	}
+
+	for _, input := range [][]byte{[]byte(`"not-a-number"`), []byte(`1e100`)} {
+		got := fbtype.Float4{Float32: 42, Valid: true}
+		if err := got.UnmarshalJSON(input); err == nil {
+			t.Fatalf("UnmarshalJSON(%s) succeeded", input)
+		}
+		if got != (fbtype.Float4{}) {
+			t.Fatalf("UnmarshalJSON(%s) left stale value: %+v", input, got)
+		}
 	}
 }
 

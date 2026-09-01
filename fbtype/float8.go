@@ -76,8 +76,9 @@ func (f Float8) Int64Value() (Int8, error) {
 
 // Scan implements the [database/sql.Scanner] interface.
 func (f *Float8) Scan(src any) error {
+	*f = Float8{}
+
 	if src == nil {
-		*f = Float8{}
 		return nil
 	}
 
@@ -115,6 +116,8 @@ func (f Float8) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON decodes a JSON number or null into f.
 func (f *Float8) UnmarshalJSON(b []byte) error {
+	*f = Float8{}
+
 	var n *float64
 	err := json.Unmarshal(b, &n)
 	if err != nil {
@@ -122,10 +125,9 @@ func (f *Float8) UnmarshalJSON(b []byte) error {
 	}
 
 	if n == nil {
-		*f = Float8{}
-	} else {
-		*f = Float8{Float64: *n, Valid: true}
+		return nil
 	}
+	*f = Float8{Float64: *n, Valid: true}
 
 	return nil
 }

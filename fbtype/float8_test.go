@@ -68,6 +68,28 @@ func TestFloat8UnmarshalJSON(t *testing.T) {
 	}
 }
 
+func TestFloat8ScanAndUnmarshalJSONClearDestinationOnError(t *testing.T) {
+	for _, input := range []any{"not-a-number", struct{}{}} {
+		got := fbtype.Float8{Float64: 42, Valid: true}
+		if err := got.Scan(input); err == nil {
+			t.Fatalf("Scan(%T) succeeded", input)
+		}
+		if got != (fbtype.Float8{}) {
+			t.Fatalf("Scan(%T) left stale value: %+v", input, got)
+		}
+	}
+
+	for _, input := range [][]byte{[]byte(`"not-a-number"`), []byte(`1e1000`)} {
+		got := fbtype.Float8{Float64: 42, Valid: true}
+		if err := got.UnmarshalJSON(input); err == nil {
+			t.Fatalf("UnmarshalJSON(%s) succeeded", input)
+		}
+		if got != (fbtype.Float8{}) {
+			t.Fatalf("UnmarshalJSON(%s) left stale value: %+v", input, got)
+		}
+	}
+}
+
 func TestFloat8CodecDirectScanToString(t *testing.T) {
 	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_DOUBLE, 0, 8, 0)
 	src := make([]byte, 8)
