@@ -33,6 +33,8 @@ const (
 	maxDecFloatErrorInputBytes  = 128
 )
 
+var decFloat16BinaryCodec = decfloat.NewDecimalCodec(decfloat.Decimal64)
+
 // String returns the canonical textual representation of s.
 func (s SpecialValue) String() string {
 	switch s {
@@ -829,14 +831,12 @@ func encodeDecFloat16Binary(buf []byte, d DecFloat16) ([]byte, error) {
 		return nil, nil
 	}
 
-	codec := decfloat.NewDecimalCodec(decfloat.Decimal64)
-
 	if d.Special != SpecialNone {
 		dd, err := decodedDecimalFromSpecial(d.Special)
 		if err != nil {
 			return nil, err
 		}
-		b, err := codec.Encode(dd)
+		b, err := decFloat16BinaryCodec.Encode(dd)
 		if err != nil {
 			return nil, err
 		}
@@ -860,7 +860,7 @@ func encodeDecFloat16Binary(buf []byte, d DecFloat16) ([]byte, error) {
 		Coefficient: coef,
 	}
 
-	b, err := codec.Encode(dd)
+	b, err := decFloat16BinaryCodec.Encode(dd)
 	if err != nil {
 		return nil, err
 	}
@@ -875,9 +875,7 @@ func decodeDecFloat16Binary(src []byte, dst *DecFloat16) error {
 		return fmt.Errorf("invalid length for DECFLOAT(16): expected 8 bytes, got %d", len(src))
 	}
 
-	codec := decfloat.NewDecimalCodec(decfloat.Decimal64)
-
-	dd, err := codec.ParseBytes(src)
+	dd, err := decFloat16BinaryCodec.ParseBytes(src)
 	if err != nil {
 		return err
 	}

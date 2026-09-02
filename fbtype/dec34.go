@@ -12,6 +12,8 @@ import (
 	"rdb.red-soft.ru/fbx/fbtype/decfloat"
 )
 
+var decFloat34BinaryCodec = decfloat.NewDecimalCodec(decfloat.Decimal128)
+
 // Dec34Scanner scans a Firebird DECFLOAT(34) value.
 type Dec34Scanner interface {
 	// ScanDec34 scans v into the receiver.
@@ -510,14 +512,12 @@ func encodeDecFloat34Binary(buf []byte, d DecFloat34) ([]byte, error) {
 		return nil, nil
 	}
 
-	codec := decfloat.NewDecimalCodec(decfloat.Decimal128)
-
 	if d.Special != SpecialNone {
 		dd, err := decodedDecimalFromSpecial(d.Special)
 		if err != nil {
 			return nil, err
 		}
-		b, err := codec.Encode(dd)
+		b, err := decFloat34BinaryCodec.Encode(dd)
 		if err != nil {
 			return nil, err
 		}
@@ -541,7 +541,7 @@ func encodeDecFloat34Binary(buf []byte, d DecFloat34) ([]byte, error) {
 		Coefficient: coef,
 	}
 
-	b, err := codec.Encode(dd)
+	b, err := decFloat34BinaryCodec.Encode(dd)
 	if err != nil {
 		return nil, err
 	}
@@ -556,9 +556,7 @@ func decodeDecFloat34Binary(src []byte, dst *DecFloat34) error {
 		return fmt.Errorf("invalid length for DECFLOAT(34): expected 16 bytes, got %d", len(src))
 	}
 
-	codec := decfloat.NewDecimalCodec(decfloat.Decimal128)
-
-	dd, err := codec.ParseBytes(src)
+	dd, err := decFloat34BinaryCodec.ParseBytes(src)
 	if err != nil {
 		return err
 	}
