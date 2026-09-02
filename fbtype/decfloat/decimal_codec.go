@@ -19,8 +19,13 @@ type DecodedDecimal struct {
 }
 
 // DecimalCodec encodes and decodes one IEEE-754 decimal format.
+//
+// The zero value is invalid; use [NewDecimalCodec]. Format and
+// CoefficientCoder must use the same coefficient precision.
 type DecimalCodec struct {
-	Format           DecimalFormat
+	// Format describes the decimal interchange format.
+	Format DecimalFormat
+	// CoefficientCoder encodes and decodes Format's coefficient continuation.
 	CoefficientCoder *DenselyPackedDecimalCodec
 }
 

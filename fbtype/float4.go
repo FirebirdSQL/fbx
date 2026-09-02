@@ -12,11 +12,11 @@ import (
 )
 
 // Float4 represents the Firebird FLOAT type.
-//
-// Valid is false when the value represents SQL NULL.
 type Float4 struct {
+	// Float32 contains the floating-point value when Valid is true.
 	Float32 float32
-	Valid   bool
+	// Valid is false when the value represents SQL NULL.
+	Valid bool
 }
 
 func float64ToFloat32(n float64) (float32, error) {
@@ -26,7 +26,8 @@ func float64ToFloat32(n float64) (float32, error) {
 	return float32(n), nil
 }
 
-// ScanFloat64 implements [Float64Scanner].
+// ScanFloat64 implements [Float64Scanner]. It rejects finite overflow,
+// preserves non-finite values, and otherwise rounds to float32.
 func (f *Float4) ScanFloat64(n Float8) error {
 	if !n.Valid {
 		*f = Float4{}
@@ -48,13 +49,14 @@ func (f Float4) Float64Value() (Float8, error) {
 	return Float8{Float64: float64(f.Float32), Valid: f.Valid}, nil
 }
 
-// ScanInt64 implements [Int64Scanner].
+// ScanInt64 implements [Int64Scanner] and may round to float32 precision.
 func (f *Float4) ScanInt64(n Int8) error {
 	*f = Float4{Float32: float32(n.Int64), Valid: n.Valid}
 	return nil
 }
 
-// Int64Value implements [Int64Valuer].
+// Int64Value implements [Int64Valuer]. It rejects fractional, non-finite, and
+// out-of-range values.
 func (f Float4) Int64Value() (Int8, error) {
 	if !f.Valid {
 		return Int8{}, nil
@@ -68,7 +70,8 @@ func (f Float4) Int64Value() (Int8, error) {
 	return Int8{Int64: i64, Valid: true}, nil
 }
 
-// Scan implements the [database/sql.Scanner] interface.
+// Scan implements [database/sql.Scanner]. It accepts nil, float64, and string
+// values and uses the same conversion rules as [Float4.ScanFloat64].
 func (f *Float4) Scan(src any) error {
 	*f = Float4{}
 
@@ -104,7 +107,7 @@ func (f Float4) Value() (driver.Value, error) {
 	return float64(f.Float32), nil
 }
 
-// MarshalJSON encodes f as a JSON number or null.
+// MarshalJSON encodes f as a JSON number or null and rejects non-finite values.
 func (f Float4) MarshalJSON() ([]byte, error) {
 	if !f.Valid {
 		return []byte("null"), nil
@@ -112,7 +115,8 @@ func (f Float4) MarshalJSON() ([]byte, error) {
 	return json.Marshal(f.Float32)
 }
 
-// UnmarshalJSON decodes a JSON number or null into f.
+// UnmarshalJSON decodes a JSON number or null into f. It rejects overflow;
+// underflow may round to signed zero.
 func (f *Float4) UnmarshalJSON(b []byte) error {
 	*f = Float4{}
 
