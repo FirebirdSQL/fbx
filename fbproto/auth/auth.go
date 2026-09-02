@@ -3,6 +3,7 @@ package auth
 import (
 	"fmt"
 	"strings"
+	"sync"
 )
 
 // ConstructorOption is a functional option for configuring AuthPlugin.
@@ -66,15 +67,24 @@ var defaultPluginSequence = []string{
 	"Legacy_Auth",
 }
 
-var pluginConstructors = map[string]func(conf PluginConfig) AuthPlugin{
-	"srp":    func(PluginConfig) AuthPlugin { return NewSrpAuthPlugin() },
-	"srp256": func(PluginConfig) AuthPlugin { return NewSrp256AuthPlugin() },
-	"srp224": func(PluginConfig) AuthPlugin { return NewSrp224AuthPlugin() },
-	"srp384": func(PluginConfig) AuthPlugin { return NewSrp384AuthPlugin() },
-	"srp512": func(PluginConfig) AuthPlugin { return NewSrp512AuthPlugin() },
-	"legacy_auth": func(conf PluginConfig) AuthPlugin {
-		return NewLegacyAuthPlugin(conf.Password)
-	},
+var pluginConstructors struct {
+	mu               sync.RWMutex
+	constructorsList map[string]func(conf PluginConfig) AuthPlugin
+}
+
+func init() {
+	pluginConstructors.mu.Lock()
+	pluginConstructors.constructorsList = map[string]func(conf PluginConfig) AuthPlugin{
+		"srp":    func(PluginConfig) AuthPlugin { return NewSrpAuthPlugin() },
+		"srp256": func(PluginConfig) AuthPlugin { return NewSrp256AuthPlugin() },
+		"srp224": func(PluginConfig) AuthPlugin { return NewSrp224AuthPlugin() },
+		"srp384": func(PluginConfig) AuthPlugin { return NewSrp384AuthPlugin() },
+		"srp512": func(PluginConfig) AuthPlugin { return NewSrp512AuthPlugin() },
+		"legacy_auth": func(conf PluginConfig) AuthPlugin {
+			return NewLegacyAuthPlugin(conf.Password)
+		},
+	}
+	pluginConstructors.mu.Unlock()
 }
 
 // DefaultPluginSequence returns a copy of the default authentication plugin order.
@@ -109,10 +119,13 @@ type SpecificDataChunk struct {
 // To register it, you need to pass the name of the plugin and its constructor.
 // Constructor must be like in pluginConstructors map.
 func RegisterAuthPlugin(name string, constructor func(PluginConfig) AuthPlugin) error {
+	pluginConstructors.mu.Lock()
+	defer pluginConstructors.mu.Unlock()
+
 	lowerName := strings.ToLower(name)
-	if _, ok := pluginConstructors[lowerName]; !ok {
+	if _, ok := pluginConstructors.constructorsList[lowerName]; !ok {
 		defaultPluginSequence = append(defaultPluginSequence, strings.TrimSpace(name))
-		pluginConstructors[lowerName] = constructor
+		pluginConstructors.constructorsList[lowerName] = constructor
 		return nil
 	}
 	return fmt.Errorf("plugin already exists")
@@ -360,8 +373,11 @@ func (m *AuthManager) pluginNames() []string {
 
 // The method creates an authentication plugin if such a name exists in pluginConstructors.
 func createAuthPlugin(name string, conf PluginConfig) (AuthPlugin, error) {
+	pluginConstructors.mu.RLock()
+	defer pluginConstructors.mu.RUnlock()
+
 	key := strings.ToLower(strings.TrimSpace(name))
-	constructor, ok := pluginConstructors[key]
+	constructor, ok := pluginConstructors.constructorsList[key]
 	if !ok {
 		return nil, &UnsupportedPluginError{Name: name}
 	}
