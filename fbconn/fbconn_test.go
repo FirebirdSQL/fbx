@@ -495,6 +495,96 @@ func TestConnPrepareContextPrecanceled(t *testing.T) {
 	ensureConnValid(t, fbConn)
 }
 
+func TestPrepareTxForConnectionUsesCurrentInternalTransaction(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	defer closeConn(t, fbConn)
+
+	preparingTx, err := fbConn.StartTransaction(ctx)
+	require.NoError(t, err)
+	defer func() {
+		if !preparingTx.Closed {
+			assert.NoError(t, preparingTx.Rollback(context.Background()))
+		}
+	}()
+
+	result := fbConn.ExecTx(ctx, preparingTx, "select RDB$SET_CONTEXT('USER_TRANSACTION', 'rs_328477_scope', 'preparing') from rdb$database").Read()
+	require.NoError(t, result.Err)
+
+	currentTx, err := fbConn.StartTransaction(ctx)
+	require.NoError(t, err)
+	defer func() {
+		if !currentTx.Closed {
+			assert.NoError(t, currentTx.Rollback(context.Background()))
+		}
+	}()
+
+	result = fbConn.ExecTx(ctx, currentTx, "select RDB$SET_CONTEXT('USER_TRANSACTION', 'rs_328477_scope', 'current') from rdb$database").Read()
+	require.NoError(t, result.Err)
+
+	st, err := fbConn.PrepareTxForConnection(ctx, preparingTx, "select RDB$GET_CONTEXT('USER_TRANSACTION', 'rs_328477_scope') from rdb$database")
+	require.NoError(t, err)
+	defer func() {
+		assert.NoError(t, st.Deallocate(context.Background()))
+	}()
+
+	result = st.ExecTx(ctx, preparingTx, nil).Read()
+	require.NoError(t, result.Err)
+	require.Equal(t, "preparing", string(result.Rows[0][0]))
+	require.NoError(t, preparingTx.Rollback(ctx))
+
+	result = st.Exec(ctx, nil).Read()
+	require.NoError(t, result.Err)
+	require.Equal(t, "current", string(result.Rows[0][0]))
+	require.NoError(t, st.Deallocate(ctx))
+	require.NoError(t, currentTx.Rollback(ctx))
+	ensureConnValid(t, fbConn)
+}
+
+func TestPrepareTxRemainsBoundToPreparingTransaction(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	defer closeConn(t, fbConn)
+
+	preparingTx, err := fbConn.StartTransaction(ctx)
+	require.NoError(t, err)
+	defer func() {
+		if !preparingTx.Closed {
+			assert.NoError(t, preparingTx.Rollback(context.Background()))
+		}
+	}()
+
+	currentTx, err := fbConn.StartTransaction(ctx)
+	require.NoError(t, err)
+	defer func() {
+		if !currentTx.Closed {
+			assert.NoError(t, currentTx.Rollback(context.Background()))
+		}
+	}()
+
+	st, err := fbConn.PrepareTx(ctx, preparingTx, "select 1 from rdb$database")
+	require.NoError(t, err)
+	defer func() {
+		assert.NoError(t, st.Deallocate(context.Background()))
+	}()
+
+	require.NoError(t, preparingTx.Rollback(ctx))
+	require.Error(t, st.Exec(ctx, nil).Read().Err)
+	require.NoError(t, st.Deallocate(ctx))
+	require.NoError(t, currentTx.Rollback(ctx))
+	ensureConnValid(t, fbConn)
+}
+
 func TestConnDeallocate(t *testing.T) {
 	t.Parallel()
 

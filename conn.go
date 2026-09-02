@@ -534,7 +534,28 @@ func (c *Conn) prepareNamedBatchTx(ctx context.Context, tx *dbTx, name, original
 	return pb.sd, nil
 }
 
-func (c *Conn) internalPrepare(ctx context.Context, tx *dbTx, name, sql string) (sd *fbconn.Statement, err error) {
+type statementScope uint8
+
+const (
+	statementScopeTransaction statementScope = iota
+	statementScopeConnection
+)
+
+func (c *Conn) internalPrepare(ctx context.Context, tx *dbTx, name, sql string) (*fbconn.Statement, error) {
+	return c.internalPrepareWithScope(ctx, tx, name, sql, statementScopeTransaction)
+}
+
+func (c *Conn) internalPrepareForCache(ctx context.Context, tx *dbTx, name, sql string) (*fbconn.Statement, error) {
+	return c.internalPrepareWithScope(ctx, tx, name, sql, statementScopeConnection)
+}
+
+func (c *Conn) internalPrepareWithScope(
+	ctx context.Context,
+	tx *dbTx,
+	name string,
+	sql string,
+	scope statementScope,
+) (sd *fbconn.Statement, err error) {
 	if c.prepareTracer != nil {
 		ctx = c.prepareTracer.TracePrepareStart(ctx, c, TracePrepareStartData{Name: name, SQL: sql})
 	}
@@ -565,7 +586,11 @@ func (c *Conn) internalPrepare(ctx context.Context, tx *dbTx, name, sql string) 
 	psName, psKey := preparedStatementNameAndKey(name, sql)
 
 	if tx != nil {
-		st, err = c.fbConn.PrepareTx(ctx, tx.tx, sql)
+		if scope == statementScopeConnection {
+			st, err = c.fbConn.PrepareTxForConnection(ctx, tx.tx, sql)
+		} else {
+			st, err = c.fbConn.PrepareTx(ctx, tx.tx, sql)
+		}
 	} else {
 		st, err = c.fbConn.Prepare(ctx, sql)
 	}
@@ -580,7 +605,11 @@ func (c *Conn) internalPrepare(ctx context.Context, tx *dbTx, name, sql string) 
 	return st, nil
 }
 
-// Deallocate releases a prepared statement or named batch.
+// Deallocate releases a prepared statement, an automatically cached statement,
+// or a named batch. Automatically cached statements can be identified by their
+// SQL text.
+// If name identifies both a prepared statement and cached SQL, Deallocate
+// releases both statements.
 // Calling Deallocate on a non-existent object will succeed.
 func (c *Conn) Deallocate(ctx context.Context, name string) error {
 	if pb := c.preparedBatches[name]; pb != nil {
@@ -592,16 +621,65 @@ func (c *Conn) Deallocate(ctx context.Context, name string) error {
 		return nil
 	}
 
-	st := c.preparedStatements[name]
-
-	if st != nil {
-		err := st.Deallocate(ctx)
-
-		if err != nil {
-			return err
+	preparedStatement := c.preparedStatements[name]
+	var cachedStatement *fbconn.Statement
+	if c.statementCache != nil {
+		cachedStatement = c.statementCache.Get(name)
+		if cachedStatement == nil {
+			cachedStatement = c.statementCache.GetInvalidatedBySQL(name)
 		}
+	}
 
-		delete(c.preparedStatements, name)
+	var err error
+	if preparedStatement != nil {
+		err = c.deallocatePreparedStatement(ctx, preparedStatement)
+	}
+	if cachedStatement != nil && cachedStatement != preparedStatement {
+		err = errors.Join(err, c.deallocatePreparedStatement(ctx, cachedStatement))
+	}
+
+	return err
+}
+
+// DeallocateStatement releases the prepared statement identified by sd.
+// It does nothing if sd is nil or no longer belongs to the connection.
+func (c *Conn) DeallocateStatement(ctx context.Context, sd *fbconn.StatementDescription) error {
+	if sd == nil {
+		return nil
+	}
+
+	for _, st := range c.preparedStatements {
+		if st.Description == sd {
+			return c.deallocatePreparedStatement(ctx, st)
+		}
+	}
+
+	return nil
+}
+
+func (c *Conn) deallocatePreparedStatement(ctx context.Context, st *fbconn.Statement) error {
+	if err := st.Deallocate(ctx); err != nil {
+		return err
+	}
+
+	if c.statementCache != nil {
+		c.statementCache.Remove(st)
+	}
+	removed := false
+	if c.preparedStatements[st.Description.SQL] == st {
+		delete(c.preparedStatements, st.Description.SQL)
+		removed = true
+	}
+	if c.preparedStatements[st.Description.Name] == st {
+		delete(c.preparedStatements, st.Description.Name)
+		removed = true
+	}
+	if !removed {
+		for name, preparedStatement := range c.preparedStatements {
+			if preparedStatement == st {
+				delete(c.preparedStatements, name)
+			}
+		}
 	}
 
 	return nil
@@ -713,6 +791,7 @@ func (c *Conn) execTx(ctx context.Context, tx *dbTx, sql string, arguments ...an
 func (c *Conn) exec(ctx context.Context, tx *dbTx, sql string, arguments ...any) (commandTag fbconn.QueryStatus, err error) {
 	mode := c.config.DefaultQueryExecMode
 	var queryRewriter QueryRewriter
+	invalidateSQL := sql
 
 optionLoop:
 	for len(arguments) > 0 {
@@ -733,6 +812,7 @@ optionLoop:
 		if err != nil {
 			return fbconn.QueryStatus{}, fmt.Errorf("rewrite query failed: %w", err)
 		}
+		invalidateSQL = sql
 	}
 
 	if pb := c.preparedBatches[sql]; pb != nil {
@@ -745,28 +825,18 @@ optionLoop:
 	defer func() {
 		if err != nil {
 			if sc := c.statementCache; sc != nil {
-				sc.Invalidate(sql)
+				sc.Invalidate(invalidateSQL)
 			}
 		}
 	}()
 
 	switch mode {
 	case QueryExecModeCacheStatement:
-		if sd, ok := c.preparedStatements[sql]; ok {
-			return c.execPrepared(ctx, tx, sd, arguments)
+		st, err := c.getCachedStatement(ctx, tx, sql)
+		if err != nil {
+			return fbconn.QueryStatus{}, err
 		}
-
-		if c.statementCache == nil {
-			return fbconn.QueryStatus{}, errDisabledStatementCache
-		}
-		st := c.statementCache.Get(sql)
-		if st == nil {
-			st, err = c.internalPrepare(ctx, tx, stmtcache.StatementName(sql), sql)
-			if err != nil {
-				return fbconn.QueryStatus{}, err
-			}
-			c.statementCache.Put(st)
-		}
+		invalidateSQL = st.Description.SQL
 
 		return c.execPrepared(ctx, tx, st, arguments)
 	case QueryExecModeExec:
@@ -785,6 +855,43 @@ optionLoop:
 	default:
 		return fbconn.QueryStatus{}, fmt.Errorf("unknown QueryExecMode: %v", mode)
 	}
+}
+
+// getCachedStatement returns an explicitly registered statement or the
+// connection-wide cached statement for sql. When tx is non-nil, a statement
+// admitted to the cache is prepared in tx for metadata resolution but is not
+// bound to its lifetime: [fbconn.Statement.ExecTx] uses its explicit
+// transaction, while [fbconn.Statement.Exec] uses the connection's current
+// internal transaction.
+//
+// If the generated cache name already belongs to an explicitly prepared
+// statement, that statement is returned without transferring its ownership to
+// the cache.
+func (c *Conn) getCachedStatement(ctx context.Context, tx *dbTx, sql string) (*fbconn.Statement, error) {
+	if st := c.preparedStatements[sql]; st != nil {
+		return st, nil
+	}
+
+	if c.statementCache == nil {
+		return nil, errDisabledStatementCache
+	}
+
+	st := c.statementCache.Get(sql)
+	if st != nil {
+		return st, nil
+	}
+
+	statementName := stmtcache.StatementName(sql)
+	existingStatement := c.preparedStatements[statementName]
+	st, err := c.internalPrepareForCache(ctx, tx, statementName, sql)
+	if err != nil {
+		return nil, err
+	}
+	if existingStatement != nil {
+		return st, nil
+	}
+	c.statementCache.Put(st)
+	return st, nil
 }
 
 func (c *Conn) execPrepared(ctx context.Context, tx *dbTx, st *fbconn.Statement, arguments []any) (fbconn.QueryStatus, error) {
@@ -1009,17 +1116,21 @@ optionLoop:
 		return rows, err
 	}
 
-	var err error
-	st := c.preparedStatements[sql]
-	if st != nil || mode == QueryExecModeCacheStatement {
-		if st == nil {
-			st, err = c.internalPrepare(ctx, tx, sql, sql)
-			if err != nil {
-				rows.fatal(err)
-				return rows, err
-			}
-			c.statementCache.Put(st)
+	var (
+		st  *fbconn.Statement
+		err error
+	)
+	if mode == QueryExecModeCacheStatement {
+		st, err = c.getCachedStatement(ctx, tx, sql)
+		if err != nil {
+			rows.fatal(err)
+			return rows, err
 		}
+	} else {
+		st = c.preparedStatements[sql]
+	}
+
+	if st != nil {
 
 		if len(st.Description.Parameters) != len(args) {
 			rows.fatal(fmt.Errorf("expected %d arguments, got %d", len(st.Description.Parameters), len(args)))
@@ -1091,31 +1202,15 @@ func (c *Conn) QueryRow(ctx context.Context, sql string, args ...any) Row {
 func (c *Conn) deallocateInvalidatedCachedStatements(ctx context.Context) error {
 	var invalidatedStatements []*fbconn.Statement
 	if c.statementCache != nil {
-		invalidatedStatements = c.statementCache.GetInvalidated()
+		invalidatedStatements = append(invalidatedStatements, c.statementCache.GetInvalidated()...)
 	}
 
 	if len(invalidatedStatements) == 0 {
 		return nil
 	}
 
-	//pipeline := c.fbConn.StartPipeline(ctx)
-	//defer pipeline.Close()
-
 	for _, st := range invalidatedStatements {
-		var key string
-
-		// Depending on execution path preparedStatements may be keyed either by SQL or by statement name.
-		if _, ok := c.preparedStatements[st.Description.SQL]; ok {
-			key = st.Description.SQL
-		} else if _, ok := c.preparedStatements[st.Description.Name]; ok {
-			key = st.Description.Name
-		}
-
-		if key == "" {
-			continue
-		}
-
-		if err := c.Deallocate(ctx, key); err != nil {
+		if err := c.deallocatePreparedStatement(ctx, st); err != nil {
 			return err
 		}
 	}
