@@ -1445,19 +1445,22 @@ func TestRowsColumnTypeNullable(t *testing.T) {
 
 func TestRowsDatabaseSQLValueTypes(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		var numericValue, doubleValue, octetsValue, timeValue any
+		var numericValue, floatValue, doubleValue, octetsValue, timeValue any
 		err := db.QueryRow(`
 			select
 				cast(9007199254740993 as numeric(18, 0)),
+				cast(1.25 as float),
 				cast(123.5 as double precision),
 				cast(x'deadbeef' as varchar(4) character set octets),
 				cast('14:30:45.1234' as time)
 			from rdb$database
-		`).Scan(&numericValue, &doubleValue, &octetsValue, &timeValue)
+		`).Scan(&numericValue, &floatValue, &doubleValue, &octetsValue, &timeValue)
 		require.NoError(t, err)
 
 		require.IsType(t, "", numericValue)
 		require.Equal(t, "9007199254740993", numericValue)
+		require.IsType(t, float64(0), floatValue)
+		require.Equal(t, float64(1.25), floatValue)
 		require.IsType(t, float64(0), doubleValue)
 		require.Equal(t, float64(123.5), doubleValue)
 		require.IsType(t, []byte(nil), octetsValue)

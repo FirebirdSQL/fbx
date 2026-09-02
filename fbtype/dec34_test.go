@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
+	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
 )
@@ -44,6 +45,9 @@ func isExpectedEqDec34(want fbtype.DecFloat34) func(any) bool {
 		if d.Special != want.Special {
 			return false
 		}
+		if d.NegativeZero != want.NegativeZero {
+			return false
+		}
 		if want.Special != fbtype.SpecialNone {
 			return true
 		}
@@ -77,13 +81,16 @@ func isExpectedEqFloat64(want float64) func(any) bool {
 		}
 
 		if math.IsNaN(want) {
-			return math.IsNaN(f)
+			return math.IsNaN(f) && math.Signbit(f) == math.Signbit(want)
 		}
 		if math.IsInf(want, 1) {
 			return math.IsInf(f, 1)
 		}
 		if math.IsInf(want, -1) {
 			return math.IsInf(f, -1)
+		}
+		if want == 0 {
+			return f == 0 && math.Signbit(f) == math.Signbit(want)
 		}
 
 		epsilon := 1e-14
@@ -112,6 +119,8 @@ func TestDecFloat34Codec_RoundTrip_DB(t *testing.T) {
 
 	testsData := []tc{
 		{"zero", fbtype.DecFloat34{Int: big.NewInt(0), Exp: 0, Valid: true, Special: fbtype.SpecialNone}, "0", 0, false},
+		{"zero_with_scale", fbtype.DecFloat34{Int: big.NewInt(0), Exp: -2, Valid: true, Special: fbtype.SpecialNone}, "0.00", 0, false},
+		{"zero_with_positive_exponent", fbtype.DecFloat34{Int: big.NewInt(0), Exp: 5, Valid: true, Special: fbtype.SpecialNone}, "0E+5", 0, false},
 		{"one", fbtype.DecFloat34{Int: big.NewInt(1), Exp: 0, Valid: true, Special: fbtype.SpecialNone}, "1", 1, false},
 		{"minus_one", fbtype.DecFloat34{Int: big.NewInt(-1), Exp: 0, Valid: true, Special: fbtype.SpecialNone}, "-1", -1, false},
 
@@ -209,9 +218,15 @@ func TestDecFloat34Codec_RoundTrip_DB(t *testing.T) {
 		},
 
 		{"negative_zero",
-			fbtype.DecFloat34{Int: big.NewInt(0), Exp: 0, Valid: true, Special: fbtype.SpecialNone},
-			"0",
-			0,
+			fbtype.DecFloat34{Int: big.NewInt(0), Exp: 0, Valid: true, Special: fbtype.SpecialNone, NegativeZero: true},
+			"-0",
+			math.Copysign(0, -1),
+			false,
+		},
+		{"negative_zero_with_scale",
+			fbtype.DecFloat34{Int: big.NewInt(0), Exp: -2, Valid: true, Special: fbtype.SpecialNone, NegativeZero: true},
+			"-0.00",
+			math.Copysign(0, -1),
 			false,
 		},
 
@@ -219,6 +234,8 @@ func TestDecFloat34Codec_RoundTrip_DB(t *testing.T) {
 		{"neg_inf", fbtype.DecFloat34{Valid: true, Special: fbtype.SpecialNegInf}, "-Infinity", math.Inf(-1), false},
 		{"qnan", fbtype.DecFloat34{Valid: true, Special: fbtype.SpecialQuietNaN}, "NaN", math.NaN(), false},
 		{"snan", fbtype.DecFloat34{Valid: true, Special: fbtype.SpecialSignalingNaN}, "sNaN", math.NaN(), false},
+		{"neg_qnan", fbtype.DecFloat34{Valid: true, Special: fbtype.SpecialNegQuietNaN}, "-NaN", math.Copysign(math.NaN(), -1), false},
+		{"neg_snan", fbtype.DecFloat34{Valid: true, Special: fbtype.SpecialNegSignalingNaN}, "-sNaN", math.Copysign(math.NaN(), -1), false},
 	}
 
 	var tests []fbxtest.ValueRoundTripTest
@@ -334,9 +351,24 @@ func TestDecFloat34_Value(t *testing.T) {
 			want:  "123.45",
 		},
 		{
+			name:  "negative zero",
+			input: mustDec34(t, "-0"),
+			want:  "-0",
+		},
+		{
 			name:  "special +Infinity",
 			input: mustDec34(t, "+Infinity"),
 			want:  "+Infinity",
+		},
+		{
+			name:  "special -NaN",
+			input: mustDec34(t, "-NaN"),
+			want:  "-NaN",
+		},
+		{
+			name:  "special -sNaN",
+			input: mustDec34(t, "-sNaN"),
+			want:  "-sNaN",
 		},
 		{
 			name:    "invalid (NULL)",
@@ -374,9 +406,24 @@ func TestDecFloat34_JSON(t *testing.T) {
 			want:  `"123.45"`,
 		},
 		{
+			name:  "negative zero",
+			input: mustDec34(t, "-0"),
+			want:  `"-0"`,
+		},
+		{
 			name:  "special +Infinity",
 			input: mustDec34(t, "+Infinity"),
 			want:  `"+Infinity"`,
+		},
+		{
+			name:  "special -NaN",
+			input: mustDec34(t, "-NaN"),
+			want:  `"-NaN"`,
+		},
+		{
+			name:  "special -sNaN",
+			input: mustDec34(t, "-sNaN"),
+			want:  `"-sNaN"`,
 		},
 		{
 			name:  "NULL",
@@ -412,10 +459,16 @@ func TestDecFloat34_SpecialMethods(t *testing.T) {
 		isSpecial  bool
 		isInfinity bool
 		isNaN      bool
+		isNegZero  bool
 	}{
 		{
 			name:  "normal number",
 			input: mustDec34(t, "123.45"),
+		},
+		{
+			name:      "negative zero",
+			input:     mustDec34(t, "-0"),
+			isNegZero: true,
 		},
 		{
 			name:       "+Infinity",
@@ -441,6 +494,18 @@ func TestDecFloat34_SpecialMethods(t *testing.T) {
 			isSpecial: true,
 			isNaN:     true,
 		},
+		{
+			name:      "-NaN",
+			input:     mustDec34(t, "-NaN"),
+			isSpecial: true,
+			isNaN:     true,
+		},
+		{
+			name:      "-sNaN",
+			input:     mustDec34(t, "-sNaN"),
+			isSpecial: true,
+			isNaN:     true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -448,6 +513,7 @@ func TestDecFloat34_SpecialMethods(t *testing.T) {
 			require.Equal(t, tt.isSpecial, tt.input.IsSpecial())
 			require.Equal(t, tt.isInfinity, tt.input.IsInfinity())
 			require.Equal(t, tt.isNaN, tt.input.IsNaN())
+			require.Equal(t, tt.isNegZero, tt.input.IsNegativeZero())
 		})
 	}
 }
@@ -455,11 +521,31 @@ func TestDecFloat34_SpecialMethods(t *testing.T) {
 func TestDecFloat34_Overflow(t *testing.T) {
 	t.Parallel()
 
-	var d fbtype.DecFloat34
-	err := d.Scan("12345678901234567890123456789012345")
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_DEC128, 0, 16, 0)
 
-	require.NoError(t, err)
-	require.True(t, d.Valid)
+	for _, tt := range []struct {
+		name        string
+		input       string
+		wantScanErr bool
+	}{
+		{"34 digits", "1234567890123456789012345678901234", false},
+		{"35 digits", "12345678901234567890123456789012345", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var d fbtype.DecFloat34
+			err := d.Scan(tt.input)
+			if tt.wantScanErr {
+				require.ErrorContains(t, err, "coefficient out of range")
+				require.False(t, d.Valid)
+				return
+			}
+			require.NoError(t, err)
+			require.True(t, d.Valid)
 
-	t.Logf("35 digits scanned: %s", d.String())
+			encoded, err := m.Encode(typeMetadata, d, nil)
+			require.NoError(t, err)
+			require.Len(t, encoded, 16)
+		})
+	}
 }
