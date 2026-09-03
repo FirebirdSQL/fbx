@@ -57,17 +57,14 @@ type Config struct {
 	MaxBlobCacheSize           int
 	FetchBatchSize             int
 
-	Certificate    []byte
-	CertificatePIN string
+	// ConstructorOptions allows to pass callbacks for setting parameters to authentication plugins.
+	ConstructorOptions map[string][]auth.ConstructorOption
 
 	// BuildContextWatcherHandler is called to create a ContextWatcherHandler for a connection. The handler is called
 	// when a context passed to a FbConn method is canceled.
 	BuildContextWatcherHandler func(*FbConn) ctxwatch.Handler
 
 	RuntimeParams map[string]string // Run-time parameters to set on connection as session default values (e.g. search_path or application_name)
-
-	KerberosSrvName string
-	KerberosSpn     string
 
 	Fallbacks []*FallbackConfig
 
@@ -146,6 +143,14 @@ func (c *Config) Copy() *Config {
 			newConf.RuntimeParams[k] = v
 		}
 	}
+	if newConf.ConstructorOptions != nil {
+		newConf.ConstructorOptions = make(map[string][]auth.ConstructorOption, len(c.ConstructorOptions))
+		for k, v := range c.ConstructorOptions {
+			newSlice := make([]auth.ConstructorOption, len(v))
+			copy(newSlice, v)
+			newConf.ConstructorOptions[k] = newSlice
+		}
+	}
 	if len(newConf.AuthPluginList) > 0 {
 		newList := make([]string, len(c.AuthPluginList))
 		copy(newList, c.AuthPluginList)
@@ -162,12 +167,25 @@ func (c *Config) Copy() *Config {
 		}
 		newConf.Fallbacks = fbs
 	}
-	if len(newConf.Certificate) > 0 {
-		newCertificate := make([]byte, len(c.Certificate))
-		copy(newCertificate, c.Certificate)
-		newConf.Certificate = newCertificate
-	}
 	return newConf
+}
+
+// SetPluginConstructorOptions allows to specify a list
+// of [auth.ConstructorOptions] for the specified authentication plugin.
+// If the option is nil, the method will return an error.
+func (conf *Config) SetPluginConstructorOptions(plugin string, opts ...auth.ConstructorOption) error {
+	if conf.ConstructorOptions == nil {
+		conf.ConstructorOptions = make(map[string][]auth.ConstructorOption)
+	}
+	newOpts := make([]auth.ConstructorOption, 0, len(opts))
+	for _, opt := range opts {
+		if opt == nil {
+			return fmt.Errorf("plugin option must not be nil")
+		}
+		newOpts = append(newOpts, opt)
+	}
+	conf.ConstructorOptions[strings.ToLower(strings.TrimSpace(plugin))] = newOpts
+	return nil
 }
 
 // FallbackConfig contains additional host/port pairs to try when the primary address fails
@@ -382,8 +400,6 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		"user":                          {},
 		"password":                      {},
 		"connect_timeout":               {},
-		"krbspn":                        {},
-		"krbsrvname":                    {},
 		"auth_plugin_list":              {},
 		"system_user":                   {},
 		"wire_crypt":                    {},
@@ -399,14 +415,6 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		"max_blob_cache_size":           {},
 		"fetch_batch_size":              {},
 		"target_session_attrs":          {},
-	}
-
-	// Adding kerberos configuration
-	if _, present := settings["krbsrvname"]; present {
-		config.KerberosSrvName = settings["krbsrvname"]
-	}
-	if _, present := settings["krbspn"]; present {
-		config.KerberosSpn = settings["krbspn"]
 	}
 
 	for k, v := range settings {
