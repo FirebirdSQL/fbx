@@ -71,7 +71,8 @@ func TestAuthManagerHandleServerChallenge(t *testing.T) {
 	m, err := NewAuthManager(pluginConfig, nil)
 	require.NoError(t, err)
 	legacyName := "Legacy_Auth"
-	m.SetCurrentPlugin(legacyName)
+	_, err = m.SetCurrentPlugin(legacyName)
+	require.NoError(t, err)
 	step, err := m.HandleServerChallenge(legacyName, nil)
 	require.NoError(t, err)
 	require.NotNil(t, step)
