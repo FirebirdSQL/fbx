@@ -42,7 +42,7 @@ func TestConnectServiceSendsServiceAttach(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	resultCh := make(chan serviceAttachProbeResult, 1)
 	go func() {
-		defer serverConn.Close()
+		defer func() { _ = serverConn.Close() }()
 		resultCh <- runServiceAttachProbeServer(serverConn)
 	}()
 
@@ -76,7 +76,7 @@ func TestConnectServiceAttachAndClose(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	resultCh := make(chan serviceLifecycleProbeResult, 1)
 	go func() {
-		defer serverConn.Close()
+		defer func() { _ = serverConn.Close() }()
 		resultCh <- runServiceLifecycleProbeServer(serverConn)
 	}()
 
@@ -110,7 +110,7 @@ func TestServiceConnCloseReturnsDetachError(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	serverDone := make(chan error, 1)
 	go func() {
-		defer serverConn.Close()
+		defer func() { _ = serverConn.Close() }()
 		serverDone <- runServiceAttachSuccessProbeServer(serverConn)
 	}()
 

@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -24,29 +25,40 @@ var supportedDateLayouts = []string{
 	"2006/1/2",
 }
 
+// DateScanner scans a Firebird DATE value.
 type DateScanner interface {
+	// ScanDate scans v into the receiver.
 	ScanDate(v Date) error
 }
 
+// DateValuer returns a Firebird DATE value.
 type DateValuer interface {
+	// DateValue returns the Firebird DATE value to encode.
 	DateValue() (Date, error)
 }
 
+// Date represents the Firebird DATE type.
+//
+// Time contains the date normalized to midnight UTC. Firebird DATE stores only
+// the calendar date, so time-of-day and location are discarded when values are
+// encoded or scanned. Valid is false when the value represents SQL NULL.
 type Date struct {
-	Time  time.Time
-	Valid bool
+	Time  time.Time // Time contains the date normalized to midnight UTC.
+	Valid bool      // Valid is false when the value represents SQL NULL.
 }
 
+// ScanDate implements [DateScanner].
 func (d *Date) ScanDate(v Date) error {
 	*d = v
 	return nil
 }
 
+// DateValue implements [DateValuer].
 func (d Date) DateValue() (Date, error) {
 	return d, nil
 }
 
-// Scan implements the database/sql Scanner interface.
+// Scan implements the [database/sql.Scanner] interface.
 func (dst *Date) Scan(src any) error {
 	if src == nil {
 		*dst = Date{}
@@ -74,15 +86,16 @@ func (dst *Date) Scan(src any) error {
 	return fmt.Errorf("cannot scan %T", src)
 }
 
-// Value implements the database/sql/driver Valuer interface.
+// Value implements the [database/sql/driver.Valuer] interface.
 func (src Date) Value() (driver.Value, error) {
 	if !src.Valid {
 		return nil, nil
 	}
 
-	return src.Time, nil
+	return normalizeFirebirdDate(src.Time)
 }
 
+// MarshalJSON encodes src as a JSON string in YYYY-MM-DD format or null.
 func (src Date) MarshalJSON() ([]byte, error) {
 	if !src.Valid {
 		return []byte("null"), nil
@@ -96,6 +109,7 @@ func (src Date) MarshalJSON() ([]byte, error) {
 	return json.Marshal(s)
 }
 
+// UnmarshalJSON decodes a JSON string in YYYY-MM-DD format or null into dst.
 func (dst *Date) UnmarshalJSON(b []byte) error {
 	var s *string
 	err := json.Unmarshal(b, &s)
@@ -123,8 +137,10 @@ func (dst *Date) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// DateCodec encodes and decodes Firebird DATE values.
 type DateCodec struct{}
 
+// PlanEncode returns an encode plan for supported Firebird DATE input values.
 func (DateCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	switch value.(type) {
 	case DateValuer:
@@ -150,24 +166,21 @@ func (encodePlanDateCodecBinary) Encode(value any, buf []byte) (newBuf []byte, e
 		return nil, nil
 	}
 
-	t, err := normalizeFirebirdDate(date.Time)
+	days, err := firebirdDateDayOffset(date.Time)
 	if err != nil {
 		return nil, err
 	}
 
-	days := int32((t.Unix() - firebirdDateEpoch.Unix()) / secondsPerDay)
 	return fbio.AppendInt32BE(buf, days), nil
 }
 
 type encodePlanDateCodecBinaryTime struct{}
 
 func (encodePlanDateCodecBinaryTime) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	t, err := normalizeFirebirdDate(value.(time.Time))
+	days, err := firebirdDateDayOffset(value.(time.Time))
 	if err != nil {
 		return nil, err
 	}
-
-	days := int32((t.Unix() - firebirdDateEpoch.Unix()) / secondsPerDay)
 
 	return fbio.AppendInt32BE(buf, days), nil
 }
@@ -180,11 +193,15 @@ func (encodePlanDateCodecBinaryString) Encode(value any, buf []byte) (newBuf []b
 		return nil, err
 	}
 
-	days := int32((t.Unix() - firebirdDateEpoch.Unix()) / secondsPerDay)
+	days, err := firebirdDateDayOffset(t)
+	if err != nil {
+		return nil, err
+	}
 
 	return fbio.AppendInt32BE(buf, days), nil
 }
 
+// PlanScan returns a scan plan for supported Firebird DATE target values.
 func (DateCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
 	switch target.(type) {
 	case DateScanner:
@@ -201,7 +218,10 @@ func (DateCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPla
 type scanPlanBinaryDateToDateScanner struct{}
 
 func (scanPlanBinaryDateToDateScanner) Scan(src []byte, dst any) error {
-	scanner := (dst).(DateScanner)
+	scanner, ok := dst.(DateScanner)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
 
 	if src == nil {
 		return scanner.ScanDate(Date{})
@@ -212,8 +232,10 @@ func (scanPlanBinaryDateToDateScanner) Scan(src []byte, dst any) error {
 	}
 
 	dayOffset := int32(binary.BigEndian.Uint32(src))
-
-	t := firebirdDateEpoch.AddDate(0, 0, int(dayOffset))
+	t, err := firebirdDateFromDayOffset(dayOffset)
+	if err != nil {
+		return err
+	}
 
 	return scanner.ScanDate(Date{Time: t, Valid: true})
 }
@@ -235,7 +257,12 @@ func (scanPlanBinaryDateToTime) Scan(src []byte, dst any) error {
 	}
 
 	dayOffset := int32(binary.BigEndian.Uint32(src))
-	*t = firebirdDateEpoch.AddDate(0, 0, int(dayOffset))
+	date, err := firebirdDateFromDayOffset(dayOffset)
+	if err != nil {
+		return err
+	}
+
+	*t = date
 
 	return nil
 }
@@ -249,8 +276,7 @@ func (scanPlanBinaryDateToString) Scan(src []byte, dst any) error {
 	}
 
 	if src == nil {
-		*s = ""
-		return nil
+		return fmt.Errorf("cannot scan NULL into *string")
 	}
 
 	if len(src) != 4 {
@@ -258,7 +284,10 @@ func (scanPlanBinaryDateToString) Scan(src []byte, dst any) error {
 	}
 
 	dayOffset := int32(binary.BigEndian.Uint32(src))
-	date := firebirdDateEpoch.AddDate(0, 0, int(dayOffset))
+	date, err := firebirdDateFromDayOffset(dayOffset)
+	if err != nil {
+		return err
+	}
 
 	formatted, err := formatDateString(date)
 	if err != nil {
@@ -272,7 +301,10 @@ func (scanPlanBinaryDateToString) Scan(src []byte, dst any) error {
 type scanPlanTextAnyToDateScanner struct{}
 
 func (scanPlanTextAnyToDateScanner) Scan(src []byte, dst any) error {
-	scanner := (dst).(DateScanner)
+	scanner, ok := dst.(DateScanner)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
 
 	if src == nil {
 		return scanner.ScanDate(Date{})
@@ -286,6 +318,7 @@ func (scanPlanTextAnyToDateScanner) Scan(src []byte, dst any) error {
 	return scanner.ScanDate(Date{Time: t, Valid: true})
 }
 
+// DecodeDatabaseSQLValue decodes src into a database/sql driver value.
 func (c DateCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
@@ -300,6 +333,7 @@ func (c DateCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src
 	return date.Time, nil
 }
 
+// DecodeValue decodes src into the default Go value for Firebird DATE.
 func (c DateCodec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
@@ -326,6 +360,27 @@ func normalizeFirebirdDate(t time.Time) (time.Time, error) {
 	}
 
 	return t, nil
+}
+
+func firebirdDateDayOffset(t time.Time) (int32, error) {
+	t, err := normalizeFirebirdDate(t)
+	if err != nil {
+		return 0, err
+	}
+
+	days := (t.Unix() - firebirdDateEpoch.Unix()) / secondsPerDay
+	if days < math.MinInt32 || days > math.MaxInt32 {
+		return 0, fmt.Errorf(
+			"date out of Firebird wire range: %04d-%02d-%02d",
+			t.Year(), t.Month(), t.Day(),
+		)
+	}
+
+	return int32(days), nil
+}
+
+func firebirdDateFromDayOffset(dayOffset int32) (time.Time, error) {
+	return normalizeFirebirdDate(firebirdDateEpoch.AddDate(0, 0, int(dayOffset)))
 }
 
 func formatDateString(t time.Time) (string, error) {

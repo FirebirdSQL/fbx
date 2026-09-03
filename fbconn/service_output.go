@@ -38,7 +38,8 @@ func (c *ServiceConn) copyServiceOutput(ctx context.Context, output io.Writer) e
 
 		chunk, state, err := parseServiceOutput(response)
 		if err != nil {
-			return err
+			c.conn.asyncClose()
+			return fmt.Errorf("parse service output: %w", err)
 		}
 
 		switch state {

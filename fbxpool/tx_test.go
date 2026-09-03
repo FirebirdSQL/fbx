@@ -22,7 +22,7 @@ func TestTxExec(t *testing.T) {
 
 	tx, err := pool.Begin(ctx)
 	require.NoError(t, err)
-	defer tx.Rollback(ctx)
+	defer func() { require.NoError(t, tx.Rollback(ctx)) }()
 
 	testExec(t, ctx, tx)
 }
@@ -39,7 +39,7 @@ func TestTxQuery(t *testing.T) {
 
 	tx, err := pool.Begin(ctx)
 	require.NoError(t, err)
-	defer tx.Rollback(ctx)
+	defer func() { require.NoError(t, tx.Rollback(ctx)) }()
 
 	testQuery(t, ctx, tx)
 }
@@ -56,7 +56,7 @@ func TestTxQueryRow(t *testing.T) {
 
 	tx, err := pool.Begin(ctx)
 	require.NoError(t, err)
-	defer tx.Rollback(ctx)
+	defer func() { require.NoError(t, tx.Rollback(ctx)) }()
 
 	testQueryRow(t, ctx, tx)
 }

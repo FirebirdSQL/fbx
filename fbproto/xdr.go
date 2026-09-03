@@ -202,7 +202,7 @@ func (x *XDRWriter) WriteInt64(i int64) error {
 }
 
 func (x *XDRWriter) WriteBuffer(buf []byte) error {
-	if buf == nil || len(buf) == 0 {
+	if len(buf) == 0 {
 		return x.WriteInt32(0)
 	}
 	n := len(buf)

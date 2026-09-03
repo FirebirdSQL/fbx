@@ -3,12 +3,15 @@ package fbtype
 import (
 	"database/sql/driver"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"reflect"
 	"time"
 
 	"rdb.red-soft.ru/fbx/fbproto"
 )
+
+var errNullArrayElement = errors.New("NULL array element is not supported")
 
 // ArrayGetter is the interface for sending the array to the server
 type ArrayGetter interface {
@@ -126,8 +129,7 @@ func (ps planScanArray) Scan(src []byte, dst any) error {
 	}
 
 	if src == nil {
-		array.SetDimensions(nil)
-		return nil
+		return array.SetDimensions(nil)
 	}
 
 	realIndexes, actualDims, err := getActualSliceDimensions(ps.arrayData.Dimensions, src, ps.arrayData.TypeId, ps.arrayData.Length)
@@ -173,6 +175,12 @@ func (pe planEncodeArray) Encode(value any, buf []byte) (newBuf []byte, err erro
 	if fieldElementCount < argumentElementCount {
 		return nil, fmt.Errorf("array too long")
 	}
+	if argumentElementCount == 0 {
+		if buf == nil {
+			buf = make([]byte, 0)
+		}
+		return buf, nil
+	}
 
 	var encodePlan EncodePlan
 	var lastElemType reflect.Type
@@ -183,6 +191,9 @@ func (pe planEncodeArray) Encode(value any, buf []byte) (newBuf []byte, err erro
 
 	for i := 0; i < argumentElementCount; i++ {
 		elem = array.Index(i)
+		if isNilValue(elem) {
+			return nil, fmt.Errorf("cannot encode NULL array element at index %d", i)
+		}
 		elemType := reflect.TypeOf(elem)
 		if lastElemType != elemType {
 			lastElemType = elemType
@@ -203,6 +214,9 @@ func (pe planEncodeArray) Encode(value any, buf []byte) (newBuf []byte, err erro
 		}
 
 		if err != nil {
+			if errors.Is(err, errNullArrayElement) {
+				return nil, fmt.Errorf("cannot encode NULL array element at index %d", i)
+			}
 			return nil, err
 		}
 		buf = append(buf, tmpBuf...)
@@ -211,8 +225,13 @@ func (pe planEncodeArray) Encode(value any, buf []byte) (newBuf []byte, err erro
 	return buf, nil
 }
 
-// Dimensions returns the list of dimensions and their bounds for array
+// Dimensions returns the dimensions and bounds of value. A nil-like value
+// represents a SQL NULL array and returns nil dimensions.
 func Dimensions(value any, lowers []int) ([]map[string]int, error) {
+	if isNilValue(value) {
+		return nil, nil
+	}
+
 	array, err := getArrayEncodeType(value)
 	if err != nil {
 		return nil, err
@@ -229,65 +248,59 @@ func Dimensions(value any, lowers []int) ([]map[string]int, error) {
 }
 
 func (ad *ArrayData) encodeStaticType(encodePlan EncodePlan, elem any) ([]byte, error) {
-	var buf []byte
-	var err error
-	if elem != nil {
-		buf, err = encodePlan.Encode(elem, buf)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		buf = append(buf, make([]byte, ad.Length)...)
+	buf, err := encodePlan.Encode(elem, make([]byte, 0))
+	if err != nil {
+		return nil, err
 	}
+	if buf == nil {
+		return nil, errNullArrayElement
+	}
+
 	return buf, nil
 }
 
 func (ad *ArrayData) encodeWithPadding(encodePlan EncodePlan, elem any) ([]byte, error) {
-	var buf []byte
-	var err error
-	if elem != nil {
-		buf, err = encodePlan.Encode(elem, buf)
-		if err != nil {
-			return nil, err
-		}
-		l := uint32(len(buf))
-		padding := make([]byte, ad.Length-l)
-		for i := range padding {
-			padding[i] = 32
-		}
-		buf = append(buf, padding...)
-		if ad.Length%4 != 0 {
-			padding = make([]byte, 4-ad.Length%4)
-			buf = append(buf, padding...)
-		}
-	} else {
-		buf = append(buf, make([]byte, ad.Length)...)
+	buf, err := encodePlan.Encode(elem, make([]byte, 0))
+	if err != nil {
+		return nil, err
 	}
+	if buf == nil {
+		return nil, errNullArrayElement
+	}
+
+	l := uint32(len(buf))
+	padding := make([]byte, ad.Length-l)
+	for i := range padding {
+		padding[i] = 32
+	}
+	buf = append(buf, padding...)
+	if ad.Length%4 != 0 {
+		padding = make([]byte, 4-ad.Length%4)
+		buf = append(buf, padding...)
+	}
+
 	return buf, nil
 }
 
 func (ArrayData) encodeVaryingType(encodePlan EncodePlan, elem any) ([]byte, error) {
-	var buf []byte
-	if elem != nil {
-		str, err := encodePlan.Encode(elem, buf)
-		if err != nil {
-			return nil, err
-		}
-		lenElem := uint32(len(str))
-		bufLen := make([]byte, 4)
-		binary.BigEndian.PutUint32(bufLen, lenElem)
-		buf = append(buf, bufLen...)
-		buf = append(buf, str...)
-
-		if lenElem%4 != 0 {
-			padding := make([]byte, 4-lenElem%4)
-			buf = append(buf, padding...)
-		}
-	} else {
-		bufLen := make([]byte, 4)
-		binary.BigEndian.PutUint32(bufLen, 0)
-		buf = append(buf, bufLen...)
+	str, err := encodePlan.Encode(elem, make([]byte, 0))
+	if err != nil {
+		return nil, err
 	}
+	if str == nil {
+		return nil, errNullArrayElement
+	}
+
+	lenElem := uint32(len(str))
+	bufLen := make([]byte, 4)
+	binary.BigEndian.PutUint32(bufLen, lenElem)
+	buf := append(bufLen, str...)
+
+	if lenElem%4 != 0 {
+		padding := make([]byte, 4-lenElem%4)
+		buf = append(buf, padding...)
+	}
+
 	return buf, nil
 }
 
@@ -374,6 +387,13 @@ func (ad *ArrayData) decodeBinary(m *Map, src []byte, array ArraySetter, realInd
 }
 
 func getArrayDecodeType(dst any) (ArraySetter, error) {
+	targetValue := reflect.ValueOf(dst)
+	if !targetValue.IsValid() || targetValue.Kind() != reflect.Pointer {
+		return nil, fmt.Errorf("unsupported argument type %T for array decode", dst)
+	}
+	if targetValue.IsNil() {
+		return nil, fmt.Errorf("cannot decode array into nil target %T", dst)
+	}
 
 	switch target := dst.(type) {
 	case *[]int16:
@@ -392,14 +412,8 @@ func getArrayDecodeType(dst any) (ArraySetter, error) {
 		return (*FlatArray[time.Time])(target), nil
 	}
 
-	targetType := reflect.TypeOf(dst)
-	if targetType.Kind() != reflect.Ptr {
-		return nil, fmt.Errorf("unsupported argument type %T for array decode", dst)
-	}
-
+	targetType := targetValue.Type()
 	targetElemType := targetType.Elem()
-
-	targetValue := reflect.ValueOf(dst)
 
 	if targetElemType.Kind() == reflect.Slice {
 		innerElement := targetElemType.Elem().Kind()
@@ -427,6 +441,13 @@ func getArrayDecodeType(dst any) (ArraySetter, error) {
 }
 
 func getArrayEncodeType(dst any) (ArrayGetter, error) {
+	targetValue := reflect.ValueOf(dst)
+	if !targetValue.IsValid() {
+		return nil, fmt.Errorf("unsupported argument type %T for array encode", dst)
+	}
+	if targetValue.Kind() == reflect.Pointer && targetValue.IsNil() {
+		return nil, fmt.Errorf("cannot encode array from nil target %T", dst)
+	}
 
 	switch target := dst.(type) {
 	case []int16:
@@ -445,9 +466,7 @@ func getArrayEncodeType(dst any) (ArrayGetter, error) {
 		return (FlatArray[time.Time])(target), nil
 	}
 
-	targetElemType := reflect.TypeOf(dst)
-
-	targetValue := reflect.ValueOf(dst)
+	targetElemType := targetValue.Type()
 
 	if targetElemType.Kind() == reflect.Slice {
 		innerElement := targetElemType.Elem().Kind()

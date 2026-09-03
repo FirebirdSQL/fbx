@@ -188,7 +188,9 @@ func TestOctetsStringParamInPasswordComparison(t *testing.T) {
 		`)
 		require.NoError(tb, err)
 
-		defer conn.Exec(ctx, "drop table test_user_list")
+		defer func() {
+			_, _ = conn.Exec(ctx, "drop table test_user_list")
+		}()
 
 		_, err = conn.Exec(ctx, `
 			insert into test_user_list (id, password)

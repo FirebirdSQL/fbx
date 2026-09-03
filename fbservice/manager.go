@@ -13,6 +13,7 @@ const serviceCloseTimeout = 5 * time.Second
 
 type serviceConnection interface {
 	Backup(context.Context, string, string, fbconn.BackupOptions) error
+	Restore(context.Context, string, string, fbconn.RestoreOptions) error
 	Close(context.Context) error
 }
 
@@ -21,7 +22,9 @@ type connectServiceFunc func(context.Context, *fbconn.ServiceConfig) (serviceCon
 // Manager runs Firebird service manager operations.
 //
 // A Manager is safe for concurrent use. Each operation opens and closes its
-// own service connection.
+// own service connection. Manager does not limit the number of concurrent
+// service actions; callers are responsible for limiting them according to the
+// server's capacity.
 type Manager struct {
 	config  *Config
 	connect connectServiceFunc

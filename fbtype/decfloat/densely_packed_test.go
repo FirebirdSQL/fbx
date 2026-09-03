@@ -176,3 +176,36 @@ func TestDenselyPackedDecimalCodec_RoundTrip_Negative(t *testing.T) {
 		})
 	}
 }
+
+func TestDenselyPackedDecimalCodec_RejectsOversizedCoefficientBeforeIntConversion(t *testing.T) {
+	c := NewDenselyPackedDecimalCodec(16)
+	groups := new(big.Int).Exp(big.NewInt(1000), big.NewInt(5), nil)
+	beyondInt64 := new(big.Int).Lsh(big.NewInt(1), 64)
+	beyondInt64.Mul(beyondInt64, groups)
+
+	tests := []*big.Int{
+		new(big.Int).Exp(big.NewInt(10), big.NewInt(16), nil),
+		beyondInt64,
+	}
+	for _, value := range tests {
+		t.Run(value.String(), func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Fatalf("EncodeValue(%s) did not panic", value)
+				}
+			}()
+
+			c.EncodeValue(value, make([]byte, 8), 7)
+		})
+	}
+}
+
+func TestNewDenselyPackedDecimalCodecRejectsUnsupportedPrecision(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("NewDenselyPackedDecimalCodec(37) did not panic")
+		}
+	}()
+
+	NewDenselyPackedDecimalCodec(37)
+}

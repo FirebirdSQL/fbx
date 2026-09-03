@@ -318,11 +318,12 @@ func (w *float32Wrapper) ScanInt64(v Int8) error {
 }
 
 func (w float32Wrapper) Int64Value() (Int8, error) {
-	if w > math.MaxInt64 {
-		return Int8{}, fmt.Errorf("%f is greater than maximum value for int64", w)
+	i64, err := float64ToInt64(float64(w))
+	if err != nil {
+		return Int8{}, err
 	}
 
-	return Int8{Int64: int64(w), Valid: true}, nil
+	return Int8{Int64: i64, Valid: true}, nil
 }
 
 func (w *float32Wrapper) ScanFloat64(v Float8) error {
@@ -330,7 +331,12 @@ func (w *float32Wrapper) ScanFloat64(v Float8) error {
 		return fmt.Errorf("cannot scan NULL into *float32")
 	}
 
-	*w = float32Wrapper(v.Float64)
+	f32, err := float64ToFloat32(v.Float64)
+	if err != nil {
+		return err
+	}
+
+	*w = float32Wrapper(f32)
 
 	return nil
 }
@@ -354,11 +360,12 @@ func (w *float64Wrapper) ScanInt64(v Int8) error {
 }
 
 func (w float64Wrapper) Int64Value() (Int8, error) {
-	if w > math.MaxInt64 {
-		return Int8{}, fmt.Errorf("%f is greater than maximum value for int64", w)
+	i64, err := float64ToInt64(float64(w))
+	if err != nil {
+		return Int8{}, err
 	}
 
-	return Int8{Int64: int64(w), Valid: true}, nil
+	return Int8{Int64: i64, Valid: true}, nil
 }
 
 func (w *float64Wrapper) ScanFloat64(v Float8) error {
@@ -433,6 +440,19 @@ func (w timeWrapper) TimestamptzValue() (Timestamptz, error) {
 	return Timestamptz{Time: time.Time(w), Valid: true}, nil
 }
 
+func (w *timeWrapper) ScanTimetz(v Timetz) error {
+	if !v.Valid {
+		return fmt.Errorf("cannot scan NULL into *time.Time")
+	}
+
+	*w = timeWrapper(v.Time)
+	return nil
+}
+
+func (w timeWrapper) TimetzValue() (Timetz, error) {
+	return Timetz{Time: time.Time(w), Valid: true}, nil
+}
+
 func (w *timeWrapper) ScanTime(v Time) error {
 	if !v.Valid {
 		return fmt.Errorf("cannot scan NULL into *time.Time")
@@ -443,25 +463,13 @@ func (w *timeWrapper) ScanTime(v Time) error {
 		return fmt.Errorf("%d microseconds cannot be represented as time.Time", v.Microseconds)
 	}
 
-	usec := v.Microseconds
-	hours := usec / microsecondsPerHour
-	usec -= hours * microsecondsPerHour
-	minutes := usec / microsecondsPerMinute
-	usec -= minutes * microsecondsPerMinute
-	seconds := usec / microsecondsPerSecond
-	usec -= seconds * microsecondsPerSecond
-	ns := usec * 1000
-	*w = timeWrapper(time.Date(2000, 1, 1, int(hours), int(minutes), int(seconds), int(ns), time.UTC))
+	*w = timeWrapper(timeFromMicroseconds(v.Microseconds, timeAnchorDate, time.UTC))
 	return nil
 }
 
 func (w timeWrapper) TimeValue() (Time, error) {
 	t := time.Time(w)
-	usec := int64(t.Hour())*microsecondsPerHour +
-		int64(t.Minute())*microsecondsPerMinute +
-		int64(t.Second())*microsecondsPerSecond +
-		int64(t.Nanosecond())/1000
-	return Time{Microseconds: usec, Valid: true}, nil
+	return Time{Microseconds: timeOfDayMicroseconds(t), Valid: true}, nil
 }
 
 type fmtStringerWrapper struct {
@@ -627,7 +635,7 @@ func (a *anyMultiDimSliceArray) SetDimensions(dimensions []ArrayDimension) error
 		}
 
 		if sliceDimensionCount != len(dimensions) {
-			return fmt.Errorf("Firebird array has %d dimensions but slice has %d dimensions", len(dimensions), sliceDimensionCount)
+			return fmt.Errorf("firebird array has %d dimensions but slice has %d dimensions", len(dimensions), sliceDimensionCount)
 		}
 
 		elementCount := allElementsCount(dimensions)

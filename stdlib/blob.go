@@ -12,8 +12,8 @@ import (
 	"rdb.red-soft.ru/fbx/fbtype"
 )
 
-// Blob is a lazy BLOB reader returned from database/sql scans when using stdlib.
-// Read from it directly or call Bytes/Text to materialize the contents.
+// Blob is a BLOB reader returned from database/sql scans when using stdlib.
+// Its contents are materialized before the database connection is released.
 type Blob struct {
 	rc      io.ReadCloser
 	SubType int32
@@ -22,13 +22,21 @@ type Blob struct {
 	encoding *fbproto.Encoding
 }
 
-func buildBlobValue(reader io.ReadCloser, fd *fbconn.FieldDescription, conn *Conn) (Blob, error) {
+type blobMemoryReader struct {
+	*bytes.Reader
+}
+
+func (*blobMemoryReader) Close() error {
+	return nil
+}
+
+func buildBlobValue(data []byte, fd *fbconn.FieldDescription) (Blob, error) {
 	blob := Blob{
-		rc:      reader,
+		rc:      &blobMemoryReader{Reader: bytes.NewReader(data)},
 		SubType: fd.Subtype,
 	}
 	if fd.Subtype == fbproto.BLOB_SUB_TYPE_TEXT {
-		encoding, charset, err := blobTextEncoding(fd, conn)
+		encoding, charset, err := blobTextEncoding(fd)
 		if err != nil {
 			return Blob{}, err
 		}
@@ -38,7 +46,7 @@ func buildBlobValue(reader io.ReadCloser, fd *fbconn.FieldDescription, conn *Con
 	return blob, nil
 }
 
-func blobTextEncoding(fd *fbconn.FieldDescription, conn *Conn) (*fbproto.Encoding, string, error) {
+func blobTextEncoding(fd *fbconn.FieldDescription) (*fbproto.Encoding, string, error) {
 	charsetID := fbtype.CharacterSetForType(fd.Type, fd.Subtype, fd.Scale)
 	charset, err := fbproto.CharacterSetIdIntoName(charsetID)
 	if err != nil {
@@ -109,7 +117,7 @@ func (b Blob) Seek(offset int64, whence int) (int64, error) {
 	return seeker.Seek(offset, whence)
 }
 
-// Scan implements sql.Scanner for lazy BLOB values.
+// Scan implements database/sql.Scanner for BLOB values.
 func (b *Blob) Scan(src any) error {
 	switch v := src.(type) {
 	case nil:

@@ -324,11 +324,10 @@ func (tl *TraceLog) log(ctx context.Context, conn *fbx.Conn, lvl LogLevel, msg s
 
 	fbConn := conn.FbConn()
 	if fbConn != nil {
-		//FIXME: there is not PID in fbconn
-		//pid := fbConn.PID()
-		//if pid != 0 {
-		//	data["pid"] = pid
-		//}
+		attachmentID := fbConn.AttachmentID()
+		if attachmentID != 0 {
+			data["attachment_id"] = attachmentID
+		}
 	}
 
 	tl.Logger.Log(ctx, lvl, msg, data)

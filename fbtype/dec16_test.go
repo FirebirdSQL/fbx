@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
+	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
 )
@@ -40,6 +41,9 @@ func isExpectedEqDec16(want fbtype.DecFloat16) func(any) bool {
 		}
 
 		if d.Special != want.Special {
+			return false
+		}
+		if d.NegativeZero != want.NegativeZero {
 			return false
 		}
 		if want.Special != fbtype.SpecialNone {
@@ -84,9 +88,13 @@ func TestDecFloat16Codec_RoundTrip_DB(t *testing.T) {
 
 	values := []tv{
 		{"0", "0"},
+		{"0.00", "0.00"},
+		{"0E+5", "0E+5"},
 		{"1", "1"},
 		{"-1", "-1"},
-		{"-0", "0"},
+		{"-0", "-0"},
+		{"-0.00", "-0.00"},
+		{"-0E-398", "-0E-398"},
 
 		{"0.1", "0.1"},
 		{"0.00001", "0.00001"},
@@ -106,11 +114,11 @@ func TestDecFloat16Codec_RoundTrip_DB(t *testing.T) {
 		{"1E-20", "1E-20"},
 		{"1.234567890123456E+20", "1.234567890123456E+20"},
 		{"9.999999999999999E-20", "9.999999999999999E-20"},
-		{"1.2E+6", "1200000"},
+		{"1.2E+6", "1.2E+6"},
 		{"0.123E+3", "123"},
-		{"1230E-2", "12.3"},
-		{"0.001E+6", "1000"},
-		{"123.0E+2", "12300"},
+		{"1230E-2", "12.30"},
+		{"0.001E+6", "1E+3"},
+		{"123.0E+2", "1.230E+4"},
 
 		{"9999999999999999", "9999999999999999"},
 		{"-9999999999999999", "-9999999999999999"},
@@ -141,6 +149,8 @@ func TestDecFloat16Codec_RoundTrip_DB(t *testing.T) {
 		{"-Infinity", "-Infinity"},
 		{"NaN", "NaN"},
 		{"sNaN", "sNaN"},
+		{"-NaN", "-NaN"},
+		{"-sNaN", "-sNaN"},
 	}
 
 	tests := make([]fbxtest.ValueRoundTripTest, 0, len(values)*2+2)
@@ -275,6 +285,11 @@ func TestDecFloat16_Value(t *testing.T) {
 			want:  "0",
 		},
 		{
+			name:  "negative zero",
+			input: mustDec16(t, "-0"),
+			want:  "-0",
+		},
+		{
 			name:  "special +Infinity",
 			input: mustDec16(t, "+Infinity"),
 			want:  "+Infinity",
@@ -288,6 +303,16 @@ func TestDecFloat16_Value(t *testing.T) {
 			name:  "special NaN",
 			input: mustDec16(t, "NaN"),
 			want:  "NaN",
+		},
+		{
+			name:  "special -NaN",
+			input: mustDec16(t, "-NaN"),
+			want:  "-NaN",
+		},
+		{
+			name:  "special -sNaN",
+			input: mustDec16(t, "-sNaN"),
+			want:  "-sNaN",
 		},
 		{
 			name:    "invalid (NULL)",
@@ -330,6 +355,11 @@ func TestDecFloat16_JSON(t *testing.T) {
 			want:  `"0"`,
 		},
 		{
+			name:  "negative zero",
+			input: mustDec16(t, "-0"),
+			want:  `"-0"`,
+		},
+		{
 			name:  "negative",
 			input: mustDec16(t, "-678.90"),
 			want:  `"-678.90"`,
@@ -348,6 +378,16 @@ func TestDecFloat16_JSON(t *testing.T) {
 			name:  "special NaN",
 			input: mustDec16(t, "NaN"),
 			want:  `"NaN"`,
+		},
+		{
+			name:  "special -NaN",
+			input: mustDec16(t, "-NaN"),
+			want:  `"-NaN"`,
+		},
+		{
+			name:  "special -sNaN",
+			input: mustDec16(t, "-sNaN"),
+			want:  `"-sNaN"`,
 		},
 		{
 			name:  "NULL",
@@ -405,6 +445,7 @@ func TestDecFloat16_SpecialMethods(t *testing.T) {
 		isSpecial  bool
 		isInfinity bool
 		isNaN      bool
+		isNegZero  bool
 	}{
 		{
 			name:  "normal number",
@@ -413,6 +454,11 @@ func TestDecFloat16_SpecialMethods(t *testing.T) {
 		{
 			name:  "zero",
 			input: mustDec16(t, "0"),
+		},
+		{
+			name:      "negative zero",
+			input:     mustDec16(t, "-0"),
+			isNegZero: true,
 		},
 		{
 			name:       "+Infinity",
@@ -438,6 +484,18 @@ func TestDecFloat16_SpecialMethods(t *testing.T) {
 			isSpecial: true,
 			isNaN:     true,
 		},
+		{
+			name:      "-NaN",
+			input:     mustDec16(t, "-NaN"),
+			isSpecial: true,
+			isNaN:     true,
+		},
+		{
+			name:      "-sNaN",
+			input:     mustDec16(t, "-sNaN"),
+			isSpecial: true,
+			isNaN:     true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -445,6 +503,7 @@ func TestDecFloat16_SpecialMethods(t *testing.T) {
 			require.Equal(t, tt.isSpecial, tt.input.IsSpecial())
 			require.Equal(t, tt.isInfinity, tt.input.IsInfinity())
 			require.Equal(t, tt.isNaN, tt.input.IsNaN())
+			require.Equal(t, tt.isNegZero, tt.input.IsNegativeZero())
 		})
 	}
 }
@@ -453,50 +512,43 @@ func TestDecFloat16_Overflow(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name           string
-		input          string
-		expectScanErr  bool
-		expectEncodeOK bool
+		name        string
+		input       string
+		wantScanErr bool
 	}{
 		{
-			name:           "16 digits OK",
-			input:          "1234567890123456",
-			expectScanErr:  false,
-			expectEncodeOK: true,
+			name:  "16 digits OK",
+			input: "1234567890123456",
 		},
 		{
-			name:           "17 digits - scan OK, encode fail",
-			input:          "12345678901234567",
-			expectScanErr:  false,
-			expectEncodeOK: false,
+			name:        "17 digits",
+			input:       "12345678901234567",
+			wantScanErr: true,
 		},
 		{
-			name:           "20 digits - too many",
-			input:          "12345678901234567890",
-			expectScanErr:  false,
-			expectEncodeOK: false,
+			name:        "20 digits",
+			input:       "12345678901234567890",
+			wantScanErr: true,
 		},
 	}
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_DEC64, 0, 8, 0)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var d fbtype.DecFloat16
 			err := d.Scan(tt.input)
-
-			if tt.expectScanErr {
-				require.Error(t, err)
+			if tt.wantScanErr {
+				require.ErrorContains(t, err, "coefficient out of range")
+				require.False(t, d.Valid)
 				return
 			}
-
 			require.NoError(t, err)
 			require.True(t, d.Valid)
 
-			t.Logf("Scanned %s: Int=%s, Exp=%d, digits=%d",
-				tt.input, d.Int.String(), d.Exp, len(d.Int.String()))
-
-			if !tt.expectEncodeOK {
-				t.Logf("Note: encoding to DECFLOAT(16) should fail for this value")
-			}
+			encoded, err := m.Encode(typeMetadata, d, nil)
+			require.NoError(t, err)
+			require.Len(t, encoded, 8)
 		})
 	}
 }
@@ -505,31 +557,36 @@ func TestDecFloat16_ExponentBoundaries(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		input   string
-		wantErr bool
+		name        string
+		input       string
+		wantScanErr bool
 	}{
 		{"min_exponent", "1E-398", false},
 		{"max_exponent", "9.999999999999999E+369", false},
 		{"near_min", "1E-397", false},
 		{"near_max", "1E+368", false},
 
-		{"underflow", "1E-399", false},
-		{"overflow", "1E+370", false},
+		{"underflow", "1E-399", true},
+		{"overflow", "1E+370", true},
 	}
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_DEC64, 0, 8, 0)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var d fbtype.DecFloat16
 			err := d.Scan(tt.input)
-
-			if tt.wantErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				require.True(t, d.Valid)
-				t.Logf("Parsed %s: Int=%s, Exp=%d", tt.input, d.Int.String(), d.Exp)
+			if tt.wantScanErr {
+				require.ErrorContains(t, err, "exponent out of range")
+				require.False(t, d.Valid)
+				return
 			}
+			require.NoError(t, err)
+			require.True(t, d.Valid)
+
+			encoded, err := m.Encode(typeMetadata, d, nil)
+			require.NoError(t, err)
+			require.Len(t, encoded, 8)
 		})
 	}
 }

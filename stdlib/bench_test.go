@@ -59,7 +59,9 @@ func BenchmarkSelectRowsScanSimple(b *testing.B) {
 				}
 
 				for rows.Next() {
-					rows.Scan(&br.ID, &br.FirstName, &br.LastName, &br.Sex, &br.BirthDate, &br.Weight, &br.Height, &br.UpdateTime)
+					if err := rows.Scan(&br.ID, &br.FirstName, &br.LastName, &br.Sex, &br.BirthDate, &br.Weight, &br.Height, &br.UpdateTime); err != nil {
+						b.Fatal(err)
+					}
 				}
 
 				if rows.Err() != nil {
@@ -97,7 +99,9 @@ func BenchmarkSelectRowsScanNull(b *testing.B) {
 				}
 
 				for rows.Next() {
-					rows.Scan(&br.ID, &br.FirstName, &br.LastName, &br.Sex, &br.BirthDate, &br.Weight, &br.Height, &br.UpdateTime)
+					if err := rows.Scan(&br.ID, &br.FirstName, &br.LastName, &br.Sex, &br.BirthDate, &br.Weight, &br.Height, &br.UpdateTime); err != nil {
+						b.Fatal(err)
+					}
 				}
 
 				if rows.Err() != nil {

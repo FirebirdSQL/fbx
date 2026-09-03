@@ -129,7 +129,7 @@ func RunValueRoundTripTests(
 				}
 
 				result := reflect.ValueOf(tt.Result)
-				if result.Kind() == reflect.Ptr {
+				if result.Kind() == reflect.Pointer {
 					result = result.Elem()
 				}
 

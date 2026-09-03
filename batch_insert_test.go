@@ -717,7 +717,9 @@ func ExampleBatchInsertRows() {
 		fmt.Println(err)
 		return
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		_ = conn.Close(ctx)
+	}()
 
 	if !exampleBatchSupported(ctx, conn) {
 		// to silently skip example on unsupported engine
@@ -768,7 +770,9 @@ func ExampleBatchInsertFunc() {
 		fmt.Println(err)
 		return
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		_ = conn.Close(ctx)
+	}()
 
 	if !exampleBatchSupported(ctx, conn) {
 		// to silently skip example on unsupported engine
@@ -829,7 +833,9 @@ func ExampleBatchInsertSlice() {
 		fmt.Println(err)
 		return
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		_ = conn.Close(ctx)
+	}()
 
 	if !exampleBatchSupported(ctx, conn) {
 		// to silently skip example on unsupported engine

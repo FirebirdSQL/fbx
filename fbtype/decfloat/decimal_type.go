@@ -2,6 +2,7 @@ package decfloat
 
 import "fmt"
 
+// DecimalType identifies a finite value or an IEEE-754 decimal special value.
 type DecimalType uint8
 
 const (
@@ -11,6 +12,7 @@ const (
 	DecimalSignalingNaN
 )
 
+// String returns the name of t.
 func (t DecimalType) String() string {
 	switch t {
 	case DecimalFinite:
@@ -48,17 +50,17 @@ func decimalTypeFromFirstByte(firstByte int) DecimalType {
 	}
 }
 
-func (t DecimalType) specialBits() byte {
+func (t DecimalType) specialBits() (byte, error) {
 	switch t {
 	case DecimalInfinity:
-		return inf0
+		return inf0, nil
 	case DecimalNaN:
-		return nanQuiet
+		return nanQuiet, nil
 	case DecimalSignalingNaN:
-		return nanSignal
+		return nanSignal, nil
 	case DecimalFinite:
-		panic("decfloat: finite has no special bits")
+		return 0, fmt.Errorf("decfloat: finite has no special bits")
 	default:
-		panic("decfloat: unknown DecimalType")
+		return 0, fmt.Errorf("decfloat: unknown DecimalType %d", t)
 	}
 }

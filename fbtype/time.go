@@ -2,8 +2,11 @@ package fbtype
 
 import (
 	"database/sql/driver"
+	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"rdb.red-soft.ru/fbx/internal/fbio"
@@ -18,35 +21,81 @@ const (
 	microsecondsPerMonth  = 30 * microsecondsPerDay
 )
 
+var (
+	// timeAnchorDate is the arbitrary date used when Firebird TIME values must
+	// be represented as time.Time.
+	timeAnchorDate = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// timetzBaseDate is the Firebird base date used to resolve named time zones
+	// for TIME WITH TIME ZONE.
+	timetzBaseDate = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+)
+
+func timeOfDayMicroseconds(t time.Time) int64 {
+	return int64(t.Hour())*microsecondsPerHour +
+		int64(t.Minute())*microsecondsPerMinute +
+		int64(t.Second())*microsecondsPerSecond +
+		int64(t.Nanosecond())/1000
+}
+
+func timeFromMicroseconds(usec int64, date time.Time, loc *time.Location) time.Time {
+	hours := usec / microsecondsPerHour
+	usec -= hours * microsecondsPerHour
+	minutes := usec / microsecondsPerMinute
+	usec -= minutes * microsecondsPerMinute
+	seconds := usec / microsecondsPerSecond
+	usec -= seconds * microsecondsPerSecond
+
+	return time.Date(
+		date.Year(), date.Month(), date.Day(),
+		int(hours), int(minutes), int(seconds), int(usec)*1000,
+		loc,
+	)
+}
+
+func timeWithDate(t time.Time, date time.Time) time.Time {
+	return time.Date(
+		date.Year(), date.Month(), date.Day(),
+		t.Hour(), t.Minute(), t.Second(), t.Nanosecond(),
+		t.Location(),
+	)
+}
+
+// TimeScanner scans a Firebird TIME value.
 type TimeScanner interface {
+	// ScanTime scans v into the receiver.
 	ScanTime(v Time) error
 }
 
+// TimeValuer returns a Firebird TIME value.
 type TimeValuer interface {
+	// TimeValue returns the Firebird TIME value to encode.
 	TimeValue() (Time, error)
 }
 
-// Time represents the Firebird time type. The Firebird time is a time of day without time zone.
+// Time represents the Firebird TIME type.
 //
-// Time is represented as the number of 100 microseconds since midnight in the same way that Firebird does. Other time and
-// date types in fbtype can use time.Time as the underlying representation.
-//
-// The time with time zone type is not supported. Use of time with time zone is discouraged by the Firebird documentation.
+// Microseconds contains the time of day as microseconds since midnight.
+// Firebird stores TIME on the wire as the number of 100-microsecond ticks since
+// midnight, so values are truncated to that precision when encoded. Valid is
+// false when the value represents SQL NULL.
 type Time struct {
-	Microseconds int64 // Number of 100 microseconds since midnight
+	Microseconds int64
 	Valid        bool
 }
 
+// ScanTime implements [TimeScanner].
 func (t *Time) ScanTime(v Time) error {
 	*t = v
 	return nil
 }
 
+// TimeValue implements [TimeValuer].
 func (t Time) TimeValue() (Time, error) {
 	return t, nil
 }
 
-// Scan implements the database/sql Scanner interface.
+// Scan implements the [database/sql.Scanner] interface.
 func (t *Time) Scan(src any) error {
 	if src == nil {
 		*t = Time{}
@@ -57,41 +106,72 @@ func (t *Time) Scan(src any) error {
 	case string:
 		usec, err := parseTimeString(src)
 		if err != nil {
-			t.Microseconds = 0
-			t.Valid = false
+			*t = Time{}
 			return err
 		}
 		t.Microseconds = usec
 		t.Valid = true
 		return nil
 	case time.Time:
-		t.Microseconds = int64(src.Hour())*microsecondsPerHour +
-			int64(src.Minute())*microsecondsPerMinute +
-			int64(src.Second())*microsecondsPerSecond +
-			int64(src.Nanosecond())/1000
+		t.Microseconds = timeOfDayMicroseconds(src)
 		t.Valid = true
 		return nil
 	}
 
+	*t = Time{}
 	return fmt.Errorf("cannot scan %T", src)
 }
 
-// Value implements the database/sql/driver Valuer interface.
+// Value implements the [database/sql/driver.Valuer] interface.
 func (t Time) Value() (driver.Value, error) {
 	if !t.Valid {
 		return nil, nil
 	}
 
-	typeMetadata := NewTypeMetadata(0, 0, 0, 0)
-	buf, err := TimeCodec{}.PlanEncode(nil, typeMetadata, t).Encode(t, nil)
+	return timeFromTimeValue(t)
+}
+
+// MarshalJSON encodes t as a JSON string in HH:MM:SS.ffffff format or null.
+func (t Time) MarshalJSON() ([]byte, error) {
+	if !t.Valid {
+		return []byte("null"), nil
+	}
+
+	s, err := formatTimeString(t.Microseconds)
 	if err != nil {
 		return nil, err
 	}
-	return string(buf), err
+
+	return json.Marshal(s)
 }
 
+// UnmarshalJSON decodes a JSON time string or null into t.
+func (t *Time) UnmarshalJSON(b []byte) error {
+	var s *string
+	err := json.Unmarshal(b, &s)
+	if err != nil {
+		return err
+	}
+
+	if s == nil {
+		*t = Time{}
+		return nil
+	}
+
+	usec, err := parseTimeString(*s)
+	if err != nil {
+		*t = Time{}
+		return err
+	}
+
+	*t = Time{Microseconds: usec, Valid: true}
+	return nil
+}
+
+// TimeCodec encodes and decodes Firebird TIME values.
 type TimeCodec struct{}
 
+// PlanEncode returns an encode plan for supported Firebird TIME input values.
 func (TimeCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	switch value.(type) {
 	case TimeValuer:
@@ -131,59 +211,9 @@ func (encodePlanTimeCodecBinary) Encode(value any, buf []byte) ([]byte, error) {
 type encodePlanTimeCodecBinaryString struct{}
 
 func (encodePlanTimeCodecBinaryString) Encode(value any, buf []byte) ([]byte, error) {
-	str := value.(string)
-
-	if len(str) < 8 || str[2] != ':' || str[5] != ':' {
-		return nil, fmt.Errorf("invalid TIME format: %q (expected HH:MM:SS or HH:MM:SS.ffffff)", str)
-	}
-
-	hours, err := strconv.ParseInt(str[0:2], 10, 64)
+	usec, err := parseTimeString(value.(string))
 	if err != nil {
-		return nil, fmt.Errorf("cannot parse hours from %q: %w", str, err)
-	}
-	if hours < 0 || hours > 23 {
-		return nil, fmt.Errorf("hours out of range (0-23): %d", hours)
-	}
-	usec := hours * microsecondsPerHour
-
-	minutes, err := strconv.ParseInt(str[3:5], 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("cannot parse minutes from %q: %w", str, err)
-	}
-	if minutes < 0 || minutes > 59 {
-		return nil, fmt.Errorf("minutes out of range (0-59): %d", minutes)
-	}
-	usec += minutes * microsecondsPerMinute
-
-	seconds, err := strconv.ParseInt(str[6:8], 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("cannot parse seconds from %q: %w", str, err)
-	}
-	if seconds < 0 || seconds > 59 {
-		return nil, fmt.Errorf("seconds out of range (0-59): %d", seconds)
-	}
-	usec += seconds * microsecondsPerSecond
-
-	if len(str) > 9 {
-		if str[8] != '.' || len(str) > 15 {
-			return nil, fmt.Errorf("invalid TIME format: %q (expected HH:MM:SS.ffffff)", str)
-		}
-
-		fraction := str[9:]
-		n, err := strconv.ParseInt(fraction, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("cannot parse microseconds from %q: %w", str, err)
-		}
-
-		for i := len(fraction); i < 6; i++ {
-			n *= 10
-		}
-
-		usec += n
-	}
-
-	if usec < 0 || usec >= microsecondsPerDay {
-		return nil, fmt.Errorf("fbtype: TIME value out of range for Firebird (µs since midnight: %d)", usec)
+		return nil, err
 	}
 
 	ticks := uint32(usec / 100)
@@ -192,41 +222,12 @@ func (encodePlanTimeCodecBinaryString) Encode(value any, buf []byte) ([]byte, er
 	return buf, nil
 }
 
-type encodePlanTimeCodecText struct{}
-
-func (encodePlanTimeCodecText) Encode(value any, buf []byte) (newBuf []byte, err error) {
-	t, err := value.(TimeValuer).TimeValue()
-	if err != nil {
-		return nil, err
-	}
-
-	if !t.Valid {
-		return nil, nil
-	}
-
-	usec := t.Microseconds
-	hours := usec / microsecondsPerHour
-	usec -= hours * microsecondsPerHour
-	minutes := usec / microsecondsPerMinute
-	usec -= minutes * microsecondsPerMinute
-	seconds := usec / microsecondsPerSecond
-	usec -= seconds * microsecondsPerSecond
-
-	s := fmt.Sprintf("%02d:%02d:%02d.%06d", hours, minutes, seconds, usec)
-
-	return append(buf, s...), nil
-}
-
 type encodePlanTimeCodecBinaryTime struct{}
 
 func (encodePlanTimeCodecBinaryTime) Encode(value any, buf []byte) ([]byte, error) {
 	t := value.(time.Time)
 
-	usec := int64(t.Hour())*microsecondsPerHour +
-		int64(t.Minute())*microsecondsPerMinute +
-		int64(t.Second())*microsecondsPerSecond +
-		int64(t.Nanosecond())/1000
-
+	usec := timeOfDayMicroseconds(t)
 	if usec < 0 || usec >= microsecondsPerDay {
 		return nil, fmt.Errorf("fbtype: TIME value out of range (µs since midnight: %d)", usec)
 	}
@@ -238,6 +239,7 @@ func (encodePlanTimeCodecBinaryTime) Encode(value any, buf []byte) ([]byte, erro
 	return buf, nil
 }
 
+// PlanScan returns a scan plan for supported Firebird TIME target values.
 func (TimeCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
 	switch target.(type) {
 	case TimeScanner:
@@ -256,31 +258,21 @@ func (TimeCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPla
 type scanPlanBinaryTimeToTime struct{}
 
 func (scanPlanBinaryTimeToTime) Scan(src []byte, dst any) error {
-	target := dst.(*time.Time)
+	target, ok := dst.(*time.Time)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
 
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into *time.Time")
 	}
 
-	ticks := fbio.ReadInt32BE(src)
-	usec := int64(ticks) * 100
-
-	if usec < 0 || usec >= microsecondsPerDay {
-		return fmt.Errorf("TIME value out of range: %d microseconds", usec)
+	usec, _, err := decodeTimeBinary(src)
+	if err != nil {
+		return err
 	}
 
-	hours := usec / microsecondsPerHour
-	usec %= microsecondsPerHour
-
-	minutes := usec / microsecondsPerMinute
-	usec %= microsecondsPerMinute
-
-	seconds := usec / microsecondsPerSecond
-	usec %= microsecondsPerSecond
-
-	nanos := usec * 1000
-
-	*target = time.Date(2000, 1, 1, int(hours), int(minutes), int(seconds), int(nanos), time.UTC)
+	*target = timeFromMicroseconds(usec, timeAnchorDate, time.UTC)
 
 	return nil
 }
@@ -288,18 +280,19 @@ func (scanPlanBinaryTimeToTime) Scan(src []byte, dst any) error {
 type scanPlanBinaryTimeToTimeScanner struct{}
 
 func (scanPlanBinaryTimeToTimeScanner) Scan(src []byte, dst any) error {
-	scanner := dst.(TimeScanner)
+	scanner, ok := dst.(TimeScanner)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
 
 	if src == nil {
 		return scanner.ScanTime(Time{})
 	}
 
-	if len(src) != 4 {
-		return fmt.Errorf("fbtype: invalid length for Firebird TIME: %d", len(src))
+	usec, _, err := decodeTimeBinary(src)
+	if err != nil {
+		return err
 	}
-
-	ticks := uint32(fbio.ReadInt32BE(src))
-	usec := int64(ticks) * 100
 
 	return scanner.ScanTime(Time{
 		Microseconds: usec,
@@ -327,11 +320,14 @@ func (scanPlanBinaryTimeToTextScanner) Scan(src []byte, dst any) error {
 	return ts.ScanText(Text{String: formatted, Valid: true})
 }
 
-// Scan TIME to *string
+// scanPlanBinaryTimeToString scans Firebird TIME into *string.
 type scanPlanBinaryTimeToString struct{}
 
 func (scanPlanBinaryTimeToString) Scan(src []byte, dst any) error {
-	target := dst.(*string)
+	target, ok := dst.(*string)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
 
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into *string")
@@ -346,18 +342,21 @@ func (scanPlanBinaryTimeToString) Scan(src []byte, dst any) error {
 	return nil
 }
 
+// DecodeDatabaseSQLValue decodes src into a database/sql driver value.
 func (c TimeCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
 	}
 
-	_, formatted, err := decodeTimeBinary(src)
+	usec, _, err := decodeTimeBinary(src)
 	if err != nil {
 		return nil, err
 	}
-	return formatted, nil
+
+	return timeFromMicroseconds(usec, timeAnchorDate, time.UTC), nil
 }
 
+// DecodeValue decodes src into the default Go value for Firebird TIME.
 func (c TimeCodec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
@@ -376,8 +375,32 @@ func decodeTimeBinary(src []byte) (int64, string, error) {
 		return 0, "", fmt.Errorf("fbtype: invalid length for Firebird TIME: %d", len(src))
 	}
 
-	ticks := uint32(fbio.ReadInt32BE(src))
+	ticks := binary.BigEndian.Uint32(src)
 	usec := int64(ticks) * 100
+	if err := validateTimeMicroseconds(usec); err != nil {
+		return 0, "", err
+	}
+
+	formatted, err := formatTimeString(usec)
+	if err != nil {
+		return 0, "", err
+	}
+
+	return usec, formatted, nil
+}
+
+func timeFromTimeValue(t Time) (time.Time, error) {
+	if err := validateTimeMicroseconds(t.Microseconds); err != nil {
+		return time.Time{}, err
+	}
+
+	return timeFromMicroseconds(t.Microseconds, timeAnchorDate, time.UTC), nil
+}
+
+func formatTimeString(usec int64) (string, error) {
+	if err := validateTimeMicroseconds(usec); err != nil {
+		return "", err
+	}
 
 	hours := usec / microsecondsPerHour
 	usec -= hours * microsecondsPerHour
@@ -386,53 +409,128 @@ func decodeTimeBinary(src []byte) (int64, string, error) {
 	seconds := usec / microsecondsPerSecond
 	usec -= seconds * microsecondsPerSecond
 
-	totalUsec := hours*microsecondsPerHour + minutes*microsecondsPerMinute + seconds*microsecondsPerSecond + usec
-
 	formatted := fmt.Sprintf("%02d:%02d:%02d.%06d", hours, minutes, seconds, usec)
 
-	return totalUsec, formatted, nil
+	return formatted, nil
+}
+
+func validateTimeMicroseconds(usec int64) error {
+	if usec < 0 || usec >= microsecondsPerDay {
+		return fmt.Errorf("fbtype: TIME value out of range for Firebird (µs since midnight: %d)", usec)
+	}
+
+	return nil
 }
 
 func parseTimeString(s string) (usec int64, err error) {
-	if len(s) < 8 || s[2] != ':' || s[5] != ':' {
-		return 0, fmt.Errorf("cannot decode %v into Time", s)
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, fmt.Errorf("invalid TIME format: empty string")
 	}
 
-	hours, err := strconv.ParseInt(s[0:2], 10, 64)
+	fields := strings.Split(s, ":")
+	if len(fields) < 2 || len(fields) > 3 {
+		return 0, fmt.Errorf("invalid TIME format: %q (expected HH:MM[:SS[.ffffff]])", s)
+	}
+
+	hours, err := parseTimeNumber(fields[0], "hours", s)
 	if err != nil {
-		return 0, fmt.Errorf("cannot decode %v into Time", s)
+		return 0, err
 	}
-	usec = hours * microsecondsPerHour
-
-	minutes, err := strconv.ParseInt(s[3:5], 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("cannot decode %v into Time", s)
+	if hours < 0 || hours > 23 {
+		return 0, fmt.Errorf("hours out of range (0-23): %d", hours)
 	}
-	usec += minutes * microsecondsPerMinute
 
-	seconds, err := strconv.ParseInt(s[6:8], 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("cannot decode %v into Time", s)
-	}
-	usec += seconds * microsecondsPerSecond
-
-	if len(s) > 9 {
-		if s[8] != '.' || len(s) > 15 {
-			return 0, fmt.Errorf("cannot decode %v into Time", s)
-		}
-
-		fraction := s[9:]
-		n, err := strconv.ParseInt(fraction, 10, 64)
+	minutes := int64(0)
+	if len(fields) >= 2 {
+		minutes, err = parseTimeNumber(fields[1], "minutes", s)
 		if err != nil {
-			return 0, fmt.Errorf("cannot decode %v into Time", s)
+			return 0, err
+		}
+		if minutes < 0 || minutes > 59 {
+			return 0, fmt.Errorf("minutes out of range (0-59): %d", minutes)
+		}
+	}
+
+	seconds := int64(0)
+	fractionUsec := int64(0)
+	if len(fields) == 3 {
+		secondsPart := fields[2]
+		if secondsPart == "" {
+			return 0, fmt.Errorf("invalid TIME format: %q (empty seconds)", s)
 		}
 
-		for i := len(fraction); i < 6; i++ {
-			n *= 10
+		if strings.Count(secondsPart, ".") > 1 {
+			return 0, fmt.Errorf("invalid TIME format: %q", s)
 		}
 
-		usec += n
+		if secondsText, fraction, found := strings.Cut(secondsPart, "."); found {
+			seconds, err = parseTimeNumber(secondsText, "seconds", s)
+			if err != nil {
+				return 0, err
+			}
+			if len(fraction) == 0 || len(fraction) > 6 {
+				return 0, fmt.Errorf("invalid TIME fractional seconds: %q", s)
+			}
+			fractionUsec, err = parseTimeFraction(fraction, s)
+			if err != nil {
+				return 0, err
+			}
+		} else {
+			seconds, err = parseTimeNumber(secondsPart, "seconds", s)
+			if err != nil {
+				return 0, err
+			}
+		}
+
+		if seconds < 0 || seconds > 59 {
+			return 0, fmt.Errorf("seconds out of range (0-59): %d", seconds)
+		}
+	} else if strings.Contains(fields[len(fields)-1], ".") {
+		return 0, fmt.Errorf("invalid TIME format: %q (fractional seconds require seconds)", s)
+	}
+
+	usec = hours*microsecondsPerHour +
+		minutes*microsecondsPerMinute +
+		seconds*microsecondsPerSecond +
+		fractionUsec
+
+	if err := validateTimeMicroseconds(usec); err != nil {
+		return 0, err
 	}
 
 	return usec, nil
+}
+
+func parseTimeNumber(s string, field string, input string) (int64, error) {
+	if len(s) != 2 {
+		return 0, fmt.Errorf("invalid TIME %s in %q", field, input)
+	}
+
+	for i := range s {
+		if s[i] < '0' || s[i] > '9' {
+			return 0, fmt.Errorf("cannot parse %s from %q", field, input)
+		}
+	}
+
+	return strconv.ParseInt(s, 10, 64)
+}
+
+func parseTimeFraction(s string, input string) (int64, error) {
+	for i := range s {
+		if s[i] < '0' || s[i] > '9' {
+			return 0, fmt.Errorf("cannot parse microseconds from %q", input)
+		}
+	}
+
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("cannot parse microseconds from %q: %w", input, err)
+	}
+
+	for i := len(s); i < 6; i++ {
+		n *= 10
+	}
+
+	return n, nil
 }

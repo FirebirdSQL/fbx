@@ -33,6 +33,7 @@ func TestAuthManagerBuildListAndCurrent(t *testing.T) {
 		assembled = append(assembled, chunk.Data...)
 	}
 	require.Equal(t, cur.InitialClientData(), assembled)
+	require.Equal(t, assembled, m.AuthSpecificData())
 
 	plg, err := m.SetCurrentPlugin("srp")
 	require.NoError(t, err)
