@@ -1,6 +1,6 @@
 # Change Log
 
-# [0.6.0] - TBD
+# [0.6.0] - 03.09.2026
 
 ### Added
 
@@ -18,7 +18,7 @@
 
 ### Improved
 
-- RS-313511, RS-323064, RS-325034, RS-323428: masive fbtype refactoring and cleanup.
+- RS-313511, RS-323064, RS-325034, RS-323428: Massive fbtype refactoring and cleanup.
 - RS-317500: Formalize fatal server error and connection closing policy.
 - RS-312736: Make server version available in ValidateConnect.
 - RS-308545: Port pgx 5.10.0: Closed connection sentinel.
@@ -30,7 +30,7 @@
 - RS-316290: Multiple fixes in stdlib layer.
 - RS-325029: Wire encryption negotiation after authentication plugin switch.
 - RS-328463: Materialize stdlib BLOB values before releasing connections.
-- RS-328465: Preserve stdlib ARRAY values across Rows.Next calls ()
+- RS-328465: Preserve stdlib ARRAY values across Rows. Next calls.
 - RS-329012: NULL handling in array encoding.
 - RS-323436: Handle returning execution errors correctly.
 - RS-308545. Port pgx 5.10.0. fix keyword/value trailing whitespace parsing.
