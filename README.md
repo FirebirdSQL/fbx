@@ -29,7 +29,7 @@ Firebird values, tracing hooks, and modern Red Database / Firebird features.
 - Firebird array support, including reading, writing, and scanning array values through the native API and the `database/sql` compatibility layer.
 - Row collection helpers for scanning rows into values, maps, and structs.
 - Query, prepare, connect, acquire, and release tracing hooks, plus the `tracelog` package.
-- Multifactor authentication using Red Database / Firebird security policies.
+- Multifactor authentication using Red Database security policies.
 
 ## Planned Features
 
