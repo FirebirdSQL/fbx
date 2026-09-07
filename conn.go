@@ -386,6 +386,8 @@ func (c *Conn) DropDatabase(ctx context.Context) error {
 // Prepare creates a prepared statement with name and sql. sql can contain placeholders for bound parameters. These
 // placeholders are referenced positionally as ?. name can be used instead of sql with [Conn.Query], [Conn.QueryRow], and
 // [Conn.Exec] to execute the statement.
+// Named statements belong to the connection and can be reused in any query
+// execution mode until explicitly deallocated or the connection is closed.
 //
 // If sql starts with "batch ", Prepare creates a named batch.
 // Use [Conn.Exec] to add rows, [Conn.Flush] to send queued rows, and
@@ -405,7 +407,7 @@ func (c *Conn) prepareTx(ctx context.Context, tx *dbTx, name string, sql string)
 		return c.prepareNamedBatchTx(ctx, tx, name, sql, normalizedSQL)
 	}
 
-	st, err := c.internalPrepare(ctx, tx, name, sql)
+	st, err := c.internalPrepareForConnection(ctx, tx, name, sql)
 	if err != nil {
 		return nil, err
 	}
@@ -545,7 +547,7 @@ func (c *Conn) internalPrepare(ctx context.Context, tx *dbTx, name, sql string) 
 	return c.internalPrepareWithScope(ctx, tx, name, sql, statementScopeTransaction)
 }
 
-func (c *Conn) internalPrepareForCache(ctx context.Context, tx *dbTx, name, sql string) (*fbconn.Statement, error) {
+func (c *Conn) internalPrepareForConnection(ctx context.Context, tx *dbTx, name, sql string) (*fbconn.Statement, error) {
 	return c.internalPrepareWithScope(ctx, tx, name, sql, statementScopeConnection)
 }
 
@@ -686,12 +688,9 @@ func (c *Conn) deallocatePreparedStatement(ctx context.Context, st *fbconn.State
 }
 
 // DeallocateAll releases all prepared statements and named batches.
-// It also resets the statement cache.
+// It resets the statement cache after all deallocations succeed. On error,
+// statements that have not been released remain registered for a later retry.
 func (c *Conn) DeallocateAll(ctx context.Context) error {
-	if c.config.StatementCacheCapacity > 0 {
-		c.statementCache = stmtcache.NewLRUCache(c.config.StatementCacheCapacity)
-	}
-
 	for name := range c.preparedStatements {
 		if err := c.Deallocate(ctx, name); err != nil {
 			return err
@@ -704,6 +703,9 @@ func (c *Conn) DeallocateAll(ctx context.Context) error {
 	}
 	c.preparedStatements = map[string]*fbconn.Statement{}
 	c.preparedBatches = map[string]*PreparedBatch{}
+	if c.config.StatementCacheCapacity > 0 {
+		c.statementCache = stmtcache.NewLRUCache(c.config.StatementCacheCapacity)
+	}
 
 	return nil
 }
@@ -830,20 +832,12 @@ optionLoop:
 		}
 	}()
 
-	switch mode {
-	case QueryExecModeCacheStatement:
-		st, err := c.getCachedStatement(ctx, tx, sql)
-		if err != nil {
-			return fbconn.QueryStatus{}, err
-		}
-		invalidateSQL = st.Description.SQL
-
-		return c.execPrepared(ctx, tx, st, arguments)
-	case QueryExecModeExec:
-		st, err := c.internalPrepare(ctx, tx, "", sql)
-		if err != nil {
-			return fbconn.QueryStatus{}, err
-		}
+	st, temporary, err := c.resolveStatement(ctx, tx, sql, mode)
+	if err != nil {
+		return fbconn.QueryStatus{}, err
+	}
+	invalidateSQL = st.Description.SQL
+	if temporary {
 		defer func() {
 			cleanupCtx, cancel := cleanupContext(ctx)
 			defer cancel()
@@ -851,27 +845,39 @@ optionLoop:
 				err = errors.Join(err, cleanupErr)
 			}
 		}()
-		return c.execPrepared(ctx, tx, st, arguments)
+	}
+	return c.execPrepared(ctx, tx, st, arguments)
+}
+
+// resolveStatement gives registered names precedence over the execution mode.
+// temporary is true only when the caller must deallocate the returned statement:
+// Exec does so before returning, while Query transfers ownership to Rows.
+func (c *Conn) resolveStatement(ctx context.Context, tx *dbTx, sql string, mode QueryExecMode) (st *fbconn.Statement, temporary bool, err error) {
+	if st = c.preparedStatements[sql]; st != nil {
+		return st, false, nil
+	}
+	switch mode {
+	case QueryExecModeCacheStatement:
+		st, err = c.getCachedStatement(ctx, tx, sql)
+		return st, false, err
+	case QueryExecModeExec:
+		st, err = c.internalPrepare(ctx, tx, "", sql)
+		return st, true, err
 	default:
-		return fbconn.QueryStatus{}, fmt.Errorf("unknown QueryExecMode: %v", mode)
+		return nil, false, fmt.Errorf("unknown QueryExecMode: %v", mode)
 	}
 }
 
-// getCachedStatement returns an explicitly registered statement or the
-// connection-wide cached statement for sql. When tx is non-nil, a statement
-// admitted to the cache is prepared in tx for metadata resolution but is not
-// bound to its lifetime: [fbconn.Statement.ExecTx] uses its explicit
-// transaction, while [fbconn.Statement.Exec] uses the connection's current
-// internal transaction.
+// getCachedStatement returns the connection-wide cached statement for sql.
+// When tx is non-nil, a statement admitted to the cache is prepared in tx for
+// metadata resolution. The statement remains connection-scoped:
+// [fbconn.Statement.ExecTx] uses its explicit transaction, while
+// [fbconn.Statement.Exec] uses the connection's current internal transaction.
 //
 // If the generated cache name already belongs to an explicitly prepared
 // statement, that statement is returned without transferring its ownership to
 // the cache.
 func (c *Conn) getCachedStatement(ctx context.Context, tx *dbTx, sql string) (*fbconn.Statement, error) {
-	if st := c.preparedStatements[sql]; st != nil {
-		return st, nil
-	}
-
 	if c.statementCache == nil {
 		return nil, errDisabledStatementCache
 	}
@@ -883,7 +889,7 @@ func (c *Conn) getCachedStatement(ctx context.Context, tx *dbTx, sql string) (*f
 
 	statementName := stmtcache.StatementName(sql)
 	existingStatement := c.preparedStatements[statementName]
-	st, err := c.internalPrepareForCache(ctx, tx, statementName, sql)
+	st, err := c.internalPrepareForConnection(ctx, tx, statementName, sql)
 	if err != nil {
 		return nil, err
 	}
@@ -1021,11 +1027,9 @@ const (
 	// number of columns returned by a "SELECT *" changes or the type of a column is changed.
 	QueryExecModeCacheStatement
 
-	// QueryExecModeExec Assume the Firebird query parameter types based on the Go type of the arguments.
-	// Queries are executed in a single round trip. Type mappings can be
-	// registered with fbtype.Map.RegisterDefaultFbType. Queries will be rejected that have arguments that are
-	// unregistered or ambiguous. e.g. A map[string]string may have the Firebird type json or hstore. Modes that know
-	// the Firebird type can use a map[string]string directly as an argument. This mode cannot.
+	// QueryExecModeExec prepares a temporary statement for SQL that is not a
+	// registered statement name. The statement is deallocated after Exec or
+	// when Query's Rows are closed. Registered names are reused in either mode.
 	QueryExecModeExec
 )
 
@@ -1116,70 +1120,30 @@ optionLoop:
 		return rows, err
 	}
 
-	var (
-		st  *fbconn.Statement
-		err error
-	)
-	if mode == QueryExecModeCacheStatement {
-		st, err = c.getCachedStatement(ctx, tx, sql)
-		if err != nil {
-			rows.fatal(err)
-			return rows, err
-		}
-	} else {
-		st = c.preparedStatements[sql]
+	st, temporary, err := c.resolveStatement(ctx, tx, sql, mode)
+	if err != nil {
+		rows.fatal(err)
+		return rows, err
+	}
+	rows.sql = st.Description.SQL
+	rows.boundStatement = st
+	rows.ownsStatement = temporary
+
+	if len(st.Description.Parameters) != len(args) {
+		rows.fatal(fmt.Errorf("expected %d arguments, got %d", len(st.Description.Parameters), len(args)))
+		return rows, rows.err
 	}
 
-	if st != nil {
-
-		if len(st.Description.Parameters) != len(args) {
-			rows.fatal(fmt.Errorf("expected %d arguments, got %d", len(st.Description.Parameters), len(args)))
-			return rows, rows.err
-		}
-
-		rows.sql = st.Description.SQL
-		rows.boundStatement = st
-
-		err = c.eqb.Build(ctx, c, tx, c.typeMap, st.Description, args)
-		if err != nil {
-			rows.fatal(err)
-			return rows, rows.err
-		}
-
-		if tx != nil {
-			rows.resultReader = st.ExecTx(ctx, tx.tx, c.eqb.ParamValues)
-		} else {
-			rows.resultReader = st.Exec(ctx, c.eqb.ParamValues)
-		}
-	} else if mode == QueryExecModeExec {
-		st, err = c.internalPrepare(ctx, tx, "", sql)
-		if err != nil {
-			rows.fatal(err)
-			return rows, err
-		}
-
-		err = c.eqb.Build(ctx, c, tx, c.typeMap, st.Description, args)
-		if err != nil {
-			cleanupCtx, cancel := cleanupContext(ctx)
-			if cleanupErr := st.Deallocate(cleanupCtx); cleanupErr != nil {
-				err = errors.Join(err, cleanupErr)
-			}
-			cancel()
-			rows.fatal(err)
-			return rows, rows.err
-		}
-
-		rows.boundStatement = st
-		rows.ownsStatement = true
-		if tx != nil {
-			rows.resultReader = st.ExecTx(ctx, tx.tx, c.eqb.ParamValues)
-		} else {
-			rows.resultReader = st.Exec(ctx, c.eqb.ParamValues)
-		}
-	} else {
-		err = fmt.Errorf("unknown QueryExecMode: %v", mode)
+	err = c.eqb.Build(ctx, c, tx, c.typeMap, st.Description, args)
+	if err != nil {
 		rows.fatal(err)
 		return rows, rows.err
+	}
+
+	if tx != nil {
+		rows.resultReader = st.ExecTx(ctx, tx.tx, c.eqb.ParamValues)
+	} else {
+		rows.resultReader = st.Exec(ctx, c.eqb.ParamValues)
 	}
 
 	if tx != nil {

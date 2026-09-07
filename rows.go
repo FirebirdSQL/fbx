@@ -198,6 +198,8 @@ func (rows *baseRows) Close() {
 	}
 	if rows.err == nil {
 		rows.err = statementErr
+	} else if rows.ownsStatement && statementErr != nil {
+		rows.err = errors.Join(rows.err, statementErr)
 	}
 
 	if rows.err != nil && rows.conn != nil && rows.sql != "" {

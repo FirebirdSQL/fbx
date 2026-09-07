@@ -478,9 +478,9 @@ func TestConnDeallocateInvalidatedCachedStatementsWithActiveTransactions(t *test
 			require.NoError(t, err)
 			defer func() { _ = tx1.Rollback(context.Background()) }()
 
-			// Starting tx2 makes it the connection's current internal transaction. A
-			// statement subsequently prepared through tx1 is therefore explicitly
-			// bound to tx1 in fbconn.Statement.
+			// Starting tx2 makes it the connection's current internal transaction.
+			// The cached statement below is prepared and executed through tx1,
+			// while its lifetime belongs to the connection.
 			tx2, err := conn.Begin(ctx)
 			require.NoError(t, err)
 			defer func() { _ = tx2.Rollback(context.Background()) }()
@@ -495,7 +495,7 @@ func TestConnDeallocateInvalidatedCachedStatementsWithActiveTransactions(t *test
 			require.Same(t, boundStatement, conn.preparedStatements[boundStatement.Description.Name])
 
 			// The cache only has room for one statement, so this puts the statement
-			// bound to tx1 on the invalidated list.
+			// prepared through tx1 on the invalidated list.
 			const evictingSQL = "select cast(? as integer) + 2 from rdb$database"
 			err = tx2.QueryRow(ctx, evictingSQL, 1).Scan(&n)
 			require.NoError(t, err)
@@ -505,8 +505,8 @@ func TestConnDeallocateInvalidatedCachedStatementsWithActiveTransactions(t *test
 			require.Same(t, boundStatement, invalidated[0])
 
 			// Exec and Query both deallocate invalidated statements before starting
-			// their own operation. Deallocating a tx1-bound statement while called
-			// through tx2 must not affect either transaction or leak its server handle.
+			// their own operation. Deallocating a statement prepared through tx1
+			// when called through tx2 must not affect either transaction or leak its server handle.
 			require.NoError(t, tt.trigger(ctx, tx2))
 			require.Empty(t, conn.statementCache.GetInvalidated())
 			require.NotContains(t, conn.preparedStatements, boundStatement.Description.Name)

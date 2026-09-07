@@ -194,6 +194,14 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 		boundTransaction: tx,
 	}
 
+	// A closed transaction's wire handle may already belong to another
+	// transaction. Reject it before touching the cursor or sending a request.
+	if tx.Closed {
+		rr.concludeCommand(QueryStatus{}, ErrTransactionClosed)
+		rr.closed = true
+		return rr
+	}
+
 	if err := st.validateParameterCount(paramValues); err != nil {
 		rr.concludeCommand(QueryStatus{}, err)
 		rr.closed = true

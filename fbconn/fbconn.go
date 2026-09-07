@@ -1510,13 +1510,15 @@ func (fbConn *FbConn) convertRowDescription(src []fbproto.FieldDescriptor) []Fie
 	return res
 }
 
-// Prepare creates a prepared statement inside current internal transaction
+// Prepare creates a connection-scoped prepared statement using the current
+// internal transaction to resolve its metadata. Statement.Exec uses the
+// connection's current internal transaction on each execution.
 func (fbConn *FbConn) Prepare(ctx context.Context, sql string) (*Statement, error) {
 	tx, err := fbConn.ensureInternalTransaction(ctx, nil, false)
 	if err != nil {
 		return nil, err
 	}
-	st, err := fbConn.PrepareTx(ctx, tx, sql)
+	st, err := fbConn.prepareTx(ctx, tx, sql, statementScopeConnection)
 	if err != nil {
 		if rbErr := fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx, err); rbErr != nil {
 			err = errors.Join(err, fmt.Errorf("rollback internal tx: %w", rbErr))
@@ -1694,7 +1696,7 @@ func (fbConn *FbConn) internalPrepareTx(
 		conn:        fbConn,
 		Description: desc,
 	}
-	if scope == statementScopeTransaction && tx != fbConn.internalTransaction {
+	if scope == statementScopeTransaction {
 		st.transaction = tx
 	}
 	fbConn.activeStatements[st] = struct{}{}
