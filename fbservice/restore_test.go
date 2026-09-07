@@ -1,15 +1,17 @@
-package fbservice
+package fbservice_test
 
 import (
 	"bytes"
 	"context"
 	"errors"
+	"math"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx/fbconn"
+	"rdb.red-soft.ru/fbx/fbservice"
 )
 
 func TestManagerRestoreWithoutOptions(t *testing.T) {
@@ -32,7 +34,7 @@ func TestManagerRestoreWithoutOptions(t *testing.T) {
 func TestManagerRestoreMapsOptions(t *testing.T) {
 	manager, connection := newTestManager(t)
 	var output bytes.Buffer
-	tablespacePaths := []RestoreTablespacePath{
+	tablespacePaths := []fbservice.RestoreTablespacePath{
 		{Name: "TS1", Path: "/data/ts1"},
 		{Name: "TS2", Path: "/data/ts2"},
 	}
@@ -41,13 +43,13 @@ func TestManagerRestoreMapsOptions(t *testing.T) {
 		context.Background(),
 		"/backup/employee.fbk",
 		"/data/employee.fdb",
-		RestoreOptions{
+		fbservice.RestoreOptions{
 			Output:                     &output,
 			VerboseInterval:            100,
-			Statistics:                 RestoreStatisticsAll,
+			Statistics:                 fbservice.RestoreStatisticsAll,
 			Replace:                    true,
-			AccessMode:                 RestoreAccessModeReadOnly,
-			ReplicaMode:                RestoreReplicaModeReadOnly,
+			AccessMode:                 fbservice.RestoreAccessModeReadOnly,
+			ReplicaMode:                fbservice.RestoreReplicaModeReadOnly,
 			DeactivateIndexes:          true,
 			SkipShadows:                true,
 			SkipValidityConstraints:    true,
@@ -109,17 +111,17 @@ func TestManagerRestoreMapsOptions(t *testing.T) {
 
 func TestManagerRestoreMapsStandaloneOptions(t *testing.T) {
 	tests := map[string]struct {
-		options RestoreOptions
+		options fbservice.RestoreOptions
 		check   func(*testing.T, fbconn.RestoreOptions)
 	}{
 		"verbose": {
-			options: RestoreOptions{Verbose: true},
+			options: fbservice.RestoreOptions{Verbose: true},
 			check: func(t *testing.T, options fbconn.RestoreOptions) {
 				require.True(t, options.Verbose)
 			},
 		},
 		"metadata only with data filters": {
-			options: RestoreOptions{
+			options: fbservice.RestoreOptions{
 				MetadataOnly:      true,
 				SkipSchemaData:    "SKIP_SCHEMA",
 				SkipData:          "SKIP_%",
@@ -135,7 +137,7 @@ func TestManagerRestoreMapsStandaloneOptions(t *testing.T) {
 			},
 		},
 		"key name with key holder": {
-			options: RestoreOptions{KeyHolder: "KeyHolder", KeyName: "KeyName"},
+			options: fbservice.RestoreOptions{KeyHolder: "KeyHolder", KeyName: "KeyName"},
 			check: func(t *testing.T, options fbconn.RestoreOptions) {
 				require.Equal(t, "KeyHolder", options.KeyHolder)
 				require.Equal(t, "KeyName", options.KeyName)
@@ -143,7 +145,7 @@ func TestManagerRestoreMapsStandaloneOptions(t *testing.T) {
 			},
 		},
 		"crypt plugin with key holder": {
-			options: RestoreOptions{KeyHolder: "KeyHolder", CryptPlugin: "DbCrypt"},
+			options: fbservice.RestoreOptions{KeyHolder: "KeyHolder", CryptPlugin: "DbCrypt"},
 			check: func(t *testing.T, options fbconn.RestoreOptions) {
 				require.Equal(t, "KeyHolder", options.KeyHolder)
 				require.Empty(t, options.KeyName)
@@ -171,7 +173,7 @@ func TestManagerRestoreMapsStandaloneOptions(t *testing.T) {
 
 func TestManagerRestoreMapsStatistics(t *testing.T) {
 	tests := map[string]struct {
-		statistics RestoreStatistics
+		statistics fbservice.RestoreStatistics
 		want       fbconn.RestoreStatistics
 	}{
 		"none": {
@@ -179,23 +181,23 @@ func TestManagerRestoreMapsStatistics(t *testing.T) {
 			want:       0,
 		},
 		"elapsed time": {
-			statistics: RestoreStatisticsElapsedTime,
+			statistics: fbservice.RestoreStatisticsElapsedTime,
 			want:       fbconn.RestoreStatisticsElapsedTime,
 		},
 		"delta time": {
-			statistics: RestoreStatisticsDeltaTime,
+			statistics: fbservice.RestoreStatisticsDeltaTime,
 			want:       fbconn.RestoreStatisticsDeltaTime,
 		},
 		"page reads": {
-			statistics: RestoreStatisticsPageReads,
+			statistics: fbservice.RestoreStatisticsPageReads,
 			want:       fbconn.RestoreStatisticsPageReads,
 		},
 		"page writes": {
-			statistics: RestoreStatisticsPageWrites,
+			statistics: fbservice.RestoreStatisticsPageWrites,
 			want:       fbconn.RestoreStatisticsPageWrites,
 		},
 		"all": {
-			statistics: RestoreStatisticsAll,
+			statistics: fbservice.RestoreStatisticsAll,
 			want:       fbconn.RestoreStatisticsAll,
 		},
 	}
@@ -208,7 +210,7 @@ func TestManagerRestoreMapsStatistics(t *testing.T) {
 				context.Background(),
 				"/backup/employee.fbk",
 				"/data/employee.fdb",
-				RestoreOptions{Statistics: tt.statistics},
+				fbservice.RestoreOptions{Statistics: tt.statistics},
 			)
 
 			require.NoError(t, err)
@@ -220,15 +222,15 @@ func TestManagerRestoreMapsStatistics(t *testing.T) {
 func TestManagerRestoreAcceptsMaximumValues(t *testing.T) {
 	manager, connection := newTestManager(t)
 	exactLimit := strings.Repeat("я", 32767) + "x"
-	require.Len(t, []byte(exactLimit), maxServiceActionStringLength)
+	require.Len(t, []byte(exactLimit), math.MaxUint16)
 
 	err := manager.Restore(
 		context.Background(),
 		exactLimit,
 		exactLimit,
-		RestoreOptions{
-			VerboseInterval:       maxServiceActionInt32,
-			Statistics:            RestoreStatisticsAll,
+		fbservice.RestoreOptions{
+			VerboseInterval:       math.MaxInt32,
+			Statistics:            fbservice.RestoreStatisticsAll,
 			FixFSSData:            exactLimit,
 			FixFSSMetadata:        exactLimit,
 			SkipSchemaData:        exactLimit,
@@ -239,39 +241,39 @@ func TestManagerRestoreAcceptsMaximumValues(t *testing.T) {
 			KeyName:               exactLimit,
 			CryptPlugin:           exactLimit,
 			TablespaceMappingFile: exactLimit,
-			TablespacePaths: []RestoreTablespacePath{{
+			TablespacePaths: []fbservice.RestoreTablespacePath{{
 				Name: exactLimit,
 				Path: exactLimit,
 			}},
-			PageBuffers:     maxServiceActionInt32,
+			PageBuffers:     math.MaxInt32,
 			PageSize:        32768,
-			ParallelWorkers: maxServiceActionInt32,
+			ParallelWorkers: math.MaxInt32,
 		},
 	)
 
 	require.NoError(t, err)
 	require.True(t, connection.opened)
 	require.Equal(t, exactLimit, connection.restoreOptions.FixFSSData)
-	require.Equal(t, maxServiceActionInt32, connection.restoreOptions.VerboseInterval)
-	require.Equal(t, maxServiceActionInt32, connection.restoreOptions.PageBuffers)
-	require.Equal(t, maxServiceActionInt32, connection.restoreOptions.ParallelWorkers)
+	require.Equal(t, math.MaxInt32, connection.restoreOptions.VerboseInterval)
+	require.Equal(t, math.MaxInt32, connection.restoreOptions.PageBuffers)
+	require.Equal(t, math.MaxInt32, connection.restoreOptions.ParallelWorkers)
 }
 
 func TestManagerRestoreMapsAccessMode(t *testing.T) {
 	tests := map[string]struct {
-		accessMode RestoreAccessMode
+		accessMode fbservice.RestoreAccessMode
 		want       fbconn.RestoreAccessMode
 	}{
 		"from backup": {
-			accessMode: RestoreAccessModeFromBackup,
+			accessMode: fbservice.RestoreAccessModeFromBackup,
 			want:       fbconn.RestoreAccessModeFromBackup,
 		},
 		"read-only": {
-			accessMode: RestoreAccessModeReadOnly,
+			accessMode: fbservice.RestoreAccessModeReadOnly,
 			want:       fbconn.RestoreAccessModeReadOnly,
 		},
 		"read-write": {
-			accessMode: RestoreAccessModeReadWrite,
+			accessMode: fbservice.RestoreAccessModeReadWrite,
 			want:       fbconn.RestoreAccessModeReadWrite,
 		},
 	}
@@ -284,7 +286,7 @@ func TestManagerRestoreMapsAccessMode(t *testing.T) {
 				context.Background(),
 				"/backup/employee.fbk",
 				"/data/employee.fdb",
-				RestoreOptions{AccessMode: tt.accessMode},
+				fbservice.RestoreOptions{AccessMode: tt.accessMode},
 			)
 
 			require.NoError(t, err)
@@ -295,23 +297,23 @@ func TestManagerRestoreMapsAccessMode(t *testing.T) {
 
 func TestManagerRestoreMapsReplicaMode(t *testing.T) {
 	tests := map[string]struct {
-		replicaMode RestoreReplicaMode
+		replicaMode fbservice.RestoreReplicaMode
 		want        fbconn.RestoreReplicaMode
 	}{
 		"from backup": {
-			replicaMode: RestoreReplicaModeFromBackup,
+			replicaMode: fbservice.RestoreReplicaModeFromBackup,
 			want:        fbconn.RestoreReplicaModeFromBackup,
 		},
 		"none": {
-			replicaMode: RestoreReplicaModeNone,
+			replicaMode: fbservice.RestoreReplicaModeNone,
 			want:        fbconn.RestoreReplicaModeNone,
 		},
 		"read-only": {
-			replicaMode: RestoreReplicaModeReadOnly,
+			replicaMode: fbservice.RestoreReplicaModeReadOnly,
 			want:        fbconn.RestoreReplicaModeReadOnly,
 		},
 		"read-write": {
-			replicaMode: RestoreReplicaModeReadWrite,
+			replicaMode: fbservice.RestoreReplicaModeReadWrite,
 			want:        fbconn.RestoreReplicaModeReadWrite,
 		},
 	}
@@ -324,7 +326,7 @@ func TestManagerRestoreMapsReplicaMode(t *testing.T) {
 				context.Background(),
 				"/backup/employee.fbk",
 				"/data/employee.fdb",
-				RestoreOptions{ReplicaMode: tt.replicaMode},
+				fbservice.RestoreOptions{ReplicaMode: tt.replicaMode},
 			)
 
 			require.NoError(t, err)
@@ -340,8 +342,8 @@ func TestManagerRestoreRejectsMultipleOptions(t *testing.T) {
 		context.Background(),
 		"/backup/employee.fbk",
 		"/data/employee.fdb",
-		RestoreOptions{},
-		RestoreOptions{},
+		fbservice.RestoreOptions{},
+		fbservice.RestoreOptions{},
 	)
 
 	require.ErrorContains(t, err, "at most one")
@@ -350,27 +352,27 @@ func TestManagerRestoreRejectsMultipleOptions(t *testing.T) {
 
 func TestManagerRestoreRejectsSemanticOptionsBeforeOpeningConnection(t *testing.T) {
 	tests := map[string]struct {
-		options RestoreOptions
+		options fbservice.RestoreOptions
 		errText string
 	}{
 		"verbose and interval": {
-			options: RestoreOptions{Verbose: true, VerboseInterval: 100},
+			options: fbservice.RestoreOptions{Verbose: true, VerboseInterval: 100},
 			errText: "restore verbose and verbose interval are mutually exclusive",
 		},
 		"key name without key holder": {
-			options: RestoreOptions{KeyName: "KeyName"},
+			options: fbservice.RestoreOptions{KeyName: "KeyName"},
 			errText: "restore key name requires key holder",
 		},
 		"crypt plugin without key holder": {
-			options: RestoreOptions{CryptPlugin: "DbCrypt"},
+			options: fbservice.RestoreOptions{CryptPlugin: "DbCrypt"},
 			errText: "restore crypt plugin requires key holder",
 		},
 		"empty tablespace name": {
-			options: RestoreOptions{TablespacePaths: []RestoreTablespacePath{{Path: "/data/ts1"}}},
+			options: fbservice.RestoreOptions{TablespacePaths: []fbservice.RestoreTablespacePath{{Path: "/data/ts1"}}},
 			errText: "restore tablespace path 1 name must not be empty",
 		},
 		"empty tablespace path": {
-			options: RestoreOptions{TablespacePaths: []RestoreTablespacePath{{Name: "TS1"}}},
+			options: fbservice.RestoreOptions{TablespacePaths: []fbservice.RestoreTablespacePath{{Name: "TS1"}}},
 			errText: "restore tablespace path 1 path must not be empty",
 		},
 	}
@@ -396,7 +398,7 @@ func TestManagerRestoreValidatesRequestBeforeOpeningConnection(t *testing.T) {
 	type testCase struct {
 		backupFile string
 		database   string
-		options    RestoreOptions
+		options    fbservice.RestoreOptions
 		errText    string
 	}
 
@@ -410,102 +412,104 @@ func TestManagerRestoreValidatesRequestBeforeOpeningConnection(t *testing.T) {
 			errText:    "restore database must not be empty",
 		},
 		"backup file exceeds SPB limit": {
-			backupFile: strings.Repeat("b", maxServiceActionStringLength+1),
+			backupFile: strings.Repeat("b", math.MaxUint16+1),
 			database:   "/data/employee.fdb",
 			errText:    "restore backup file is 65536 bytes; maximum is 65535",
 		},
 		"database exceeds SPB limit": {
 			backupFile: "/backup/employee.fbk",
-			database:   strings.Repeat("d", maxServiceActionStringLength+1),
+			database:   strings.Repeat("d", math.MaxUint16+1),
 			errText:    "restore database is 65536 bytes; maximum is 65535",
 		},
 		"negative page buffers": {
 			backupFile: "/backup/employee.fbk",
 			database:   "/data/employee.fdb",
-			options:    RestoreOptions{PageBuffers: -1},
+			options:    fbservice.RestoreOptions{PageBuffers: -1},
 			errText:    "restore page buffers must be between 0",
 		},
 		"invalid page size": {
 			backupFile: "/backup/employee.fbk",
 			database:   "/data/employee.fdb",
-			options:    RestoreOptions{PageSize: 12345},
+			options:    fbservice.RestoreOptions{PageSize: 12345},
 			errText:    "restore page size must be one of",
 		},
 		"negative verbose interval": {
 			backupFile: "/backup/employee.fbk",
 			database:   "/data/employee.fdb",
-			options:    RestoreOptions{VerboseInterval: -1},
+			options:    fbservice.RestoreOptions{VerboseInterval: -1},
 			errText:    "restore verbose interval must be between 0",
 		},
 		"verbose interval below minimum": {
 			backupFile: "/backup/employee.fbk",
 			database:   "/data/employee.fdb",
-			options:    RestoreOptions{VerboseInterval: minRestoreVerboseInterval - 1},
+			options:    fbservice.RestoreOptions{VerboseInterval: 99},
 			errText:    "restore verbose interval must be 0 or at least 100",
 		},
 		"negative parallel workers": {
 			backupFile: "/backup/employee.fbk",
 			database:   "/data/employee.fdb",
-			options:    RestoreOptions{ParallelWorkers: -1},
+			options:    fbservice.RestoreOptions{ParallelWorkers: -1},
 			errText:    "restore parallel workers must be between 0",
 		},
 		"invalid access mode": {
 			backupFile: "/backup/employee.fbk",
 			database:   "/data/employee.fdb",
-			options:    RestoreOptions{AccessMode: RestoreAccessMode(255)},
+			options:    fbservice.RestoreOptions{AccessMode: fbservice.RestoreAccessMode(255)},
 			errText:    "invalid restore access mode 255",
 		},
 		"invalid replica mode": {
 			backupFile: "/backup/employee.fbk",
 			database:   "/data/employee.fdb",
-			options:    RestoreOptions{ReplicaMode: RestoreReplicaMode(255)},
+			options:    fbservice.RestoreOptions{ReplicaMode: fbservice.RestoreReplicaMode(255)},
 			errText:    "invalid restore replica mode 255",
 		},
 		"invalid statistics": {
 			backupFile: "/backup/employee.fbk",
 			database:   "/data/employee.fdb",
-			options:    RestoreOptions{Statistics: RestoreStatistics(0x10)},
+			options:    fbservice.RestoreOptions{Statistics: fbservice.RestoreStatistics(0x10)},
 			errText:    "invalid restore statistics flags 0x10",
 		},
 		"skip data exceeds SPB limit": {
 			backupFile: "/backup/employee.fbk",
 			database:   "/data/employee.fdb",
-			options: RestoreOptions{
-				SkipData: strings.Repeat("s", maxServiceActionStringLength+1),
+			options: fbservice.RestoreOptions{
+				SkipData: strings.Repeat("s", math.MaxUint16+1),
 			},
 			errText: "restore skip data is 65536 bytes; maximum is 65535",
 		},
 		"include data exceeds SPB limit": {
 			backupFile: "/backup/employee.fbk",
 			database:   "/data/employee.fdb",
-			options: RestoreOptions{
-				IncludeData: strings.Repeat("i", maxServiceActionStringLength+1),
+			options: fbservice.RestoreOptions{
+				IncludeData: strings.Repeat("i", math.MaxUint16+1),
 			},
 			errText: "restore include data is 65536 bytes; maximum is 65535",
 		},
 	}
 
-	tooLong := strings.Repeat("x", maxServiceActionStringLength+1)
+	tooLong := strings.Repeat("x", math.MaxUint16+1)
 	for _, tt := range []struct {
 		name      string
 		errorName string
-		options   func(string) RestoreOptions
+		options   func(string) fbservice.RestoreOptions
 	}{
-		{"fix FSS data exceeds SPB limit", "fix FSS data", func(value string) RestoreOptions { return RestoreOptions{FixFSSData: value} }},
-		{"fix FSS metadata exceeds SPB limit", "fix FSS metadata", func(value string) RestoreOptions { return RestoreOptions{FixFSSMetadata: value} }},
-		{"skip schema data exceeds SPB limit", "skip schema data", func(value string) RestoreOptions { return RestoreOptions{SkipSchemaData: value} }},
-		{"include schema data exceeds SPB limit", "include schema data", func(value string) RestoreOptions { return RestoreOptions{IncludeSchemaData: value} }},
-		{"key holder exceeds SPB limit", "key holder", func(value string) RestoreOptions { return RestoreOptions{KeyHolder: value} }},
-		{"key name exceeds SPB limit", "key name", func(value string) RestoreOptions { return RestoreOptions{KeyName: value} }},
-		{"crypt plugin exceeds SPB limit", "crypt plugin", func(value string) RestoreOptions {
-			return RestoreOptions{KeyHolder: "KeyHolder", CryptPlugin: value}
+		{"fix FSS data exceeds SPB limit", "fix FSS data", func(value string) fbservice.RestoreOptions { return fbservice.RestoreOptions{FixFSSData: value} }},
+		{"fix FSS metadata exceeds SPB limit", "fix FSS metadata", func(value string) fbservice.RestoreOptions { return fbservice.RestoreOptions{FixFSSMetadata: value} }},
+		{"skip schema data exceeds SPB limit", "skip schema data", func(value string) fbservice.RestoreOptions { return fbservice.RestoreOptions{SkipSchemaData: value} }},
+		{"include schema data exceeds SPB limit", "include schema data", func(value string) fbservice.RestoreOptions { return fbservice.RestoreOptions{IncludeSchemaData: value} }},
+		{"key holder exceeds SPB limit", "key holder", func(value string) fbservice.RestoreOptions { return fbservice.RestoreOptions{KeyHolder: value} }},
+		{"key name exceeds SPB limit", "key name", func(value string) fbservice.RestoreOptions { return fbservice.RestoreOptions{KeyName: value} }},
+		{"crypt plugin exceeds SPB limit", "crypt plugin", func(value string) fbservice.RestoreOptions {
+			return fbservice.RestoreOptions{KeyHolder: "KeyHolder", CryptPlugin: value}
 		}},
-		{"tablespace mapping file exceeds SPB limit", "tablespace mapping file", func(value string) RestoreOptions { return RestoreOptions{TablespaceMappingFile: value} }},
-		{"tablespace path name exceeds SPB limit", "tablespace path 1 name", func(value string) RestoreOptions {
-			return RestoreOptions{TablespacePaths: []RestoreTablespacePath{{Name: value, Path: "/data/ts1"}}}
+		{"tablespace mapping file exceeds SPB limit", "tablespace mapping file", func(value string) fbservice.RestoreOptions {
+			return fbservice.RestoreOptions{TablespaceMappingFile: value}
 		}},
-		{"tablespace path exceeds SPB limit", "tablespace path 1 path", func(value string) RestoreOptions {
-			return RestoreOptions{TablespacePaths: []RestoreTablespacePath{{Name: "TS1", Path: value}}}
+		{"tablespace path name exceeds SPB limit", "tablespace path 1 name", func(value string) fbservice.RestoreOptions {
+			return fbservice.RestoreOptions{TablespacePaths: []fbservice.RestoreTablespacePath{{Name: value, Path: "/data/ts1"}}}
+		}},
+		{"tablespace path exceeds SPB limit", "tablespace path 1 path", func(value string) fbservice.RestoreOptions {
+			return fbservice.RestoreOptions{TablespacePaths: []fbservice.RestoreTablespacePath{{Name: "TS1", Path: value}}}
 		}},
 	} {
 		tests[tt.name] = testCase{
@@ -517,23 +521,23 @@ func TestManagerRestoreValidatesRequestBeforeOpeningConnection(t *testing.T) {
 	}
 
 	if strconv.IntSize > 32 {
-		aboveMaxInt32 := int64(maxServiceActionInt32) + 1
+		aboveMaxInt32 := int64(math.MaxInt32) + 1
 		tests["page buffers exceed int32"] = testCase{
 			backupFile: "/backup/employee.fbk",
 			database:   "/data/employee.fdb",
-			options:    RestoreOptions{PageBuffers: int(aboveMaxInt32)},
+			options:    fbservice.RestoreOptions{PageBuffers: int(aboveMaxInt32)},
 			errText:    "restore page buffers must be between 0",
 		}
 		tests["verbose interval exceeds int32"] = testCase{
 			backupFile: "/backup/employee.fbk",
 			database:   "/data/employee.fdb",
-			options:    RestoreOptions{VerboseInterval: int(aboveMaxInt32)},
+			options:    fbservice.RestoreOptions{VerboseInterval: int(aboveMaxInt32)},
 			errText:    "restore verbose interval must be between 0",
 		}
 		tests["parallel workers exceed int32"] = testCase{
 			backupFile: "/backup/employee.fbk",
 			database:   "/data/employee.fdb",
-			options:    RestoreOptions{ParallelWorkers: int(aboveMaxInt32)},
+			options:    fbservice.RestoreOptions{ParallelWorkers: int(aboveMaxInt32)},
 			errText:    "restore parallel workers must be between 0",
 		}
 	}
@@ -573,9 +577,9 @@ func TestManagerRestoreReturnsOperationAndCloseErrors(t *testing.T) {
 func TestManagerRestoreReturnsConnectionError(t *testing.T) {
 	manager, _ := newTestManager(t)
 	connectionErr := errors.New("connection failed")
-	manager.connect = func(context.Context, *fbconn.ServiceConfig) (serviceConnection, error) {
+	fbservice.SetConnectForTest(manager, func(context.Context, *fbconn.ServiceConfig) (fbservice.ServiceConnection, error) {
 		return nil, connectionErr
-	}
+	})
 
 	err := manager.Restore(
 		context.Background(),
