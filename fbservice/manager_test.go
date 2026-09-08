@@ -12,6 +12,58 @@ import (
 	"rdb.red-soft.ru/fbx/fbconn"
 )
 
+func TestNewManager(t *testing.T) {
+	for name, connString := range map[string]string{
+		"URL":           "firebird://service-user:service-password@service-host:4040/ignored.fdb?create_database=true",
+		"keyword/value": "host=service-host port=4040 user=service-user password=service-password database=ignored.fdb create_database=true",
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			manager, err := NewManager(ctx, connString)
+			require.NoError(t, err)
+			require.NotNil(t, manager)
+			require.NotNil(t, manager.connect)
+			cancel()
+
+			operationCtx := context.Background()
+			connection := new(fakeServiceConnection)
+			manager.connect = func(ctx context.Context, config *fbconn.ServiceConfig) (serviceConnection, error) {
+				require.Equal(t, operationCtx, ctx)
+				require.NoError(t, ctx.Err())
+				connection.connectionConfig = config.ConnectionConfig.Copy()
+				connection.expectedDatabase = config.ExpectedDatabase
+				return connection, nil
+			}
+
+			err = manager.Backup(operationCtx, "/data/employee.fdb", "/backup/employee.fbk")
+
+			require.NoError(t, err)
+			require.Equal(t, "service-host", connection.connectionConfig.Host)
+			require.Equal(t, uint16(4040), connection.connectionConfig.Port)
+			require.Equal(t, "service-user", connection.connectionConfig.User)
+			require.Equal(t, "service-password", connection.connectionConfig.Password)
+			requireDatabaseConnectionSettingsCleared(t, connection.connectionConfig)
+			require.Equal(t, "/data/employee.fdb", connection.expectedDatabase)
+			require.Equal(t, "/data/employee.fdb", connection.database)
+			require.Equal(t, "/backup/employee.fbk", connection.backupFile)
+			require.True(t, connection.closed)
+		})
+	}
+}
+
+func TestNewManagerRejectsInvalidConnectionString(t *testing.T) {
+	for _, connString := range []string{"firebird://localhost:invalid/employee", "host='unterminated", "port=65536"} {
+		t.Run(connString, func(t *testing.T) {
+			manager, err := NewManager(context.Background(), connString)
+
+			var parseErr *fbconn.ParseConfigError
+			require.ErrorAs(t, err, &parseErr)
+			require.Nil(t, manager)
+		})
+	}
+}
+
 func TestManagerSupportsConcurrentOperations(t *testing.T) {
 	config, err := ParseConfig("firebird://sysdba:masterkey@localhost/employee")
 	require.NoError(t, err)
@@ -20,7 +72,8 @@ func TestManagerSupportsConcurrentOperations(t *testing.T) {
 	var opened atomic.Int64
 	var closed atomic.Int64
 
-	manager := NewManager(config)
+	manager, err := NewManagerConfig(context.Background(), config)
+	require.NoError(t, err)
 	manager.connect = func(
 		_ context.Context,
 		config *fbconn.ServiceConfig,
