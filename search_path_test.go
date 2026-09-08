@@ -115,6 +115,7 @@ func setupSearchPathSchemas(ctx context.Context, t testing.TB, conn *fbx.Conn, s
 }
 
 func TestParseConfigWithoutSearchPathHasNoRuntimeParam(t *testing.T) {
+	t.Setenv("FBSEARCHPATH", "")
 	config, err := fbx.ParseConfig("host=localhost application_name=fbxtest")
 	require.NoError(t, err)
 	_, ok := config.RuntimeParams["search_path"]
