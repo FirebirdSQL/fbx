@@ -312,20 +312,31 @@ func TestSetSearchPathDeallocatesNamedPreparedStatement(t *testing.T) {
 	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, []fbx.QueryExecMode{fbx.QueryExecModeCacheStatement}, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
 		skipUnlessSchemasSupported(ctx, t, conn)
 
-		const schema1 = "FBX_SP_PREP1"
-		const schema2 = "FBX_SP_PREP2"
-		const sql = "select val from test"
+		const (
+			schema1 = "FBX_SP_PREP1"
+			schema2 = "FBX_SP_PREP2"
+			name    = "prepared"
+			sql     = "select val from test"
+		)
 		setupSearchPathSchemas(ctx, t, conn, schema1, schema2)
 
 		mustExecCtx(ctx, t, conn, "set search_path to "+schema1)
 
+		_, err := conn.Prepare(ctx, name, sql)
+		require.NoError(t, err)
+
 		var val int
-		require.NoError(t, conn.QueryRow(ctx, sql).Scan(&val))
+		require.NoError(t, conn.QueryRow(ctx, name).Scan(&val))
 		assert.Equal(t, 1, val)
 
 		mustExecCtx(ctx, t, conn, "set search_path to "+schema2)
 
-		require.NoError(t, conn.QueryRow(ctx, sql).Scan(&val))
+		require.Error(t, conn.QueryRow(ctx, name).Scan(&val))
+
+		_, err = conn.Prepare(ctx, name, sql)
+		require.NoError(t, err)
+
+		require.NoError(t, conn.QueryRow(ctx, name).Scan(&val))
 		assert.Equal(t, 2, val)
 	})
 }
