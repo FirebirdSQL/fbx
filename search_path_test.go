@@ -146,8 +146,8 @@ func TestConnConfigCopyPreservesSearchPath(t *testing.T) {
 	assert.Equal(t, config.ConnString(), copied.ConnString())
 
 	copied.RuntimeParams["search_path"] = "changed"
-	assert.Equal(t, "s1,s2", copied.RuntimeParams["search_path"])
-	assert.Equal(t, "changed", config.RuntimeParams["search_path"])
+	assert.Equal(t, "s1,s2", config.RuntimeParams["search_path"])
+	assert.Equal(t, "changed", copied.RuntimeParams["search_path"])
 }
 
 func TestConnectWithSearchPathOnServersWithoutSchemas(t *testing.T) {
