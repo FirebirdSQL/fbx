@@ -88,7 +88,9 @@ func TestPoolSearchPathAppliesToEveryConnection(t *testing.T) {
 	conns := make([]*fbxpool.Conn, 0, config.MaxConns)
 	defer func() {
 		for _, c := range conns {
-			c.Release()
+			if c != nil {
+				c.Release()
+			}
 		}
 	}()
 	for i := int32(0); i < config.MaxConns; i++ {
