@@ -109,7 +109,7 @@ func setupSearchPathSchemas(ctx context.Context, t testing.TB, conn *fbx.Conn, s
 		defer func() { _ = cleanupConn.Close(cleanupCtx) }()
 
 		for _, schema := range schemas {
-			dropSchema(ctx, conn, schema)
+			dropSchema(ctx, cleanupConn, schema)
 		}
 	})
 }
