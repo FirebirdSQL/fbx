@@ -86,16 +86,16 @@ func TestPoolSearchPathAppliesToEveryConnection(t *testing.T) {
 	defer pool.Close()
 
 	conns := make([]*fbxpool.Conn, 0, config.MaxConns)
-	for i := int32(0); i < config.MaxConns; i++ {
-		c, err := pool.Acquire(ctx)
-		require.NoError(t, err)
-		conns = append(conns, c)
-	}
 	defer func() {
 		for _, c := range conns {
 			c.Release()
 		}
 	}()
+	for i := int32(0); i < config.MaxConns; i++ {
+		c, err := pool.Acquire(ctx)
+		conns = append(conns, c)
+		require.NoError(t, err)
+	}
 
 	attachments := map[string]bool{}
 	for _, c := range conns {
