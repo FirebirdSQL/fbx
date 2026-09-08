@@ -73,6 +73,39 @@ func (f driverValuerFunc) Value() (driver.Value, error) {
 	return f()
 }
 
+type textOverrideCodec struct{}
+
+func (textOverrideCodec) PlanEncode(*fbtype.Map, fbtype.TypeMetadata, any) fbtype.EncodePlan {
+	return nil
+}
+
+func (textOverrideCodec) PlanScan(_ *fbtype.Map, _ fbtype.TypeMetadata, target any) fbtype.ScanPlan {
+	if _, ok := target.(*string); ok {
+		return textOverrideScanPlan{}
+	}
+	return nil
+}
+
+func (textOverrideCodec) DecodeDatabaseSQLValue(*fbtype.Map, fbtype.TypeMetadata, []byte) (driver.Value, error) {
+	return "override", nil
+}
+
+func (textOverrideCodec) DecodeValue(*fbtype.Map, fbtype.TypeMetadata, []byte) (any, error) {
+	return "override", nil
+}
+
+type textOverrideScanPlan struct{}
+
+func (textOverrideScanPlan) Scan(_ []byte, target any) error {
+	dst, ok := target.(*string)
+	if !ok {
+		return fbtype.ErrScanTargetTypeChanged
+	}
+
+	*dst = "override"
+	return nil
+}
+
 type arrayGetterEncodeCodec struct{}
 
 func (arrayGetterEncodeCodec) PlanEncode(m *fbtype.Map, typeMetadata fbtype.TypeMetadata, value any) fbtype.EncodePlan {
@@ -216,6 +249,21 @@ func TestMapScanTextIntoAnyReturnsString(t *testing.T) {
 	err := m.Scan(typeMetadata, []byte("foo"), &got)
 	require.NoError(t, err)
 	assert.Equal(t, "foo", got)
+}
+
+func TestMapScanTextIntoStringUsesRegisteredCodec(t *testing.T) {
+	m := fbtype.NewMap()
+	m.RegisterType(&fbtype.Type{
+		Name:   "text_override_test",
+		TypeID: fbtype.MakeTypeSubtype(fbproto.SQL_TYPE_TEXT, 0),
+		Codec:  textOverrideCodec{},
+	})
+
+	var got string
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 0, 3, 0)
+	err := m.Scan(typeMetadata, []byte("raw"), &got)
+	require.NoError(t, err)
+	assert.Equal(t, "override", got)
 }
 
 func TestMapScanTextIntoStringWithUnsupportedCharsetReturnsError(t *testing.T) {

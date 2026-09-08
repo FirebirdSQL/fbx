@@ -2,6 +2,7 @@ package fbtype
 
 import (
 	"database/sql/driver"
+	"fmt"
 )
 
 // BytesScanner scans Firebird OCTETS data from raw bytes.
@@ -104,12 +105,29 @@ func (encodePlanBytesCodecBinaryString) Encode(value any, buf []byte) ([]byte, e
 func (OctetsCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
 
 	switch target.(type) {
+	case *string:
+		return scanPlanBinaryBytesToString{}
 	case *[]byte:
 		return scanPlanBinaryBytesToBytes{}
 	case BytesScanner:
 		return scanPlanBinaryBytesToBytesScanner{}
 	}
 
+	return nil
+}
+
+type scanPlanBinaryBytesToString struct{}
+
+func (scanPlanBinaryBytesToString) Scan(src []byte, dst any) error {
+	p, ok := dst.(*string)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+	if src == nil {
+		return fmt.Errorf("cannot scan NULL into %T", dst)
+	}
+
+	*p = string(src)
 	return nil
 }
 

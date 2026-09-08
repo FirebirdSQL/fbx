@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
+	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbtype"
 )
 
@@ -81,6 +82,35 @@ func TestOctetsScanIntoString(t *testing.T) {
 		require.NoError(tb, err)
 		require.Equal(tb, "somestring", got)
 	})
+}
+
+func TestOctetsScanIntoStringPreservesBytes(t *testing.T) {
+	t.Parallel()
+
+	m := fbtype.NewMap()
+	want := []byte{0xff, 0xfe, 0xfd}
+
+	for _, typeID := range []uint32{fbproto.SQL_TYPE_TEXT, fbproto.SQL_TYPE_VARYING} {
+		var got string
+		typeMetadata := fbtype.NewTypeMetadata(typeID, 1, uint32(len(want)), 0)
+		err := m.Scan(typeMetadata, want, &got)
+		require.NoError(t, err)
+		require.Equal(t, want, []byte(got))
+	}
+}
+
+func TestOctetsScanPlanStringErrors(t *testing.T) {
+	t.Parallel()
+
+	plan := fbtype.OctetsCodec{}.PlanScan(nil, fbtype.TypeMetadata{}, new(string))
+	require.NotNil(t, plan)
+
+	var got string
+	err := plan.Scan(nil, &got)
+	require.ErrorContains(t, err, "cannot scan NULL into *string")
+
+	err = plan.Scan([]byte("value"), new([]byte))
+	require.ErrorIs(t, err, fbtype.ErrScanTargetTypeChanged)
 }
 
 func TestOctetsRoundTripStringParamToBytes(t *testing.T) {
