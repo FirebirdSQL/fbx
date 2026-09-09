@@ -277,6 +277,43 @@ func TestMapScanTextIntoStringWithUnsupportedCharsetReturnsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "unknown or unsupported charset id: 99")
 }
 
+func TestDefaultMapCharacterTypes(t *testing.T) {
+	t.Parallel()
+
+	m := fbtype.NewMap()
+	tests := []struct {
+		name   string
+		typeID uint32
+	}{
+		{name: "char", typeID: fbproto.SQL_TYPE_TEXT},
+		{name: "varchar", typeID: fbproto.SQL_TYPE_VARYING},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dataType, ok := m.TypeForName(tt.name)
+			require.True(t, ok)
+			require.Equal(t, tt.name, dataType.Name)
+			require.Equal(t, tt.typeID, dataType.TypeID)
+		})
+	}
+
+	_, ok := m.TypeForName("text")
+	require.False(t, ok)
+}
+
+func TestDefaultMapGoTextValuesUseVarchar(t *testing.T) {
+	t.Parallel()
+
+	m := fbtype.NewMap()
+	for _, value := range []any{"", new(string), fbtype.Text{}, new(fbtype.Text)} {
+		dataType, ok := m.TypeForValue(value)
+		require.True(t, ok, "value type %T", value)
+		require.Equal(t, "varchar", dataType.Name, "value type %T", value)
+		require.Equal(t, uint32(fbproto.SQL_TYPE_VARYING), dataType.TypeID, "value type %T", value)
+	}
+}
+
 func TestMapScanSmallintIntoAnyReturnsInt16(t *testing.T) {
 	m := fbtype.NewMap()
 	var got any
@@ -1188,7 +1225,7 @@ func TestMapPlanEncodeNilDriverValuerWithValueReceiverIsNull(t *testing.T) {
 	require.Nil(t, buf)
 }
 
-func TestMapEncodeDatabaseValuerStringWithUnknownTypeIDUsesDefaultText(t *testing.T) {
+func TestMapEncodeDatabaseValuerStringWithUnknownTypeIDUsesDefaultVarchar(t *testing.T) {
 	m := fbtype.NewMap()
 	typeMetadata := fbtype.NewTypeMetadata(unregisteredTypeID, 0, 0, 0)
 	buf, err := m.Encode(typeMetadata, driverValuerFunc(func() (driver.Value, error) { return "foo", nil }), nil)
@@ -1196,7 +1233,7 @@ func TestMapEncodeDatabaseValuerStringWithUnknownTypeIDUsesDefaultText(t *testin
 	require.Equal(t, []byte("foo"), buf)
 }
 
-func TestMapEncodeStringWithUnknownTypeIDUsesDefaultText(t *testing.T) {
+func TestMapEncodeStringWithUnknownTypeIDUsesDefaultVarchar(t *testing.T) {
 	m := fbtype.NewMap()
 	typeMetadata := fbtype.NewTypeMetadata(unregisteredTypeID, 0, 3, 0)
 	buf, err := m.Encode(typeMetadata, "foo", nil)

@@ -8,29 +8,40 @@ import (
 	"rdb.red-soft.ru/fbx/fbproto"
 )
 
+// TextScanner scans a value's text representation as [Text].
 type TextScanner interface {
+	// ScanText scans v into the receiver.
 	ScanText(v Text) error
 }
 
+// TextValuer provides a value's text representation for encoding.
 type TextValuer interface {
+	// TextValue returns the text value to encode.
 	TextValue() (Text, error)
 }
 
+// Text represents nullable Firebird character data.
+//
+// String contains the character value. Valid is false when the value
+// represents SQL NULL.
 type Text struct {
 	String string
 	Valid  bool
 }
 
+// ScanText implements [TextScanner].
 func (t *Text) ScanText(v Text) error {
 	*t = v
 	return nil
 }
 
+// TextValue implements [TextValuer].
 func (t Text) TextValue() (Text, error) {
 	return t, nil
 }
 
-// Scan implements the database/sql Scanner interface.
+// Scan implements [database/sql.Scanner]. It accepts nil, string, and []byte
+// values.
 func (dst *Text) Scan(src any) error {
 	*dst = Text{}
 
@@ -50,7 +61,7 @@ func (dst *Text) Scan(src any) error {
 	return fmt.Errorf("cannot scan %T", src)
 }
 
-// Value implements the database/sql/driver Valuer interface.
+// Value implements the [database/sql/driver.Valuer] interface.
 func (src Text) Value() (driver.Value, error) {
 	if !src.Valid {
 		return nil, nil
@@ -58,6 +69,7 @@ func (src Text) Value() (driver.Value, error) {
 	return src.String, nil
 }
 
+// MarshalJSON encodes src as a JSON string or null.
 func (src Text) MarshalJSON() ([]byte, error) {
 	if !src.Valid {
 		return []byte("null"), nil
@@ -66,6 +78,7 @@ func (src Text) MarshalJSON() ([]byte, error) {
 	return json.Marshal(src.String)
 }
 
+// UnmarshalJSON decodes a JSON string or null into dst.
 func (dst *Text) UnmarshalJSON(b []byte) error {
 	*dst = Text{}
 
@@ -84,8 +97,12 @@ func (dst *Text) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// TextCodec encodes and decodes Firebird CHAR and VARCHAR values except
+// those declared with CHARACTER SET OCTETS.
 type TextCodec struct{}
 
+// PlanEncode returns an encode plan for supported Firebird CHAR and VARCHAR
+// input values.
 func (TextCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	switch value.(type) {
 	case string, []byte, TextValuer:
@@ -188,6 +205,8 @@ func (e encodePlanTextCodecTextValuer) Encode(value any, buf []byte) (newBuf []b
 	return appendNonNullBytes(buf, res), nil
 }
 
+// PlanScan returns a scan plan for supported Firebird CHAR and VARCHAR target
+// values.
 func (TextCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
 	switch target.(type) {
 	case *string, *[]byte, BytesScanner, TextScanner:
@@ -202,13 +221,13 @@ func (TextCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPla
 
 	switch target.(type) {
 	case *string:
-		return scanPlanTextAnyToString{encoding: encoding, length: typeMetadata.Length, typeId: typeMetadata.TypeID}
+		return scanPlanTextAnyToString{encoding: encoding, length: typeMetadata.Length, typeID: typeMetadata.TypeID}
 	case *[]byte:
-		return scanPlanAnyToNewByteSlice{encoding: encoding, length: typeMetadata.Length, typeId: typeMetadata.TypeID}
+		return scanPlanTextAnyToByteSlice{encoding: encoding, length: typeMetadata.Length, typeID: typeMetadata.TypeID}
 	case BytesScanner:
-		return scanPlanAnyToByteScanner{encoding: encoding, length: typeMetadata.Length, typeId: typeMetadata.TypeID}
+		return scanPlanTextAnyToBytesScanner{encoding: encoding, length: typeMetadata.Length, typeID: typeMetadata.TypeID}
 	case TextScanner:
-		return scanPlanTextAnyToTextScanner{encoding: encoding, length: typeMetadata.Length, typeId: typeMetadata.TypeID}
+		return scanPlanTextAnyToTextScanner{encoding: encoding, length: typeMetadata.Length, typeID: typeMetadata.TypeID}
 	}
 
 	return nil
@@ -222,10 +241,13 @@ func (s scanPlanTextCodecError) Scan(src []byte, dst any) error {
 	return s.err
 }
 
+// DecodeDatabaseSQLValue decodes src into a database/sql driver value.
 func (c TextCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
 	return c.DecodeValue(m, typeMetadata, src)
 }
 
+// DecodeValue decodes src into the default Go value for Firebird CHAR or
+// VARCHAR.
 func (c TextCodec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
@@ -255,7 +277,7 @@ func textEncoding(typeMetadata TypeMetadata) (*fbproto.Encoding, error) {
 }
 
 type scanPlanTextAnyToString struct {
-	typeId   uint32
+	typeID   uint32
 	length   uint32
 	encoding *fbproto.Encoding
 }
@@ -269,16 +291,16 @@ func (s scanPlanTextAnyToString) Scan(src []byte, dst any) error {
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
-	return decodeFBString(src, s.typeId == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, p)
+	return decodeFBString(src, s.typeID == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, p)
 }
 
-type scanPlanAnyToNewByteSlice struct {
-	typeId   uint32
+type scanPlanTextAnyToByteSlice struct {
+	typeID   uint32
 	length   uint32
 	encoding *fbproto.Encoding
 }
 
-func (s scanPlanAnyToNewByteSlice) Scan(src []byte, dst any) error {
+func (s scanPlanTextAnyToByteSlice) Scan(src []byte, dst any) error {
 	p, ok := dst.(*[]byte)
 	if !ok {
 		return ErrScanTargetTypeChanged
@@ -288,7 +310,7 @@ func (s scanPlanAnyToNewByteSlice) Scan(src []byte, dst any) error {
 		*p = nil
 	} else {
 		var res string
-		if err := decodeFBString(src, s.typeId == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, &res); err != nil {
+		if err := decodeFBString(src, s.typeID == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, &res); err != nil {
 			return err
 		}
 		*p = []byte(res)
@@ -297,13 +319,13 @@ func (s scanPlanAnyToNewByteSlice) Scan(src []byte, dst any) error {
 	return nil
 }
 
-type scanPlanAnyToByteScanner struct {
-	typeId   uint32
+type scanPlanTextAnyToBytesScanner struct {
+	typeID   uint32
 	length   uint32
 	encoding *fbproto.Encoding
 }
 
-func (s scanPlanAnyToByteScanner) Scan(src []byte, dst any) error {
+func (s scanPlanTextAnyToBytesScanner) Scan(src []byte, dst any) error {
 	p, ok := dst.(BytesScanner)
 	if !ok {
 		return ErrScanTargetTypeChanged
@@ -314,14 +336,14 @@ func (s scanPlanAnyToByteScanner) Scan(src []byte, dst any) error {
 	}
 
 	var res string
-	if err := decodeFBString(src, s.typeId == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, &res); err != nil {
+	if err := decodeFBString(src, s.typeID == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, &res); err != nil {
 		return err
 	}
 	return p.ScanBytes([]byte(res))
 }
 
 type scanPlanTextAnyToTextScanner struct {
-	typeId   uint32
+	typeID   uint32
 	length   uint32
 	encoding *fbproto.Encoding
 }
@@ -337,7 +359,7 @@ func (s scanPlanTextAnyToTextScanner) Scan(src []byte, dst any) error {
 	}
 
 	var res string
-	if err := decodeFBString(src, s.typeId == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, &res); err != nil {
+	if err := decodeFBString(src, s.typeID == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, &res); err != nil {
 		return err
 	}
 
