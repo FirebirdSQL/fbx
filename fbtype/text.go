@@ -32,8 +32,9 @@ func (t Text) TextValue() (Text, error) {
 
 // Scan implements the database/sql Scanner interface.
 func (dst *Text) Scan(src any) error {
+	*dst = Text{}
+
 	if src == nil {
-		*dst = Text{}
 		return nil
 	}
 
@@ -66,6 +67,8 @@ func (src Text) MarshalJSON() ([]byte, error) {
 }
 
 func (dst *Text) UnmarshalJSON(b []byte) error {
+	*dst = Text{}
+
 	var s *string
 	err := json.Unmarshal(b, &s)
 	if err != nil {
@@ -84,14 +87,19 @@ func (dst *Text) UnmarshalJSON(b []byte) error {
 type TextCodec struct{}
 
 func (TextCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
-	charsetId := CharacterSetForType(typeMetadata.TypeID, typeMetadata.SubType, typeMetadata.Scale)
-	name, err := fbproto.CharacterSetIdIntoName(charsetId)
-	if err != nil {
+	switch value.(type) {
+	case string, []byte, TextValuer:
+	case fmt.Stringer:
+		if _, ok := value.(driver.Valuer); ok {
+			return nil
+		}
+	default:
 		return nil
 	}
-	encoding, err := fbproto.NewEncoding(name)
+
+	encoding, err := textEncoding(typeMetadata)
 	if err != nil {
-		return nil
+		return encodePlanTextCodecError{err: err}
 	}
 
 	switch value.(type) {
@@ -102,13 +110,18 @@ func (TextCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) Encode
 	case TextValuer:
 		return encodePlanTextCodecTextValuer{encoding: encoding, length: typeMetadata.Length}
 	case fmt.Stringer:
-		if _, ok := value.(driver.Valuer); ok {
-			return nil
-		}
 		return encodePlanTextCodecStringer{encoding: encoding, length: typeMetadata.Length}
 	}
 
 	return nil
+}
+
+type encodePlanTextCodecError struct {
+	err error
+}
+
+func (e encodePlanTextCodecError) Encode(value any, buf []byte) ([]byte, error) {
+	return nil, e.err
 }
 
 type encodePlanTextCodecString struct {
@@ -122,8 +135,7 @@ func (e encodePlanTextCodecString) Encode(value any, buf []byte) (newBuf []byte,
 	if err != nil {
 		return nil, err
 	}
-	buf = append(buf, res...)
-	return buf, nil
+	return appendNonNullBytes(buf, res), nil
 }
 
 type encodePlanTextCodecByteSlice struct {
@@ -137,8 +149,7 @@ func (e encodePlanTextCodecByteSlice) Encode(value any, buf []byte) (newBuf []by
 	if err != nil {
 		return nil, err
 	}
-	buf = append(buf, res...)
-	return buf, nil
+	return appendNonNullBytes(buf, res), nil
 }
 
 type encodePlanTextCodecStringer struct {
@@ -152,8 +163,7 @@ func (e encodePlanTextCodecStringer) Encode(value any, buf []byte) (newBuf []byt
 	if err != nil {
 		return nil, err
 	}
-	buf = append(buf, res...)
-	return buf, nil
+	return appendNonNullBytes(buf, res), nil
 }
 
 type encodePlanTextCodecTextValuer struct {
@@ -175,20 +185,19 @@ func (e encodePlanTextCodecTextValuer) Encode(value any, buf []byte) (newBuf []b
 	if err != nil {
 		return nil, err
 	}
-	buf = append(buf, res...)
-
-	return buf, nil
+	return appendNonNullBytes(buf, res), nil
 }
 
 func (TextCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
-	charsetId := CharacterSetForType(typeMetadata.TypeID, typeMetadata.SubType, typeMetadata.Scale)
-	name, err := fbproto.CharacterSetIdIntoName(charsetId)
-	if err != nil {
+	switch target.(type) {
+	case *string, *[]byte, BytesScanner, TextScanner:
+	default:
 		return nil
 	}
-	encoding, err := fbproto.NewEncoding(name)
+
+	encoding, err := textEncoding(typeMetadata)
 	if err != nil {
-		return nil
+		return scanPlanTextCodecError{err: err}
 	}
 
 	switch target.(type) {
@@ -205,6 +214,14 @@ func (TextCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPla
 	return nil
 }
 
+type scanPlanTextCodecError struct {
+	err error
+}
+
+func (s scanPlanTextCodecError) Scan(src []byte, dst any) error {
+	return s.err
+}
+
 func (c TextCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
 	return c.DecodeValue(m, typeMetadata, src)
 }
@@ -214,12 +231,7 @@ func (c TextCodec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (a
 		return nil, nil
 	}
 
-	charsetId := CharacterSetForType(typeMetadata.TypeID, typeMetadata.SubType, typeMetadata.Scale)
-	name, err := fbproto.CharacterSetIdIntoName(charsetId)
-	if err != nil {
-		return nil, err
-	}
-	encoding, err := fbproto.NewEncoding(name)
+	encoding, err := textEncoding(typeMetadata)
 	if err != nil {
 		return nil, err
 	}
@@ -230,6 +242,16 @@ func (c TextCodec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (a
 	}
 
 	return res, nil
+}
+
+func textEncoding(typeMetadata TypeMetadata) (*fbproto.Encoding, error) {
+	charsetID := CharacterSetForType(typeMetadata.TypeID, typeMetadata.SubType, typeMetadata.Scale)
+	name, err := fbproto.CharacterSetIdIntoName(charsetID)
+	if err != nil {
+		return nil, err
+	}
+
+	return fbproto.NewEncoding(name)
 }
 
 type scanPlanTextAnyToString struct {

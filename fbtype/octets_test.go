@@ -11,6 +11,14 @@ import (
 	"rdb.red-soft.ru/fbx/fbtype"
 )
 
+type testBytesValuer struct {
+	value []byte
+}
+
+func (v testBytesValuer) BytesValue() ([]byte, error) {
+	return v.value, nil
+}
+
 func isExpectedEqBytes(a any) func(any) bool {
 	return func(v any) bool {
 		ab := a.([]byte)
@@ -67,7 +75,36 @@ func TestOctetsCodecPlanEncodeEmptyString(t *testing.T) {
 
 	buf, err := plan.Encode("", nil)
 	require.NoError(t, err)
+	require.NotNil(t, buf)
 	require.Len(t, buf, 0)
+}
+
+func TestOctetsCodecEncodePreservesEmptyValue(t *testing.T) {
+	t.Parallel()
+
+	metadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_VARYING, fbproto.CS_BINARY, 16, 0)
+	tests := []struct {
+		name  string
+		value any
+	}{
+		{name: "string", value: ""},
+		{name: "bytes", value: []byte{}},
+		{name: "BytesValuer", value: testBytesValuer{value: []byte{}}},
+	}
+
+	m := fbtype.NewMap()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf, err := m.Encode(metadata, tt.value, nil)
+			require.NoError(t, err)
+			require.NotNil(t, buf)
+			require.Empty(t, buf)
+		})
+	}
+
+	buf, err := m.Encode(metadata, testBytesValuer{}, nil)
+	require.NoError(t, err)
+	require.Nil(t, buf)
 }
 
 func TestOctetsScanIntoString(t *testing.T) {

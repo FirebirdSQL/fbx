@@ -78,7 +78,7 @@ func (encodePlanBytesCodecBinaryBytes) Encode(value any, buf []byte) (newBuf []b
 		return nil, nil
 	}
 
-	return append(buf, b...), nil
+	return appendNonNullBytes(buf, b), nil
 }
 
 type encodePlanBytesCodecBinaryBytesValuer struct{}
@@ -92,14 +92,14 @@ func (encodePlanBytesCodecBinaryBytesValuer) Encode(value any, buf []byte) (newB
 		return nil, nil
 	}
 
-	return append(buf, b...), nil
+	return appendNonNullBytes(buf, b), nil
 }
 
 type encodePlanBytesCodecBinaryString struct{}
 
 func (encodePlanBytesCodecBinaryString) Encode(value any, buf []byte) ([]byte, error) {
 	s := value.(string)
-	return append(buf, s...), nil
+	return appendNonNullBytes(buf, []byte(s)), nil
 }
 
 func (OctetsCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {

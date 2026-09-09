@@ -274,7 +274,7 @@ func TestMapScanTextIntoStringWithUnsupportedCharsetReturnsError(t *testing.T) {
 	err := m.Scan(typeMetadata, []byte("foo"), &got)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "cannot scan")
+	assert.Contains(t, err.Error(), "unknown or unsupported charset id: 99")
 }
 
 func TestMapScanSmallintIntoAnyReturnsInt16(t *testing.T) {

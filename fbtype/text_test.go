@@ -13,10 +13,16 @@ import (
 
 type someFmtStringer struct{}
 
+type emptyFmtStringer struct{}
+
 const utf8CharsetID = 4
 
 func (someFmtStringer) String() string {
 	return "some fmt.Stringer"
+}
+
+func (emptyFmtStringer) String() string {
+	return ""
 }
 
 func TestTextCodec(t *testing.T) {
@@ -207,6 +213,83 @@ func TestTextCodecScanPlansRejectChangedTarget(t *testing.T) {
 	}
 }
 
+func TestTextCodecEncodePreservesEmptyValue(t *testing.T) {
+	t.Parallel()
+
+	metadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_VARYING, utf8CharsetID, 16, 0)
+	tests := []struct {
+		name  string
+		value any
+	}{
+		{name: "string", value: ""},
+		{name: "bytes", value: []byte{}},
+		{name: "Text", value: fbtype.Text{String: "", Valid: true}},
+		{name: "fmt.Stringer", value: emptyFmtStringer{}},
+	}
+
+	m := fbtype.NewMap()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf, err := m.Encode(metadata, tt.value, nil)
+			require.NoError(t, err)
+			require.NotNil(t, buf)
+			require.Empty(t, buf)
+		})
+	}
+
+	buf, err := m.Encode(metadata, fbtype.Text{}, nil)
+	require.NoError(t, err)
+	require.Nil(t, buf)
+}
+
+func TestTextCodecPreservesCharsetErrors(t *testing.T) {
+	t.Parallel()
+
+	const unsupportedCharsetID = 52
+	metadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_VARYING, unsupportedCharsetID, 16, 0)
+	m := fbtype.NewMap()
+
+	encodePlan := fbtype.TextCodec{}.PlanEncode(m, metadata, "value")
+	require.NotNil(t, encodePlan)
+	_, err := encodePlan.Encode("value", nil)
+	require.ErrorContains(t, err, "unknown or unsupported charset id: 52")
+
+	_, err = m.Encode(metadata, "value", nil)
+	require.ErrorContains(t, err, "unknown or unsupported charset id: 52")
+	require.NotContains(t, err.Error(), "cannot find encode plan")
+
+	scanPlan := fbtype.TextCodec{}.PlanScan(m, metadata, new(string))
+	require.NotNil(t, scanPlan)
+	err = scanPlan.Scan([]byte("value"), new(string))
+	require.ErrorContains(t, err, "unknown or unsupported charset id: 52")
+
+	var got string
+	err = m.Scan(metadata, []byte("value"), &got)
+	require.ErrorContains(t, err, "unknown or unsupported charset id: 52")
+
+	_, err = fbtype.TextCodec{}.DecodeValue(m, metadata, []byte("value"))
+	require.ErrorContains(t, err, "unknown or unsupported charset id: 52")
+}
+
+func TestTextCodecUnsupportedTypesDoNotReturnCharsetErrorPlan(t *testing.T) {
+	t.Parallel()
+
+	metadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_VARYING, 52, 16, 0)
+	codec := fbtype.TextCodec{}
+
+	require.Nil(t, codec.PlanEncode(fbtype.NewMap(), metadata, int64(1)))
+	require.Nil(t, codec.PlanScan(fbtype.NewMap(), metadata, new(int64)))
+}
+
+func TestTextScanClearsValueOnError(t *testing.T) {
+	t.Parallel()
+
+	value := fbtype.Text{String: "old", Valid: true}
+	err := value.Scan(int64(1))
+	require.Error(t, err)
+	require.Equal(t, fbtype.Text{}, value)
+}
+
 func TestTextMarshalJSON(t *testing.T) {
 	successfulTests := []struct {
 		source fbtype.Text
@@ -246,4 +329,13 @@ func TestTextUnmarshalJSON(t *testing.T) {
 			t.Errorf("%d: expected %v to convert to %v, but it was %v", i, tt.source, tt.result, r)
 		}
 	}
+}
+
+func TestTextUnmarshalJSONClearsValueOnError(t *testing.T) {
+	t.Parallel()
+
+	value := fbtype.Text{String: "old", Valid: true}
+	err := value.UnmarshalJSON([]byte("{"))
+	require.Error(t, err)
+	require.Equal(t, fbtype.Text{}, value)
 }
