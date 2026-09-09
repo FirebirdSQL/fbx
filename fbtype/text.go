@@ -239,10 +239,15 @@ type scanPlanTextAnyToString struct {
 }
 
 func (s scanPlanTextAnyToString) Scan(src []byte, dst any) error {
+	p, ok := dst.(*string)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
-	return decodeFBString(src, s.typeId == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, dst)
+	return decodeFBString(src, s.typeId == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, p)
 }
 
 type scanPlanAnyToNewByteSlice struct {
@@ -252,7 +257,11 @@ type scanPlanAnyToNewByteSlice struct {
 }
 
 func (s scanPlanAnyToNewByteSlice) Scan(src []byte, dst any) error {
-	p := (dst).(*[]byte)
+	p, ok := dst.(*[]byte)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
 	if src == nil {
 		*p = nil
 	} else {
@@ -273,7 +282,15 @@ type scanPlanAnyToByteScanner struct {
 }
 
 func (s scanPlanAnyToByteScanner) Scan(src []byte, dst any) error {
-	p := (dst).(BytesScanner)
+	p, ok := dst.(BytesScanner)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
+	if src == nil {
+		return p.ScanBytes(nil)
+	}
+
 	var res string
 	if err := decodeFBString(src, s.typeId == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, &res); err != nil {
 		return err
@@ -288,7 +305,10 @@ type scanPlanTextAnyToTextScanner struct {
 }
 
 func (s scanPlanTextAnyToTextScanner) Scan(src []byte, dst any) error {
-	scanner := (dst).(TextScanner)
+	scanner, ok := dst.(TextScanner)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
 
 	if src == nil {
 		return scanner.ScanText(Text{})
@@ -302,11 +322,7 @@ func (s scanPlanTextAnyToTextScanner) Scan(src []byte, dst any) error {
 	return scanner.ScanText(Text{String: res, Valid: true})
 }
 
-func decodeFBString(src []byte, varying bool, length uint32, enc *fbproto.Encoding, dst any) error {
-	p, ok := dst.(*string)
-	if !ok {
-		return fmt.Errorf("decodeFBString: dst must be *string, got %T", dst)
-	}
+func decodeFBString(src []byte, varying bool, length uint32, enc *fbproto.Encoding, dst *string) error {
 	if enc == nil || enc.Decoder == nil {
 		return fmt.Errorf("decodeFBString: encoding is not initialized")
 	}
@@ -316,7 +332,7 @@ func decodeFBString(src []byte, varying bool, length uint32, enc *fbproto.Encodi
 		if err != nil {
 			return err
 		}
-		*p = string(buf)
+		*dst = string(buf)
 		return nil
 	}
 
@@ -338,7 +354,7 @@ func decodeFBString(src []byte, varying bool, length uint32, enc *fbproto.Encodi
 		return fmt.Errorf("invalid maximum bytes per character for charset %s: 0", enc.Charset)
 	}
 	if maxBytesPerChar == 1 {
-		*p = tmpStr
+		*dst = tmpStr
 		return nil
 	}
 
@@ -362,7 +378,7 @@ func decodeFBString(src []byte, varying bool, length uint32, enc *fbproto.Encodi
 		)
 	}
 
-	*p = string(runes[:int(characterLength)])
+	*dst = string(runes[:int(characterLength)])
 
 	return nil
 }

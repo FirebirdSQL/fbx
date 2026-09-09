@@ -113,6 +113,27 @@ func TestOctetsScanPlanStringErrors(t *testing.T) {
 	require.ErrorIs(t, err, fbtype.ErrScanTargetTypeChanged)
 }
 
+func TestOctetsScanPlansRejectChangedTarget(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		target any
+		other  any
+	}{
+		{name: "bytes", target: new([]byte), other: new(string)},
+		{name: "bytes scanner", target: new(fbtype.PreallocBytes), other: new(string)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plan := fbtype.OctetsCodec{}.PlanScan(nil, fbtype.TypeMetadata{}, tt.target)
+			require.NotNil(t, plan)
+			require.ErrorIs(t, plan.Scan([]byte("value"), tt.other), fbtype.ErrScanTargetTypeChanged)
+		})
+	}
+}
+
 func TestOctetsRoundTripStringParamToBytes(t *testing.T) {
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
 		tb.Helper()
@@ -162,29 +183,83 @@ func TestPreallocBytes(t *testing.T) {
 		tb.Helper()
 
 		origBuf := []byte{5, 6, 7, 8}
-		buf := origBuf
+		buf := fbtype.PreallocBytes(origBuf[:0])
 
 		err := conn.QueryRow(ctx,
 			"select cast(? as varchar(2) character set octets) from rdb$database",
 			[]byte{1, 2},
-		).Scan((*fbtype.PreallocBytes)(&buf))
+		).Scan(&buf)
 		require.NoError(tb, err)
 
 		require.Len(tb, buf, 2)
 		require.Equal(tb, 4, cap(buf))
-		require.Equal(tb, []byte{1, 2}, buf)
+		require.Equal(tb, []byte{1, 2}, []byte(buf))
 		require.Equal(tb, []byte{1, 2, 7, 8}, origBuf)
+
+		err = conn.QueryRow(ctx,
+			"select cast(? as varchar(4) character set octets) from rdb$database",
+			[]byte{9, 10, 11, 12},
+		).Scan(&buf)
+		require.NoError(tb, err)
+
+		require.Len(tb, buf, 4)
+		require.Equal(tb, 4, cap(buf))
+		require.Equal(tb, []byte{9, 10, 11, 12}, []byte(buf))
+		require.Equal(tb, []byte{9, 10, 11, 12}, origBuf)
 
 		err = conn.QueryRow(ctx,
 			"select cast(? as varchar(5) character set octets) from rdb$database",
 			[]byte{3, 4, 5, 6, 7},
-		).Scan((*fbtype.PreallocBytes)(&buf))
+		).Scan(&buf)
 		require.NoError(tb, err)
 
 		require.Len(tb, buf, 5)
 		require.Equal(tb, 5, cap(buf))
-		require.Equal(tb, []byte{1, 2, 7, 8}, origBuf)
+		require.Equal(tb, []byte{3, 4, 5, 6, 7}, []byte(buf))
+		require.Equal(tb, []byte{9, 10, 11, 12}, origBuf)
+
+		err = conn.QueryRow(ctx,
+			"select cast(null as varchar(1) character set octets) from rdb$database",
+		).Scan(&buf)
+		require.NoError(tb, err)
+		require.Nil(tb, buf)
+
+		err = conn.QueryRow(ctx,
+			"select cast('' as varchar(1) character set octets) from rdb$database",
+		).Scan(&buf)
+		require.NoError(tb, err)
+		require.NotNil(tb, buf)
+		require.Empty(tb, buf)
 	})
+}
+
+func TestPreallocBytesScanBytes(t *testing.T) {
+	t.Parallel()
+
+	storage := []byte{5, 6, 7, 8}
+	buf := fbtype.PreallocBytes(storage[:0])
+
+	require.NoError(t, buf.ScanBytes([]byte{1, 2}))
+	require.Equal(t, []byte{1, 2}, []byte(buf))
+	require.Equal(t, 4, cap(buf))
+	require.Equal(t, []byte{1, 2, 7, 8}, storage)
+
+	require.NoError(t, buf.ScanBytes([]byte{9, 10, 11, 12}))
+	require.Equal(t, []byte{9, 10, 11, 12}, []byte(buf))
+	require.Equal(t, 4, cap(buf))
+	require.Equal(t, []byte{9, 10, 11, 12}, storage)
+
+	require.NoError(t, buf.ScanBytes([]byte{13, 14, 15, 16, 17}))
+	require.Equal(t, []byte{13, 14, 15, 16, 17}, []byte(buf))
+	require.Equal(t, 5, cap(buf))
+	require.Equal(t, []byte{9, 10, 11, 12}, storage)
+
+	require.NoError(t, buf.ScanBytes(nil))
+	require.Nil(t, buf)
+
+	require.NoError(t, buf.ScanBytes([]byte{}))
+	require.NotNil(t, buf)
+	require.Empty(t, buf)
 }
 
 func TestUndecodedBytes(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// BytesScanner scans Firebird OCTETS data from raw bytes.
+// BytesScanner scans decoded text or raw Firebird OCTETS data as bytes.
 type BytesScanner interface {
 	// ScanBytes receives a byte slice of driver memory that is only valid until
 	// the next database method call.
@@ -39,7 +39,7 @@ func (b *PreallocBytes) ScanBytes(v []byte) error {
 		return nil
 	}
 
-	if len(v) <= len(*b) {
+	if *b != nil && len(v) <= cap(*b) {
 		*b = (*b)[:len(v)]
 	} else {
 		*b = make(PreallocBytes, len(v))
@@ -134,7 +134,11 @@ func (scanPlanBinaryBytesToString) Scan(src []byte, dst any) error {
 type scanPlanBinaryBytesToBytes struct{}
 
 func (scanPlanBinaryBytesToBytes) Scan(src []byte, dst any) error {
-	dstBuf := dst.(*[]byte)
+	dstBuf, ok := dst.(*[]byte)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
 	if src == nil {
 		*dstBuf = nil
 		return nil
@@ -148,7 +152,11 @@ func (scanPlanBinaryBytesToBytes) Scan(src []byte, dst any) error {
 type scanPlanBinaryBytesToBytesScanner struct{}
 
 func (scanPlanBinaryBytesToBytesScanner) Scan(src []byte, dst any) error {
-	scanner := (dst).(BytesScanner)
+	scanner, ok := dst.(BytesScanner)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
 	return scanner.ScanBytes(src)
 }
 

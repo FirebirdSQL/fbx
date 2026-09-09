@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
@@ -133,6 +134,75 @@ func TestTextCodecFixedCharDecodeInvalidMetadata(t *testing.T) {
 				err := m.Scan(tt.metadata, tt.src, &got)
 				require.ErrorContains(t, err, tt.wantErr)
 			})
+		})
+	}
+}
+
+func TestTextCodecBytesScannerPreservesNull(t *testing.T) {
+	t.Parallel()
+
+	metadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_VARYING, fbproto.CS_NONE, 10, 0)
+	plan := fbtype.TextCodec{}.PlanScan(fbtype.NewMap(), metadata, new(fbtype.PreallocBytes))
+	require.NotNil(t, plan)
+
+	value := fbtype.PreallocBytes{1, 2, 3}
+	require.NoError(t, plan.Scan(nil, &value))
+	require.Nil(t, value)
+
+	value = fbtype.PreallocBytes{1, 2, 3}
+	require.NoError(t, plan.Scan([]byte{}, &value))
+	require.NotNil(t, value)
+	require.Empty(t, value)
+}
+
+func TestTextCodecBytesScannerRoundTrip(t *testing.T) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
+		tb.Helper()
+
+		tests := []struct {
+			name  string
+			query string
+			want  []byte
+		}{
+			{name: "null", query: "select cast(null as varchar(10)) from rdb$database", want: nil},
+			{name: "empty", query: "select cast('' as varchar(10)) from rdb$database", want: []byte{}},
+			{name: "text", query: "select cast('hello' as varchar(10)) from rdb$database", want: []byte("hello")},
+		}
+
+		for _, tt := range tests {
+			got := fbtype.PreallocBytes{1, 2, 3}
+			err := conn.QueryRow(ctx, tt.query).Scan(&got)
+			require.NoError(tb, err, "case=%s", tt.name)
+			if tt.want == nil {
+				require.Nil(tb, got, "case=%s", tt.name)
+			} else {
+				require.NotNil(tb, got, "case=%s", tt.name)
+				require.Equal(tb, tt.want, []byte(got), "case=%s", tt.name)
+			}
+		}
+	})
+}
+
+func TestTextCodecScanPlansRejectChangedTarget(t *testing.T) {
+	t.Parallel()
+
+	metadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_VARYING, fbproto.CS_NONE, 10, 0)
+	tests := []struct {
+		name   string
+		target any
+		other  any
+	}{
+		{name: "string", target: new(string), other: new([]byte)},
+		{name: "bytes", target: new([]byte), other: new(string)},
+		{name: "bytes scanner", target: new(fbtype.PreallocBytes), other: new(string)},
+		{name: "text scanner", target: new(fbtype.Text), other: new(string)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plan := fbtype.TextCodec{}.PlanScan(fbtype.NewMap(), metadata, tt.target)
+			require.NotNil(t, plan)
+			require.ErrorIs(t, plan.Scan([]byte("value"), tt.other), fbtype.ErrScanTargetTypeChanged)
 		})
 	}
 }
