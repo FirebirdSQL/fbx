@@ -303,31 +303,66 @@ func (s scanPlanTextAnyToTextScanner) Scan(src []byte, dst any) error {
 }
 
 func decodeFBString(src []byte, varying bool, length uint32, enc *fbproto.Encoding, dst any) error {
-	var err error
-	buf, err := enc.Decoder.Bytes(src)
+	p, ok := dst.(*string)
+	if !ok {
+		return fmt.Errorf("decodeFBString: dst must be *string, got %T", dst)
+	}
+	if enc == nil || enc.Decoder == nil {
+		return fmt.Errorf("decodeFBString: encoding is not initialized")
+	}
+
+	if varying {
+		buf, err := enc.Decoder.Bytes(src)
+		if err != nil {
+			return err
+		}
+		*p = string(buf)
+		return nil
+	}
+
+	if uint64(len(src)) < uint64(length) {
+		return fmt.Errorf("fixed text payload is too short: got %d bytes, need at least %d", len(src), length)
+	}
+
+	// Array elements may include XDR alignment bytes after the fixed value.
+	// Decode only the length declared by the server.
+	fixedSrc := src[:int(length)]
+	buf, err := enc.Decoder.Bytes(fixedSrc)
 	if err != nil {
 		return err
 	}
 
-	p, ok := (dst).(*string)
-	if !ok {
-		return fmt.Errorf("decodeFBString: dst must be *string, got %T", dst)
-	}
-
 	tmpStr := string(buf)
-
-	if varying {
+	maxBytesPerChar := enc.MaxBytesPerChar
+	if maxBytesPerChar == 0 {
+		return fmt.Errorf("invalid maximum bytes per character for charset %s: 0", enc.Charset)
+	}
+	if maxBytesPerChar == 1 {
 		*p = tmpStr
 		return nil
 	}
 
-	maxBytesPerChar := enc.MaxBytesPerChar
-	possibleCharLength := length
-	if maxBytesPerChar > 1 && length%maxBytesPerChar == 0 {
-		possibleCharLength = length / maxBytesPerChar
+	if length%maxBytesPerChar != 0 {
+		return fmt.Errorf(
+			"fixed text length %d is not divisible by %d bytes per character for charset %s",
+			length,
+			maxBytesPerChar,
+			enc.Charset,
+		)
 	}
 
-	*p = string([]rune(tmpStr)[:possibleCharLength])
+	characterLength := length / maxBytesPerChar
+	runes := []rune(tmpStr)
+	if uint64(len(runes)) < uint64(characterLength) {
+		return fmt.Errorf(
+			"fixed text payload contains %d characters, need at least %d for charset %s",
+			len(runes),
+			characterLength,
+			enc.Charset,
+		)
+	}
+
+	*p = string(runes[:int(characterLength)])
 
 	return nil
 }
