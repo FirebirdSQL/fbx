@@ -29,6 +29,16 @@ func (b UUID) UUIDValue() (UUID, error) {
 	return b, nil
 }
 
+// BytesValue implements [BytesValuer]. It returns the 16-byte Firebird binary
+// representation of b.
+func (b UUID) BytesValue() ([]byte, error) {
+	if !b.Valid {
+		return nil, nil
+	}
+
+	return b.Bytes[:], nil
+}
+
 // parseUUID converts a string UUID in standard form to a byte array.
 func parseUUID(src string) (dst [16]byte, err error) {
 	switch len(src) {
@@ -138,15 +148,22 @@ func (dst *UUID) UnmarshalJSON(src []byte) error {
 	return nil
 }
 
+// UUIDCodec encodes and decodes UUID values as 16 binary bytes. Firebird uses
+// this representation with CHAR(16) CHARACTER SET OCTETS.
 type UUIDCodec struct{}
 
+// PlanEncode returns an encode plan for values implementing [UUIDValuer].
 func (UUIDCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
-	return encodePlanUUIDCodecTextUUIDValuer{}
+	if _, ok := value.(UUIDValuer); !ok {
+		return nil
+	}
+
+	return encodePlanUUIDCodecBinaryUUIDValuer{}
 }
 
-type encodePlanUUIDCodecTextUUIDValuer struct{}
+type encodePlanUUIDCodecBinaryUUIDValuer struct{}
 
-func (encodePlanUUIDCodecTextUUIDValuer) Encode(value any, buf []byte) (newBuf []byte, err error) {
+func (encodePlanUUIDCodecBinaryUUIDValuer) Encode(value any, buf []byte) (newBuf []byte, err error) {
 	uuid, err := value.(UUIDValuer).UUIDValue()
 	if err != nil {
 		return nil, err
@@ -156,9 +173,10 @@ func (encodePlanUUIDCodecTextUUIDValuer) Encode(value any, buf []byte) (newBuf [
 		return nil, nil
 	}
 
-	return append(buf, encodeUUID(uuid.Bytes)...), nil
+	return append(buf, uuid.Bytes[:]...), nil
 }
 
+// PlanScan returns a scan plan for supported UUID target values.
 func (UUIDCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
 	switch target.(type) {
 	case UUIDScanner:
@@ -173,7 +191,10 @@ func (UUIDCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPla
 type scanPlanBinaryUUIDToUUIDScanner struct{}
 
 func (scanPlanBinaryUUIDToUUIDScanner) Scan(src []byte, dst any) error {
-	scanner := (dst).(UUIDScanner)
+	scanner, ok := dst.(UUIDScanner)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
 
 	if src == nil {
 		return scanner.ScanUUID(UUID{})
@@ -192,7 +213,10 @@ func (scanPlanBinaryUUIDToUUIDScanner) Scan(src []byte, dst any) error {
 type scanPlanBinaryUUIDToTextScanner struct{}
 
 func (scanPlanBinaryUUIDToTextScanner) Scan(src []byte, dst any) error {
-	scanner := (dst).(TextScanner)
+	scanner, ok := dst.(TextScanner)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
 
 	if src == nil {
 		return scanner.ScanText(Text{})
@@ -208,6 +232,7 @@ func (scanPlanBinaryUUIDToTextScanner) Scan(src []byte, dst any) error {
 	return scanner.ScanText(Text{String: encodeUUID(buf), Valid: true})
 }
 
+// DecodeDatabaseSQLValue decodes src into a canonical UUID string.
 func (c UUIDCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
@@ -222,6 +247,7 @@ func (c UUIDCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src
 	return encodeUUID(uuid.Bytes), nil
 }
 
+// DecodeValue decodes src into a 16-byte UUID array.
 func (c UUIDCodec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil

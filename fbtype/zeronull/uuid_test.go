@@ -9,32 +9,39 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
+	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbtype/zeronull"
-	"rdb.red-soft.ru/fbx/fbxtest"
 )
 
-func TestUUIDTranscode(t *testing.T) {
-	t.Skip()
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
+func TestUUIDValueEncoding(t *testing.T) {
+	t.Parallel()
 
-	fbxtest.RunValueRoundTripTests(ctx, t, defaultConnTestRunner, nil, "uuid", []fbxtest.ValueRoundTripTest{
-		{
-			Param:  (zeronull.UUID)([16]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}),
-			Result: new(zeronull.UUID),
-			Test:   isExpectedEq((zeronull.UUID)([16]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15})),
-		},
-		{
-			Param:  nil,
-			Result: new(zeronull.UUID),
-			Test:   isExpectedEq((zeronull.UUID)([16]byte{})),
-		},
-		{
-			Param:  (zeronull.UUID)([16]byte{}),
-			Result: new(any),
-			Test:   isExpectedEq(nil),
-		},
-	})
+	want := zeronull.UUID{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
+
+	uuidValue, err := want.UUIDValue()
+	require.NoError(t, err)
+	require.Equal(t, fbtype.UUID{Bytes: [16]byte(want), Valid: true}, uuidValue)
+
+	binaryValue, err := want.BytesValue()
+	require.NoError(t, err)
+	require.Equal(t, want[:], binaryValue)
+
+	databaseValue, err := want.Value()
+	require.NoError(t, err)
+	require.Equal(t, "00010203-0405-0607-0809-0a0b0c0d0e0f", databaseValue)
+
+	zero := zeronull.UUID{}
+	uuidValue, err = zero.UUIDValue()
+	require.NoError(t, err)
+	require.Equal(t, fbtype.UUID{}, uuidValue)
+
+	binaryValue, err = zero.BytesValue()
+	require.NoError(t, err)
+	require.Nil(t, binaryValue)
+
+	databaseValue, err = zero.Value()
+	require.NoError(t, err)
+	require.Nil(t, databaseValue)
 }
 
 func TestUUIDtoFB(t *testing.T) {
@@ -54,6 +61,14 @@ func TestUUIDtoFB(t *testing.T) {
 		uv, err := u.UUIDValue()
 		require.NoError(t, err)
 		assert.Equal(t, uv.String(), strings.ToLower(s))
+
+		var binaryRoundTrip zeronull.UUID
+		err = conn.QueryRow(ctx,
+			"select cast(? as char(16) character set octets) from rdb$database",
+			u,
+		).Scan(&binaryRoundTrip)
+		require.NoError(t, err)
+		require.Equal(t, u, binaryRoundTrip)
 
 		var u2 zeronull.UUID
 		var s2 string

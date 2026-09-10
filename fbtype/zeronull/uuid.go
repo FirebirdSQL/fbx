@@ -3,7 +3,6 @@ package zeronull
 import (
 	"database/sql/driver"
 
-	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbtype"
 )
 
@@ -30,6 +29,16 @@ func (u UUID) UUIDValue() (fbtype.UUID, error) {
 	return fbtype.UUID{Bytes: u, Valid: true}, nil
 }
 
+// BytesValue implements [fbtype.BytesValuer]. It returns the 16-byte Firebird
+// binary representation of u.
+func (u UUID) BytesValue() ([]byte, error) {
+	if u == (UUID{}) {
+		return nil, nil
+	}
+
+	return u[:], nil
+}
+
 // Scan implements the database/sql Scanner interface.
 func (u *UUID) Scan(src any) error {
 	if src == nil {
@@ -54,11 +63,5 @@ func (u UUID) Value() (driver.Value, error) {
 		return nil, nil
 	}
 
-	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_VARYING, 0, 0, 0)
-	buf, err := fbtype.UUIDCodec{}.PlanEncode(nil, typeMetadata, u).Encode(u, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return string(buf), nil
+	return fbtype.UUID{Bytes: u, Valid: true}.String(), nil
 }
