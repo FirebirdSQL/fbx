@@ -1,4 +1,4 @@
-package fbservice
+package fbservice_test
 
 import (
 	"context"
@@ -10,27 +10,28 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx/fbconn"
+	"rdb.red-soft.ru/fbx/fbservice"
 )
 
 func TestManagerSupportsConcurrentOperations(t *testing.T) {
-	config, err := ParseConfig("firebird://sysdba:masterkey@localhost/employee")
+	config, err := fbservice.ParseConfig("firebird://sysdba:masterkey@localhost/employee")
 	require.NoError(t, err)
 
 	const operationCount = 100
 	var opened atomic.Int64
 	var closed atomic.Int64
 
-	manager := NewManager(config)
-	manager.connect = func(
+	manager := fbservice.NewManager(config)
+	fbservice.SetConnectForTest(manager, func(
 		_ context.Context,
 		config *fbconn.ServiceConfig,
-	) (serviceConnection, error) {
+	) (fbservice.ServiceConnection, error) {
 		opened.Add(1)
 		return &concurrentServiceConnection{
 			expectedDatabase: config.ExpectedDatabase,
 			closed:           &closed,
 		}, nil
-	}
+	})
 
 	var wg sync.WaitGroup
 	errs := make(chan error, operationCount)
