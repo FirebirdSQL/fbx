@@ -105,6 +105,8 @@ func initDefaultMap() {
 	registerDefaultFbTypeVariants[Int128](defaultMap, "int128")
 	registerDefaultFbTypeVariants[Numeric](defaultMap, "numeric")
 	registerDefaultFbTypeVariants[Text](defaultMap, "varchar")
+	defaultMap.RegisterDefaultFbType(UUID{}, "octets")
+	defaultMap.RegisterDefaultFbType(&UUID{}, "octets")
 	registerDefaultFbTypeVariants[Time](defaultMap, "time")
 	registerDefaultFbTypeVariants[Timetz](defaultMap, "timetz")
 	registerDefaultFbTypeVariants[Timestamp](defaultMap, "timestamp")

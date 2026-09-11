@@ -2,6 +2,7 @@ package fbtype_test
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -12,6 +13,25 @@ import (
 	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbtype"
 )
+
+type testUUIDValuer struct {
+	uuid fbtype.UUID
+	err  error
+}
+
+func (v testUUIDValuer) UUIDValue() (fbtype.UUID, error) {
+	return v.uuid, v.err
+}
+
+type testUUIDScanner struct {
+	uuid fbtype.UUID
+	err  error
+}
+
+func (s *testUUIDScanner) ScanUUID(v fbtype.UUID) error {
+	s.uuid = v
+	return s.err
+}
 
 func TestUUIDCodec(t *testing.T) {
 	t.Parallel()
@@ -84,6 +104,100 @@ func TestUUIDEncodesThroughOctetsCodec(t *testing.T) {
 	require.Nil(t, encoded)
 }
 
+func TestDefaultMapUUIDValuesUseOctets(t *testing.T) {
+	t.Parallel()
+
+	want := fbtype.UUID{
+		Bytes: [16]byte{15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0},
+		Valid: true,
+	}
+	metadata := fbtype.NewTypeMetadata(0, 0, 0, 0)
+	m := fbtype.NewMap()
+
+	for _, value := range []any{want, &want} {
+		dataType, ok := m.TypeForValue(value)
+		require.True(t, ok, "value type %T", value)
+		require.Equal(t, "octets", dataType.Name, "value type %T", value)
+
+		encoded, err := m.Encode(metadata, value, nil)
+		require.NoError(t, err, "value type %T", value)
+		require.Equal(t, want.Bytes[:], encoded, "value type %T", value)
+	}
+}
+
+func TestUUIDInterfacesUseOctetsCodec(t *testing.T) {
+	t.Parallel()
+
+	metadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, fbproto.CS_BINARY, 16, 0)
+	want := fbtype.UUID{
+		Bytes: [16]byte{15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0},
+		Valid: true,
+	}
+	m := fbtype.NewMap()
+
+	encoded, err := m.Encode(metadata, testUUIDValuer{uuid: want}, nil)
+	require.NoError(t, err)
+	require.Equal(t, want.Bytes[:], encoded)
+
+	valuerErr := errors.New("valuer error")
+	_, err = m.Encode(metadata, testUUIDValuer{err: valuerErr}, nil)
+	require.ErrorIs(t, err, valuerErr)
+
+	var scanner testUUIDScanner
+	require.NoError(t, m.Scan(metadata, want.Bytes[:], &scanner))
+	require.Equal(t, want, scanner.uuid)
+
+	require.NoError(t, m.Scan(metadata, nil, &scanner))
+	require.Equal(t, fbtype.UUID{}, scanner.uuid)
+
+	scannerErr := errors.New("scanner error")
+	scanner.err = scannerErr
+	err = m.Scan(metadata, want.Bytes[:], &scanner)
+	require.ErrorIs(t, err, scannerErr)
+}
+
+func TestUUIDScan(t *testing.T) {
+	t.Parallel()
+
+	want := fbtype.UUID{
+		Bytes: [16]byte{29, 72, 90, 122, 109, 24, 69, 153, 140, 108, 52, 66, 86, 22, 136, 122},
+		Valid: true,
+	}
+
+	tests := []struct {
+		name    string
+		src     any
+		want    fbtype.UUID
+		wantErr bool
+	}{
+		{name: "canonical", src: "1d485a7a-6d18-4599-8c6c-34425616887a", want: want},
+		{name: "canonical uppercase", src: "1D485A7A-6D18-4599-8C6C-34425616887A", want: want},
+		{name: "compact", src: "1d485a7a6d1845998c6c34425616887a", want: want},
+		{name: "binary", src: want.Bytes[:], want: want},
+		{name: "null", src: nil, want: fbtype.UUID{}},
+		{name: "invalid separators", src: "1d485a7a_6d18_4599_8c6c_34425616887a", wantErr: true},
+		{name: "invalid text length", src: "1d485a7a6d1845998c6c34425616887", wantErr: true},
+		{name: "invalid hexadecimal digit", src: "1d485a7a-6d18-4599-8c6c-34425616887g", wantErr: true},
+		{name: "invalid binary length", src: want.Bytes[:15], wantErr: true},
+		{name: "unsupported type", src: int64(1), wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := fbtype.UUID{Bytes: [16]byte{0xff}, Valid: true}
+			err := got.Scan(tt.src)
+			if tt.wantErr {
+				require.Error(t, err)
+				require.Equal(t, fbtype.UUID{}, got)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestUUID_String(t *testing.T) {
 	tests := []struct {
 		name string
@@ -110,7 +224,7 @@ func TestUUID_String(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := tt.src.String()
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("MarshalJSON() got = %v, want %v", got, tt.want)
+				t.Errorf("String() got = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -150,48 +264,54 @@ func TestUUID_MarshalJSON(t *testing.T) {
 }
 
 func TestUUID_UnmarshalJSON(t *testing.T) {
+	want := fbtype.UUID{
+		Bytes: [16]byte{29, 72, 90, 122, 109, 24, 69, 153, 140, 108, 52, 66, 86, 22, 136, 122},
+		Valid: true,
+	}
+
 	tests := []struct {
 		name    string
-		want    *fbtype.UUID
 		src     []byte
+		want    fbtype.UUID
 		wantErr bool
 	}{
 		{
-			name: "first",
-			want: &fbtype.UUID{
-				Bytes: [16]byte{29, 72, 90, 122, 109, 24, 69, 153, 140, 108, 52, 66, 86, 22, 136, 122},
-				Valid: true,
-			},
-			src:     []byte(`"1d485a7a-6d18-4599-8c6c-34425616887a"`),
-			wantErr: false,
+			name: "canonical",
+			src:  []byte(`"1d485a7a-6d18-4599-8c6c-34425616887a"`),
+			want: want,
 		},
 		{
-			name: "second",
-			want: &fbtype.UUID{
-				Bytes: [16]byte{},
-			},
-			src:     []byte("null"),
-			wantErr: false,
+			name: "canonical uppercase",
+			src:  []byte(`"1D485A7A-6D18-4599-8C6C-34425616887A"`),
+			want: want,
 		},
 		{
-			name: "third",
-			want: &fbtype.UUID{
-				Bytes: [16]byte{},
-				Valid: false,
-			},
-			src:     []byte("1d485a7a-6d18-4599-8c6c-34425616887a"),
-			wantErr: true,
+			name: "escaped separators",
+			src:  []byte(`"1d485a7a\u002d6d18\u002d4599\u002d8c6c\u002d34425616887a"`),
+			want: want,
 		},
+		{name: "null", src: []byte("null")},
+		{name: "whitespace around null", src: []byte(" \nnull\t")},
+		{name: "compact form", src: []byte(`"1d485a7a6d1845998c6c34425616887a"`), want: want},
+		{name: "invalid separators", src: []byte(`"1d485a7a_6d18_4599_8c6c_34425616887a"`), wantErr: true},
+		{name: "invalid hexadecimal digit", src: []byte(`"1d485a7a-6d18-4599-8c6c-34425616887g"`), wantErr: true},
+		{name: "unquoted text", src: []byte("1d485a7a-6d18-4599-8c6c-34425616887a"), wantErr: true},
+		{name: "number", src: []byte("123"), wantErr: true},
+		{name: "trailing value", src: []byte(`"1d485a7a-6d18-4599-8c6c-34425616887a" true`), wantErr: true},
+		{name: "empty", src: nil, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := &fbtype.UUID{}
-			if err := got.UnmarshalJSON(tt.src); (err != nil) != tt.wantErr {
-				t.Errorf("UnmarshalJSON() error = %v, wantErr %v", err, tt.wantErr)
+			got := fbtype.UUID{Bytes: [16]byte{0xff}, Valid: true}
+			err := got.UnmarshalJSON(tt.src)
+			if tt.wantErr {
+				require.Error(t, err)
+				require.Equal(t, fbtype.UUID{}, got)
+				return
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("UnmarshalJSON() got = %v, want %v", got, tt.want)
-			}
+
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
 		})
 	}
 }

@@ -63,6 +63,8 @@ type OctetsCodec struct{}
 // CHARACTER SET OCTETS input values.
 func (OctetsCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	switch value.(type) {
+	case UUIDValuer:
+		return UUIDCodec{}.PlanEncode(m, typeMetadata, value)
 	case []byte:
 		return encodePlanOctetsCodecBytes{}
 	case BytesValuer:
@@ -110,6 +112,8 @@ func (encodePlanOctetsCodecString) Encode(value any, buf []byte) ([]byte, error)
 // CHARACTER SET OCTETS target values.
 func (OctetsCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
 	switch target.(type) {
+	case UUIDScanner:
+		return UUIDCodec{}.PlanScan(m, typeMetadata, target)
 	case *string:
 		return scanPlanBinaryOctetsToString{}
 	case *[]byte:

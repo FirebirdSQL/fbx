@@ -1,66 +1,70 @@
 package fbtype
 
 import (
-	"bytes"
 	"database/sql/driver"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 )
 
+// UUIDScanner scans a nullable UUID value.
 type UUIDScanner interface {
+	// ScanUUID scans v into the receiver.
 	ScanUUID(v UUID) error
 }
 
+// UUIDValuer provides a nullable UUID value for encoding.
 type UUIDValuer interface {
+	// UUIDValue returns the UUID value to encode.
 	UUIDValue() (UUID, error)
 }
 
+// UUID represents a nullable UUID stored by Firebird as 16 binary bytes.
+// Valid is false for SQL NULL.
 type UUID struct {
 	Bytes [16]byte
 	Valid bool
 }
 
+// ScanUUID implements [UUIDScanner].
 func (b *UUID) ScanUUID(v UUID) error {
 	*b = v
 	return nil
 }
 
+// UUIDValue implements [UUIDValuer].
 func (b UUID) UUIDValue() (UUID, error) {
 	return b, nil
 }
 
-// BytesValue implements [BytesValuer]. It returns the 16-byte Firebird binary
-// representation of b.
-func (b UUID) BytesValue() ([]byte, error) {
-	if !b.Valid {
-		return nil, nil
-	}
-
-	return b.Bytes[:], nil
-}
-
-// parseUUID converts a string UUID in standard form to a byte array.
+// parseUUID parses a canonical or compact UUID string.
 func parseUUID(src string) (dst [16]byte, err error) {
+	var encoded [32]byte
+
 	switch len(src) {
 	case 36:
-		src = src[0:8] + src[9:13] + src[14:18] + src[19:23] + src[24:]
+		if src[8] != '-' || src[13] != '-' || src[18] != '-' || src[23] != '-' {
+			return dst, fmt.Errorf("cannot parse UUID %q: invalid format", src)
+		}
+		copy(encoded[0:8], src[0:8])
+		copy(encoded[8:12], src[9:13])
+		copy(encoded[12:16], src[14:18])
+		copy(encoded[16:20], src[19:23])
+		copy(encoded[20:32], src[24:36])
 	case 32:
-		// dashes already stripped, assume valid
+		copy(encoded[:], src)
 	default:
-		// assume invalid.
-		return dst, fmt.Errorf("cannot parse UUID %v", src)
+		return dst, fmt.Errorf("cannot parse UUID %q: invalid length %d", src, len(src))
 	}
 
-	buf, err := hex.DecodeString(src)
-	if err != nil {
-		return dst, err
+	if _, err := hex.Decode(dst[:], encoded[:]); err != nil {
+		return dst, fmt.Errorf("cannot parse UUID %q: %w", src, err)
 	}
 
-	copy(dst[:], buf)
-	return dst, err
+	return dst, nil
 }
 
-// encodeUUID converts a uuid byte array to UUID standard string form.
+// encodeUUID formats UUID bytes in canonical form.
 func encodeUUID(src [16]byte) string {
 	var buf [36]byte
 
@@ -77,14 +81,14 @@ func encodeUUID(src [16]byte) string {
 	return string(buf[:])
 }
 
-// Scan implements the database/sql Scanner interface.
+// Scan implements [database/sql.Scanner]. It accepts a canonical or compact
+// UUID string, a 16-byte slice, or nil.
 func (dst *UUID) Scan(src any) error {
-	if src == nil {
-		*dst = UUID{}
-		return nil
-	}
+	*dst = UUID{}
 
 	switch src := src.(type) {
+	case nil:
+		return nil
 	case string:
 		buf, err := parseUUID(src)
 		if err != nil {
@@ -94,16 +98,18 @@ func (dst *UUID) Scan(src any) error {
 		return nil
 	case []byte:
 		if len(src) != 16 {
-			return fmt.Errorf("cannot parse UUID %b", src)
+			return fmt.Errorf("cannot parse UUID bytes: invalid length %d", len(src))
 		}
-		*dst = UUID{Bytes: [16]byte(src), Valid: true}
+		var buf [16]byte
+		copy(buf[:], src)
+		*dst = UUID{Bytes: buf, Valid: true}
 		return nil
 	}
 
-	return fmt.Errorf("cannot scan %T", src)
+	return fmt.Errorf("cannot scan %T into UUID", src)
 }
 
-// Value implements the database/sql/driver Valuer interface.
+// Value implements [driver.Valuer].
 func (src UUID) Value() (driver.Value, error) {
 	if !src.Valid {
 		return nil, nil
@@ -112,6 +118,8 @@ func (src UUID) Value() (driver.Value, error) {
 	return encodeUUID(src.Bytes), nil
 }
 
+// String returns the canonical UUID representation, or an empty string for
+// SQL NULL.
 func (src UUID) String() string {
 	if !src.Valid {
 		return ""
@@ -120,27 +128,28 @@ func (src UUID) String() string {
 	return encodeUUID(src.Bytes)
 }
 
+// MarshalJSON encodes src as a canonical UUID string or null.
 func (src UUID) MarshalJSON() ([]byte, error) {
 	if !src.Valid {
 		return []byte("null"), nil
 	}
 
-	var buff bytes.Buffer
-	buff.WriteByte('"')
-	buff.WriteString(encodeUUID(src.Bytes))
-	buff.WriteByte('"')
-	return buff.Bytes(), nil
+	return json.Marshal(encodeUUID(src.Bytes))
 }
 
+// UnmarshalJSON decodes a canonical or compact UUID string, or null, into dst.
 func (dst *UUID) UnmarshalJSON(src []byte) error {
-	if bytes.Equal(src, []byte("null")) {
-		*dst = UUID{}
+	*dst = UUID{}
+
+	var uuidText *string
+	if err := json.Unmarshal(src, &uuidText); err != nil {
+		return err
+	}
+	if uuidText == nil {
 		return nil
 	}
-	if len(src) != 38 {
-		return fmt.Errorf("invalid length for UUID: %v", len(src))
-	}
-	buf, err := parseUUID(string(src[1 : len(src)-1]))
+
+	buf, err := parseUUID(*uuidText)
 	if err != nil {
 		return err
 	}
