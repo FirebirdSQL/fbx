@@ -18,15 +18,13 @@ func TestNewManager(t *testing.T) {
 		"keyword/value": "host=service-host port=4040 user=service-user password=service-password database=ignored.fdb create_database=true",
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			manager, err := NewManager(ctx, connString)
+			manager, err := NewManager(connString)
 			require.NoError(t, err)
 			require.NotNil(t, manager)
 			require.NotNil(t, manager.connect)
-			cancel()
 
-			operationCtx := context.Background()
+			operationCtx, cancel := context.WithCancel(context.Background())
+			defer cancel()
 			connection := new(fakeServiceConnection)
 			manager.connect = func(ctx context.Context, config *fbconn.ServiceConfig) (serviceConnection, error) {
 				require.Equal(t, operationCtx, ctx)
@@ -55,7 +53,7 @@ func TestNewManager(t *testing.T) {
 func TestNewManagerRejectsInvalidConnectionString(t *testing.T) {
 	for _, connString := range []string{"firebird://localhost:invalid/employee", "host='unterminated", "port=65536"} {
 		t.Run(connString, func(t *testing.T) {
-			manager, err := NewManager(context.Background(), connString)
+			manager, err := NewManager(connString)
 
 			var parseErr *fbconn.ParseConfigError
 			require.ErrorAs(t, err, &parseErr)
@@ -72,7 +70,7 @@ func TestManagerSupportsConcurrentOperations(t *testing.T) {
 	var opened atomic.Int64
 	var closed atomic.Int64
 
-	manager, err := NewManagerConfig(context.Background(), config)
+	manager, err := NewManagerConfig(config)
 	require.NoError(t, err)
 	manager.connect = func(
 		_ context.Context,

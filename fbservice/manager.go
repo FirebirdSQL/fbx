@@ -34,12 +34,12 @@ type Manager struct {
 //
 // Construction does not open a connection. Each operation
 // opens its own service connection using the context passed to that operation.
-func NewManager(ctx context.Context, connString string) (*Manager, error) {
+func NewManager(connString string) (*Manager, error) {
 	config, err := ParseConfig(connString)
 	if err != nil {
 		return nil, err
 	}
-	return NewManagerConfig(ctx, config)
+	return NewManagerConfig(config)
 }
 
 // NewManagerConfig returns a service manager that uses config for new connections.
@@ -47,9 +47,9 @@ func NewManager(ctx context.Context, connString string) (*Manager, error) {
 // Config must be non-nil and created by [ParseConfig]. NewManagerConfig copies
 // config. Later changes to config do not affect the manager.
 //
-// Construction does not open a connection, so ctx is unused. Each operation
+// Construction does not open a connection. Each operation
 // opens its own service connection using the context passed to that operation.
-func NewManagerConfig(ctx context.Context, config *Config) (*Manager, error) {
+func NewManagerConfig(config *Config) (*Manager, error) {
 	if _, err := config.toConnectionConfig(); err != nil {
 		return nil, err
 	}

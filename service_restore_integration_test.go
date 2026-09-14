@@ -61,7 +61,7 @@ func TestServiceRestoreIntegration(t *testing.T) {
 
 	serviceConfig, err := fbservice.ParseConfig(connString)
 	require.NoError(t, err)
-	manager, err := fbservice.NewManagerConfig(ctx, serviceConfig)
+	manager, err := fbservice.NewManagerConfig(serviceConfig)
 	require.NoError(t, err)
 	fixture := newRestoreIntegrationBackup(
 		ctx,

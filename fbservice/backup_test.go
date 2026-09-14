@@ -186,7 +186,7 @@ func TestManagerBackupReturnsOperationAndCloseErrors(t *testing.T) {
 func TestNewManagerConfigCopiesConfig(t *testing.T) {
 	config, err := ParseConfig("firebird://sysdba:masterkey@localhost/employee")
 	require.NoError(t, err)
-	manager, err := NewManagerConfig(context.Background(), config)
+	manager, err := NewManagerConfig(config)
 	require.NoError(t, err)
 	config.User = "changed"
 	config.AuthPlugins = append(config.AuthPlugins, "changed")
@@ -211,7 +211,7 @@ func TestManagerMapsPublicConfigToConnectionConfig(t *testing.T) {
 	config.WireCrypt = false
 	config.ConnectTimeout = 3 * time.Second
 
-	manager, err := NewManagerConfig(context.Background(), config)
+	manager, err := NewManagerConfig(config)
 	require.NoError(t, err)
 	connection := new(fakeServiceConnection)
 	manager.connect = func(_ context.Context, serviceConfig *fbconn.ServiceConfig) (serviceConnection, error) {
@@ -259,7 +259,7 @@ func TestManagerClearsDatabaseOnlyConnectionSettings(t *testing.T) {
 	config.connectionConfig.DPB = []byte{1}
 	config.connectionConfig.RuntimeParams = map[string]string{"application_name": "fbservice-test"}
 
-	manager, err := NewManagerConfig(context.Background(), config)
+	manager, err := NewManagerConfig(config)
 	require.NoError(t, err)
 	connection := new(fakeServiceConnection)
 	manager.connect = func(_ context.Context, serviceConfig *fbconn.ServiceConfig) (serviceConnection, error) {
@@ -276,14 +276,14 @@ func TestManagerClearsDatabaseOnlyConnectionSettings(t *testing.T) {
 }
 
 func TestNewManagerConfigRejectsConfigNotCreatedByParseConfig(t *testing.T) {
-	manager, err := NewManagerConfig(context.Background(), &Config{Host: "localhost"})
+	manager, err := NewManagerConfig(&Config{Host: "localhost"})
 
 	require.ErrorContains(t, err, "must be created by ParseConfig")
 	require.Nil(t, manager)
 }
 
 func TestNewManagerConfigRejectsNilConfig(t *testing.T) {
-	manager, err := NewManagerConfig(context.Background(), nil)
+	manager, err := NewManagerConfig(nil)
 
 	require.ErrorContains(t, err, "config must not be nil")
 	require.Nil(t, manager)
@@ -295,7 +295,7 @@ func newTestManager(t *testing.T) (*Manager, *fakeServiceConnection) {
 	require.NoError(t, err)
 
 	connection := new(fakeServiceConnection)
-	manager, err := NewManagerConfig(context.Background(), config)
+	manager, err := NewManagerConfig(config)
 	require.NoError(t, err)
 	manager.connect = func(_ context.Context, config *fbconn.ServiceConfig) (serviceConnection, error) {
 		connection.opened = true

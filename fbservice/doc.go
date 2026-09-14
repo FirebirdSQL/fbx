@@ -5,7 +5,7 @@ services.
 A Manager stores connection settings and opens a separate service connection
 for each operation. Create a manager directly from a connection string:
 
-	manager, err := fbservice.NewManager(ctx, os.Getenv("DATABASE_URL"))
+	manager, err := fbservice.NewManager(os.Getenv("DATABASE_URL"))
 	if err != nil {
 		return err
 	}
@@ -16,7 +16,7 @@ To customize settings, parse the configuration before creating the manager:
 	if err != nil {
 		return err
 	}
-	manager, err := fbservice.NewManagerConfig(ctx, config)
+	manager, err := fbservice.NewManagerConfig(config)
 	if err != nil {
 		return err
 	}
