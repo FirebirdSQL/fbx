@@ -14,7 +14,10 @@ const serviceCloseTimeout = 5 * time.Second
 type serviceConnection interface {
 	Backup(context.Context, string, string, fbconn.BackupOptions) error
 	Restore(context.Context, string, string, fbconn.RestoreOptions) error
-	Statistics(context.Context, string, fbconn.StatisticsOptions) error
+	serviceCloser
+}
+
+type serviceCloser interface {
 	Close(context.Context) error
 }
 
@@ -68,17 +71,14 @@ func (m *Manager) open(ctx context.Context, expectedDatabase string) (serviceCon
 	if m == nil || m.config == nil {
 		return nil, errors.New("service manager config must not be nil")
 	}
-	connectionConfig, err := m.config.toConnectionConfig()
+	config, err := m.config.toServiceConfig(expectedDatabase)
 	if err != nil {
 		return nil, err
 	}
-	return m.connect(ctx, &fbconn.ServiceConfig{
-		ConnectionConfig: connectionConfig,
-		ExpectedDatabase: expectedDatabase,
-	})
+	return m.connect(ctx, config)
 }
 
-func closeService(conn serviceConnection) error {
+func closeService(conn serviceCloser) error {
 	ctx, cancel := context.WithTimeout(context.Background(), serviceCloseTimeout)
 	defer cancel()
 	if err := conn.Close(ctx); err != nil {

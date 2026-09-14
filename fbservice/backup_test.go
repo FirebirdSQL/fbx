@@ -344,10 +344,6 @@ func (c *fakeServiceConnection) Restore(
 	return c.restoreErr
 }
 
-func (*fakeServiceConnection) Statistics(context.Context, string, fbconn.StatisticsOptions) error {
-	return errors.New("unexpected statistics operation")
-}
-
 func (c *fakeServiceConnection) Close(context.Context) error {
 	c.closed = true
 	return c.closeErr

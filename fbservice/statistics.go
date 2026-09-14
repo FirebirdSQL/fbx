@@ -10,13 +10,20 @@ import (
 	"rdb.red-soft.ru/fbx/fbconn"
 )
 
+type statisticsConnection interface {
+	Statistics(context.Context, string, fbconn.StatisticsOptions) error
+	serviceCloser
+}
+
+type connectStatisticsFunc func(context.Context, *fbconn.ServiceConfig) (statisticsConnection, error)
+
 // StatisticsManager collects gstat reports through the Firebird service manager.
 // It is safe for concurrent use: each operation opens and closes its own service
 // connection. Callers are responsible for limiting concurrent operations and
 // for synchronizing writers shared between operations.
 type StatisticsManager struct {
 	config  *Config
-	connect connectServiceFunc
+	connect connectStatisticsFunc
 }
 
 // NewStatisticsManager parses connString using [ParseConfig] and returns a
@@ -36,8 +43,12 @@ func NewStatisticsManager(connString string) (*StatisticsManager, error) {
 func NewStatisticsManagerConfig(config *Config) *StatisticsManager {
 	return &StatisticsManager{
 		config:  config.Copy(),
-		connect: connectService,
+		connect: connectStatistics,
 	}
+}
+
+func connectStatistics(ctx context.Context, config *fbconn.ServiceConfig) (statisticsConnection, error) {
+	return fbconn.ConnectServiceConfig(ctx, config)
 }
 
 // StatisticsOptions controls the gstat report. The zero value analyzes data and
@@ -99,17 +110,14 @@ func (m *StatisticsManager) Statistics(ctx context.Context, database string, opt
 	if m == nil {
 		return errors.New("statistics manager must not be nil")
 	}
-	connectionConfig, err := m.config.toConnectionConfig()
+	config, err := m.config.toServiceConfig(database)
 	if err != nil {
 		return fmt.Errorf("connect to service manager: %w", err)
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	conn, err := m.connect(ctx, &fbconn.ServiceConfig{
-		ConnectionConfig: connectionConfig,
-		ExpectedDatabase: database,
-	})
+	conn, err := m.connect(ctx, config)
 	if err != nil {
 		return fmt.Errorf("connect to service manager: %w", err)
 	}

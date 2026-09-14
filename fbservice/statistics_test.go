@@ -130,7 +130,7 @@ func TestStatisticsManagerConstructors(t *testing.T) {
 	manager, err := fbservice.NewStatisticsManager("host=localhost user=sysdba database=ignored")
 	require.NoError(t, err)
 	var connection *fakeStatisticsConnection
-	connect := func(_ context.Context, config *fbconn.ServiceConfig) (fbservice.ServiceConnection, error) {
+	connect := func(_ context.Context, config *fbconn.ServiceConfig) (fbservice.StatisticsConnection, error) {
 		connection = new(fakeStatisticsConnection)
 		connection.connectionConfig = config.ConnectionConfig.Copy()
 		connection.expectedDatabase = config.ExpectedDatabase
@@ -168,7 +168,7 @@ func TestStatisticsManagerErrors(t *testing.T) {
 	require.ErrorIs(t, err, closeErr)
 	require.True(t, connection.closed)
 	connectErr := errors.New("connect failed")
-	fbservice.SetStatisticsConnectForTest(manager, func(context.Context, *fbconn.ServiceConfig) (fbservice.ServiceConnection, error) {
+	fbservice.SetStatisticsConnectForTest(manager, func(context.Context, *fbconn.ServiceConfig) (fbservice.StatisticsConnection, error) {
 		return nil, connectErr
 	})
 	require.ErrorIs(t, manager.Statistics(context.Background(), "db"), connectErr)
@@ -179,7 +179,7 @@ func TestStatisticsManagerClosesAfterCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	connection := &statisticsCancelConnection{cancel: cancel}
-	fbservice.SetStatisticsConnectForTest(manager, func(context.Context, *fbconn.ServiceConfig) (fbservice.ServiceConnection, error) {
+	fbservice.SetStatisticsConnectForTest(manager, func(context.Context, *fbconn.ServiceConfig) (fbservice.StatisticsConnection, error) {
 		return connection, nil
 	})
 	require.ErrorIs(t, manager.Statistics(ctx, "db"), context.Canceled)
@@ -228,7 +228,7 @@ func (c *statisticsCancelConnection) Close(ctx context.Context) error {
 func TestStatisticsManagerConcurrentOperations(t *testing.T) {
 	manager, _ := newTestStatisticsManager(t)
 	var opened, closed atomic.Int64
-	fbservice.SetStatisticsConnectForTest(manager, func(_ context.Context, config *fbconn.ServiceConfig) (fbservice.ServiceConnection, error) {
+	fbservice.SetStatisticsConnectForTest(manager, func(_ context.Context, config *fbconn.ServiceConfig) (fbservice.StatisticsConnection, error) {
 		opened.Add(1)
 		return &fakeStatisticsConnection{expectedDatabase: config.ExpectedDatabase, closedCount: &closed}, nil
 	})
@@ -254,7 +254,7 @@ func newTestStatisticsManager(t *testing.T) (*fbservice.StatisticsManager, *fake
 
 	connection := new(fakeStatisticsConnection)
 	manager := fbservice.NewStatisticsManagerConfig(config)
-	fbservice.SetStatisticsConnectForTest(manager, func(_ context.Context, config *fbconn.ServiceConfig) (fbservice.ServiceConnection, error) {
+	fbservice.SetStatisticsConnectForTest(manager, func(_ context.Context, config *fbconn.ServiceConfig) (fbservice.StatisticsConnection, error) {
 		connection.opened = true
 		connection.expectedDatabase = config.ExpectedDatabase
 		return connection, nil
@@ -262,6 +262,7 @@ func newTestStatisticsManager(t *testing.T) (*fbservice.StatisticsManager, *fake
 	return manager, connection
 }
 
+// This connection intentionally implements only Statistics and Close.
 type fakeStatisticsConnection struct {
 	opened            bool
 	closed            bool
@@ -286,14 +287,6 @@ func (c *fakeStatisticsConnection) Statistics(_ context.Context, database string
 	c.database = database
 	c.statisticsOptions = options
 	return c.statisticsErr
-}
-
-func (*fakeStatisticsConnection) Backup(context.Context, string, string, fbconn.BackupOptions) error {
-	return errors.New("unexpected backup operation")
-}
-
-func (*fakeStatisticsConnection) Restore(context.Context, string, string, fbconn.RestoreOptions) error {
-	return errors.New("unexpected restore operation")
 }
 
 func (c *fakeStatisticsConnection) Close(context.Context) error {
