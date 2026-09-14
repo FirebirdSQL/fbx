@@ -659,7 +659,7 @@ func TestParseConfigEnv(t *testing.T) {
 		}
 	}
 
-	fbEnvvars := []string{"FBHOST", "FBPORT", "FBDATABASE", "FBUSER", "FBPASSWORD", "FBAPPNAME", "FBCONNECT_TIMEOUT", "FBTZ", "FBFETCH_BATCH_SIZE", "FBWIRECOMPRESSION"}
+	fbEnvvars := []string{"FBHOST", "FBPORT", "FBDATABASE", "FBUSER", "FBPASSWORD", "FBAPPNAME", "FBCONNECT_TIMEOUT", "FBTZ", "FBFETCH_BATCH_SIZE", "FBWIRECOMPRESSION", "FBSEARCHPATH"}
 
 	tests := []struct {
 		name    string
@@ -691,6 +691,7 @@ func TestParseConfigEnv(t *testing.T) {
 				"FBFETCH_BATCH_SIZE": "64",
 				"FBWIRECOMPRESSION":  "true",
 				"FBTZ":               "America/New_York",
+				"FBSEARCHPATH":       "myschema",
 			},
 			config: &fbconn.Config{
 				Host:            "123.123.123.123",
@@ -701,7 +702,7 @@ func TestParseConfigEnv(t *testing.T) {
 				ConnectTimeout:  10 * time.Second,
 				FetchBatchSize:  64,
 				WireCompression: true,
-				RuntimeParams:   map[string]string{"application_name": "fbxtest", "timezone": "America/New_York"},
+				RuntimeParams:   map[string]string{"application_name": "fbxtest", "timezone": "America/New_York", "search_path": "myschema"},
 			},
 		},
 	}
