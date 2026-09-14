@@ -133,6 +133,10 @@ func (c *concurrentServiceConnection) Restore(
 	return c.recordOperation(database)
 }
 
+func (*concurrentServiceConnection) Statistics(context.Context, string, fbconn.StatisticsOptions) error {
+	return errors.New("unexpected statistics operation")
+}
+
 func (c *concurrentServiceConnection) Close(context.Context) error {
 	if !c.operationCalled {
 		return errors.New("service connection closed before an operation")

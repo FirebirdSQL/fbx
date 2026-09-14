@@ -13,3 +13,8 @@ type ServiceConnection = serviceConnection
 func SetConnectForTest(manager *Manager, connect func(context.Context, *fbconn.ServiceConfig) (ServiceConnection, error)) {
 	manager.connect = connect
 }
+
+// SetStatisticsConnectForTest replaces the connector before any statistics operations run.
+func SetStatisticsConnectForTest(manager *StatisticsManager, connect func(context.Context, *fbconn.ServiceConfig) (ServiceConnection, error)) {
+	manager.connect = connect
+}

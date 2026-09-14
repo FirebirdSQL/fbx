@@ -61,7 +61,22 @@ Set AccessMode to override the access mode recorded in the backup:
 		AccessMode: fbservice.RestoreAccessModeReadOnly,
 	})
 
-Manager does not write to standard output unless an operation explicitly
+Collect a gstat report with StatisticsManager:
+
+	statistics := fbservice.NewStatisticsManagerConfig(config)
+	err = statistics.Statistics(ctx, database, fbservice.StatisticsOptions{
+		Output:         os.Stdout,
+		DataPages:      true,
+		RecordVersions: true,
+		Tables:         []string{"EMPLOYEE"},
+	})
+
+StatisticsManager supports Output, DataPages, HeaderPages, IndexPages,
+SystemRelations, RecordVersions, Tables, Schemas, NoCreation, Encryption and
+ParallelWorkers. Unsupported server options return errors. Omitting options
+selects the server's default data and index analysis and discards the report.
+
+Managers do not write to standard output unless an operation explicitly
 receives os.Stdout as its output.
 */
 package fbservice

@@ -14,6 +14,7 @@ const serviceCloseTimeout = 5 * time.Second
 type serviceConnection interface {
 	Backup(context.Context, string, string, fbconn.BackupOptions) error
 	Restore(context.Context, string, string, fbconn.RestoreOptions) error
+	Statistics(context.Context, string, fbconn.StatisticsOptions) error
 	Close(context.Context) error
 }
 
