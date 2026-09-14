@@ -51,7 +51,8 @@ func (u *UUID) Scan(src any) error {
 	return nil
 }
 
-// Value implements [driver.Valuer].
+// Value implements [driver.Valuer]. It returns nil for the zero UUID and a
+// canonical UUID string otherwise.
 func (u UUID) Value() (driver.Value, error) {
 	if u == (UUID{}) {
 		return nil, nil

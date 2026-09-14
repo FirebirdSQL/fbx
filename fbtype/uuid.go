@@ -19,8 +19,9 @@ type UUIDValuer interface {
 	UUIDValue() (UUID, error)
 }
 
-// UUID represents a nullable UUID stored by Firebird as 16 binary bytes.
-// Valid is false for SQL NULL.
+// UUID represents a nullable UUID encoded as 16 binary bytes. Firebird has no
+// native UUID type; UUID values are commonly stored as CHAR(16) CHARACTER SET
+// OCTETS. Valid is false for SQL NULL.
 type UUID struct {
 	Bytes [16]byte
 	Valid bool
@@ -109,7 +110,8 @@ func (dst *UUID) Scan(src any) error {
 	return fmt.Errorf("cannot scan %T into UUID", src)
 }
 
-// Value implements [driver.Valuer].
+// Value implements [driver.Valuer]. It returns nil for SQL NULL and a canonical
+// UUID string otherwise.
 func (src UUID) Value() (driver.Value, error) {
 	if !src.Valid {
 		return nil, nil

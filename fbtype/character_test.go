@@ -271,6 +271,82 @@ func TestTextCodecPreservesCharsetErrors(t *testing.T) {
 	require.ErrorContains(t, err, "unknown or unsupported charset id: 52")
 }
 
+func TestTextCodecUnsupportedCharsetAllowsNull(t *testing.T) {
+	t.Parallel()
+
+	const unsupportedCharsetID = 52
+	tests := []struct {
+		name   string
+		typeID uint32
+	}{
+		{name: "char", typeID: fbproto.SQL_TYPE_TEXT},
+		{name: "varchar", typeID: fbproto.SQL_TYPE_VARYING},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			metadata := fbtype.NewTypeMetadata(tt.typeID, unsupportedCharsetID, 16, 0)
+			m := fbtype.NewMap()
+
+			encoded, err := m.Encode(metadata, fbtype.Text{}, nil)
+			require.NoError(t, err)
+			require.Nil(t, encoded)
+
+			_, err = m.Encode(metadata, fbtype.Text{String: "value", Valid: true}, nil)
+			require.ErrorContains(t, err, "unknown or unsupported charset id: 52")
+
+			text := fbtype.Text{String: "old", Valid: true}
+			require.NoError(t, m.Scan(metadata, nil, &text))
+			require.Equal(t, fbtype.Text{}, text)
+
+			bytes := []byte("old")
+			require.NoError(t, m.Scan(metadata, nil, &bytes))
+			require.Nil(t, bytes)
+
+			prealloc := fbtype.PreallocBytes("old")
+			require.NoError(t, m.Scan(metadata, nil, &prealloc))
+			require.Nil(t, prealloc)
+
+			var stringValue string
+			err = m.Scan(metadata, nil, &stringValue)
+			require.ErrorContains(t, err, "cannot scan NULL into *string")
+			require.NotContains(t, err.Error(), "unknown or unsupported charset")
+
+			err = m.Scan(metadata, []byte("value"), &text)
+			require.ErrorContains(t, err, "unknown or unsupported charset id: 52")
+		})
+	}
+}
+
+func TestTextCodecUnsupportedCharsetNullRoundTrip(t *testing.T) {
+	runner := defaultConnTestRunner
+	createConfig := runner.CreateConfig
+	runner.CreateConfig = func(ctx context.Context, t testing.TB) *fbx.ConnConfig {
+		config := createConfig(ctx, t)
+		config.Encoding = "NONE"
+		return config
+	}
+
+	fbxtest.RunWithQueryExecModes(context.Background(), t, runner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		for _, typeName := range []string{"char(10)", "varchar(10)"} {
+			value := fbtype.Text{String: "old", Valid: true}
+			err := conn.QueryRow(ctx,
+				"select cast(null as "+typeName+" character set win1251) from rdb$database",
+			).Scan(&value)
+			require.NoError(t, err, "type=%s", typeName)
+			require.Equal(t, fbtype.Text{}, value, "type=%s", typeName)
+
+			value = fbtype.Text{String: "old", Valid: true}
+			err = conn.QueryRow(ctx,
+				"select cast(? as "+typeName+" character set win1251) from rdb$database",
+				fbtype.Text{},
+			).Scan(&value)
+			require.NoError(t, err, "type=%s", typeName)
+			require.Equal(t, fbtype.Text{}, value, "type=%s", typeName)
+		}
+	})
+}
+
 func TestTextCodecUnsupportedTypesDoNotReturnCharsetErrorPlan(t *testing.T) {
 	t.Parallel()
 

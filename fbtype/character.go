@@ -41,7 +41,7 @@ func (t Text) TextValue() (Text, error) {
 }
 
 // Scan implements [database/sql.Scanner]. It accepts nil, string, and []byte
-// values.
+// values. Scan resets dst to SQL NULL before processing, including on errors.
 func (dst *Text) Scan(src any) error {
 	*dst = Text{}
 
@@ -114,9 +114,13 @@ func (TextCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) Encode
 		return nil
 	}
 
-	encoding, err := textEncoding(typeMetadata)
-	if err != nil {
-		return encodePlanTextCodecError{err: err}
+	encoding, encodingErr := textEncoding(typeMetadata)
+	if encodingErr != nil {
+		if _, ok := value.(TextValuer); ok {
+			// A TextValuer can represent SQL NULL, which needs no charset conversion.
+			return encodePlanTextCodecTextValuer{encodingErr: encodingErr}
+		}
+		return encodePlanTextCodecError{err: encodingErr}
 	}
 
 	switch value.(type) {
@@ -184,8 +188,9 @@ func (e encodePlanTextCodecStringer) Encode(value any, buf []byte) (newBuf []byt
 }
 
 type encodePlanTextCodecTextValuer struct {
-	encoding *fbproto.Encoding
-	length   uint32
+	encoding    *fbproto.Encoding
+	length      uint32
+	encodingErr error
 }
 
 func (e encodePlanTextCodecTextValuer) Encode(value any, buf []byte) (newBuf []byte, err error) {
@@ -196,6 +201,9 @@ func (e encodePlanTextCodecTextValuer) Encode(value any, buf []byte) (newBuf []b
 
 	if !text.Valid {
 		return nil, nil
+	}
+	if e.encodingErr != nil {
+		return nil, e.encodingErr
 	}
 
 	res, err := encodeFBString(text.String, e.length, e.encoding)
@@ -214,31 +222,20 @@ func (TextCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPla
 		return nil
 	}
 
-	encoding, err := textEncoding(typeMetadata)
-	if err != nil {
-		return scanPlanTextCodecError{err: err}
-	}
+	encoding, encodingErr := textEncoding(typeMetadata)
 
 	switch target.(type) {
 	case *string:
-		return scanPlanTextAnyToString{encoding: encoding, length: typeMetadata.Length, typeID: typeMetadata.TypeID}
+		return scanPlanTextAnyToString{encoding: encoding, encodingErr: encodingErr, length: typeMetadata.Length, typeID: typeMetadata.TypeID}
 	case *[]byte:
-		return scanPlanTextAnyToByteSlice{encoding: encoding, length: typeMetadata.Length, typeID: typeMetadata.TypeID}
+		return scanPlanTextAnyToByteSlice{encoding: encoding, encodingErr: encodingErr, length: typeMetadata.Length, typeID: typeMetadata.TypeID}
 	case BytesScanner:
-		return scanPlanTextAnyToBytesScanner{encoding: encoding, length: typeMetadata.Length, typeID: typeMetadata.TypeID}
+		return scanPlanTextAnyToBytesScanner{encoding: encoding, encodingErr: encodingErr, length: typeMetadata.Length, typeID: typeMetadata.TypeID}
 	case TextScanner:
-		return scanPlanTextAnyToTextScanner{encoding: encoding, length: typeMetadata.Length, typeID: typeMetadata.TypeID}
+		return scanPlanTextAnyToTextScanner{encoding: encoding, encodingErr: encodingErr, length: typeMetadata.Length, typeID: typeMetadata.TypeID}
 	}
 
 	return nil
-}
-
-type scanPlanTextCodecError struct {
-	err error
-}
-
-func (s scanPlanTextCodecError) Scan(src []byte, dst any) error {
-	return s.err
 }
 
 // DecodeDatabaseSQLValue decodes src into a database/sql driver value.
@@ -277,9 +274,10 @@ func textEncoding(typeMetadata TypeMetadata) (*fbproto.Encoding, error) {
 }
 
 type scanPlanTextAnyToString struct {
-	typeID   uint32
-	length   uint32
-	encoding *fbproto.Encoding
+	typeID      uint32
+	length      uint32
+	encoding    *fbproto.Encoding
+	encodingErr error
 }
 
 func (s scanPlanTextAnyToString) Scan(src []byte, dst any) error {
@@ -291,13 +289,17 @@ func (s scanPlanTextAnyToString) Scan(src []byte, dst any) error {
 	if src == nil {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
+	if s.encodingErr != nil {
+		return s.encodingErr
+	}
 	return decodeFBString(src, s.typeID == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, p)
 }
 
 type scanPlanTextAnyToByteSlice struct {
-	typeID   uint32
-	length   uint32
-	encoding *fbproto.Encoding
+	typeID      uint32
+	length      uint32
+	encoding    *fbproto.Encoding
+	encodingErr error
 }
 
 func (s scanPlanTextAnyToByteSlice) Scan(src []byte, dst any) error {
@@ -308,21 +310,26 @@ func (s scanPlanTextAnyToByteSlice) Scan(src []byte, dst any) error {
 
 	if src == nil {
 		*p = nil
-	} else {
-		var res string
-		if err := decodeFBString(src, s.typeID == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, &res); err != nil {
-			return err
-		}
-		*p = []byte(res)
+		return nil
 	}
+	if s.encodingErr != nil {
+		return s.encodingErr
+	}
+
+	var res string
+	if err := decodeFBString(src, s.typeID == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, &res); err != nil {
+		return err
+	}
+	*p = []byte(res)
 
 	return nil
 }
 
 type scanPlanTextAnyToBytesScanner struct {
-	typeID   uint32
-	length   uint32
-	encoding *fbproto.Encoding
+	typeID      uint32
+	length      uint32
+	encoding    *fbproto.Encoding
+	encodingErr error
 }
 
 func (s scanPlanTextAnyToBytesScanner) Scan(src []byte, dst any) error {
@@ -334,6 +341,9 @@ func (s scanPlanTextAnyToBytesScanner) Scan(src []byte, dst any) error {
 	if src == nil {
 		return p.ScanBytes(nil)
 	}
+	if s.encodingErr != nil {
+		return s.encodingErr
+	}
 
 	var res string
 	if err := decodeFBString(src, s.typeID == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, &res); err != nil {
@@ -343,9 +353,10 @@ func (s scanPlanTextAnyToBytesScanner) Scan(src []byte, dst any) error {
 }
 
 type scanPlanTextAnyToTextScanner struct {
-	typeID   uint32
-	length   uint32
-	encoding *fbproto.Encoding
+	typeID      uint32
+	length      uint32
+	encoding    *fbproto.Encoding
+	encodingErr error
 }
 
 func (s scanPlanTextAnyToTextScanner) Scan(src []byte, dst any) error {
@@ -356,6 +367,9 @@ func (s scanPlanTextAnyToTextScanner) Scan(src []byte, dst any) error {
 
 	if src == nil {
 		return scanner.ScanText(Text{})
+	}
+	if s.encodingErr != nil {
+		return s.encodingErr
 	}
 
 	var res string
