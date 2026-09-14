@@ -1095,6 +1095,7 @@ func TestConnInitTypeMap(t *testing.T) {
 
 	nameTypeIDs := map[string]uint32{
 		"int":     fbproto.SQL_TYPE_LONG,
+		"char":    fbproto.SQL_TYPE_TEXT,
 		"varchar": fbproto.SQL_TYPE_VARYING,
 	}
 	for name, typeid := range nameTypeIDs {

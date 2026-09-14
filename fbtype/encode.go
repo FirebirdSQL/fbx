@@ -648,6 +648,16 @@ func (m *Map) Encode(typeMetadata TypeMetadata, value any, buf []byte) (newBuf [
 	return newBuf, nil
 }
 
+// appendNonNullBytes preserves the distinction between an empty encoded value
+// and SQL NULL when the destination buffer has not been initialized yet.
+func appendNonNullBytes(buf, value []byte) []byte {
+	if buf == nil && len(value) == 0 {
+		return []byte{}
+	}
+
+	return append(buf, value...)
+}
+
 var valuerReflectType = reflect.TypeFor[driver.Valuer]()
 
 func isNilValue(value any) bool {
