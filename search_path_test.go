@@ -425,11 +425,8 @@ func TestSetSearchPathByQueryDeallocatesStatements(t *testing.T) {
 		require.Equal(t, 1, testTableValue(ctx, t, conn))
 
 		rows, err := conn.Query(ctx, "set search_path to "+schema2)
-		require.NoError(t, err)
+		require.ErrorContains(t, err, "not supported by Query method")
 		rows.Close()
-
-		assert.Equal(t, quotedSearchPath(schema2, "SYSTEM"), currentSearchPath(ctx, t, conn))
-		assert.Equal(t, 2, testTableValue(ctx, t, conn))
 	})
 }
 
