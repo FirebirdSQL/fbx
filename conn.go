@@ -801,8 +801,7 @@ func (c *Conn) execPrepared(ctx context.Context, tx *dbTx, st *fbconn.Statement,
 	} else {
 		result = st.Exec(ctx, c.eqb.ParamValues).Read()
 	}
-	re := regexp.MustCompile(`(?i)set\s+search_path\s+to`)
-	if result.Err == nil && re.MatchString(st.Description.SQL) {
+	if result.Err == nil && CheckRegexp(st.Description.SQL) {
 		err = c.DeallocateAll(ctx)
 		if err != nil {
 			return result.QueryStatus, err
@@ -970,6 +969,11 @@ func (c *Conn) queryTx(ctx context.Context, tx *dbTx, sql string, args ...any) (
 		return &baseRows{err: err, closed: true}, err
 	}
 
+	if CheckRegexp(sql) {
+		err := fmt.Errorf(`"%s" not supported by Query method`, sql)
+		return &baseRows{err: err, closed: true}, err
+	}
+
 	mode := c.config.DefaultQueryExecMode
 	var queryRewriter QueryRewriter
 
@@ -1133,4 +1137,9 @@ func (c *Conn) Commit(ctx context.Context) error {
 // Rollback rollbacks internal transaction
 func (c *Conn) Rollback(ctx context.Context) error {
 	return c.fbConn.Rollback(ctx)
+}
+
+func CheckRegexp(sql string) bool {
+	re := regexp.MustCompile(`(?i)set\s+search_path\s+to|alter\s+session\s+reset`)
+	return re.MatchString(sql)
 }
