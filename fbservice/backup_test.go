@@ -185,11 +185,12 @@ func TestManagerBackupReturnsOperationAndCloseErrors(t *testing.T) {
 	require.ErrorContains(t, err, "close failed")
 }
 
-func TestNewManagerCopiesConfig(t *testing.T) {
+func TestNewManagerConfigCopiesConfig(t *testing.T) {
 	config, err := fbservice.ParseConfig("firebird://sysdba:masterkey@localhost/employee")
 	require.NoError(t, err)
 	config.AuthPlugins = []string{"Srp256", "Srp"}
-	manager := fbservice.NewManager(config)
+	manager, err := fbservice.NewManagerConfig(config)
+	require.NoError(t, err)
 	connection := new(fakeServiceConnection)
 	fbservice.SetConnectForTest(manager, func(_ context.Context, serviceConfig *fbconn.ServiceConfig) (fbservice.ServiceConnection, error) {
 		connection.connectionConfig = serviceConfig.ConnectionConfig.Copy()
@@ -222,7 +223,8 @@ func TestManagerMapsPublicConfigToConnectionConfig(t *testing.T) {
 	config.WireCrypt = false
 	config.ConnectTimeout = 3 * time.Second
 
-	manager := fbservice.NewManager(config)
+	manager, err := fbservice.NewManagerConfig(config)
+	require.NoError(t, err)
 	connection := new(fakeServiceConnection)
 	fbservice.SetConnectForTest(manager, func(_ context.Context, serviceConfig *fbconn.ServiceConfig) (fbservice.ServiceConnection, error) {
 		connection.connectionConfig = serviceConfig.ConnectionConfig.Copy()
@@ -256,7 +258,8 @@ func TestManagerClearsDatabaseOnlyConnectionSettings(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	manager := fbservice.NewManager(config)
+	manager, err := fbservice.NewManagerConfig(config)
+	require.NoError(t, err)
 	connection := new(fakeServiceConnection)
 	fbservice.SetConnectForTest(manager, func(_ context.Context, serviceConfig *fbconn.ServiceConfig) (fbservice.ServiceConnection, error) {
 		connection.connectionConfig = serviceConfig.ConnectionConfig.Copy()
@@ -271,20 +274,18 @@ func TestManagerClearsDatabaseOnlyConnectionSettings(t *testing.T) {
 	requireDatabaseConnectionSettingsCleared(t, connection.connectionConfig)
 }
 
-func TestManagerRejectsConfigNotCreatedByParseConfig(t *testing.T) {
-	manager := fbservice.NewManager(&fbservice.Config{Host: "localhost"})
-
-	err := manager.Backup(context.Background(), "/data/employee.fdb", "/backup/employee.fbk")
+func TestNewManagerConfigRejectsConfigNotCreatedByParseConfig(t *testing.T) {
+	manager, err := fbservice.NewManagerConfig(&fbservice.Config{Host: "localhost"})
 
 	require.ErrorContains(t, err, "must be created by ParseConfig")
+	require.Nil(t, manager)
 }
 
-func TestManagerBackupRejectsNilConfig(t *testing.T) {
-	manager := fbservice.NewManager(nil)
-
-	err := manager.Backup(context.Background(), "/data/employee.fdb", "/backup/employee.fbk")
+func TestNewManagerConfigRejectsNilConfig(t *testing.T) {
+	manager, err := fbservice.NewManagerConfig(nil)
 
 	require.ErrorContains(t, err, "config must not be nil")
+	require.Nil(t, manager)
 }
 
 func newTestManager(t *testing.T) (*fbservice.Manager, *fakeServiceConnection) {
@@ -293,7 +294,8 @@ func newTestManager(t *testing.T) (*fbservice.Manager, *fakeServiceConnection) {
 	require.NoError(t, err)
 
 	connection := new(fakeServiceConnection)
-	manager := fbservice.NewManager(config)
+	manager, err := fbservice.NewManagerConfig(config)
+	require.NoError(t, err)
 	fbservice.SetConnectForTest(manager, func(_ context.Context, config *fbconn.ServiceConfig) (fbservice.ServiceConnection, error) {
 		connection.opened = true
 		connection.expectedDatabase = config.ExpectedDatabase

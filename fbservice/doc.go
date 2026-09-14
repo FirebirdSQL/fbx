@@ -3,13 +3,23 @@ Package fbservice provides a high-level API for Firebird and RedDatabase
 services.
 
 A Manager stores connection settings and opens a separate service connection
-for each operation. Create a manager from a parsed configuration:
+for each operation. Create a manager directly from a connection string:
+
+	manager, err := fbservice.NewManager(os.Getenv("DATABASE_URL"))
+	if err != nil {
+		return err
+	}
+
+To customize settings, parse the configuration before creating the manager:
 
 	config, err := fbservice.ParseConfig(os.Getenv("DATABASE_URL"))
 	if err != nil {
 		return err
 	}
-	manager := fbservice.NewManager(config)
+	manager, err := fbservice.NewManagerConfig(config)
+	if err != nil {
+		return err
+	}
 
 Operations without special settings can omit their options:
 

@@ -10,7 +10,7 @@ import (
 // Config contains settings used to connect to the Firebird service manager.
 //
 // Config must be created by [ParseConfig]. After parsing, its fields can be
-// modified before passing the config to [NewManager].
+// modified before passing the config to [NewManagerConfig].
 type Config struct {
 	// Host is the server hostname or Unix socket path.
 	Host string
