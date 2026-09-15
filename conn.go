@@ -1058,6 +1058,7 @@ optionLoop:
 			if c.queryTracer != nil {
 				c.queryTracer.TraceQueryEnd(ctx, c, TraceQueryEndData{Err: err})
 			}
+			st.Deallocate(ctx)
 			return &baseRows{err: err, closed: true}, err
 		}
 
@@ -1176,7 +1177,7 @@ func IsCacheCleaningNeeded(sql string) bool {
 	}
 	for _, c := range sql {
 		switch c {
-		case ' ', '\t', '\r', '\f', '\v', ';':
+		case ' ', '\t', '\f', '\v', ';':
 			reset_symbol()
 		case '/':
 			if !commentTracker.lineOpend {
@@ -1215,13 +1216,14 @@ func IsCacheCleaningNeeded(sql string) bool {
 					reset_symbol()
 				}
 			}
-		case '\n':
+		case '\n', '\r':
 			reset_symbol()
 			commentTracker.lineOpend = false
 		default:
 			if !isSingleOpend && !isDoubleOpend && !commentTracker.blockOpend && !commentTracker.lineOpend {
 				currentSymbol.WriteRune(c)
 			}
+			commentTracker.blockEnd = false
 		}
 		if len(symbols) == 1 && symbols[0] != "set" && symbols[0] != "alter" {
 			break
@@ -1241,4 +1243,5 @@ func IsCacheCleaningNeeded(sql string) bool {
 	}
 
 	return false
+
 }
