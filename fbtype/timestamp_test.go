@@ -122,6 +122,16 @@ func TestTimestampScanStringSupportedFormats(t *testing.T) {
 			minute: 16,
 		},
 		{
+			name:   "firebird single digit fields",
+			input:  "2025-12-17 1:2:3",
+			year:   2025,
+			month:  time.December,
+			day:    17,
+			hour:   1,
+			minute: 2,
+			second: 3,
+		},
+		{
 			name:   "firebird alternative date format",
 			input:  "17.12.2025 10:16:43.1234",
 			year:   2025,
@@ -238,6 +248,16 @@ func TestTimestampCodecEncodeStringSupportsFirebirdFormats(t *testing.T) {
 			minute: 16,
 			second: 43,
 			nsec:   123400000,
+		},
+		{
+			name:   "firebird single digit fields",
+			input:  "2025-12-17 1:2:3",
+			year:   2025,
+			month:  time.December,
+			day:    17,
+			hour:   1,
+			minute: 2,
+			second: 3,
 		},
 		{
 			name:   "rfc3339 wall clock",
@@ -459,6 +479,7 @@ func TestTimestampUnmarshalJSON(t *testing.T) {
 		{source: "null", result: fbtype.Timestamp{}},
 		{source: "\"2012-03-29T10:05:45\"", result: fbtype.Timestamp{Time: time.Date(2012, 3, 29, 10, 5, 45, 0, time.UTC), Valid: true}},
 		{source: "\"2012-03-29T10:05:45.555\"", result: fbtype.Timestamp{Time: time.Date(2012, 3, 29, 10, 5, 45, 555*1000*1000, time.UTC), Valid: true}},
+		{source: "\"2025-12-17 1:2:3\"", result: fbtype.Timestamp{Time: time.Date(2025, 12, 17, 1, 2, 3, 0, time.UTC), Valid: true}},
 	}
 	for i, tt := range successfulTests {
 		var r fbtype.Timestamp

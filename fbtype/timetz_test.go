@@ -268,6 +268,22 @@ func TestTimetzCodecRoundTripString(t *testing.T) {
 			wantLocName: "Europe/Moscow",
 		},
 		{
+			name:        "single digit fields and named zone",
+			input:       "1:2:3 Europe/Moscow",
+			wantHour:    1,
+			wantMinute:  2,
+			wantSecond:  3,
+			wantLocName: "Europe/Moscow",
+		},
+		{
+			name:        "single digit fields and compact offset",
+			input:       "1:2:3+03:00",
+			wantHour:    1,
+			wantMinute:  2,
+			wantSecond:  3,
+			wantLocName: "+03:00",
+		},
+		{
 			name:        "UTC suffix",
 			input:       "12:00:00Z",
 			wantHour:    12,
@@ -465,6 +481,13 @@ func TestTimetzScanValueAndJSON(t *testing.T) {
 	}
 	if !reflect.DeepEqual(ttz.Time, decoded.Time) {
 		t.Fatalf("decoded time differs:\n got  = %#v\n want = %#v", decoded.Time, ttz.Time)
+	}
+
+	if err := json.Unmarshal([]byte(`"1:2:3 Europe/Moscow"`), &decoded); err != nil {
+		t.Fatalf("UnmarshalJSON single-digit fields failed: %v", err)
+	}
+	if decoded.Time.Hour() != 1 || decoded.Time.Minute() != 2 || decoded.Time.Second() != 3 || decoded.Time.Location().String() != "Europe/Moscow" {
+		t.Fatalf("decoded single-digit time = %s, want 01:02:03 Europe/Moscow", decoded.Time)
 	}
 
 	if err := ttz.Scan(nil); err != nil {

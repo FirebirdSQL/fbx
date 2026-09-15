@@ -418,7 +418,7 @@ func splitCompactTimetzString(s string) (timePart string, zonePart string, err e
 		return s[:len(s)-1], "Z", nil
 	}
 
-	for i := len(s) - 1; i >= 5; i-- {
+	for i := len(s) - 1; i > 0; i-- {
 		if s[i] == '+' || s[i] == '-' {
 			return s[:i], s[i:], nil
 		}
@@ -428,67 +428,10 @@ func splitCompactTimetzString(s string) (timePart string, zonePart string, err e
 }
 
 func parseTimetzClock(s string) (int64, error) {
-	if len(s) < 5 || s[2] != ':' {
-		return 0, fmt.Errorf("invalid TIMETZ time: %q", s)
-	}
-
-	hours, err := strconv.ParseInt(s[0:2], 10, 64)
+	usec, err := parseTimeString(s)
 	if err != nil {
-		return 0, fmt.Errorf("cannot parse hours from %q: %w", s, err)
+		return 0, fmt.Errorf("invalid TIMETZ time %q: %w", s, err)
 	}
-	if hours < 0 || hours > 23 {
-		return 0, fmt.Errorf("hours out of range (0-23): %d", hours)
-	}
-
-	minutes, err := strconv.ParseInt(s[3:5], 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("cannot parse minutes from %q: %w", s, err)
-	}
-	if minutes < 0 || minutes > 59 {
-		return 0, fmt.Errorf("minutes out of range (0-59): %d", minutes)
-	}
-
-	usec := hours*microsecondsPerHour + minutes*microsecondsPerMinute
-	if len(s) == 5 {
-		return usec, nil
-	}
-
-	if len(s) < 8 || s[5] != ':' {
-		return 0, fmt.Errorf("invalid TIMETZ time: %q", s)
-	}
-
-	seconds, err := strconv.ParseInt(s[6:8], 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("cannot parse seconds from %q: %w", s, err)
-	}
-	if seconds < 0 || seconds > 59 {
-		return 0, fmt.Errorf("seconds out of range (0-59): %d", seconds)
-	}
-	usec += seconds * microsecondsPerSecond
-
-	if len(s) == 8 {
-		return usec, nil
-	}
-
-	if s[8] != '.' {
-		return 0, fmt.Errorf("invalid TIMETZ time: %q", s)
-	}
-
-	fraction := s[9:]
-	if len(fraction) == 0 || len(fraction) > 6 {
-		return 0, fmt.Errorf("invalid TIMETZ fractional seconds: %q", s)
-	}
-
-	n, err := strconv.ParseInt(fraction, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("cannot parse microseconds from %q: %w", s, err)
-	}
-
-	for i := len(fraction); i < 6; i++ {
-		n *= 10
-	}
-
-	usec += n
 	return usec, nil
 }
 

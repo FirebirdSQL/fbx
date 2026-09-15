@@ -199,8 +199,18 @@ func TestTimestamptzCodecRoundTripString(t *testing.T) {
 			wantLocName: "Europe/Moscow",
 		},
 		{
+			name:        "Firebird single digit fields with named zone",
+			str:         "2025-12-17 1:2:3 Europe/Moscow",
+			wantLocName: "Europe/Moscow",
+		},
+		{
 			name:        "Firebird compact offset",
 			str:         "2025-12-17 10:16:43.1234+03:00",
+			wantLocName: "+03:00",
+		},
+		{
+			name:        "Firebird single digit fields with compact offset",
+			str:         "2025-12-17 1:2:3+03:00",
 			wantLocName: "+03:00",
 		},
 	}
@@ -607,6 +617,13 @@ func TestTimestamptzUnmarshalJSON(t *testing.T) {
 			json:        `"2025-12-17 10:16:43.123400 Europe/Moscow"`,
 			wantValid:   true,
 			wantTime:    "2025-12-17 10:16:43.123400 Europe/Moscow",
+			wantLocName: "Europe/Moscow",
+		},
+		{
+			name:        "valid single digit fields",
+			json:        `"2025-12-17 1:2:3 Europe/Moscow"`,
+			wantValid:   true,
+			wantTime:    "2025-12-17 1:2:3 Europe/Moscow",
 			wantLocName: "Europe/Moscow",
 		},
 		{
