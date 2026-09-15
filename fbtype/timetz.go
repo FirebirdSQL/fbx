@@ -460,8 +460,9 @@ func parseTimetzZone(s string) (*time.Location, uint16, error) {
 		return nil, 0, fmt.Errorf("timetz: unknown Firebird time zone %q", s)
 	}
 
-	loc, err := time.LoadLocation(s)
-	if err != nil {
+	loc := fbproto.ResolveLocationByTzRaw(tzRaw)
+	if loc == time.UTC && s != "UTC" {
+		_, err := time.LoadLocation(s)
 		return nil, 0, fmt.Errorf("timetz: cannot load time zone %q: %w", s, err)
 	}
 
@@ -531,8 +532,18 @@ func formatTimetzString(ttz Timetz) (string, error) {
 		t.Minute(),
 		t.Second(),
 		t.Nanosecond()/1000,
-		loc.String(),
+		formatTimetzLocationName(tzRaw, loc),
 	), nil
+}
+
+func formatTimetzLocationName(tzRaw uint16, loc *time.Location) string {
+	if tzRaw > 2878 && loc != time.UTC {
+		if name, ok := fbproto.ResolveLocationNameByTzRaw(tzRaw); ok {
+			return name
+		}
+	}
+
+	return loc.String()
 }
 
 func formatTimetzOffsetName(offsetMinutes int) string {

@@ -538,6 +538,81 @@ func TestTimetzMarshalJSONPreservesNamedZone(t *testing.T) {
 	}
 }
 
+func TestTimetzLegacyZoneRoundTrip(t *testing.T) {
+	tests := []struct {
+		name         string
+		input        string
+		want         string
+		wantLocation string
+		wantOffset   int
+	}{
+		{
+			name:         "ICU alias",
+			input:        "10:16:43 CST",
+			want:         "10:16:43.000000 CST",
+			wantLocation: "America/Chicago",
+			wantOffset:   -6 * 60 * 60,
+		},
+		{
+			name:         "fixed SystemV zone",
+			input:        "10:16:43 SystemV/CST6",
+			want:         "10:16:43.000000 SystemV/CST6",
+			wantLocation: "SystemV/CST6",
+			wantOffset:   -6 * 60 * 60,
+		},
+	}
+
+	m := NewMap()
+	metadata := NewTypeMetadata(fbproto.SQL_TYPE_TIME_TZ, 0, 0, 0)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			wire, err := m.Encode(metadata, tt.input, nil)
+			if err != nil {
+				t.Fatalf("Encode failed: %v", err)
+			}
+
+			var text string
+			if err := m.Scan(metadata, wire, &text); err != nil {
+				t.Fatalf("Scan string failed: %v", err)
+			}
+			if text != tt.want {
+				t.Fatalf("string = %q, want %q", text, tt.want)
+			}
+
+			var decoded Timetz
+			if err := m.Scan(metadata, wire, &decoded); err != nil {
+				t.Fatalf("Scan Timetz failed: %v", err)
+			}
+			if decoded.Time.Location().String() != tt.wantLocation {
+				t.Fatalf("location = %q, want %q", decoded.Time.Location(), tt.wantLocation)
+			}
+			_, offset := decoded.Time.Zone()
+			if offset != tt.wantOffset {
+				t.Fatalf("offset = %d, want %d", offset, tt.wantOffset)
+			}
+		})
+	}
+}
+
+func TestTimetzRejectsUnsupportedSystemVDSTZones(t *testing.T) {
+	zones := []string{
+		"SystemV/AST4ADT",
+		"SystemV/CST6CDT",
+		"SystemV/EST5EDT",
+		"SystemV/MST7MDT",
+		"SystemV/PST8PDT",
+		"SystemV/YST9YDT",
+	}
+
+	for _, zone := range zones {
+		t.Run(zone, func(t *testing.T) {
+			if _, _, err := parseTimetzZone(zone); err == nil {
+				t.Fatalf("parseTimetzZone(%q) expected error, got nil", zone)
+			}
+		})
+	}
+}
+
 func TestTimetzMarshalJSONRejectsSubMinuteOffset(t *testing.T) {
 	ttz := Timetz{
 		Time:  time.Date(2025, 12, 10, 12, 0, 0, 0, time.FixedZone("+00:00:30", 30)),

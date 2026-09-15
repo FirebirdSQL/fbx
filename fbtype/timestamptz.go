@@ -541,7 +541,7 @@ func formatTimestamptzString(tstz Timestamptz) (string, error) {
 	}
 	s := t.Format(layout)
 	if tzRaw > 2878 {
-		s += "[" + loc.String() + "]"
+		s += "[" + formatTimetzLocationName(tzRaw, loc) + "]"
 	}
 	return s, nil
 }

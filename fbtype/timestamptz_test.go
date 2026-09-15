@@ -1007,6 +1007,61 @@ func TestTimestamptzStringRoundTripPreservesInstant(t *testing.T) {
 	}
 }
 
+func TestTimestamptzLegacyZoneRoundTrip(t *testing.T) {
+	tests := []struct {
+		name         string
+		input        string
+		want         string
+		wantLocation string
+	}{
+		{
+			name:         "ICU alias in winter",
+			input:        "2025-01-15 10:16:43 CST",
+			want:         "2025-01-15T10:16:43.000000-06:00[CST]",
+			wantLocation: "America/Chicago",
+		},
+		{
+			name:         "ICU alias in summer",
+			input:        "2025-07-15 10:16:43 CST",
+			want:         "2025-07-15T10:16:43.000000-05:00[CST]",
+			wantLocation: "America/Chicago",
+		},
+		{
+			name:         "fixed SystemV zone",
+			input:        "2025-07-15 10:16:43 SystemV/CST6",
+			want:         "2025-07-15T10:16:43.000000-06:00[SystemV/CST6]",
+			wantLocation: "SystemV/CST6",
+		},
+	}
+
+	m := NewMap()
+	metadata := NewTypeMetadata(fbproto.SQL_TYPE_TIMESTAMP_TZ, 0, 0, 0)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			wire, err := m.Encode(metadata, tt.input, nil)
+			if err != nil {
+				t.Fatalf("Encode failed: %v", err)
+			}
+
+			var text string
+			if err := m.Scan(metadata, wire, &text); err != nil {
+				t.Fatalf("Scan string failed: %v", err)
+			}
+			if text != tt.want {
+				t.Fatalf("string = %q, want %q", text, tt.want)
+			}
+
+			var decoded Timestamptz
+			if err := m.Scan(metadata, wire, &decoded); err != nil {
+				t.Fatalf("Scan Timestamptz failed: %v", err)
+			}
+			if decoded.Time.Location().String() != tt.wantLocation {
+				t.Fatalf("location = %q, want %q", decoded.Time.Location(), tt.wantLocation)
+			}
+		})
+	}
+}
+
 func TestTimestamptzRejectsInvalidZonedStrings(t *testing.T) {
 	cases := []struct{ text, errorPart string }{
 		{"2025-10-26T02:30:00+03:00[Europe/Berlin]", "offset"},

@@ -85,7 +85,7 @@ func TestTimestamptzDSTTranscode(t *testing.T) {
 		loc, err := time.LoadLocation("Europe/Berlin")
 		require.NoError(t, err)
 		db := stdlib.OpenDB(*conn.Config())
-		defer db.Close()
+		defer func() { require.NoError(t, db.Close()) }()
 		const query = "select cast(? as timestamp with time zone) from rdb$database"
 		for _, tc := range []struct {
 			name, text string

@@ -50,6 +50,25 @@ Timestamp with Time Zone Strings
 String and JSON input also accept RFC3339 and legacy Firebird-style values. Legacy local times must exist and be
 unambiguous; otherwise an explicit offset is required. Fixed offsets omit the bracketed suffix.
 
+Firebird and Red Database use ICU for named time zones. The time zone table bundled with this driver contains 638 names.
+Firebird time zone documentation:
+
+https://www.firebirdsql.org/file/documentation/chunk/en/refdocs/fblangref50/fblangref50-datatypes-datetime.html
+
+Go cannot load some legacy ICU names directly. fbx maps aliases and fixed-offset System V names when Go has equivalent
+rules. The following six System V zones remain unsupported because Go does not provide their ICU-compatible
+daylight-saving transition rules:
+
+    SystemV/AST4ADT
+    SystemV/CST6CDT
+    SystemV/EST5EDT
+    SystemV/MST7MDT
+    SystemV/PST8PDT
+    SystemV/YST9YDT
+
+String input containing one of these names is rejected. A value read from Firebird with one of these zone IDs uses UTC
+as its location.
+
 Null Values
 
 fbtype can map NULLs in two ways. The first is types that can directly represent NULL such as [Int4]. They work in a
