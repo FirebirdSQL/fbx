@@ -30,53 +30,57 @@ func IsSqlSearchPathChanged(sql string) bool {
 	for _, c := range sql {
 		switch c {
 		case ' ', '\t', '\f', '\v', ';':
-			reset_symbol()
 		case '/':
 			if !commentTracker.lineOpend {
-				if !commentTracker.blockStart && !commentTracker.blockEnd {
-					commentTracker.blockStart = true
-				} else if commentTracker.blockEnd {
+				if commentTracker.blockEnd {
 					commentTracker.blockEnd = false
 					commentTracker.blockOpend = false
+				} else if !commentTracker.blockOpend {
+					commentTracker.blockStart = true
 				}
 			}
+			continue
 		case '*':
 			if !commentTracker.lineOpend {
-				if !commentTracker.blockEnd && !commentTracker.blockStart {
+				if !commentTracker.blockEnd && commentTracker.blockOpend {
 					commentTracker.blockEnd = true
+					continue
 				} else if commentTracker.blockStart {
 					commentTracker.blockStart = false
 					commentTracker.blockOpend = true
-					reset_symbol()
 				}
 			}
 		case '"':
 			if !commentTracker.lineOpend && !commentTracker.blockOpend {
 				isDoubleOpend = !isDoubleOpend
 			}
+			continue
 		case '\'':
 			if !commentTracker.lineOpend && !commentTracker.blockOpend {
 				isSingleOpend = !isSingleOpend
 			}
+			continue
 		case '-':
-			if !commentTracker.blockOpend {
+			if !commentTracker.lineOpend && !commentTracker.blockOpend {
 				if !commentTracker.lineStart {
 					commentTracker.lineStart = true
+
+					continue
 				} else {
 					commentTracker.lineStart = false
 					commentTracker.lineOpend = true
-					reset_symbol()
 				}
 			}
 		case '\n', '\r':
-			reset_symbol()
 			commentTracker.lineOpend = false
 		default:
 			if !isSingleOpend && !isDoubleOpend && !commentTracker.blockOpend && !commentTracker.lineOpend {
 				currentSymbol.WriteRune(c)
 			}
 			commentTracker.blockEnd = false
+			continue
 		}
+		reset_symbol()
 		if len(symbols) == 1 && symbols[0] != "set" && symbols[0] != "alter" {
 			break
 		}
