@@ -1054,11 +1054,13 @@ optionLoop:
 		}
 
 		if IsSqlSearchPathChanged(st.Description.SQL) {
-			err := fmt.Errorf(`"%s" not supported by Query method`, sql)
+			err = st.Deallocate(ctx)
+			if err == nil {
+				err = fmt.Errorf(`"%s" not supported by Query method`, sql)
+			}
 			if c.queryTracer != nil {
 				c.queryTracer.TraceQueryEnd(ctx, c, TraceQueryEndData{Err: err})
 			}
-			st.Deallocate(ctx)
 			return &baseRows{err: err, closed: true}, err
 		}
 
