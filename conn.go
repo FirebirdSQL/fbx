@@ -800,7 +800,7 @@ func (c *Conn) execPrepared(ctx context.Context, tx *dbTx, st *fbconn.Statement,
 	} else {
 		result = st.Exec(ctx, c.eqb.ParamValues).Read()
 	}
-	if result.Err == nil && IsCacheCleaningNeeded(st.Description.SQL) {
+	if result.Err == nil && IsSqlSearchPathChanged(st.Description.SQL) {
 		err = c.DeallocateAll(ctx)
 		if err != nil {
 			return result.QueryStatus, err
@@ -1027,7 +1027,7 @@ optionLoop:
 		rows.sql = st.Description.SQL
 		rows.boundStatement = st
 
-		if IsCacheCleaningNeeded(st.Description.SQL) {
+		if IsSqlSearchPathChanged(st.Description.SQL) {
 			err := fmt.Errorf(`"%s" not supported by Query method`, sql)
 			if c.queryTracer != nil {
 				c.queryTracer.TraceQueryEnd(ctx, c, TraceQueryEndData{Err: err})
@@ -1053,7 +1053,7 @@ optionLoop:
 			return rows, err
 		}
 
-		if IsCacheCleaningNeeded(st.Description.SQL) {
+		if IsSqlSearchPathChanged(st.Description.SQL) {
 			err := fmt.Errorf(`"%s" not supported by Query method`, sql)
 			if c.queryTracer != nil {
 				c.queryTracer.TraceQueryEnd(ctx, c, TraceQueryEndData{Err: err})
@@ -1148,100 +1148,4 @@ func (c *Conn) Commit(ctx context.Context) error {
 // Rollback rollbacks internal transaction
 func (c *Conn) Rollback(ctx context.Context) error {
 	return c.fbConn.Rollback(ctx)
-}
-
-func IsCacheCleaningNeeded(sql string) bool {
-	currentSymbol := strings.Builder{}
-	currentSymbol.Grow(60)
-
-	symbols := make([]string, 0, 3)
-	commentTracker := struct {
-		blockStart bool
-		blockEnd   bool
-		blockOpend bool
-		lineStart  bool
-		lineOpend  bool
-	}{}
-	isSingleOpend := false
-	isDoubleOpend := false
-
-	reset_symbol := func() {
-		commentTracker.blockStart = false
-		commentTracker.blockEnd = false
-		isSingleOpend = false
-		isDoubleOpend = false
-		if currentSymbol.Len() > 0 {
-			symbols = append(symbols, strings.ToLower(currentSymbol.String()))
-		}
-		currentSymbol.Reset()
-	}
-	for _, c := range sql {
-		switch c {
-		case ' ', '\t', '\f', '\v', ';':
-			reset_symbol()
-		case '/':
-			if !commentTracker.lineOpend {
-				if !commentTracker.blockStart && !commentTracker.blockEnd {
-					commentTracker.blockStart = true
-				} else if commentTracker.blockEnd {
-					commentTracker.blockEnd = false
-					commentTracker.blockOpend = false
-				}
-			}
-		case '*':
-			if !commentTracker.lineOpend {
-				if !commentTracker.blockEnd && !commentTracker.blockStart {
-					commentTracker.blockEnd = true
-				} else if commentTracker.blockStart {
-					commentTracker.blockStart = false
-					commentTracker.blockOpend = true
-					reset_symbol()
-				}
-			}
-		case '"':
-			if !commentTracker.lineOpend && !commentTracker.blockOpend {
-				isDoubleOpend = !isDoubleOpend
-			}
-		case '\'':
-			if !commentTracker.lineOpend && !commentTracker.blockOpend {
-				isSingleOpend = !isSingleOpend
-			}
-		case '-':
-			if !commentTracker.blockOpend {
-				if !commentTracker.lineStart {
-					commentTracker.lineStart = true
-				} else {
-					commentTracker.lineStart = false
-					commentTracker.lineOpend = true
-					reset_symbol()
-				}
-			}
-		case '\n', '\r':
-			reset_symbol()
-			commentTracker.lineOpend = false
-		default:
-			if !isSingleOpend && !isDoubleOpend && !commentTracker.blockOpend && !commentTracker.lineOpend {
-				currentSymbol.WriteRune(c)
-			}
-			commentTracker.blockEnd = false
-		}
-		if len(symbols) == 1 && symbols[0] != "set" && symbols[0] != "alter" {
-			break
-		}
-		if len(symbols) == 3 {
-			break
-		}
-
-	}
-	if currentSymbol.Len() > 0 {
-		symbols = append(symbols, strings.ToLower(currentSymbol.String()))
-	}
-
-	if len(symbols) >= 3 && (symbols[0] == "set" && symbols[1] == "search_path" && symbols[2] == "to" ||
-		symbols[0] == "alter" && symbols[1] == "session" && symbols[2] == "reset") {
-		return true
-	}
-
-	return false
-
 }
