@@ -70,7 +70,7 @@ func (tstz Timestamptz) Value() (driver.Value, error) {
 	return tstz.Time, nil
 }
 
-// MarshalJSON encodes tstz as a JSON Firebird TIMESTAMP WITH TIME ZONE string or null.
+// MarshalJSON encodes tstz as a JSON timestamp with its UTC offset and optional zone name, or null.
 func (tstz Timestamptz) MarshalJSON() ([]byte, error) {
 	if !tstz.Valid {
 		return []byte("null"), nil
@@ -84,7 +84,7 @@ func (tstz Timestamptz) MarshalJSON() ([]byte, error) {
 	return json.Marshal(s)
 }
 
-// UnmarshalJSON decodes a JSON timestamp-with-time-zone string or null into tstz.
+// UnmarshalJSON decodes a supported timestamp-with-time-zone string or null into tstz.
 func (tstz *Timestamptz) UnmarshalJSON(b []byte) error {
 	var s *string
 	err := json.Unmarshal(b, &s)
@@ -358,13 +358,18 @@ func decodeTimestamptzBinary(src []byte) (Timestamptz, error) {
 }
 
 func parseTimestamptzString(s string) (Timestamptz, error) {
-	t, err := time.Parse(time.RFC3339Nano, s)
-	if err == nil {
-		return timestamptzFromTime(t)
+	s = strings.TrimSpace(s)
+	if strings.ContainsAny(s, "[]") {
+		return parseTimestamptzNamedZone(s)
 	}
 
-	t, err = time.Parse(time.RFC3339, s)
+	t, err := parseTimestamptzOffset(s)
 	if err == nil {
+		if !strings.HasSuffix(s, "Z") {
+			// Keep numeric offsets independent of time.Local, including +00:00.
+			_, offset := t.Zone()
+			t = t.In(time.FixedZone(formatTimetzOffsetName(offset/60), offset))
+		}
 		return timestamptzFromTime(t)
 	}
 
@@ -388,8 +393,101 @@ func parseTimestamptzString(s string) (Timestamptz, error) {
 		return Timestamptz{}, fmt.Errorf("cannot parse %q as TIMESTAMPTZ: %w", s, err)
 	}
 
-	t = timeFromMicroseconds(usec, date, loc)
+	wall := timeFromMicroseconds(usec, date, time.UTC)
+	t, err = resolveTimestamptzLocalTime(wall, loc)
+	if err != nil {
+		return Timestamptz{}, err
+	}
 	return Timestamptz{Time: t, tzRaw: tzRaw, Valid: true}, nil
+}
+
+// parseTimestamptzOffset parses an ISO timestamp with an explicit offset.
+func parseTimestamptzOffset(s string) (time.Time, error) {
+	zoneStart := strings.LastIndexAny(s, "Z+-")
+	clockStart := strings.IndexByte(s, 'T')
+	if clockStart < 0 || zoneStart <= clockStart {
+		return time.Time{}, fmt.Errorf("TIMESTAMPTZ requires an ISO timestamp with a UTC offset: %q", s)
+	}
+	zone := s[zoneStart:]
+	if zone != "Z" {
+		if (len(zone) != 6 && len(zone) != 9) || zone[3] != ':' ||
+			zone[1:3] > "23" || zone[4:6] > "59" ||
+			(len(zone) == 9 && (zone[6] != ':' || zone[7:9] > "59")) {
+			return time.Time{}, fmt.Errorf("invalid TIMESTAMPTZ UTC offset: %q", zone)
+		}
+	}
+	var err error
+	for _, layout := range [...]string{
+		time.RFC3339Nano,
+		"2006-01-02T15:04Z07:00",
+		"2006-01-02T15:04:05Z07:00:00",
+		"2006-01-02T15:04Z07:00:00",
+	} {
+		var t time.Time
+		t, err = time.ParseInLocation(layout, s, time.UTC)
+		if err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("invalid TIMESTAMPTZ with UTC offset %q: %w", s, err)
+}
+
+func parseTimestamptzNamedZone(s string) (Timestamptz, error) {
+	timestamp, suffix, ok := strings.Cut(s, "[")
+	if !ok || !strings.HasSuffix(suffix, "]") || len(suffix) < 2 ||
+		strings.ContainsAny(timestamp, "]") || strings.ContainsAny(suffix[:len(suffix)-1], "[]") {
+		return Timestamptz{}, fmt.Errorf("invalid TIMESTAMPTZ zone suffix: %q", s)
+	}
+	zoneName := suffix[:len(suffix)-1]
+	t, err := parseTimestamptzOffset(timestamp)
+	if err != nil {
+		return Timestamptz{}, err
+	}
+	loc, tzRaw, err := parseTimetzZone(zoneName)
+	if err != nil {
+		return Timestamptz{}, fmt.Errorf("cannot parse %q as TIMESTAMPTZ: %w", s, err)
+	}
+	localized := t.In(loc)
+	_, offset := t.Zone()
+	_, zoneOffset := localized.Zone()
+	if !strings.HasSuffix(timestamp, "Z") && offset != zoneOffset {
+		return Timestamptz{}, fmt.Errorf("TIMESTAMPTZ UTC offset does not match time zone %q: %q", zoneName, s)
+	}
+	return Timestamptz{Time: localized, tzRaw: tzRaw, Valid: true}, nil
+}
+
+// resolveTimestamptzLocalTime resolves legacy local fields and rejects gaps and overlaps.
+func resolveTimestamptzLocalTime(wall time.Time, loc *time.Location) (time.Time, error) {
+	const offsetWindow = 24 * time.Hour
+	limit := wall.Add(offsetWindow)
+	var result time.Time
+	found := false
+	for cursor := wall.Add(-offsetWindow); !cursor.After(limit); {
+		local := cursor.In(loc)
+		_, offset := local.Zone()
+		candidate := wall.Add(-time.Duration(offset) * time.Second).In(loc)
+		_, candidateOffset := candidate.Zone()
+		if candidateOffset == offset {
+			if found && !candidate.Equal(result) {
+				return time.Time{}, fmt.Errorf("ambiguous TIMESTAMPTZ local time %s in %s; specify a UTC offset",
+					wall.Format("2006-01-02 15:04:05.999999"), loc)
+			}
+			result, found = candidate, true
+		}
+		_, end := local.ZoneBounds()
+		if end.IsZero() || end.After(limit) {
+			break
+		}
+		if !end.After(cursor) {
+			end = time.Date(cursor.UTC().Year()+1, time.January, 1, 0, 0, 0, 0, time.UTC)
+		}
+		cursor = end
+	}
+	if !found {
+		return time.Time{}, fmt.Errorf("nonexistent TIMESTAMPTZ local time %s in %s",
+			wall.Format("2006-01-02 15:04:05.999999"), loc)
+	}
+	return result, nil
 }
 
 func splitTimestamptzString(s string) (datePart string, timePart string, zonePart string, err error) {
@@ -437,16 +535,15 @@ func formatTimestamptzString(tstz Timestamptz) (string, error) {
 
 	loc := fbproto.ResolveLocationByTzRaw(tzRaw)
 	t := tstz.Time.In(loc)
-	return fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d.%06d %s",
-		t.Year(),
-		t.Month(),
-		t.Day(),
-		t.Hour(),
-		t.Minute(),
-		t.Second(),
-		t.Nanosecond()/1000,
-		loc.String(),
-	), nil
+	layout := "2006-01-02T15:04:05.000000-07:00"
+	if _, offset := t.Zone(); offset%60 != 0 {
+		layout += ":00"
+	}
+	s := t.Format(layout)
+	if tzRaw > 2878 {
+		s += "[" + loc.String() + "]"
+	}
+	return s, nil
 }
 
 func tzRawFromTime(t time.Time) (uint16, error) {

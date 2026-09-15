@@ -40,6 +40,16 @@ fbtype maps between all common base types directly between Go and Firebird. In p
 
     []byte        char/varchar character set octets
 
+Timestamp with Time Zone Strings
+
+[Timestamptz] JSON and native string scans include the UTC offset and an optional bracketed zone name:
+
+    2025-10-26T02:30:00.000000+02:00[Europe/Berlin]
+    2025-10-26T02:30:00.000000+01:00[Europe/Berlin]
+
+String and JSON input also accept RFC3339 and legacy Firebird-style values. Legacy local times must exist and be
+unambiguous; otherwise an explicit offset is required. Fixed offsets omit the bracketed suffix.
+
 Null Values
 
 fbtype can map NULLs in two ways. The first is types that can directly represent NULL such as [Int4]. They work in a

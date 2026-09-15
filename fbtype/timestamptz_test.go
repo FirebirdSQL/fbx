@@ -1,9 +1,11 @@
 package fbtype
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -451,7 +453,7 @@ func TestTimestamptzCodecScansStringPreservesNamedZone(t *testing.T) {
 		t.Fatalf("Scan string failed: %v", err)
 	}
 
-	want := "2025-12-17 10:16:43.123400 Europe/Moscow"
+	want := "2025-12-17T10:16:43.123400+03:00[Europe/Moscow]"
 	if got != want {
 		t.Fatalf("string scan = %q, want %q", got, want)
 	}
@@ -545,7 +547,7 @@ func TestTimestamptzMarshalJSON(t *testing.T) {
 				Time:  time.Date(2012, 1, 2, 3, 4, 5, 6000, locMinus6),
 				Valid: true,
 			},
-			want: `"2012-01-02 03:04:05.000006 -06:00"`,
+			want: `"2012-01-02T03:04:05.000006-06:00"`,
 		},
 		{
 			name: "valid UTC",
@@ -553,7 +555,7 @@ func TestTimestamptzMarshalJSON(t *testing.T) {
 				Time:  time.Date(1970, 1, 1, 0, 0, 0, 0, locUTC),
 				Valid: true,
 			},
-			want: `"1970-01-01 00:00:00.000000 UTC"`,
+			want: `"1970-01-01T00:00:00.000000+00:00[UTC]"`,
 		},
 		{
 			name: "null",
@@ -666,7 +668,7 @@ func TestTimestamptzMarshalJSONPreservesNamedZone(t *testing.T) {
 		t.Fatalf("MarshalJSON failed: %v", err)
 	}
 
-	want := `"2025-12-17 10:16:43.123400 Europe/Moscow"`
+	want := `"2025-12-17T10:16:43.123400+03:00[Europe/Moscow]"`
 	if string(b) != want {
 		t.Fatalf("JSON = %s, want %s", b, want)
 	}
@@ -915,6 +917,180 @@ func TestTzRawRoundTripWithResolve(t *testing.T) {
 				t.Fatalf("%s: offset mismatch after tzRaw roundtrip: orig=%d, resolved=%d",
 					tt.name, offOrig, offResolved)
 			}
+		})
+	}
+}
+
+func TestTimestamptzStringRoundTripPreservesInstant(t *testing.T) {
+	cases := []struct {
+		name, zone, utc, text string
+	}{
+		{"Berlin first", "Europe/Berlin", "2025-10-26T00:30:00Z", "2025-10-26T02:30:00.000000+02:00[Europe/Berlin]"},
+		{"Berlin second", "Europe/Berlin", "2025-10-26T01:30:00Z", "2025-10-26T02:30:00.000000+01:00[Europe/Berlin]"},
+		{"New York first", "America/New_York", "2025-11-02T05:30:00Z", "2025-11-02T01:30:00.000000-04:00[America/New_York]"},
+		{"New York second", "America/New_York", "2025-11-02T06:30:00Z", "2025-11-02T01:30:00.000000-05:00[America/New_York]"},
+		{"Lord Howe first", "Australia/Lord_Howe", "2025-04-05T14:45:00Z", "2025-04-06T01:45:00.000000+11:00[Australia/Lord_Howe]"},
+		{"Lord Howe second", "Australia/Lord_Howe", "2025-04-05T15:15:00Z", "2025-04-06T01:45:00.000000+10:30[Australia/Lord_Howe]"},
+		{"historical seconds", "Europe/Berlin", "1890-01-01T00:00:00Z", "1890-01-01T00:53:28.000000+00:53:28[Europe/Berlin]"},
+		{"fraction", "Europe/Moscow", "2025-12-17T07:16:43.123400Z", "2025-12-17T10:16:43.123400+03:00[Europe/Moscow]"},
+		{"named UTC", "UTC", "2025-01-01T00:00:00Z", "2025-01-01T00:00:00.000000+00:00[UTC]"},
+		{"fixed zero", "+00:00", "2025-01-01T00:00:00Z", "2025-01-01T00:00:00.000000+00:00"},
+		{"max positive offset", "+23:59", "2025-01-01T00:00:00Z", "2025-01-01T23:59:00.000000+23:59"},
+		{"max negative offset", "-23:59", "2025-01-01T00:00:00Z", "2024-12-31T00:01:00.000000-23:59"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			instant, err := time.Parse(time.RFC3339Nano, tc.utc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			loc, tzRaw, err := parseTimetzZone(tc.zone)
+			if err != nil {
+				t.Fatal(err)
+			}
+			original := Timestamptz{Time: instant.In(loc), tzRaw: tzRaw, Valid: true}
+			m := NewMap()
+			metadata := NewTypeMetadata(fbproto.SQL_TYPE_TIMESTAMP_TZ, 0, 0, 0)
+			wire, err := m.Encode(metadata, original, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var text string
+			if err := m.Scan(metadata, wire, &text); err != nil {
+				t.Fatal(err)
+			}
+			if text != tc.text {
+				t.Fatalf("string = %q, want %q", text, tc.text)
+			}
+			reencoded, err := m.Encode(metadata, text, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(wire, reencoded) {
+				t.Fatalf("string round-trip changed wire value: %x -> %x", wire, reencoded)
+			}
+			b, err := json.Marshal(original)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantJSON, _ := json.Marshal(tc.text)
+			if !bytes.Equal(b, wantJSON) {
+				t.Fatalf("JSON = %s, want %s", b, wantJSON)
+			}
+			var decoded Timestamptz
+			if err := json.Unmarshal(b, &decoded); err != nil {
+				t.Fatal(err)
+			}
+			if !decoded.Valid || decoded.tzRaw != tzRaw || decoded.Time.Location().String() != tc.zone {
+				t.Fatalf("JSON changed validity or zone: %#v", decoded)
+			}
+			assertSameInstant(t, decoded.Time, original.Time)
+			assertSameOffset(t, decoded.Time, original.Time)
+		})
+	}
+}
+
+func TestTimestamptzRejectsInvalidZonedStrings(t *testing.T) {
+	cases := []struct{ text, errorPart string }{
+		{"2025-10-26T02:30:00+03:00[Europe/Berlin]", "offset"},
+		{"2025-03-30T02:30:00+01:00[Europe/Berlin]", "offset"},
+		{"2025-10-26T02:30:00[Europe/Berlin]", "offset"},
+		{"2025-10-26T02:30:00+02:00[America/Not_A_Zone]", "unknown"},
+		{"2025-10-26T02:30:00+02:00[]", "zone suffix"},
+		{"2025-10-26T02:30:00+02:00[Europe/Berlin", "zone suffix"},
+		{"2025-10-26T02:30:00+02:00Europe/Berlin]", "zone suffix"},
+		{"2025-10-26T02:30:00+02:00[[Europe/Berlin]]", "zone suffix"},
+		{"2025-10-26T02:30:00+02:00[Europe/Berlin]extra", "zone suffix"},
+		{"2025-10-26T02:30:00+02:00[Europe/Berlin][UTC]", "zone suffix"},
+		{"2025-10-26T02:30:00+01:60[Europe/Berlin]", "offset"},
+		{"2025-10-26T02:30:00+00:59:60[Europe/Berlin]", "offset"},
+		{"2025-10-26T02:30:00+24:00[Europe/Berlin]", "offset"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.text, func(t *testing.T) {
+			m := NewMap()
+			metadata := NewTypeMetadata(fbproto.SQL_TYPE_TIMESTAMP_TZ, 0, 0, 0)
+			if _, err := m.Encode(metadata, tc.text, nil); err == nil || !strings.Contains(err.Error(), tc.errorPart) {
+				t.Fatalf("Encode error = %v, want %q", err, tc.errorPart)
+			}
+			b, _ := json.Marshal(tc.text)
+			var decoded Timestamptz
+			if err := json.Unmarshal(b, &decoded); err == nil || !strings.Contains(err.Error(), tc.errorPart) {
+				t.Fatalf("Unmarshal error = %v, want %q", err, tc.errorPart)
+			}
+		})
+	}
+}
+
+func TestTimestamptzExplicitOffsetFormats(t *testing.T) {
+	cases := []struct{ text, utc, zone string }{
+		{"2025-10-26T02:30+02:00[Europe/Berlin]", "2025-10-26T00:30:00Z", "Europe/Berlin"},
+		{"2025-10-26T02:30+01:00[Europe/Berlin]", "2025-10-26T01:30:00Z", "Europe/Berlin"},
+		{"2025-10-26T00:30:00Z[Europe/Berlin]", "2025-10-26T00:30:00Z", "Europe/Berlin"},
+		{"2025-10-26T01:30:00Z[Europe/Berlin]", "2025-10-26T01:30:00Z", "Europe/Berlin"},
+		{"1890-01-01T00:53+00:53:28[Europe/Berlin]", "1889-12-31T23:59:32Z", "Europe/Berlin"},
+		{"2025-10-26T02:30+02:00", "2025-10-26T00:30:00Z", "+02:00"},
+		{"2025-10-26T00:30:00+00:00", "2025-10-26T00:30:00Z", "+00:00"},
+		{"2025-10-26T00:30:00Z", "2025-10-26T00:30:00Z", "UTC"},
+		{"2025-10-26T02:30:00.123456+02:00[Europe/Berlin]", "2025-10-26T00:30:00.123456Z", "Europe/Berlin"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.text, func(t *testing.T) {
+			b, _ := json.Marshal(tc.text)
+			var decoded Timestamptz
+			if err := json.Unmarshal(b, &decoded); err != nil {
+				t.Fatal(err)
+			}
+			want, err := time.Parse(time.RFC3339Nano, tc.utc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertSameInstant(t, decoded.Time, want)
+			if decoded.Time.Location().String() != tc.zone {
+				t.Fatalf("zone = %s, want %s", decoded.Time.Location(), tc.zone)
+			}
+		})
+	}
+}
+
+func TestTimestamptzLegacyLocalTimeResolution(t *testing.T) {
+	cases := []struct{ text, utc, errorPart string }{
+		{"2025-10-26 02:30 Europe/Berlin", "", "ambiguous"},
+		{"2025-11-02 01:30 America/New_York", "", "ambiguous"},
+		{"2025-04-06 01:45 Australia/Lord_Howe", "", "ambiguous"},
+		{"2025-03-30 02:30 Europe/Berlin", "", "nonexistent"},
+		{"2025-10-05 02:15 Australia/Lord_Howe", "", "nonexistent"},
+		{"2011-12-30 12:00 Pacific/Apia", "", "nonexistent"},
+		{"2025-10-26 01:59:59 Europe/Berlin", "2025-10-25T23:59:59Z", ""},
+		{"2025-10-26 03:00 Europe/Berlin", "2025-10-26T02:00:00Z", ""},
+		{"2025-03-30 03:00 Europe/Berlin", "2025-03-30T01:00:00Z", ""},
+		{"2025-12-17 10:16:43.123456 Europe/Moscow", "2025-12-17T07:16:43.123456Z", ""},
+		{"1890-01-01 00:53:28 Europe/Berlin", "1890-01-01T00:00:00Z", ""},
+		{"2040-12-31 12:00 Europe/Berlin", "2040-12-31T11:00:00Z", ""},
+		{"0001-01-01 00:00 UTC", "0001-01-01T00:00:00Z", ""},
+		{"9999-12-31 12:00 Europe/Berlin", "9999-12-31T11:00:00Z", ""},
+		{"2025-10-26 02:30 +02:00", "2025-10-26T00:30:00Z", ""},
+		{"2025-10-26 02:30 +01:00", "2025-10-26T01:30:00Z", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.text, func(t *testing.T) {
+			b, _ := json.Marshal(tc.text)
+			var decoded Timestamptz
+			err := json.Unmarshal(b, &decoded)
+			if tc.errorPart != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.errorPart) {
+					t.Fatalf("error = %v, want %q", err, tc.errorPart)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, err := time.Parse(time.RFC3339Nano, tc.utc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertSameInstant(t, decoded.Time, want)
 		})
 	}
 }
