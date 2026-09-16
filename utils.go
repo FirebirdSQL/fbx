@@ -42,7 +42,7 @@ func containsSearchPathChangingInSql(sql string) bool {
 			continue
 		case '*':
 			if !commentTracker.lineOpend {
-				if !commentTracker.blockEnd && commentTracker.blockOpend {
+				if commentTracker.blockOpend {
 					commentTracker.blockEnd = true
 					continue
 				} else if commentTracker.blockStart {
@@ -53,13 +53,13 @@ func containsSearchPathChangingInSql(sql string) bool {
 		case '"':
 			if !commentTracker.lineOpend && !commentTracker.blockOpend {
 				isDoubleOpend = !isDoubleOpend
+				continue
 			}
-			continue
 		case '\'':
 			if !commentTracker.lineOpend && !commentTracker.blockOpend {
 				isSingleOpend = !isSingleOpend
+				continue
 			}
-			continue
 		case '-':
 			if !commentTracker.lineOpend && !commentTracker.blockOpend {
 				if !commentTracker.lineStart {
