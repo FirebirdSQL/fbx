@@ -2,7 +2,7 @@ package fbx
 
 import "strings"
 
-func IsSqlSearchPathChanged(sql string) bool {
+func containsSearchPathChangingInSql(sql string) bool {
 	currentSymbol := strings.Builder{}
 	currentSymbol.Grow(15)
 

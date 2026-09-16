@@ -794,16 +794,35 @@ func (c *Conn) execPrepared(ctx context.Context, tx *dbTx, st *fbconn.Statement,
 
 	defer c.eqb.reset() // Allow c.eqb internal memory to be GC'ed as soon as possible.
 
+	var containsSearchPathInSql bool
+	var sp1, sp2 string
+
+	if st.Description.StatementInfo.StatementType == fbconn.StatementDDL {
+		containsSearchPathInSql = containsSearchPathChangingInSql(st.Description.SQL)
+		if containsSearchPathInSql {
+			err = c.QueryRow(ctx, "select rdb$get_context('SYSTEM', 'SEARCH_PATH') from rdb$database", QueryExecModeExec).Scan(&sp1)
+			if err != nil {
+				return fbconn.QueryStatus{}, err
+			}
+		}
+	}
+
 	var result *fbconn.Result
 	if tx != nil {
 		result = st.ExecTx(ctx, tx.tx, c.eqb.ParamValues).Read()
 	} else {
 		result = st.Exec(ctx, c.eqb.ParamValues).Read()
 	}
-	if result.Err == nil && IsSqlSearchPathChanged(st.Description.SQL) {
-		err = c.DeallocateAll(ctx)
+	if result.Err == nil && containsSearchPathInSql {
+		err = c.QueryRow(ctx, "select rdb$get_context('SYSTEM', 'SEARCH_PATH') from rdb$database", QueryExecModeExec).Scan(&sp2)
 		if err != nil {
 			return result.QueryStatus, err
+		}
+		if sp1 != sp2 {
+			err = c.DeallocateAll(ctx)
+			if err != nil {
+				return result.QueryStatus, err
+			}
 		}
 	}
 	return result.QueryStatus, result.Err
@@ -1027,7 +1046,8 @@ optionLoop:
 		rows.sql = st.Description.SQL
 		rows.boundStatement = st
 
-		if IsSqlSearchPathChanged(st.Description.SQL) {
+		if st.Description.StatementInfo.StatementType == fbconn.StatementDDL &&
+			containsSearchPathChangingInSql(st.Description.SQL) {
 			err := fmt.Errorf(`"%s" not supported by Query method`, sql)
 			if c.queryTracer != nil {
 				c.queryTracer.TraceQueryEnd(ctx, c, TraceQueryEndData{Err: err})
@@ -1053,7 +1073,8 @@ optionLoop:
 			return rows, err
 		}
 
-		if IsSqlSearchPathChanged(st.Description.SQL) {
+		if st.Description.StatementInfo.StatementType == fbconn.StatementDDL &&
+			containsSearchPathChangingInSql(st.Description.SQL) {
 			err = st.Deallocate(ctx)
 			if err == nil {
 				err = fmt.Errorf(`"%s" not supported by Query method`, sql)
