@@ -306,6 +306,13 @@ func TestConnectWithSearchPathDPBVariants(t *testing.T) {
 	}
 }
 
+func namedPreparedValue(ctx context.Context, t testing.TB, conn *fbx.Conn, name string) (int, error) {
+	t.Helper()
+	var val int
+	err := conn.QueryRow(ctx, name).Scan(&val)
+	return val, err
+}
+
 func TestSetSearchPathDeallocatesNamedPreparedStatement(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
@@ -340,6 +347,124 @@ func TestSetSearchPathDeallocatesNamedPreparedStatement(t *testing.T) {
 		require.NoError(t, conn.QueryRow(ctx, name).Scan(&val))
 		assert.Equal(t, 2, val)
 	})
+}
+
+func TestExecSearchPathDeallocateAllOnlyWhenPathChanges(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		skipUnlessSchemasSupported(ctx, t, conn)
+
+		const (
+			schema1 = "FBX_SP_EQ1"
+			schema2 = "FBX_SP_EQ2"
+			name    = "prepared_eq"
+			sql     = "select val from test"
+		)
+		setupSearchPathSchemas(ctx, t, conn, schema1, schema2)
+
+		mustExecCtx(ctx, t, conn, "set search_path to "+schema1)
+		_, err := conn.Prepare(ctx, name, sql)
+		require.NoError(t, err)
+		val, err := namedPreparedValue(ctx, t, conn, name)
+		require.NoError(t, err)
+		assert.Equal(t, 1, val)
+
+		pathBefore := currentSearchPath(ctx, t, conn)
+
+		mustExecCtx(ctx, t, conn, "set search_path to "+schema1)
+		assert.Equal(t, pathBefore, currentSearchPath(ctx, t, conn))
+		val, err = namedPreparedValue(ctx, t, conn, name)
+		require.NoError(t, err)
+		assert.Equal(t, 1, val)
+
+		mustExecCtx(ctx, t, conn, "/* keep tenant */ set search_path to "+schema1)
+		mustExecCtx(ctx, t, conn, fmt.Sprintf("set\n\tsearch_path\n\tto\n\t%s", schema1))
+		assert.Equal(t, pathBefore, currentSearchPath(ctx, t, conn))
+		val, err = namedPreparedValue(ctx, t, conn, name)
+		require.NoError(t, err)
+		assert.Equal(t, 1, val)
+
+		mustExecCtx(ctx, t, conn, "set search_path to "+schema2)
+		assert.NotEqual(t, pathBefore, currentSearchPath(ctx, t, conn))
+		_, err = namedPreparedValue(ctx, t, conn, name)
+		require.Error(t, err) // satements deallocated
+
+		_, err = conn.Prepare(ctx, name, sql)
+		require.NoError(t, err)
+		val, err = namedPreparedValue(ctx, t, conn, name)
+		require.NoError(t, err)
+		assert.Equal(t, 2, val)
+
+		ensureConnValid(t, conn)
+	})
+}
+
+func TestAlterSessionResetDeallocateAllOnlyWhenPathChanges(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	setupConn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
+	defer closeConn(t, setupConn)
+	skipUnlessSchemasSupported(ctx, t, setupConn)
+
+	const (
+		schema1 = "FBX_SP_RSTEQ1"
+		schema2 = "FBX_SP_RSTEQ2"
+		name    = "prepared_reset_eq"
+		sql     = "select val from test"
+	)
+	setupSearchPathSchemas(ctx, t, setupConn, schema1, schema2)
+
+	for _, mode := range fbxtest.AllQueryExecModes {
+		t.Run(mode.String(), func(t *testing.T) {
+			config, err := fbx.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
+			require.NoError(t, err)
+			config.RuntimeParams["search_path"] = schema1
+			config.DefaultQueryExecMode = mode
+
+			conn, err := fbx.ConnectConfig(ctx, config)
+			require.NoError(t, err)
+			defer closeConn(t, conn)
+
+			_, err = conn.Prepare(ctx, name, sql)
+			require.NoError(t, err)
+			val, err := namedPreparedValue(ctx, t, conn, name)
+			require.NoError(t, err)
+			assert.Equal(t, 1, val)
+
+			defaultPath := currentSearchPath(ctx, t, conn)
+
+			mustExecCtx(ctx, t, conn, "alter session reset")
+			assert.Equal(t, defaultPath, currentSearchPath(ctx, t, conn))
+			val, err = namedPreparedValue(ctx, t, conn, name)
+			require.NoError(t, err)
+			assert.Equal(t, 1, val)
+
+			mustExecCtx(ctx, t, conn, "set search_path to "+schema2)
+			assert.NotEqual(t, defaultPath, currentSearchPath(ctx, t, conn))
+			_, err = namedPreparedValue(ctx, t, conn, name)
+			require.Error(t, err)
+
+			_, err = conn.Prepare(ctx, name, sql)
+			require.NoError(t, err)
+			val, err = namedPreparedValue(ctx, t, conn, name)
+			require.NoError(t, err)
+			assert.Equal(t, 2, val)
+
+			mustExecCtx(ctx, t, conn, "alter session reset")
+			assert.Equal(t, defaultPath, currentSearchPath(ctx, t, conn))
+			_, err = namedPreparedValue(ctx, t, conn, name)
+			require.Error(t, err)
+
+			_, err = conn.Prepare(ctx, name, sql)
+			require.NoError(t, err)
+			val, err = namedPreparedValue(ctx, t, conn, name)
+			require.NoError(t, err)
+			assert.Equal(t, 1, val)
+		})
+	}
 }
 
 func TestSetSearchPathStatementSyntaxVariants(t *testing.T) {
