@@ -77,8 +77,5 @@ func main() {
 
 See documentation and more usage examples at https://pkg.go.dev/rdb.red-soft.ru/fbx
 
-See [the statement lifecycle model](docs/statements.md) for preparation scope,
-execution modes, cache ownership, and cleanup.
-
 Wire compression is disabled by default. Enable it with `wire_compression=true` in the connection string
 (`wire_compress` and `wireCompression` are accepted aliases) or with `FBWIRECOMPRESSION=true`.
