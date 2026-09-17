@@ -3,6 +3,7 @@ package fbx_test
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -26,7 +27,7 @@ func TestServiceStatisticsIntegration(t *testing.T) {
 	defer cancel()
 	database, version := newStatisticsIntegrationDatabase(ctx, t, connString)
 	t.Logf("statistics server version: %s", version)
-	manager, err := fbservice.NewStatisticsManager(connString)
+	manager, err := fbservice.NewManager(connString)
 	require.NoError(t, err)
 	run := func(t *testing.T, options fbservice.StatisticsOptions) string {
 		t.Helper()
@@ -48,7 +49,12 @@ func TestServiceStatisticsIntegration(t *testing.T) {
 		require.Contains(t, output, "Page size")
 		require.Contains(t, output, "STATS_ONE_IDX")
 	})
-	t.Run("Output nil", func(t *testing.T) { require.NoError(t, manager.Statistics(ctx, database)) })
+	t.Run("Output nil", func(t *testing.T) {
+		require.ErrorContains(t, manager.Statistics(ctx, database, fbservice.StatisticsOptions{}), "statistics output must not be nil")
+	})
+	t.Run("Output discard", func(t *testing.T) {
+		require.NoError(t, manager.Statistics(ctx, database, fbservice.StatisticsOptions{Output: io.Discard}))
+	})
 	t.Run("DataPages", func(t *testing.T) {
 		output := run(t, fbservice.StatisticsOptions{DataPages: true})
 		require.Contains(t, output, "Data pages:")
@@ -85,7 +91,7 @@ func TestServiceStatisticsIntegration(t *testing.T) {
 		require.NotContains(t, output, "STATS_TWO")
 	})
 	t.Run("Schemas", func(t *testing.T) {
-		option := fbservice.StatisticsOptions{Schemas: []string{"STATS_KEEP_SCHEMA", "Mixed schema"}}
+		option := fbservice.StatisticsOptions{Output: io.Discard, Schemas: []string{"STATS_KEEP_SCHEMA", "Mixed schema"}}
 		if version.Major < 6 {
 			var serverErr *fbconn.FbError
 			require.ErrorAs(t, manager.Statistics(ctx, database, option), &serverErr)
@@ -116,7 +122,7 @@ func TestServiceStatisticsIntegration(t *testing.T) {
 			t.Skip("parallel gstat support requires DB_KIND/DB_VERSION, RDB_VERSION or FB_VERSION")
 		}
 		require.NoError(t, server.setVersion(version))
-		option := fbservice.StatisticsOptions{ParallelWorkers: 1}
+		option := fbservice.StatisticsOptions{Output: io.Discard, ParallelWorkers: 1}
 		if server.kind == "rdb" && server.version.Major >= 5 {
 			output := run(t, option)
 			require.Contains(t, output, "STATS_ONE_IDX")
@@ -135,7 +141,7 @@ func TestServiceStatisticsIntegration(t *testing.T) {
 	})
 	t.Run("missing table returns server error", func(t *testing.T) {
 		var serverErr *fbconn.FbError
-		require.ErrorAs(t, manager.Statistics(ctx, database, fbservice.StatisticsOptions{Tables: []string{"STATS_MISSING"}}), &serverErr)
+		require.ErrorAs(t, manager.Statistics(ctx, database, fbservice.StatisticsOptions{Output: io.Discard, Tables: []string{"STATS_MISSING"}}), &serverErr)
 	})
 }
 

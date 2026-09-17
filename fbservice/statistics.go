@@ -10,52 +10,12 @@ import (
 	"rdb.red-soft.ru/fbx/fbconn"
 )
 
-type statisticsConnection interface {
-	Statistics(context.Context, string, fbconn.StatisticsOptions) error
-	serviceCloser
-}
-
-type connectStatisticsFunc func(context.Context, *fbconn.ServiceConfig) (statisticsConnection, error)
-
-// StatisticsManager collects gstat reports through the Firebird service manager.
-// It is safe for concurrent use: each operation opens and closes its own service
-// connection. Callers are responsible for limiting concurrent operations and
-// for synchronizing writers shared between operations.
-type StatisticsManager struct {
-	config  *Config
-	connect connectStatisticsFunc
-}
-
-// NewStatisticsManager parses connString using [ParseConfig] and returns a
-// statistics manager. It does not connect to the server. The database in
-// connString is ignored; [StatisticsManager.Statistics] receives the target.
-func NewStatisticsManager(connString string) (*StatisticsManager, error) {
-	config, err := ParseConfig(connString)
-	if err != nil {
-		return nil, err
-	}
-	return NewStatisticsManagerConfig(config), nil
-}
-
-// NewStatisticsManagerConfig returns a statistics manager with an independent
-// copy of config, which must come from [ParseConfig]. It does not connect to the
-// server. A nil or unparsed config causes operations on the manager to fail.
-func NewStatisticsManagerConfig(config *Config) *StatisticsManager {
-	return &StatisticsManager{
-		config:  config.Copy(),
-		connect: connectStatistics,
-	}
-}
-
-func connectStatistics(ctx context.Context, config *fbconn.ServiceConfig) (statisticsConnection, error) {
-	return fbconn.ConnectServiceConfig(ctx, config)
-}
-
-// StatisticsOptions controls the gstat report. The zero value analyzes data and
-// index pages using server defaults and discards output.
+// StatisticsOptions controls the gstat report. Output is required. Leaving all
+// other fields at their zero values selects the server's default data and index analysis.
 type StatisticsOptions struct {
-	// Output receives the textual report. Nil discards it. Writes are synchronous
-	// and must not block indefinitely. Shared writers must be concurrency safe.
+	// Output receives the textual report and must not be nil. Use io.Discard to
+	// explicitly discard the report. Writes are synchronous and must not block
+	// indefinitely. Shared writers must be concurrency safe.
 	// Statistics does not close the writer. On error, it may contain a partial report.
 	Output io.Writer
 	// DataPages analyzes data pages (-data).
@@ -89,14 +49,15 @@ type StatisticsOptions struct {
 
 // Statistics writes a gstat report for database, a server-side path or alias.
 // It validates the request before connecting and closes its service connection
-// before returning. At most one options value is accepted. Unsupported options
+// before returning. Exactly one options value with a non-nil Output is required.
+// Use io.Discard to explicitly discard the report. Unsupported options
 // return a server error and are never silently ignored. Context cancellation
 // cannot interrupt an Output.Write call already in progress. The caller must
 // not modify the options' slices until Statistics returns.
 // For a valid request, an already canceled ctx returns its error without connecting.
 // The database must not start with '-'; use a path such as ./-name.fdb for a
 // relative filename beginning with a hyphen.
-func (m *StatisticsManager) Statistics(ctx context.Context, database string, options ...StatisticsOptions) (err error) {
+func (m *Manager) Statistics(ctx context.Context, database string, options ...StatisticsOptions) (err error) {
 	if len(options) > 1 {
 		return errors.New("statistics accepts at most one StatisticsOptions value")
 	}
@@ -107,17 +68,10 @@ func (m *StatisticsManager) Statistics(ctx context.Context, database string, opt
 	if err := validateStatisticsRequest(database, option); err != nil {
 		return err
 	}
-	if m == nil {
-		return errors.New("statistics manager must not be nil")
-	}
-	config, err := m.config.toServiceConfig(database)
-	if err != nil {
-		return fmt.Errorf("connect to service manager: %w", err)
-	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	conn, err := m.connect(ctx, config)
+	conn, err := m.open(ctx, database)
 	if err != nil {
 		return fmt.Errorf("connect to service manager: %w", err)
 	}
@@ -138,6 +92,9 @@ func (m *StatisticsManager) Statistics(ctx context.Context, database string, opt
 }
 
 func validateStatisticsRequest(database string, options StatisticsOptions) error {
+	if options.Output == nil {
+		return errors.New("statistics output must not be nil; use io.Discard to discard the report")
+	}
 	if database == "" {
 		return errors.New("statistics database must not be empty")
 	}
