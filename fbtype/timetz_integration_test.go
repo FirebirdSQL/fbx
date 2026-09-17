@@ -3,6 +3,7 @@ package fbtype_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -132,6 +133,40 @@ func TestTimestamptzDSTTranscode(t *testing.T) {
 					checkTime(sqlValue.Time)
 				}
 			})
+		}
+	})
+}
+
+func TestUnsupportedSystemVDSTZonesReturnScanError(t *testing.T) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
+		if getServerMajorVersionForConn(ctx, tb, conn) <= 3 {
+			t.Skip("time zone types are not supported by server engine version <= 3")
+		}
+
+		zones := []string{
+			"SystemV/AST4ADT",
+			"SystemV/CST6CDT",
+			"SystemV/EST5EDT",
+			"SystemV/MST7MDT",
+			"SystemV/PST8PDT",
+			"SystemV/YST9YDT",
+		}
+		types := []struct {
+			name, literal, castType string
+		}{
+			{name: "TIMETZ", literal: "12:00:00", castType: "time with time zone"},
+			{name: "TIMESTAMPTZ", literal: "2025-07-15 12:00:00", castType: "timestamp with time zone"},
+		}
+
+		for _, zone := range zones {
+			for _, sqlType := range types {
+				t.Run(zone+"/"+sqlType.name, func(t *testing.T) {
+					query := fmt.Sprintf("select cast('%s %s' as %s) from rdb$database", sqlType.literal, zone, sqlType.castType)
+					var got time.Time
+					err := conn.QueryRow(ctx, query).Scan(&got)
+					require.ErrorContains(t, err, zone)
+				})
+			}
 		}
 	})
 }

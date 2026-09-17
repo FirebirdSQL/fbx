@@ -346,7 +346,10 @@ func decodeTimestamptzBinary(src []byte) (Timestamptz, error) {
 	}
 
 	tzRaw := uint16(tzVal & 0xFFFF)
-	loc := fbproto.ResolveLocationByTzRaw(tzRaw)
+	loc, err := fbproto.ResolveLocationByTzRaw(tzRaw)
+	if err != nil {
+		return Timestamptz{}, fmt.Errorf("cannot decode TIMESTAMPTZ: %w", err)
+	}
 
 	t := timeFromMicroseconds(usec, tDate, time.UTC).In(loc)
 
@@ -519,7 +522,10 @@ func timestamptzFromTime(t time.Time) (Timestamptz, error) {
 		return Timestamptz{}, err
 	}
 
-	loc := fbproto.ResolveLocationByTzRaw(tzRaw)
+	loc, err := fbproto.ResolveLocationByTzRaw(tzRaw)
+	if err != nil {
+		return Timestamptz{}, fmt.Errorf("cannot resolve TIMESTAMPTZ time zone: %w", err)
+	}
 	return Timestamptz{Time: t.In(loc), tzRaw: tzRaw, Valid: true}, nil
 }
 
@@ -533,7 +539,10 @@ func formatTimestamptzString(tstz Timestamptz) (string, error) {
 		}
 	}
 
-	loc := fbproto.ResolveLocationByTzRaw(tzRaw)
+	loc, err := fbproto.ResolveLocationByTzRaw(tzRaw)
+	if err != nil {
+		return "", fmt.Errorf("cannot format TIMESTAMPTZ: %w", err)
+	}
 	t := tstz.Time.In(loc)
 	layout := "2006-01-02T15:04:05.000000-07:00"
 	if _, offset := t.Zone(); offset%60 != 0 {
@@ -572,8 +581,13 @@ func tzRawFromLocation(t time.Time) (uint16, bool) {
 		return 0, false
 	}
 
+	resolvedLoc, err := fbproto.ResolveLocationByTzRaw(tzRaw)
+	if err != nil {
+		return 0, false
+	}
+
 	_, originalOffset := t.Zone()
-	_, resolvedOffset := t.In(fbproto.ResolveLocationByTzRaw(tzRaw)).Zone()
+	_, resolvedOffset := t.In(resolvedLoc).Zone()
 	if originalOffset != resolvedOffset {
 		return 0, false
 	}

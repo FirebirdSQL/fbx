@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -606,8 +607,18 @@ func TestTimetzRejectsUnsupportedSystemVDSTZones(t *testing.T) {
 
 	for _, zone := range zones {
 		t.Run(zone, func(t *testing.T) {
-			if _, _, err := parseTimetzZone(zone); err == nil {
-				t.Fatalf("parseTimetzZone(%q) expected error, got nil", zone)
+			if _, _, err := parseTimetzZone(zone); err == nil || !strings.Contains(err.Error(), zone) {
+				t.Fatalf("parseTimetzZone(%q) error = %v, want error containing zone name", zone, err)
+			}
+
+			tzRaw, ok := fbproto.ResolveTzRawByLocationName(zone)
+			if !ok {
+				t.Fatalf("time zone %q is not registered", zone)
+			}
+			src := make([]byte, 8)
+			binary.BigEndian.PutUint32(src[4:8], uint32(tzRaw))
+			if _, err := decodeTimetzBinary(src); err == nil || !strings.Contains(err.Error(), zone) {
+				t.Fatalf("decodeTimetzBinary(%q) error = %v, want error containing zone name", zone, err)
 			}
 		})
 	}

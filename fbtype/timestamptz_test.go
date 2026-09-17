@@ -925,7 +925,10 @@ func TestTzRawRoundTripWithResolve(t *testing.T) {
 				t.Fatalf("tzRawFromTime failed for %s: %v", tt.name, err)
 			}
 
-			resolvedLoc := fbproto.ResolveLocationByTzRaw(tzRaw)
+			resolvedLoc, err := fbproto.ResolveLocationByTzRaw(tzRaw)
+			if err != nil {
+				t.Fatalf("ResolveLocationByTzRaw failed for %s: %v", tt.name, err)
+			}
 
 			_, offOrig := tm.Zone()
 			_, offResolved := tm.In(resolvedLoc).Zone()
@@ -1057,6 +1060,35 @@ func TestTimestamptzLegacyZoneRoundTrip(t *testing.T) {
 			}
 			if decoded.Time.Location().String() != tt.wantLocation {
 				t.Fatalf("location = %q, want %q", decoded.Time.Location(), tt.wantLocation)
+			}
+		})
+	}
+}
+
+func TestTimestamptzRejectsUnsupportedSystemVDSTZones(t *testing.T) {
+	zones := []string{
+		"SystemV/AST4ADT",
+		"SystemV/CST6CDT",
+		"SystemV/EST5EDT",
+		"SystemV/MST7MDT",
+		"SystemV/PST8PDT",
+		"SystemV/YST9YDT",
+	}
+
+	for _, zone := range zones {
+		t.Run(zone, func(t *testing.T) {
+			if _, err := parseTimestamptzString("2025-07-15 10:16:43 " + zone); err == nil || !strings.Contains(err.Error(), zone) {
+				t.Fatalf("parseTimestamptzString(%q) error = %v, want error containing zone name", zone, err)
+			}
+
+			tzRaw, ok := fbproto.ResolveTzRawByLocationName(zone)
+			if !ok {
+				t.Fatalf("time zone %q is not registered", zone)
+			}
+			src := make([]byte, 12)
+			binary.BigEndian.PutUint32(src[8:12], uint32(tzRaw))
+			if _, err := decodeTimestamptzBinary(src); err == nil || !strings.Contains(err.Error(), zone) {
+				t.Fatalf("decodeTimestamptzBinary(%q) error = %v, want error containing zone name", zone, err)
 			}
 		})
 	}

@@ -66,8 +66,8 @@ daylight-saving transition rules:
     SystemV/PST8PDT
     SystemV/YST9YDT
 
-String input containing one of these names is rejected. A value read from Firebird with one of these zone IDs uses UTC
-as its location.
+String input containing one of these names is rejected. Reading a Firebird value with one of these zone IDs returns an
+error because its local time cannot be represented correctly.
 
 Null Values
 

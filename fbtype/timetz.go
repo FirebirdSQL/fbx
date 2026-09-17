@@ -331,7 +331,10 @@ func encodeTimetzBinary(buf []byte, ttz Timetz) ([]byte, error) {
 		return nil, nil
 	}
 
-	loc := fbproto.ResolveLocationByTzRaw(ttz.tzRaw)
+	loc, err := fbproto.ResolveLocationByTzRaw(ttz.tzRaw)
+	if err != nil {
+		return nil, fmt.Errorf("cannot encode TIMETZ: %w", err)
+	}
 	local := timeWithDate(ttz.Time.In(loc), timetzBaseDate)
 	utc := local.In(time.UTC)
 	usec := timeOfDayMicroseconds(utc)
@@ -364,7 +367,10 @@ func decodeTimetzBinary(src []byte) (Timetz, error) {
 	}
 
 	tzRaw := uint16(tzVal & 0xFFFF)
-	loc := fbproto.ResolveLocationByTzRaw(tzRaw)
+	loc, err := fbproto.ResolveLocationByTzRaw(tzRaw)
+	if err != nil {
+		return Timetz{}, fmt.Errorf("cannot decode TIMETZ: %w", err)
+	}
 
 	utcTime := timeFromMicroseconds(usec, timetzBaseDate, time.UTC)
 	local := timeWithDate(utcTime.In(loc), timetzBaseDate)
@@ -460,10 +466,9 @@ func parseTimetzZone(s string) (*time.Location, uint16, error) {
 		return nil, 0, fmt.Errorf("timetz: unknown Firebird time zone %q", s)
 	}
 
-	loc := fbproto.ResolveLocationByTzRaw(tzRaw)
-	if loc == time.UTC && s != "UTC" {
-		_, err := time.LoadLocation(s)
-		return nil, 0, fmt.Errorf("timetz: cannot load time zone %q: %w", s, err)
+	loc, err := fbproto.ResolveLocationByTzRaw(tzRaw)
+	if err != nil {
+		return nil, 0, fmt.Errorf("timetz: cannot use time zone %q: %w", s, err)
 	}
 
 	return loc, tzRaw, nil
@@ -525,7 +530,10 @@ func formatTimetzString(ttz Timetz) (string, error) {
 		}
 	}
 
-	loc := fbproto.ResolveLocationByTzRaw(tzRaw)
+	loc, err := fbproto.ResolveLocationByTzRaw(tzRaw)
+	if err != nil {
+		return "", fmt.Errorf("cannot format TIMETZ: %w", err)
+	}
 	t := ttz.Time.In(loc)
 	return fmt.Sprintf("%02d:%02d:%02d.%06d %s",
 		t.Hour(),

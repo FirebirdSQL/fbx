@@ -2,6 +2,7 @@ package fbproto
 
 import (
 	"sort"
+	"strings"
 	"testing"
 	"time"
 )
@@ -35,16 +36,22 @@ func TestResolveLocationByTzRawResolvesAllRegisteredZones(t *testing.T) {
 			continue
 		}
 
-		loc := ResolveLocationByTzRaw(uint16(id))
+		loc, err := ResolveLocationByTzRaw(uint16(id))
 		if unsupported[name] {
-			if loc != time.UTC {
-				t.Errorf("unsupported time zone %d %q resolved as %q, want UTC fallback", id, name, loc)
+			if err == nil {
+				t.Errorf("unsupported time zone %d %q resolved as %q, want error", id, name, loc)
+			} else if !strings.Contains(err.Error(), name) || !strings.Contains(err.Error(), "not supported by fbx") {
+				t.Errorf("unsupported time zone %d %q error = %q, want zone name and fbx attribution", id, name, err)
 			}
 			delete(unsupported, name)
 			continue
 		}
+		if err != nil {
+			t.Errorf("time zone %d %q returned error: %v", id, name, err)
+			continue
+		}
 		if loc == time.UTC && name != "UTC" {
-			t.Errorf("time zone %d %q resolved to the UTC fallback", id, name)
+			t.Errorf("time zone %d %q resolved to UTC", id, name)
 		}
 	}
 
@@ -91,7 +98,10 @@ func TestResolveLocationByTzRawAliases(t *testing.T) {
 				t.Fatalf("time zone %q is not registered", name)
 			}
 
-			loc := ResolveLocationByTzRaw(tzRaw)
+			loc, err := ResolveLocationByTzRaw(tzRaw)
+			if err != nil {
+				t.Fatalf("resolve location: %v", err)
+			}
 			if loc.String() != wantLocation {
 				t.Fatalf("location = %q, want %q", loc, wantLocation)
 			}
@@ -117,7 +127,10 @@ func TestResolveLocationByTzRawFixedSystemVZones(t *testing.T) {
 				t.Fatalf("time zone %q is not registered", name)
 			}
 
-			loc := ResolveLocationByTzRaw(tzRaw)
+			loc, err := ResolveLocationByTzRaw(tzRaw)
+			if err != nil {
+				t.Fatalf("resolve location: %v", err)
+			}
 			if loc.String() != name {
 				t.Fatalf("location = %q, want %q", loc, name)
 			}
@@ -164,7 +177,10 @@ func TestResolveLocationByTzRawOffsetUsesCanonicalName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loc := ResolveLocationByTzRaw(tt.tzRaw)
+			loc, err := ResolveLocationByTzRaw(tt.tzRaw)
+			if err != nil {
+				t.Fatalf("resolve location: %v", err)
+			}
 			if loc.String() != tt.wantName {
 				t.Fatalf("location name = %q, want %q", loc.String(), tt.wantName)
 			}
@@ -180,8 +196,14 @@ func TestResolveLocationByTzRawOffsetUsesCanonicalName(t *testing.T) {
 func TestResolveLocationByTzRawCachesLocations(t *testing.T) {
 	tzRaw := uint16(1439 + 3*60)
 
-	first := ResolveLocationByTzRaw(tzRaw)
-	second := ResolveLocationByTzRaw(tzRaw)
+	first, err := ResolveLocationByTzRaw(tzRaw)
+	if err != nil {
+		t.Fatalf("first resolve: %v", err)
+	}
+	second, err := ResolveLocationByTzRaw(tzRaw)
+	if err != nil {
+		t.Fatalf("second resolve: %v", err)
+	}
 
 	if first != second {
 		t.Fatalf("ResolveLocationByTzRaw returned different location pointers for the same tzRaw")
