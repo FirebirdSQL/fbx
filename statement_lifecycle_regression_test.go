@@ -138,6 +138,59 @@ func TestTxPreparedNameSurvivesPreparingTransaction(t *testing.T) {
 	}
 }
 
+func TestStatementCursorClosesAfterOtherTransactionEnds(t *testing.T) {
+	for _, finish := range []string{"commit", "rollback"} {
+		for _, source := range []string{"cached", "conn_prepared", "tx_prepared"} {
+			t.Run(finish+"/"+source, func(t *testing.T) {
+				ctx := context.Background()
+				config := mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE"))
+				config.DefaultQueryExecMode = QueryExecModeCacheStatement
+				config.StatementCacheCapacity = 1
+				conn := mustConnect(t, config)
+				t.Cleanup(func() { require.NoError(t, conn.Close(context.Background())) })
+				t.Logf("server: %s", conn.ServerVersion())
+
+				txA, err := conn.Begin(ctx)
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = txA.Rollback(context.Background()) })
+				// txB becomes the connection's current internal transaction,
+				// but all executions below use txA.
+				txB, err := conn.Begin(ctx)
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = txB.Rollback(context.Background()) })
+
+				const sql = "select 41 from rdb$database"
+				query := sql
+				if source != "cached" {
+					query = "cursor_transaction_regression"
+					if source == "conn_prepared" {
+						_, err = conn.Prepare(ctx, query, sql)
+					} else {
+						_, err = txA.Prepare(ctx, query, sql)
+					}
+					require.NoError(t, err)
+				}
+
+				checkQuery := func(step string) {
+					t.Helper()
+					var value int
+					// Scan closes Rows, including the cursor owned by txA.
+					require.NoError(t, txA.QueryRow(ctx, query).Scan(&value), step)
+					require.Equal(t, 41, value, step)
+				}
+				checkQuery("before ending txB")
+				if finish == "commit" {
+					require.NoError(t, txB.Commit(ctx))
+				} else {
+					require.NoError(t, txB.Rollback(ctx))
+				}
+				checkQuery("first execution after ending txB")
+				checkQuery("second execution after ending txB")
+			})
+		}
+	}
+}
+
 func TestDeallocateAllFailurePreservesStatementCache(t *testing.T) {
 	for _, invalidated := range []bool{false, true} {
 		t.Run(fmt.Sprintf("invalidated_%t", invalidated), func(t *testing.T) {

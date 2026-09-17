@@ -85,6 +85,12 @@ deallocates the temporary statement. Closing rows for a retained statement only
 closes its cursor. Exhausting rows, QueryRow.Scan, and fatal row errors also
 close rows. Callers that stop reading early must call Rows.Close.
 
+The cursor belongs to the transaction used for its last successful execution.
+Statement tracks that transaction separately from its default execution scope.
+CloseCursor skips the server close only if there is no cursor or that cursor's
+transaction has ended. Ending another transaction, including the connection's
+current internal transaction, does not close this cursor.
+
 Cache invalidation and deallocation
 
 An LRU eviction or execution error invalidates an automatic cache entry. It moves

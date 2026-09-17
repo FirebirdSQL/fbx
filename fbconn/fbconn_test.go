@@ -733,10 +733,15 @@ func TestPreparedStatementRejectsClosedTransactionAfterReplacement(t *testing.T)
 
 			// Explicitly selecting a live transaction still overrides the
 			// statement's default binding and proves the connection is usable.
-			result = st.ExecTx(ctx, currentTx, nil).Read()
-			require.NoError(t, result.Err)
-			require.Len(t, result.Rows, 1)
-			require.Equal(t, "current", string(result.Rows[0][0]))
+			// Its cursor must also be closed in that live transaction, even
+			// though the statement's default transaction has already ended.
+			for range 3 {
+				result = st.ExecTx(ctx, currentTx, nil).Read()
+				require.NoError(t, result.Err)
+				require.Len(t, result.Rows, 1)
+				require.Equal(t, "current", string(result.Rows[0][0]))
+				require.NoError(t, st.CloseCursor(ctx))
+			}
 			require.NoError(t, st.Deallocate(ctx))
 			require.NoError(t, currentTx.Rollback(ctx))
 			ensureConnValid(t, fbConn)
