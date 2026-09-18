@@ -21,7 +21,7 @@ To customize settings, parse the configuration before creating the manager:
 		return err
 	}
 
-Operations without special settings can omit their options:
+Backup and Restore without special settings can omit their options:
 
 	err = manager.Backup(ctx, database, backupFile)
 
@@ -61,7 +61,22 @@ Set AccessMode to override the access mode recorded in the backup:
 		AccessMode: fbservice.RestoreAccessModeReadOnly,
 	})
 
-Manager does not write to standard output unless an operation explicitly
+Collect a gstat report with the same Manager:
+
+	err = manager.Statistics(ctx, database, fbservice.StatisticsOptions{
+		Output:         os.Stdout,
+		DataPages:      true,
+		RecordVersions: true,
+		Tables:         []string{"EMPLOYEE"},
+	})
+
+Statistics supports Output, DataPages, HeaderPages, IndexPages,
+SystemRelations, RecordVersions, Tables, Schemas, NoCreation, Encryption and
+ParallelWorkers. Unsupported server options return errors. Output is required;
+use io.Discard to explicitly discard the report. Leaving all other options at
+their zero values selects the server's default data and index analysis.
+
+Managers do not write to standard output unless an operation explicitly
 receives os.Stdout as its output.
 */
 package fbservice

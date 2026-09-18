@@ -711,7 +711,7 @@ func TestServiceConnRestoreCanBeCanceledWhileWaitingForOutput(t *testing.T) {
 	serverDone := make(chan error, 1)
 	go func() {
 		defer func() { _ = serverConn.Close() }()
-		serverDone <- runCanceledRestoreProbeServer(serverConn, queryStarted)
+		serverDone <- runCanceledServiceActionProbeServer(serverConn, queryStarted, fbproto.Isc_action_svc_restore)
 	}()
 
 	config, err := ParseConfig("firebird://sysdba:masterkey@mock/employee")
@@ -765,7 +765,7 @@ func TestServiceConnRestoreCanBeCanceledWhileWaitingForOutput(t *testing.T) {
 	require.NoError(t, conn.Close(context.Background()))
 }
 
-func runCanceledRestoreProbeServer(conn net.Conn, queryStarted chan<- struct{}) error {
+func runCanceledServiceActionProbeServer(conn net.Conn, queryStarted chan<- struct{}, action byte) error {
 	encoding, err := fbproto.NewEncoding("UTF8")
 	if err != nil {
 		return err
@@ -788,8 +788,8 @@ func runCanceledRestoreProbeServer(conn net.Conn, queryStarted chan<- struct{}) 
 	if err != nil {
 		return err
 	}
-	if len(actionSPB) == 0 || actionSPB[0] != fbproto.Isc_action_svc_restore {
-		return errors.New("expected restore service action")
+	if len(actionSPB) == 0 || actionSPB[0] != action {
+		return errors.New("unexpected service action")
 	}
 	if err := writeProbeResponse(w, 0); err != nil {
 		return err

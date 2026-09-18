@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -16,12 +14,6 @@ import (
 	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbservice"
 )
-
-type restoreIntegrationServer struct {
-	profile string
-	kind    string
-	version fbx.ServerVersion
-}
 
 type restoreIntegrationCapabilities struct {
 	ignoreBLRErrors bool
@@ -33,8 +25,6 @@ type restoreIntegrationCapabilities struct {
 	schemaFilters   bool
 	tablespaces     bool
 }
-
-var restoreIntegrationVersionRegexp = regexp.MustCompile(`^(\d+)\.(\d+)`)
 
 func TestServiceRestoreIntegration(t *testing.T) {
 	if testing.Short() {
@@ -50,7 +40,7 @@ func TestServiceRestoreIntegration(t *testing.T) {
 	defer cancel()
 
 	server := restoreIntegrationServerFromEnvironment(ctx, t, connString)
-	capabilities := server.capabilities()
+	capabilities := server.restoreCapabilities()
 	t.Logf(
 		"restore integration profile: name=%s kind=%s version=%s capabilities=%+v",
 		server.profile,
@@ -223,7 +213,7 @@ func TestServiceRestoreIntegration(t *testing.T) {
 	})
 }
 
-func (server restoreIntegrationServer) capabilities() restoreIntegrationCapabilities {
+func (server serviceIntegrationServer) restoreCapabilities() restoreIntegrationCapabilities {
 	var capabilities restoreIntegrationCapabilities
 
 	switch server.kind {
@@ -253,81 +243,21 @@ func restoreIntegrationServerFromEnvironment(
 	ctx context.Context,
 	t *testing.T,
 	connString string,
-) restoreIntegrationServer {
+) serviceIntegrationServer {
 	t.Helper()
 
-	profile := strings.TrimSpace(os.Getenv("TARGET"))
-	kind := strings.ToLower(strings.TrimSpace(os.Getenv("DB_KIND")))
-	declaredVersion := strings.TrimSpace(os.Getenv("DB_VERSION"))
-	if kind == "" && declaredVersion == "" {
-		rdbVersion := strings.TrimSpace(os.Getenv("RDB_VERSION"))
-		firebirdVersion := strings.TrimSpace(os.Getenv("FB_VERSION"))
-		switch {
-		case rdbVersion != "" && firebirdVersion != "":
-			t.Fatal("both RDB_VERSION and FB_VERSION are set")
-		case rdbVersion != "":
-			kind = "rdb"
-			declaredVersion = rdbVersion
-		case firebirdVersion != "":
-			kind = "firebird"
-			declaredVersion = firebirdVersion
-		default:
-			t.Skip("service restore integration test requires DB_KIND/DB_VERSION, RDB_VERSION, or FB_VERSION")
-		}
+	server, err := serviceIntegrationServerFromEnvironment()
+	require.NoError(t, err)
+	if server.kind == "" {
+		t.Skip("service restore integration test requires DB_KIND/DB_VERSION, RDB_VERSION, or FB_VERSION")
 	}
-	if kind == "" || declaredVersion == "" {
-		t.Fatal("database kind and version must be provided together")
-	}
-	if kind != "firebird" && kind != "rdb" {
-		t.Fatalf("unsupported DB_KIND %q", kind)
-	}
-
-	declaredMajor, declaredMinor := parseRestoreIntegrationVersion(t, declaredVersion)
 
 	conn, err := fbx.Connect(ctx, connString)
 	require.NoError(t, err)
 	defer closeConn(t, conn)
 
-	serverVersion := conn.ServerVersion()
-	require.Equalf(
-		t,
-		declaredMajor,
-		serverVersion.Major,
-		"declared database version %q does not match server version %q",
-		declaredVersion,
-		serverVersion,
-	)
-	require.Equalf(
-		t,
-		declaredMinor,
-		serverVersion.Minor,
-		"declared database version %q does not match server version %q",
-		declaredVersion,
-		serverVersion,
-	)
-	server := restoreIntegrationServer{
-		profile: profile,
-		kind:    kind,
-		version: serverVersion,
-	}
-	if server.profile == "" {
-		server.profile = fmt.Sprintf("%s-%s", server.kind, server.version)
-	}
-
+	require.NoError(t, server.setVersion(conn.ServerVersion()))
 	return server
-}
-
-func parseRestoreIntegrationVersion(t *testing.T, version string) (int, int) {
-	t.Helper()
-	matches := restoreIntegrationVersionRegexp.FindStringSubmatch(version)
-	if len(matches) != 3 {
-		t.Fatalf("failed to parse database version %q", version)
-	}
-	major, err := strconv.Atoi(matches[1])
-	require.NoError(t, err)
-	minor, err := strconv.Atoi(matches[2])
-	require.NoError(t, err)
-	return major, minor
 }
 
 type restoreIntegrationBackup struct {

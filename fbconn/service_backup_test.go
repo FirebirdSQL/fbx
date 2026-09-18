@@ -225,6 +225,10 @@ type serviceActionProbeResult struct {
 }
 
 func runServiceActionProbeServer(conn net.Conn) serviceActionProbeResult {
+	return runServiceActionProbeServerWithOutput(conn, "gbak: writing data\n")
+}
+
+func runServiceActionProbeServerWithOutput(conn net.Conn, output string) serviceActionProbeResult {
 	encoding, err := fbproto.NewEncoding("UTF8")
 	if err != nil {
 		return serviceActionProbeResult{err: err}
@@ -255,7 +259,7 @@ func runServiceActionProbeServer(conn net.Conn) serviceActionProbeResult {
 	responses := [][]byte{
 		{fbproto.Isc_info_truncated},
 		{fbproto.Isc_info_svc_to_eof, 0, 0, fbproto.Isc_info_svc_timeout},
-		serviceOutputResponse([]byte("gbak: writing data\n")),
+		serviceOutputResponse([]byte(output)),
 		{fbproto.Isc_info_svc_to_eof, 0, 0, fbproto.Isc_info_end},
 	}
 	result := serviceActionProbeResult{actionSPB: actionSPB}

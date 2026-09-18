@@ -126,6 +126,17 @@ func (c *Config) toConnectionConfig() (*fbconn.Config, error) {
 	return connectionConfig, nil
 }
 
+func (c *Config) toServiceConfig(expectedDatabase string) (*fbconn.ServiceConfig, error) {
+	connectionConfig, err := c.toConnectionConfig()
+	if err != nil {
+		return nil, err
+	}
+	return &fbconn.ServiceConfig{
+		ConnectionConfig: connectionConfig,
+		ExpectedDatabase: expectedDatabase,
+	}, nil
+}
+
 func scrubDatabaseConnectionSettings(config *fbconn.Config) {
 	config.Database = ""
 	config.CreateDatabase = false

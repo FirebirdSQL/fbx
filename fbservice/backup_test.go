@@ -314,6 +314,8 @@ type fakeServiceConnection struct {
 	restoreBackupFile string
 	restoreDatabase   string
 	restoreOptions    fbconn.RestoreOptions
+	statisticsOptions fbconn.StatisticsOptions
+	statisticsErr     error
 	connectionConfig  *fbconn.Config
 	backupErr         error
 	restoreErr        error
@@ -347,6 +349,12 @@ func (c *fakeServiceConnection) Restore(
 func (c *fakeServiceConnection) Close(context.Context) error {
 	c.closed = true
 	return c.closeErr
+}
+
+func (c *fakeServiceConnection) Statistics(_ context.Context, database string, options fbconn.StatisticsOptions) error {
+	c.database = database
+	c.statisticsOptions = options
+	return c.statisticsErr
 }
 
 func requireDatabaseConnectionSettingsCleared(t *testing.T, config *fbconn.Config) {

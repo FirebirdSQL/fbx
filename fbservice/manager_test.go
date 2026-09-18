@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -92,11 +93,14 @@ func TestManagerSupportsConcurrentOperations(t *testing.T) {
 
 			database := fmt.Sprintf("/data/employee-%d.fdb", i)
 			backupFile := fmt.Sprintf("/backup/employee-%d.fbk", i)
-			if i%2 == 0 {
+			switch i % 3 {
+			case 0:
 				errs <- manager.Backup(context.Background(), database, backupFile)
-				return
+			case 1:
+				errs <- manager.Restore(context.Background(), backupFile, database)
+			case 2:
+				errs <- manager.Statistics(context.Background(), database, fbservice.StatisticsOptions{Output: io.Discard})
 			}
-			errs <- manager.Restore(context.Background(), backupFile, database)
 		}()
 	}
 	wg.Wait()
@@ -139,6 +143,10 @@ func (c *concurrentServiceConnection) Close(context.Context) error {
 	}
 	c.closed.Add(1)
 	return nil
+}
+
+func (c *concurrentServiceConnection) Statistics(_ context.Context, database string, _ fbconn.StatisticsOptions) error {
+	return c.recordOperation(database)
 }
 
 func (c *concurrentServiceConnection) recordOperation(database string) error {
