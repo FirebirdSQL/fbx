@@ -99,14 +99,17 @@ func (sd *StatementDescription) EncodeBatchRow(values [][]byte) ([]byte, error) 
 }
 
 type Statement struct {
-	conn         *FbConn
-	Description  *StatementDescription
-	transaction  *FBTransaction
-	cursorOpened bool
-	closed       bool
-	timeout      int
-	cursorFlags  int
-	activeBatch  *Batch
+	conn        *FbConn
+	Description *StatementDescription
+	transaction *FBTransaction
+	closed      bool
+
+	// The cursor belongs to the transaction used for execution, which can
+	// differ from transaction or conn.internalTransaction. Nil means no cursor.
+	cursorTransaction *FBTransaction
+	timeout           int
+	cursorFlags       int
+	activeBatch       *Batch
 }
 
 // SetTimeout sets statement timeout (milliseconds).
@@ -192,6 +195,14 @@ func (st *Statement) ExecTx(ctx context.Context, tx *FBTransaction, paramValues 
 		fbConn:           st.conn,
 		ctx:              ctx,
 		boundTransaction: tx,
+	}
+
+	// A closed transaction's wire handle may already belong to another
+	// transaction. Reject it before touching the cursor or sending a request.
+	if tx.Closed {
+		rr.concludeCommand(QueryStatus{}, ErrTransactionClosed)
+		rr.closed = true
+		return rr
 	}
 
 	if err := st.validateParameterCount(paramValues); err != nil {
@@ -378,7 +389,10 @@ func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *
 	}
 
 	st.closed = false
-	st.cursorOpened = st.Description.HaveCursorResult()
+	st.cursorTransaction = nil
+	if st.Description.HaveCursorResult() {
+		st.cursorTransaction = tx
+	}
 	rr.cursorOpened = st.Description.HaveCursorResult()
 	rr.singletonResult = st.Description.HaveSingletonResult()
 	rr.queryStatus = st.conn.makeQueryStatus(st.Description.GetQueryType())
@@ -393,15 +407,8 @@ func (st *Statement) internalClose(ctx context.Context, closeOption int) error {
 		return fmt.Errorf("statement has active batch")
 	}
 
-	var tx *FBTransaction
-	if st.transaction == nil && st.conn.internalTransaction != nil {
-		tx = st.conn.internalTransaction
-	} else {
-		tx = st.transaction
-	}
-
-	if closeOption == fbproto.DSQL_close && (!st.cursorOpened || (tx != nil && tx.Closed)) {
-		st.cursorOpened = false
+	if closeOption == fbproto.DSQL_close && (st.cursorTransaction == nil || st.cursorTransaction.Closed) {
+		st.cursorTransaction = nil
 		return nil
 	}
 
@@ -433,13 +440,13 @@ func (st *Statement) internalClose(ctx context.Context, closeOption int) error {
 	if closeOption == fbproto.DSQL_drop {
 		if err = st.conn.flushWithPotentialWriteReadDeadlock(); err != nil {
 			st.conn.asyncClose()
-			st.cursorOpened = false
+			st.cursorTransaction = nil
 			st.closed = true
 			return err
 		}
 	}
 
-	st.cursorOpened = false
+	st.cursorTransaction = nil
 	st.closed = closeOption == fbproto.DSQL_drop
 	if st.closed {
 		delete(st.conn.activeStatements, st)
@@ -467,11 +474,11 @@ func (st *Statement) deallocateLocked(ctx context.Context) error {
 	}
 	if err := st.conn.flushWithPotentialWriteReadDeadlock(); err != nil {
 		st.conn.asyncClose()
-		st.cursorOpened = false
+		st.cursorTransaction = nil
 		st.closed = true
 		return err
 	}
-	st.cursorOpened = false
+	st.cursorTransaction = nil
 	st.closed = true
 	delete(st.conn.activeStatements, st)
 	return nil

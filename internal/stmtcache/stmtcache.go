@@ -1,4 +1,4 @@
-// Package stmtcache is a cache for statement descriptions.
+// Package stmtcache provides a cache for prepared statements.
 package stmtcache
 
 import (
@@ -15,31 +15,40 @@ func StatementName(sql string) string {
 	return "stmtcache_" + hex.EncodeToString(digest[0:24])
 }
 
-// Cache caches statement descriptions.
+// Cache stores prepared statements by SQL text.
 type Cache interface {
-	// Get returns the statement description for sql. Returns nil if not found.
+	// Get returns the statement for sql. It returns nil if the statement is not found.
 	Get(sql string) *fbconn.Statement
 
-	// Put stores sd in the cache. Put panics if sd.SQL is "". Put does nothing if sd.SQL already exists in the cache.
-	Put(sd *fbconn.Statement)
+	// Put stores st in the cache. Put panics if st.Description.SQL is empty.
+	// Put does nothing if st.Description.SQL already exists in the cache.
+	Put(st *fbconn.Statement)
 
-	// Invalidate invalidates statement description identified by sql. Does nothing if not found.
+	// Remove removes st from the active cache or the invalidation queue.
+	// It does nothing if a different statement with the same SQL is stored.
+	Remove(st *fbconn.Statement)
+
+	// Invalidate invalidates the statement identified by sql. It does nothing if the statement is not found.
 	Invalidate(sql string)
 
-	// InvalidateAll invalidates all statement descriptions.
+	// InvalidateAll invalidates all statements.
 	InvalidateAll()
 
-	// GetInvalidated returns a slice of all statement descriptions invalidated since the last call to RemoveInvalidated.
+	// GetInvalidated returns all statements invalidated since the last call to RemoveInvalidated.
 	GetInvalidated() []*fbconn.Statement
 
-	// RemoveInvalidated removes all invalidated statement descriptions. No other calls to Cache must be made between a
-	// call to GetInvalidated and RemoveInvalidated or RemoveInvalidated may remove statement descriptions that were
+	// GetInvalidatedBySQL returns the invalidated statement for sql.
+	// It returns nil if the statement is not found.
+	GetInvalidatedBySQL(sql string) *fbconn.Statement
+
+	// RemoveInvalidated removes all invalidated statements. No other calls to Cache must be made between a
+	// call to GetInvalidated and RemoveInvalidated or RemoveInvalidated may remove statements that were
 	// never seen by the call to GetInvalidated.
 	RemoveInvalidated()
 
-	// Len returns the number of cached prepared statement descriptions.
+	// Len returns the number of cached prepared statements.
 	Len() int
 
-	// Cap returns the maximum number of cached prepared statement descriptions.
+	// Cap returns the maximum number of cached prepared statements.
 	Cap() int
 }

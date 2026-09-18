@@ -1510,13 +1510,15 @@ func (fbConn *FbConn) convertRowDescription(src []fbproto.FieldDescriptor) []Fie
 	return res
 }
 
-// Prepare creates a prepared statement inside current internal transaction
+// Prepare creates a connection-scoped prepared statement using the current
+// internal transaction to resolve its metadata. Statement.Exec uses the
+// connection's current internal transaction on each execution.
 func (fbConn *FbConn) Prepare(ctx context.Context, sql string) (*Statement, error) {
 	tx, err := fbConn.ensureInternalTransaction(ctx, nil, false)
 	if err != nil {
 		return nil, err
 	}
-	st, err := fbConn.PrepareTx(ctx, tx, sql)
+	st, err := fbConn.prepareTx(ctx, tx, sql, statementScopeConnection)
 	if err != nil {
 		if rbErr := fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx, err); rbErr != nil {
 			err = errors.Join(err, fmt.Errorf("rollback internal tx: %w", rbErr))
@@ -1526,8 +1528,28 @@ func (fbConn *FbConn) Prepare(ctx context.Context, sql string) (*Statement, erro
 	return st, nil
 }
 
-// PrepareTx creates a prepared statement
+type statementScope uint8
+
+const (
+	statementScopeTransaction statementScope = iota
+	statementScopeConnection
+)
+
+// PrepareTx creates a prepared statement bound to tx.
 func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql string) (*Statement, error) {
+	return fbConn.prepareTx(ctx, tx, sql, statementScopeTransaction)
+}
+
+// PrepareTxForConnection creates a connection-scoped prepared statement using
+// tx to resolve its metadata. [Statement.Exec] uses the connection's current
+// internal transaction, while [Statement.ExecTx] uses its explicit transaction.
+// Callers must only retain the statement while its metadata remains valid
+// outside tx.
+func (fbConn *FbConn) PrepareTxForConnection(ctx context.Context, tx *FBTransaction, sql string) (*Statement, error) {
+	return fbConn.prepareTx(ctx, tx, sql, statementScopeConnection)
+}
+
+func (fbConn *FbConn) prepareTx(ctx context.Context, tx *FBTransaction, sql string, scope statementScope) (*Statement, error) {
 	if err := fbConn.lock(); err != nil {
 		return nil, err
 	}
@@ -1547,10 +1569,15 @@ func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 		defer fbConn.contextWatcher.Unwatch()
 	}
 
-	return fbConn.internalPrepareTx(ctx, tx, sql)
+	return fbConn.internalPrepareTx(ctx, tx, sql, scope)
 }
 
-func (fbConn *FbConn) internalPrepareTx(ctx context.Context, tx *FBTransaction, sql string) (*Statement, error) {
+func (fbConn *FbConn) internalPrepareTx(
+	ctx context.Context,
+	tx *FBTransaction,
+	sql string,
+	scope statementScope,
+) (*Statement, error) {
 	var err error
 
 	if err = fbConn.withWriteLockAndFlush(func() error {
@@ -1669,7 +1696,7 @@ func (fbConn *FbConn) internalPrepareTx(ctx context.Context, tx *FBTransaction, 
 		conn:        fbConn,
 		Description: desc,
 	}
-	if tx != fbConn.internalTransaction {
+	if scope == statementScopeTransaction {
 		st.transaction = tx
 	}
 	fbConn.activeStatements[st] = struct{}{}
@@ -1978,7 +2005,7 @@ func (fbConn *FbConn) getArrayMetadata(ctx context.Context, tx *FBTransaction, s
 		)
 	}
 
-	st, err := fbConn.internalPrepareTx(ctx, tx, queryString)
+	st, err := fbConn.internalPrepareTx(ctx, tx, queryString, statementScopeTransaction)
 
 	if err != nil {
 		return nil, nil, err
@@ -2071,7 +2098,7 @@ func (fbConn *FbConn) getArrayDimensions(ctx context.Context, tx *FBTransaction,
 		)
 	}
 
-	st, err := fbConn.internalPrepareTx(ctx, tx, queryString)
+	st, err := fbConn.internalPrepareTx(ctx, tx, queryString, statementScopeTransaction)
 
 	if err != nil {
 		return nil, err

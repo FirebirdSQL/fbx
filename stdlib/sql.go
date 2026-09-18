@@ -699,7 +699,7 @@ func (s *Stmt) Close() error {
 		return nil
 	}
 
-	err := s.conn.conn.Deallocate(ctx, s.sd.SQL)
+	err := s.conn.conn.DeallocateStatement(ctx, s.sd)
 	delete(s.conn.psRefCounts, s.sd)
 	s.closed = true
 	return err

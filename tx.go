@@ -184,6 +184,9 @@ type Tx interface {
 	// being closed.
 	Rollback(ctx context.Context) error
 
+	// Prepare resolves SQL in this transaction and registers the statement on
+	// the connection. The statement remains usable after Commit or Rollback.
+	// Named batches (SQL prefixed with "batch ") belong to this transaction.
 	Prepare(ctx context.Context, name, sql string) (*fbconn.StatementDescription, error)
 	// PrepareBatch creates a batch object inside the transaction.
 	//
