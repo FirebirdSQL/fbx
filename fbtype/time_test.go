@@ -118,6 +118,10 @@ func TestTimeScanStringSupportedFirebirdFormats(t *testing.T) {
 		{input: "14:30:45", want: timeUsec(14, 30, 45, 0)},
 		{input: "14:30:45.1", want: timeUsec(14, 30, 45, 100000)},
 		{input: "14:30:45.123456", want: timeUsec(14, 30, 45, 123456)},
+		{input: "1:2", want: timeUsec(1, 2, 0, 0)},
+		{input: "1:02:03", want: timeUsec(1, 2, 3, 0)},
+		{input: "01:2:3", want: timeUsec(1, 2, 3, 0)},
+		{input: "1:2:3.4", want: timeUsec(1, 2, 3, 400000)},
 		{input: " 04:05:06.789123 ", want: timeUsec(4, 5, 6, 789123)},
 	}
 
@@ -143,9 +147,9 @@ func TestTimeScanStringRejectsInvalidFields(t *testing.T) {
 		"04:05:06.1234567",
 		"04:05:06.x",
 		"04:05.1",
-		"1:02:03",
-		"12:3:04",
-		"12:03:4",
+		"123:02:03",
+		"12:345:04",
+		"12:03:456",
 		"12:03:04+03:00",
 	}
 
@@ -230,6 +234,11 @@ func TestTimeUnmarshalJSON(t *testing.T) {
 			want: fbtype.Time{Microseconds: timeUsec(14, 30, 0, 0), Valid: true},
 		},
 		{
+			name: "single digit fields",
+			src:  `"1:2:3"`,
+			want: fbtype.Time{Microseconds: timeUsec(1, 2, 3, 0), Valid: true},
+		},
+		{
 			name: "null",
 			src:  "null",
 			want: fbtype.Time{},
@@ -279,6 +288,8 @@ func TestTimeCodecEncodeStringSupportsFirebirdFormats(t *testing.T) {
 	}{
 		{input: "14:30", want: timeUsec(14, 30, 0, 0)},
 		{input: "14:30:45.123456", want: timeUsec(14, 30, 45, 123400)},
+		{input: "1:2", want: timeUsec(1, 2, 0, 0)},
+		{input: "1:02:03", want: timeUsec(1, 2, 3, 0)},
 	}
 
 	for _, tt := range tests {

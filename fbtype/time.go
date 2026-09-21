@@ -503,7 +503,7 @@ func parseTimeString(s string) (usec int64, err error) {
 }
 
 func parseTimeNumber(s string, field string, input string) (int64, error) {
-	if len(s) != 2 {
+	if len(s) < 1 || len(s) > 2 {
 		return 0, fmt.Errorf("invalid TIME %s in %q", field, input)
 	}
 
