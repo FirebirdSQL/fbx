@@ -52,19 +52,27 @@ func TestDecimalFormatConstants(t *testing.T) {
 		exponentBits      int
 		exponentLimit     int
 		exponentBias      int
+		minExponent       int
+		maxExponent       int
 	}{
 		{
 			name: "decimal64", format: Decimal64, byteLength: 8,
 			coefficientDigits: 16, exponentBits: 8, exponentLimit: 767, exponentBias: 398,
+			minExponent: -398, maxExponent: 369,
 		},
 		{
 			name: "decimal128", format: Decimal128, byteLength: 16,
 			coefficientDigits: 34, exponentBits: 12, exponentLimit: 12287, exponentBias: 6176,
+			minExponent: -6176, maxExponent: 6111,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			minExponent, maxExponent := tt.format.ExponentRange()
+			if minExponent != tt.minExponent || maxExponent != tt.maxExponent {
+				t.Fatalf("ExponentRange() = [%d..%d], want [%d..%d]", minExponent, maxExponent, tt.minExponent, tt.maxExponent)
+			}
 			if tt.format.formatByteLength != tt.byteLength ||
 				tt.format.coefficientDigits != tt.coefficientDigits ||
 				tt.format.exponentContinuationBits != tt.exponentBits ||

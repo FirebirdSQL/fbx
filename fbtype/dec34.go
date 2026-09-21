@@ -61,7 +61,8 @@ func (d DecFloat34) Dec34Value() (DecFloat34, error) {
 	return cloneDecFloat34(d), nil
 }
 
-// Scan implements the [database/sql.Scanner] interface.
+// Scan implements the [database/sql.Scanner] interface. Text values are rescaled
+// without rounding when needed to fit DECFLOAT(34). Errors reset d to SQL NULL.
 func (d *DecFloat34) Scan(src any) error {
 	*d = DecFloat34{}
 
@@ -114,7 +115,8 @@ func (d DecFloat34) MarshalJSON() ([]byte, error) {
 	return json.Marshal(d.String())
 }
 
-// UnmarshalJSON decodes a JSON string or null into d.
+// UnmarshalJSON decodes a JSON string or null into d using the same exact
+// conversion as [DecFloat34.Scan]. Errors reset d to SQL NULL.
 func (d *DecFloat34) UnmarshalJSON(b []byte) error {
 	*d = DecFloat34{}
 

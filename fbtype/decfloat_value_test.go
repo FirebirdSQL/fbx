@@ -1,12 +1,17 @@
 package fbtype
 
 import (
+	"bytes"
+	"database/sql/driver"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"math"
 	"math/big"
 	"strings"
 	"testing"
+
+	"rdb.red-soft.ru/fbx/fbproto"
 )
 
 func TestDecFloatValueCopiesCoefficient(t *testing.T) {
@@ -107,7 +112,7 @@ func TestDecFloatScanAndJSONClearDestinationOnError(t *testing.T) {
 	})
 }
 
-func TestDecFloatParsingRejectsCombinedExponentOverflow(t *testing.T) {
+func TestDecFloatParsingRejectsUnrepresentableLargeExponents(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
@@ -119,11 +124,6 @@ func TestDecFloatParsingRejectsCombinedExponentOverflow(t *testing.T) {
 			scan:  func(s string) error { var d DecFloat16; return d.Scan(s) },
 		},
 		{
-			name:  "DecFloat16 negative zero overflow",
-			input: "-0.0E-2147483648",
-			scan:  func(s string) error { var d DecFloat16; return d.Scan(s) },
-		},
-		{
 			name:  "DecFloat16 positive overflow",
 			input: "1E+2147483648",
 			scan:  func(s string) error { var d DecFloat16; return d.Scan(s) },
@@ -131,11 +131,6 @@ func TestDecFloatParsingRejectsCombinedExponentOverflow(t *testing.T) {
 		{
 			name:  "DecFloat34 negative overflow",
 			input: "1.0E-2147483648",
-			scan:  func(s string) error { var d DecFloat34; return d.Scan(s) },
-		},
-		{
-			name:  "DecFloat34 negative zero overflow",
-			input: "-0.0E-2147483648",
 			scan:  func(s string) error { var d DecFloat34; return d.Scan(s) },
 		},
 		{
@@ -151,8 +146,162 @@ func TestDecFloatParsingRejectsCombinedExponentOverflow(t *testing.T) {
 			if err == nil {
 				t.Fatalf("Scan(%q) succeeded", tt.input)
 			}
-			if !strings.Contains(err.Error(), "exponent") || !strings.Contains(err.Error(), "int32") {
+			if !strings.Contains(err.Error(), "exponent out of range") {
 				t.Fatalf("Scan(%q) error = %v", tt.input, err)
+			}
+		})
+	}
+}
+
+func TestDecFloatTextNormalization(t *testing.T) {
+	type decimalValue interface {
+		Scan(any) error
+		String() string
+		Value() (driver.Value, error)
+	}
+	for _, spec := range []struct {
+		name      string
+		precision int
+		min, max  int32
+		metadata  TypeMetadata
+		newValue  func() decimalValue
+	}{
+		{"DecFloat16", 16, -398, 369, NewTypeMetadata(fbproto.SQL_TYPE_DEC64, 0, 8, 0), func() decimalValue { return &DecFloat16{} }},
+		{"DecFloat34", 34, -6176, 6111, NewTypeMetadata(fbproto.SQL_TYPE_DEC128, 0, 16, 0), func() decimalValue { return &DecFloat34{} }},
+	} {
+		t.Run(spec.name, func(t *testing.T) {
+			fullPower := "1" + strings.Repeat("0", spec.precision-1)
+			tests := []struct {
+				name, input, coefficient string
+				exponent                 int32
+				negativeZero             bool
+			}{
+				{"upper one", fmt.Sprintf("1E%d", spec.max+1), "10", spec.max, false},
+				{"upper ten", fmt.Sprintf("1E%d", spec.max+10), "10000000000", spec.max, false},
+				{"upper negative", fmt.Sprintf("-12E%d", spec.max+1), "-120", spec.max, false},
+				{"upper maximum power", fmt.Sprintf("1E%d", spec.max+int32(spec.precision)-1), fullPower, spec.max, false},
+				{"lower one", fmt.Sprintf("1.0E%d", spec.min), "1", spec.min, false},
+				{"lower ten", fmt.Sprintf("10000000000E%d", spec.min-10), "1", spec.min, false},
+				{"lower negative", fmt.Sprintf("-12.00E%d", spec.min), "-12", spec.min, false},
+				{"lower preserves remaining zeros", fmt.Sprintf("1000E%d", spec.min-1), "100", spec.min, false},
+				{"excess coefficient zeros", fullPower + "0", fullPower, 1, false},
+				{"excess coefficient zeros at lower bound", fmt.Sprintf("%s0E%d", fullPower, spec.min-1), fullPower, spec.min, false},
+				{"excess coefficient zeros at upper bound", fmt.Sprintf("%s0E%d", fullPower, spec.max-1), fullPower, spec.max, false},
+				{"excess zeros then lower rescale", fmt.Sprintf("%s0000E%d", fullPower, spec.min-5), fullPower[:len(fullPower)-1], spec.min, false},
+				{"long exact integer", "1" + strings.Repeat("0", 100_000) + "E-100000", fullPower, 1 - int32(spec.precision), false},
+				{"long exact fraction", "1." + strings.Repeat("0", 100_000), fullPower, 1 - int32(spec.precision), false},
+				{"long leading fractional zeros", "0." + strings.Repeat("0", 100_000) + "1E100001", "1", 0, false},
+				{"preserve scale", "1.2300", "12300", -4, false},
+				{"preserve zero scale", "-0.00", "0", -2, true},
+				{"upper zero", fmt.Sprintf("0E%d", spec.max+1), "0", spec.max, false},
+				{"lower negative zero", fmt.Sprintf("-0E%d", spec.min-1), "0", spec.min, true},
+				{"zero beyond int32", "-0.0E-2147483648", "0", spec.min, true},
+				{"zero at int64 maximum", "0E9223372036854775807", "0", spec.max, false},
+				{"zero at int64 minimum", "0E-9223372036854775808", "0", spec.min, false},
+				{"zero combined exponent underflow", "-0.0E-9223372036854775808", "0", spec.min, true},
+				{"leading zeros and sign", fmt.Sprintf(" +0001e+%d ", spec.max+1), "10", spec.max, false},
+			}
+			m := NewMap()
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					check := func(value decimalValue) {
+						t.Helper()
+						switch d := value.(type) {
+						case *DecFloat16:
+							assertDecFloat16Representation(t, *d, tt.coefficient, tt.exponent, tt.negativeZero)
+						case *DecFloat34:
+							assertDecFloat34Representation(t, *d, tt.coefficient, tt.exponent, tt.negativeZero)
+						}
+					}
+					value := spec.newValue()
+					for _, src := range []any{tt.input, []byte(tt.input)} {
+						if err := value.Scan(src); err != nil {
+							t.Fatalf("Scan(%T): %v", src, err)
+						}
+						check(value)
+					}
+					encodedJSON, err := json.Marshal(tt.input)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := json.Unmarshal(encodedJSON, value); err != nil {
+						t.Fatal(err)
+					}
+					check(value)
+					driverValue, err := value.Value()
+					if err != nil || driverValue != value.String() {
+						t.Fatalf("Value() = %v, %v", driverValue, err)
+					}
+					encodedJSON, err = json.Marshal(value)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := json.Unmarshal(encodedJSON, value); err != nil {
+						t.Fatal(err)
+					}
+					check(value)
+					for _, src := range []any{tt.input, value, driverValue} {
+						prefix := []byte{0xaa, 0xbb}
+						wire, err := m.Encode(spec.metadata, src, prefix)
+						if err != nil {
+							t.Fatalf("Encode(%T): %v", src, err)
+						}
+						if len(wire) != len(prefix)+int(spec.metadata.Length) || !bytes.Equal(wire[:len(prefix)], prefix) {
+							t.Fatalf("unexpected wire buffer: %x", wire)
+						}
+						decoded := spec.newValue()
+						if err := m.Scan(spec.metadata, wire[len(prefix):], decoded); err != nil {
+							t.Fatal(err)
+						}
+						check(decoded)
+					}
+				})
+			}
+			for _, input := range []string{
+				fmt.Sprintf("1E%d", spec.max+int32(spec.precision)),
+				fmt.Sprintf("%sE%d", strings.Repeat("9", spec.precision), spec.max+1),
+				fmt.Sprintf("1E%d", spec.min-1),
+				fmt.Sprintf("110E%d", spec.min-2),
+				fmt.Sprintf("%s0E%d", fullPower, spec.max),
+				"1" + strings.Repeat("0", spec.precision-1) + "1",
+				"1E1000000000", "1E-1000000000",
+				"1E9223372036854775807", "1E-9223372036854775808",
+				"1.0E-9223372036854775808", fullPower + "0E9223372036854775807",
+				fullPower + "000x", fullPower + "000.0.0",
+			} {
+				t.Run("reject/"+input, func(t *testing.T) {
+					value := spec.newValue()
+					checkNull := func() {
+						t.Helper()
+						got, err := value.Value()
+						if err != nil || got != nil {
+							t.Fatalf("failed parse left stale value: %v, %v", got, err)
+						}
+					}
+					for _, src := range []any{input, []byte(input)} {
+						if err := value.Scan("42"); err != nil {
+							t.Fatal(err)
+						}
+						if err := value.Scan(src); err == nil {
+							t.Fatalf("Scan accepted %q", input)
+						}
+						checkNull()
+					}
+					if err := value.Scan("42"); err != nil {
+						t.Fatal(err)
+					}
+					encodedJSON, err := json.Marshal(input)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := json.Unmarshal(encodedJSON, value); err == nil {
+						t.Fatalf("UnmarshalJSON accepted %q", input)
+					}
+					checkNull()
+					if _, err := m.Encode(spec.metadata, input, nil); err == nil {
+						t.Fatalf("Encode accepted %q", input)
+					}
+				})
 			}
 		})
 	}
