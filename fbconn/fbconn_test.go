@@ -8,6 +8,7 @@ import (
 	"math"
 	"net"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -2632,7 +2633,7 @@ func TestConnWithWarning(t *testing.T) {
 	dpb.PutInt32(fbproto.Isc_dpb_set_db_sql_dialect, 1)
 	config.DPB = dpb.Bytes()
 	config.OnFbWarning = func(c *fbconn.FbConn, warn *fbconn.FbWarning) {
-		warnings += warn.Message + "SQLSTATE: " + warn.Code
+		warnings += warn.Message + "\nSQLSTATE: " + warn.Code
 	}
 
 	fbConn, err := fbconn.ConnectConfig(ctx, config)
@@ -2648,6 +2649,35 @@ func TestConnWithWarning(t *testing.T) {
 	closeConn(t, fbConn)
 
 	assert.Equal(t, "Database dialect being changed from 3 to 1\nSQLSTATE: 01000", warnings)
+}
+
+func TestConnQueryWarnings(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	var warnings []string
+	config.OnFbWarning = func(_ *fbconn.FbConn, warning *fbconn.FbWarning) {
+		warnings = append(warnings, warning.Message)
+	}
+	conn, err := fbconn.ConnectConfig(ctx, config)
+	require.NoError(t, err)
+	defer closeConn(t, conn)
+	warnings = nil // Only inspect warnings produced by the query.
+
+	const sql = `with unused_a as (select 1 as n from rdb$database),
+unused_b as (select 2 as n from rdb$database)
+select 1 from rdb$database`
+	result := conn.Exec(ctx, sql).Read()
+	if diagnostic, ok := errors.AsType[*fbconn.FbError](result.Err); ok && slices.Contains(diagnostic.GdsCodes, fbproto.Isc_dsql_cte_not_used) {
+		t.Skip("server rejects unused CTEs instead of reporting warnings")
+	}
+	require.NoError(t, result.Err, "this scenario requires a server that reports unused CTEs as warnings")
+	require.Len(t, result.Rows, 1)
+	require.NotEmpty(t, warnings, "OnFbWarning must receive the unused CTE diagnostics")
+
+	assert.Equal(t, []string{"SQL warning code = -104\nCTE \"UNUSED_A\" is not used in query\nCTE \"UNUSED_B\" is not used in query"}, warnings)
 }
 
 func TestPassProcessName(t *testing.T) {
