@@ -816,12 +816,12 @@ func (c *Conn) execPrepared(ctx context.Context, tx *dbTx, st *fbconn.Statement,
 	if result.Err == nil && containsSearchPathInSql {
 		err = c.QueryRow(ctx, "select rdb$get_context('SYSTEM', 'SEARCH_PATH') from rdb$database", QueryExecModeExec).Scan(&sp2)
 		if err != nil {
-			return result.QueryStatus, errors.Join(err, c.Close(ctx))
+			return result.QueryStatus, errors.Join(fmt.Errorf("failed to clear the statement cache after changing the search_path"), err, c.Close(ctx))
 		}
 		if sp1 != sp2 {
 			err = c.DeallocateAll(ctx)
 			if err != nil {
-				return result.QueryStatus, err
+				return result.QueryStatus, errors.Join(fmt.Errorf("failed to clear the statement cache after changing the search_path"), err)
 			}
 		}
 	}
@@ -1079,7 +1079,7 @@ optionLoop:
 			if err == nil {
 				err = fmt.Errorf(`"%s" not supported by Query method`, sql)
 			} else {
-				err = errors.Join(err, c.Close(ctx))
+				err = errors.Join(fmt.Errorf("failed to clear the statement cache after changing the search_path"), err, c.Close(ctx))
 			}
 			if c.queryTracer != nil {
 				c.queryTracer.TraceQueryEnd(ctx, c, TraceQueryEndData{Err: err})
