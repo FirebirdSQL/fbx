@@ -331,7 +331,10 @@ func encodeTimetzBinary(buf []byte, ttz Timetz) ([]byte, error) {
 		return nil, nil
 	}
 
-	loc := fbproto.ResolveLocationByTzRaw(ttz.tzRaw)
+	loc, err := fbproto.ResolveLocationByTzRaw(ttz.tzRaw)
+	if err != nil {
+		return nil, fmt.Errorf("cannot encode TIMETZ: %w", err)
+	}
 	local := timeWithDate(ttz.Time.In(loc), timetzBaseDate)
 	utc := local.In(time.UTC)
 	usec := timeOfDayMicroseconds(utc)
@@ -364,7 +367,10 @@ func decodeTimetzBinary(src []byte) (Timetz, error) {
 	}
 
 	tzRaw := uint16(tzVal & 0xFFFF)
-	loc := fbproto.ResolveLocationByTzRaw(tzRaw)
+	loc, err := fbproto.ResolveLocationByTzRaw(tzRaw)
+	if err != nil {
+		return Timetz{}, fmt.Errorf("cannot decode TIMETZ: %w", err)
+	}
 
 	utcTime := timeFromMicroseconds(usec, timetzBaseDate, time.UTC)
 	local := timeWithDate(utcTime.In(loc), timetzBaseDate)
@@ -418,7 +424,7 @@ func splitCompactTimetzString(s string) (timePart string, zonePart string, err e
 		return s[:len(s)-1], "Z", nil
 	}
 
-	for i := len(s) - 1; i >= 5; i-- {
+	for i := len(s) - 1; i > 0; i-- {
 		if s[i] == '+' || s[i] == '-' {
 			return s[:i], s[i:], nil
 		}
@@ -428,67 +434,10 @@ func splitCompactTimetzString(s string) (timePart string, zonePart string, err e
 }
 
 func parseTimetzClock(s string) (int64, error) {
-	if len(s) < 5 || s[2] != ':' {
-		return 0, fmt.Errorf("invalid TIMETZ time: %q", s)
-	}
-
-	hours, err := strconv.ParseInt(s[0:2], 10, 64)
+	usec, err := parseTimeString(s)
 	if err != nil {
-		return 0, fmt.Errorf("cannot parse hours from %q: %w", s, err)
+		return 0, fmt.Errorf("invalid TIMETZ time %q: %w", s, err)
 	}
-	if hours < 0 || hours > 23 {
-		return 0, fmt.Errorf("hours out of range (0-23): %d", hours)
-	}
-
-	minutes, err := strconv.ParseInt(s[3:5], 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("cannot parse minutes from %q: %w", s, err)
-	}
-	if minutes < 0 || minutes > 59 {
-		return 0, fmt.Errorf("minutes out of range (0-59): %d", minutes)
-	}
-
-	usec := hours*microsecondsPerHour + minutes*microsecondsPerMinute
-	if len(s) == 5 {
-		return usec, nil
-	}
-
-	if len(s) < 8 || s[5] != ':' {
-		return 0, fmt.Errorf("invalid TIMETZ time: %q", s)
-	}
-
-	seconds, err := strconv.ParseInt(s[6:8], 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("cannot parse seconds from %q: %w", s, err)
-	}
-	if seconds < 0 || seconds > 59 {
-		return 0, fmt.Errorf("seconds out of range (0-59): %d", seconds)
-	}
-	usec += seconds * microsecondsPerSecond
-
-	if len(s) == 8 {
-		return usec, nil
-	}
-
-	if s[8] != '.' {
-		return 0, fmt.Errorf("invalid TIMETZ time: %q", s)
-	}
-
-	fraction := s[9:]
-	if len(fraction) == 0 || len(fraction) > 6 {
-		return 0, fmt.Errorf("invalid TIMETZ fractional seconds: %q", s)
-	}
-
-	n, err := strconv.ParseInt(fraction, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("cannot parse microseconds from %q: %w", s, err)
-	}
-
-	for i := len(fraction); i < 6; i++ {
-		n *= 10
-	}
-
-	usec += n
 	return usec, nil
 }
 
@@ -517,9 +466,9 @@ func parseTimetzZone(s string) (*time.Location, uint16, error) {
 		return nil, 0, fmt.Errorf("timetz: unknown Firebird time zone %q", s)
 	}
 
-	loc, err := time.LoadLocation(s)
+	loc, err := fbproto.ResolveLocationByTzRaw(tzRaw)
 	if err != nil {
-		return nil, 0, fmt.Errorf("timetz: cannot load time zone %q: %w", s, err)
+		return nil, 0, fmt.Errorf("timetz: cannot use time zone %q: %w", s, err)
 	}
 
 	return loc, tzRaw, nil
@@ -581,15 +530,28 @@ func formatTimetzString(ttz Timetz) (string, error) {
 		}
 	}
 
-	loc := fbproto.ResolveLocationByTzRaw(tzRaw)
+	loc, err := fbproto.ResolveLocationByTzRaw(tzRaw)
+	if err != nil {
+		return "", fmt.Errorf("cannot format TIMETZ: %w", err)
+	}
 	t := ttz.Time.In(loc)
 	return fmt.Sprintf("%02d:%02d:%02d.%06d %s",
 		t.Hour(),
 		t.Minute(),
 		t.Second(),
 		t.Nanosecond()/1000,
-		loc.String(),
+		formatTimetzLocationName(tzRaw, loc),
 	), nil
+}
+
+func formatTimetzLocationName(tzRaw uint16, loc *time.Location) string {
+	if tzRaw > 2878 && loc != time.UTC {
+		if name, ok := fbproto.ResolveLocationNameByTzRaw(tzRaw); ok {
+			return name
+		}
+	}
+
+	return loc.String()
 }
 
 func formatTimetzOffsetName(offsetMinutes int) string {

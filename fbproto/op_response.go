@@ -76,13 +76,14 @@ func (sv statusVectorResult) toErrorResponse() ErrorResponse {
 
 func readStatusVector(x *XDRReader, encoding *Encoding) (statusVectorResult, error) {
 	var (
-		sv             statusVectorResult
-		err            error
-		currentMsgPtr  = &sv.Message
-		numArg         int
-		gdsCode        int
-		firstSeen      = true
-		currentIsError bool
+		sv               statusVectorResult
+		err              error
+		currentMsgPtr    = &sv.Message
+		currentMsgParams int
+		numArg           int
+		gdsCode          int
+		firstSeen        = true
+		currentIsError   bool
 	)
 
 	readLineColState := 0
@@ -114,9 +115,20 @@ func readStatusVector(x *XDRReader, encoding *Encoding) (statusVectorResult, err
 					sv.GdsCodes = append(sv.GdsCodes, gdsCode)
 				}
 				if msg, ok := errmsgs[gdsCode]; ok {
-					*currentMsgPtr += msg.message
+					if len(*currentMsgPtr) == 0 {
+						*currentMsgPtr += msg.message
+					} else {
+						*currentMsgPtr += "\n" + msg.message
+					}
+					currentMsgParams = msg.params
 				} else {
-					*currentMsgPtr += fmt.Sprintf("unknown gds_code: %d\n", gdsCode)
+					tmpMsg := fmt.Sprintf("unknown gds_code: %d", gdsCode)
+					if len(*currentMsgPtr) == 0 {
+						*currentMsgPtr += tmpMsg
+					} else {
+						*currentMsgPtr += "\n" + tmpMsg
+					}
+					currentMsgParams = 0
 				}
 				if gdsCode == Isc_dsql_line_col_error {
 					readLineColState = 1
@@ -143,9 +155,20 @@ func readStatusVector(x *XDRReader, encoding *Encoding) (statusVectorResult, err
 					sv.GdsCodes = append(sv.GdsCodes, wCode)
 				}
 				if msg, ok := errmsgs[wCode]; ok {
-					*currentMsgPtr += msg.message
+					if len(*currentMsgPtr) == 0 {
+						*currentMsgPtr += msg.message
+					} else {
+						*currentMsgPtr += "\n" + msg.message
+					}
+					currentMsgParams = msg.params
 				} else {
-					*currentMsgPtr += fmt.Sprintf("unknown warning code %d", wCode)
+					tmpMsg := fmt.Sprintf("unknown gds_code: %d", wCode)
+					if len(*currentMsgPtr) == 0 {
+						*currentMsgPtr += tmpMsg
+					} else {
+						*currentMsgPtr += "\n" + tmpMsg
+					}
+					currentMsgParams = 0
 				}
 			}
 		case Isc_arg_number:
@@ -157,7 +180,11 @@ func readStatusVector(x *XDRReader, encoding *Encoding) (statusVectorResult, err
 				sv.SqlErr = num
 			}
 			numArg++
-			*currentMsgPtr = strings.Replace(*currentMsgPtr, "@"+strconv.Itoa(numArg), strconv.Itoa(num), 1)
+			if numArg <= currentMsgParams {
+				*currentMsgPtr = strings.Replace(*currentMsgPtr, "@"+strconv.Itoa(numArg), strconv.Itoa(num), 1)
+			} else {
+				*currentMsgPtr = fmt.Sprintf("%s\n%d", *currentMsgPtr, num)
+			}
 			switch readLineColState {
 			case 1:
 				sv.Line = num
@@ -166,19 +193,19 @@ func readStatusVector(x *XDRReader, encoding *Encoding) (statusVectorResult, err
 				sv.Position = num
 				readLineColState = 0
 			}
+		case Isc_arg_interpreted:
+			fallthrough
 		case Isc_arg_string:
 			str, err := x.ReadString(encoding)
 			if err != nil {
 				return sv, err
 			}
 			numArg++
-			*currentMsgPtr = strings.Replace(*currentMsgPtr, "@"+strconv.Itoa(numArg), str, 1)
-		case Isc_arg_interpreted:
-			str, err := x.ReadString(encoding)
-			if err != nil {
-				return sv, err
+			if numArg <= currentMsgParams {
+				*currentMsgPtr = strings.Replace(*currentMsgPtr, "@"+strconv.Itoa(numArg), str, 1)
+			} else {
+				*currentMsgPtr += "\n" + str
 			}
-			*currentMsgPtr += str
 		case Isc_arg_sql_state:
 			if sv.SqlState, err = x.ReadString(encoding); err != nil {
 				return sv, err

@@ -6,6 +6,7 @@ import (
 
 // lruNode is a typed doubly-linked list node with freelist support.
 type lruNode struct {
+	key  string
 	st   *fbconn.Statement
 	prev *lruNode
 	next *lruNode
@@ -22,7 +23,7 @@ type LRUCache struct {
 	freelist *lruNode
 
 	invalidStmts []*fbconn.Statement
-	invalidSet   map[string]struct{}
+	invalid      map[string]*fbconn.Statement
 }
 
 // NewLRUCache creates a new LRUCache. cap is the maximum size of the cache.
@@ -33,15 +34,15 @@ func NewLRUCache(cap int) *LRUCache {
 	tail.prev = head
 
 	return &LRUCache{
-		cap:        cap,
-		m:          make(map[string]*lruNode, cap),
-		head:       head,
-		tail:       tail,
-		invalidSet: make(map[string]struct{}),
+		cap:     cap,
+		m:       make(map[string]*lruNode, cap),
+		head:    head,
+		tail:    tail,
+		invalid: make(map[string]*fbconn.Statement),
 	}
 }
 
-// Get returns the statement description for sql. Returns nil if not found.
+// Get returns the statement for sql. It returns nil if the statement is not found.
 func (c *LRUCache) Get(key string) *fbconn.Statement {
 	node, ok := c.m[key]
 	if !ok {
@@ -51,8 +52,9 @@ func (c *LRUCache) Get(key string) *fbconn.Statement {
 	return node.st
 }
 
-// Put stores sd in the cache. Put panics if sd.SQL is "". Put does nothing if sd.SQL already exists in the cache or
-// sd.SQL has been invalidated and HandleInvalidated has not been called yet.
+// Put stores st in the cache. Put panics if st.Description.SQL is empty.
+// Put does nothing if the SQL is already cached or has been invalidated and
+// RemoveInvalidated has not been called yet.
 func (c *LRUCache) Put(st *fbconn.Statement) {
 	if st.Description.SQL == "" {
 		panic("cannot store statement description with empty SQL")
@@ -63,7 +65,7 @@ func (c *LRUCache) Put(st *fbconn.Statement) {
 	}
 
 	// The statement may have been invalidated but not yet handled. Do not readd it to the cache.
-	if _, invalidated := c.invalidSet[st.Description.SQL]; invalidated {
+	if _, invalidated := c.invalid[st.Description.SQL]; invalidated {
 		return
 	}
 
@@ -72,13 +74,64 @@ func (c *LRUCache) Put(st *fbconn.Statement) {
 	}
 
 	node := c.allocNode()
+	node.key = st.Description.SQL
 	node.st = st
 	c.insertAfter(c.head, node)
-	c.m[st.Description.SQL] = node
+	c.m[node.key] = node
 	c.len++
 }
 
-// Invalidate invalidates statement description identified by sql. Does nothing if not found.
+// Remove removes st from the active cache or the invalidation queue.
+// It does nothing if a different statement with the same SQL is stored.
+func (c *LRUCache) Remove(st *fbconn.Statement) {
+	key := st.Description.SQL
+	node := c.m[key]
+	if node == nil || node.st != st {
+		node = nil
+		for _, cachedNode := range c.m {
+			if cachedNode.st == st {
+				node = cachedNode
+				break
+			}
+		}
+	}
+
+	if node != nil {
+		delete(c.m, node.key)
+		c.unlink(node)
+		c.len--
+		c.freeNode(node)
+		return
+	}
+
+	invalidated := c.invalid[key]
+	if invalidated != st {
+		key = ""
+		for invalidatedSQL, candidate := range c.invalid {
+			if candidate == st {
+				key = invalidatedSQL
+				break
+			}
+		}
+		if key == "" {
+			return
+		}
+	}
+
+	delete(c.invalid, key)
+	for i, candidate := range c.invalidStmts {
+		if candidate == st {
+			copy(c.invalidStmts[i:], c.invalidStmts[i+1:])
+			last := len(c.invalidStmts) - 1
+			c.invalidStmts[last] = nil
+			c.invalidStmts = c.invalidStmts[:last]
+			return
+		}
+	}
+}
+
+// Invalidate invalidates the statement identified by sql.
+// It does nothing if the statement is not found.
 func (c *LRUCache) Invalidate(sql string) {
 	node, ok := c.m[sql]
 	if !ok {
@@ -86,18 +139,18 @@ func (c *LRUCache) Invalidate(sql string) {
 	}
 	delete(c.m, sql)
 	c.invalidStmts = append(c.invalidStmts, node.st)
-	c.invalidSet[sql] = struct{}{}
+	c.invalid[sql] = node.st
 	c.unlink(node)
 	c.len--
 	c.freeNode(node)
 }
 
-// InvalidateAll invalidates all statement descriptions.
+// InvalidateAll invalidates all statements.
 func (c *LRUCache) InvalidateAll() {
 	for node := c.head.next; node != c.tail; {
 		next := node.next
 		c.invalidStmts = append(c.invalidStmts, node.st)
-		c.invalidSet[node.st.Description.SQL] = struct{}{}
+		c.invalid[node.key] = node.st
 		c.freeNode(node)
 		node = next
 	}
@@ -108,25 +161,32 @@ func (c *LRUCache) InvalidateAll() {
 	c.len = 0
 }
 
-// GetInvalidated returns a slice of all statement descriptions invalidated since the last call to RemoveInvalidated.
+// GetInvalidated returns all statements invalidated since the last call to RemoveInvalidated.
 func (c *LRUCache) GetInvalidated() []*fbconn.Statement {
 	return c.invalidStmts
 }
 
-// RemoveInvalidated removes all invalidated statement descriptions. No other calls to Cache must be made between a
-// call to GetInvalidated and RemoveInvalidated or RemoveInvalidated may remove statement descriptions that were
-// never seen by the call to GetInvalidated.
-func (c *LRUCache) RemoveInvalidated() {
-	c.invalidStmts = c.invalidStmts[:0]
-	clear(c.invalidSet)
+// GetInvalidatedBySQL returns the invalidated statement for sql.
+// It returns nil if the statement is not found.
+func (c *LRUCache) GetInvalidatedBySQL(sql string) *fbconn.Statement {
+	return c.invalid[sql]
 }
 
-// Len returns the number of cached prepared statement descriptions.
+// RemoveInvalidated removes all invalidated statements. No other calls to Cache must be made between a
+// call to GetInvalidated and RemoveInvalidated or RemoveInvalidated may remove statements that were
+// never seen by the call to GetInvalidated.
+func (c *LRUCache) RemoveInvalidated() {
+	clear(c.invalidStmts)
+	c.invalidStmts = c.invalidStmts[:0]
+	clear(c.invalid)
+}
+
+// Len returns the number of cached prepared statements.
 func (c *LRUCache) Len() int {
 	return c.len
 }
 
-// Cap returns the maximum number of cached prepared statement descriptions.
+// Cap returns the maximum number of cached prepared statements.
 func (c *LRUCache) Cap() int {
 	return c.cap
 }
@@ -137,8 +197,8 @@ func (c *LRUCache) invalidateOldest() {
 		return
 	}
 	c.invalidStmts = append(c.invalidStmts, node.st)
-	c.invalidSet[node.st.Description.SQL] = struct{}{}
-	delete(c.m, node.st.Description.SQL)
+	c.invalid[node.key] = node.st
+	delete(c.m, node.key)
 	c.unlink(node)
 	c.len--
 	c.freeNode(node)
@@ -180,6 +240,7 @@ func (c *LRUCache) allocNode() *lruNode {
 }
 
 func (c *LRUCache) freeNode(node *lruNode) {
+	node.key = ""
 	node.st = nil
 	node.prev = nil
 	node.next = c.freelist

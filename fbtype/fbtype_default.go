@@ -48,7 +48,7 @@ func initDefaultMap() {
 	defaultMap.RegisterType(&Type{Name: "int", TypeID: fbproto.SQL_TYPE_LONG, Codec: Int4Codec{}})
 	defaultMap.RegisterType(&Type{Name: "bigint", TypeID: fbproto.SQL_TYPE_INT64, Codec: Int8Codec{}})
 	defaultMap.RegisterType(&Type{Name: "int128", TypeID: fbproto.SQL_TYPE_INT128, Codec: Int128Codec{}})
-	defaultMap.RegisterType(&Type{Name: "text", TypeID: fbproto.SQL_TYPE_TEXT, Codec: TextCodec{}})
+	defaultMap.RegisterType(&Type{Name: "char", TypeID: fbproto.SQL_TYPE_TEXT, Codec: TextCodec{}})
 	defaultMap.RegisterType(&Type{Name: "time", TypeID: fbproto.SQL_TYPE_TIME, Codec: TimeCodec{}})
 	defaultMap.RegisterType(&Type{Name: "timetz", TypeID: fbproto.SQL_TYPE_TIME_TZ, Codec: &TimetzCodec{}})
 	defaultMap.RegisterType(&Type{Name: "varchar", TypeID: fbproto.SQL_TYPE_VARYING, Codec: TextCodec{}})
@@ -91,7 +91,7 @@ func initDefaultMap() {
 
 	registerDefaultFbTypeVariants[bool](defaultMap, "boolean")
 	registerDefaultFbTypeVariants[time.Time](defaultMap, "timestamptz")
-	registerDefaultFbTypeVariants[string](defaultMap, "text")
+	registerDefaultFbTypeVariants[string](defaultMap, "varchar")
 	registerDefaultFbTypeVariants[[]byte](defaultMap, "octets")
 
 	// fbtype provided structs
@@ -104,7 +104,9 @@ func initDefaultMap() {
 	registerDefaultFbTypeVariants[Int8](defaultMap, "bigint")
 	registerDefaultFbTypeVariants[Int128](defaultMap, "int128")
 	registerDefaultFbTypeVariants[Numeric](defaultMap, "numeric")
-	registerDefaultFbTypeVariants[Text](defaultMap, "text")
+	registerDefaultFbTypeVariants[Text](defaultMap, "varchar")
+	defaultMap.RegisterDefaultFbType(UUID{}, "octets")
+	defaultMap.RegisterDefaultFbType(&UUID{}, "octets")
 	registerDefaultFbTypeVariants[Time](defaultMap, "time")
 	registerDefaultFbTypeVariants[Timetz](defaultMap, "timetz")
 	registerDefaultFbTypeVariants[Timestamp](defaultMap, "timestamp")

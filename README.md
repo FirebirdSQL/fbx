@@ -15,6 +15,7 @@ Firebird values, tracing hooks, and modern Red Database / Firebird features.
 - Concurrency-safe `fbxpool` connection pool for application workloads, with lifecycle hooks, health checks, configurable ping behavior, acquire tracing, release tracing, and pool statistics.
 - URL and keyword/value connection strings, environment variable support, and multi-host fallback configuration.
 - Database creation and deletion through `CreateDatabase`, `DropDatabase`, and related config helpers.
+- Services manager API for server-side backup, restore, and database statistics through `fbservice.Manager`.
 - Firebird `POST_EVENT` subscriptions through `fbevent.Manager`, including one-shot waits, callback listeners, channel subscriptions, and pgx-like notifications.
 - Red Database / Firebird 6 schema-qualified identifiers.
 - Prepared statements, statement cache, configurable statement cache size, and configurable query execution mode.
@@ -29,16 +30,23 @@ Firebird values, tracing hooks, and modern Red Database / Firebird features.
 - Firebird array support, including reading, writing, and scanning array values through the native API and the `database/sql` compatibility layer.
 - Row collection helpers for scanning rows into values, maps, and structs.
 - Query, prepare, connect, acquire, and release tracing hooks, plus the `tracelog` package.
+- Multifactor authentication using Red Database security policies.
 
 ## Planned Features
 
 - Geometric and spatial type support.
 - SQL/JSON value mapping and helper APIs.
 - ROW and structured value support.
-- Services manager API for backup, restore, trace, statistics, online validation, and user-management workflows.
+- Services manager API for trace, online validation, and user-management workflows.
 - Bidirectional result-set navigation for server-side scrollable cursors.
 - Two-phase commit and distributed transaction support.
-- Certificate-based and multifactor authentication using Red Database security policies.
+
+## Related projects
+
+### Authentication plugins
+
+- fbx-gss - https://pkg.go.dev/rdb.red-soft.ru/fbx-gss
+- fbx-cryptopro - https://pkg.go.dev/rdb.red-soft.ru/fbx-cryptopro
 
 ## Example Usage
 

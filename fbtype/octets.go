@@ -2,9 +2,10 @@ package fbtype
 
 import (
 	"database/sql/driver"
+	"fmt"
 )
 
-// BytesScanner scans Firebird OCTETS data from raw bytes.
+// BytesScanner scans decoded text or raw Firebird OCTETS data as bytes.
 type BytesScanner interface {
 	// ScanBytes receives a byte slice of driver memory that is only valid until
 	// the next database method call.
@@ -23,6 +24,7 @@ type BytesValuer interface {
 // with QueryRow because Row.Scan closes rows before returning.
 type DriverBytes []byte
 
+// ScanBytes implements [BytesScanner] without copying v.
 func (b *DriverBytes) ScanBytes(v []byte) error {
 	*b = v
 	return nil
@@ -32,13 +34,15 @@ func (b *DriverBytes) ScanBytes(v []byte) error {
 // preallocated memory. If it is too small a new slice will be allocated.
 type PreallocBytes []byte
 
+// ScanBytes implements [BytesScanner] by copying v into the receiver's
+// available capacity when possible.
 func (b *PreallocBytes) ScanBytes(v []byte) error {
 	if v == nil {
 		*b = nil
 		return nil
 	}
 
-	if len(v) <= len(*b) {
+	if *b != nil && len(v) <= cap(*b) {
 		*b = (*b)[:len(v)]
 	} else {
 		*b = make(PreallocBytes, len(v))
@@ -51,38 +55,41 @@ func (b *PreallocBytes) ScanBytes(v []byte) error {
 // value without codec decoding.
 type UndecodedBytes []byte
 
-// OctetsCodec implements [Codec] for Firebird text values with CHARACTER SET
-// OCTETS.
+// OctetsCodec encodes and decodes Firebird CHAR and VARCHAR values declared
+// with CHARACTER SET OCTETS.
 type OctetsCodec struct{}
 
+// PlanEncode returns an encode plan for supported Firebird CHAR and VARCHAR
+// CHARACTER SET OCTETS input values.
 func (OctetsCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
-
 	switch value.(type) {
+	case UUIDValuer:
+		return UUIDCodec{}.PlanEncode(m, typeMetadata, value)
 	case []byte:
-		return encodePlanBytesCodecBinaryBytes{}
+		return encodePlanOctetsCodecBytes{}
 	case BytesValuer:
-		return encodePlanBytesCodecBinaryBytesValuer{}
+		return encodePlanOctetsCodecBytesValuer{}
 	case string:
-		return encodePlanBytesCodecBinaryString{}
+		return encodePlanOctetsCodecString{}
 	}
 
 	return nil
 }
 
-type encodePlanBytesCodecBinaryBytes struct{}
+type encodePlanOctetsCodecBytes struct{}
 
-func (encodePlanBytesCodecBinaryBytes) Encode(value any, buf []byte) (newBuf []byte, err error) {
+func (encodePlanOctetsCodecBytes) Encode(value any, buf []byte) (newBuf []byte, err error) {
 	b := value.([]byte)
 	if b == nil {
 		return nil, nil
 	}
 
-	return append(buf, b...), nil
+	return appendNonNullBytes(buf, b), nil
 }
 
-type encodePlanBytesCodecBinaryBytesValuer struct{}
+type encodePlanOctetsCodecBytesValuer struct{}
 
-func (encodePlanBytesCodecBinaryBytesValuer) Encode(value any, buf []byte) (newBuf []byte, err error) {
+func (encodePlanOctetsCodecBytesValuer) Encode(value any, buf []byte) (newBuf []byte, err error) {
 	b, err := value.(BytesValuer).BytesValue()
 	if err != nil {
 		return nil, err
@@ -91,32 +98,56 @@ func (encodePlanBytesCodecBinaryBytesValuer) Encode(value any, buf []byte) (newB
 		return nil, nil
 	}
 
-	return append(buf, b...), nil
+	return appendNonNullBytes(buf, b), nil
 }
 
-type encodePlanBytesCodecBinaryString struct{}
+type encodePlanOctetsCodecString struct{}
 
-func (encodePlanBytesCodecBinaryString) Encode(value any, buf []byte) ([]byte, error) {
+func (encodePlanOctetsCodecString) Encode(value any, buf []byte) ([]byte, error) {
 	s := value.(string)
-	return append(buf, s...), nil
+	return appendNonNullBytes(buf, []byte(s)), nil
 }
 
+// PlanScan returns a scan plan for supported Firebird CHAR and VARCHAR
+// CHARACTER SET OCTETS target values.
 func (OctetsCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
-
 	switch target.(type) {
+	case UUIDScanner:
+		return UUIDCodec{}.PlanScan(m, typeMetadata, target)
+	case *string:
+		return scanPlanBinaryOctetsToString{}
 	case *[]byte:
-		return scanPlanBinaryBytesToBytes{}
+		return scanPlanBinaryOctetsToBytes{}
 	case BytesScanner:
-		return scanPlanBinaryBytesToBytesScanner{}
+		return scanPlanBinaryOctetsToBytesScanner{}
 	}
 
 	return nil
 }
 
-type scanPlanBinaryBytesToBytes struct{}
+type scanPlanBinaryOctetsToString struct{}
 
-func (scanPlanBinaryBytesToBytes) Scan(src []byte, dst any) error {
-	dstBuf := dst.(*[]byte)
+func (scanPlanBinaryOctetsToString) Scan(src []byte, dst any) error {
+	p, ok := dst.(*string)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+	if src == nil {
+		return fmt.Errorf("cannot scan NULL into %T", dst)
+	}
+
+	*p = string(src)
+	return nil
+}
+
+type scanPlanBinaryOctetsToBytes struct{}
+
+func (scanPlanBinaryOctetsToBytes) Scan(src []byte, dst any) error {
+	dstBuf, ok := dst.(*[]byte)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
 	if src == nil {
 		*dstBuf = nil
 		return nil
@@ -127,17 +158,23 @@ func (scanPlanBinaryBytesToBytes) Scan(src []byte, dst any) error {
 	return nil
 }
 
-type scanPlanBinaryBytesToBytesScanner struct{}
+type scanPlanBinaryOctetsToBytesScanner struct{}
 
-func (scanPlanBinaryBytesToBytesScanner) Scan(src []byte, dst any) error {
-	scanner := (dst).(BytesScanner)
+func (scanPlanBinaryOctetsToBytesScanner) Scan(src []byte, dst any) error {
+	scanner, ok := dst.(BytesScanner)
+	if !ok {
+		return ErrScanTargetTypeChanged
+	}
+
 	return scanner.ScanBytes(src)
 }
 
+// DecodeDatabaseSQLValue decodes src into a database/sql driver value.
 func (c OctetsCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
 	return c.DecodeValue(m, typeMetadata, src)
 }
 
+// DecodeValue decodes src into a copied byte slice.
 func (c OctetsCodec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil

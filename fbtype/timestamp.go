@@ -345,9 +345,12 @@ func parseTimestampString(s string, location *time.Location) (time.Time, error) 
 		return time.Time{}, fmt.Errorf("cannot parse TIMESTAMP date from %q: %w", s, err)
 	}
 
-	usec, err := parseTimeString(timePart)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("cannot parse TIMESTAMP time from %q: %w", s, err)
+	var usec int64
+	if timePart != "" {
+		usec, err = parseTimeString(timePart)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("cannot parse TIMESTAMP time from %q: %w", s, err)
+		}
 	}
 
 	loc := time.UTC
@@ -367,11 +370,14 @@ func splitTimestampString(s string) (datePart string, timePart string, err error
 	}
 
 	fields := strings.Fields(s)
-	if len(fields) != 2 {
-		return "", "", fmt.Errorf("invalid TIMESTAMP format: %q (expected <date> <time>, e.g. YYYY-MM-DD HH:MM[:SS[.ffffff]])", s)
+	switch len(fields) {
+	case 1:
+		return fields[0], "", nil
+	case 2:
+		return fields[0], fields[1], nil
+	default:
+		return "", "", fmt.Errorf("invalid TIMESTAMP format: %q (expected <date> [<time>], e.g. YYYY-MM-DD [HH:MM[:SS[.ffffff]]])", s)
 	}
-
-	return fields[0], fields[1], nil
 }
 
 func formatTimestampString(t time.Time) string {

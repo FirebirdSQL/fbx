@@ -1,9 +1,10 @@
-package fbservice
+package fbservice_test
 
 import (
 	"bytes"
 	"context"
 	"errors"
+	"math"
 	"strconv"
 	"strings"
 	"testing"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx/fbconn"
+	"rdb.red-soft.ru/fbx/fbservice"
 )
 
 func TestManagerBackupWithoutOptions(t *testing.T) {
@@ -34,7 +36,7 @@ func TestManagerBackupMapsOptions(t *testing.T) {
 		context.Background(),
 		"/data/employee.fdb",
 		"/backup/employee.fbk",
-		BackupOptions{
+		fbservice.BackupOptions{
 			Output:             &output,
 			Verbose:            true,
 			IgnoreChecksums:    true,
@@ -82,8 +84,8 @@ func TestManagerBackupRejectsMultipleOptions(t *testing.T) {
 		context.Background(),
 		"/data/employee.fdb",
 		"/backup/employee.fbk",
-		BackupOptions{},
-		BackupOptions{},
+		fbservice.BackupOptions{},
+		fbservice.BackupOptions{},
 	)
 
 	require.ErrorContains(t, err, "at most one")
@@ -94,7 +96,7 @@ func TestManagerBackupValidatesRequestBeforeOpeningConnection(t *testing.T) {
 	type testCase struct {
 		database   string
 		backupFile string
-		options    BackupOptions
+		options    fbservice.BackupOptions
 		errText    string
 	}
 
@@ -111,41 +113,41 @@ func TestManagerBackupValidatesRequestBeforeOpeningConnection(t *testing.T) {
 		"negative factor": {
 			database:   "/data/employee.fdb",
 			backupFile: "/backup/employee.fbk",
-			options:    BackupOptions{Factor: -1},
+			options:    fbservice.BackupOptions{Factor: -1},
 			errText:    "backup factor must be between 0",
 		},
 		"negative parallel workers": {
 			database:   "/data/employee.fdb",
 			backupFile: "/backup/employee.fbk",
-			options:    BackupOptions{ParallelWorkers: -1},
+			options:    fbservice.BackupOptions{ParallelWorkers: -1},
 			errText:    "backup parallel workers must be between 0",
 		},
 		"database exceeds SPB limit": {
-			database:   strings.Repeat("d", maxServiceActionStringLength+1),
+			database:   strings.Repeat("d", math.MaxUint16+1),
 			backupFile: "/backup/employee.fbk",
 			errText:    "backup database is 65536 bytes; maximum is 65535",
 		},
 		"backup file exceeds SPB limit": {
 			database:   "/data/employee.fdb",
-			backupFile: strings.Repeat("b", maxServiceActionStringLength+1),
+			backupFile: strings.Repeat("b", math.MaxUint16+1),
 			errText:    "backup file is 65536 bytes; maximum is 65535",
 		},
 		"compressor exceeds SPB limit": {
 			database:   "/data/employee.fdb",
 			backupFile: "/backup/employee.fbk",
-			options: BackupOptions{
-				Compressor: strings.Repeat("c", maxServiceActionStringLength+1),
+			options: fbservice.BackupOptions{
+				Compressor: strings.Repeat("c", math.MaxUint16+1),
 			},
 			errText: "backup compressor is 65536 bytes; maximum is 65535",
 		},
 	}
 	if strconv.IntSize > 32 {
-		aboveMaxInt32 := int64(maxServiceActionInt32)
+		aboveMaxInt32 := int64(math.MaxInt32)
 		aboveMaxInt32++
 		tests["factor exceeds int32"] = testCase{
 			database:   "/data/employee.fdb",
 			backupFile: "/backup/employee.fbk",
-			options: BackupOptions{
+			options: fbservice.BackupOptions{
 				Factor: int(aboveMaxInt32),
 			},
 			errText: "backup factor must be between 0",
@@ -153,7 +155,7 @@ func TestManagerBackupValidatesRequestBeforeOpeningConnection(t *testing.T) {
 		tests["parallel workers exceeds int32"] = testCase{
 			database:   "/data/employee.fdb",
 			backupFile: "/backup/employee.fbk",
-			options: BackupOptions{
+			options: fbservice.BackupOptions{
 				ParallelWorkers: int(aboveMaxInt32),
 			},
 			errText: "backup parallel workers must be between 0",
@@ -183,19 +185,30 @@ func TestManagerBackupReturnsOperationAndCloseErrors(t *testing.T) {
 	require.ErrorContains(t, err, "close failed")
 }
 
-func TestNewManagerCopiesConfig(t *testing.T) {
-	config, err := ParseConfig("firebird://sysdba:masterkey@localhost/employee")
+func TestNewManagerConfigCopiesConfig(t *testing.T) {
+	config, err := fbservice.ParseConfig("firebird://sysdba:masterkey@localhost/employee")
 	require.NoError(t, err)
-	manager := NewManager(config)
+	config.AuthPlugins = []string{"Srp256", "Srp"}
+	manager, err := fbservice.NewManagerConfig(config)
+	require.NoError(t, err)
+	connection := new(fakeServiceConnection)
+	fbservice.SetConnectForTest(manager, func(_ context.Context, serviceConfig *fbconn.ServiceConfig) (fbservice.ServiceConnection, error) {
+		connection.connectionConfig = serviceConfig.ConnectionConfig.Copy()
+		return connection, nil
+	})
 	config.User = "changed"
+	config.AuthPlugins[0] = "changed"
 	config.AuthPlugins = append(config.AuthPlugins, "changed")
 
-	require.Equal(t, "sysdba", manager.config.User)
-	require.NotContains(t, manager.config.AuthPlugins, "changed")
+	err = manager.Backup(context.Background(), "/data/employee.fdb", "/backup/employee.fbk")
+
+	require.NoError(t, err)
+	require.Equal(t, "sysdba", connection.connectionConfig.User)
+	require.Equal(t, []string{"Srp256", "Srp"}, connection.connectionConfig.AuthPluginList)
 }
 
 func TestManagerMapsPublicConfigToConnectionConfig(t *testing.T) {
-	config, err := ParseConfig("firebird://sysdba:masterkey@localhost/employee")
+	config, err := fbservice.ParseConfig("firebird://sysdba:masterkey@localhost/employee")
 	require.NoError(t, err)
 	config.Host = "service-host"
 	config.Port = 4040
@@ -210,12 +223,13 @@ func TestManagerMapsPublicConfigToConnectionConfig(t *testing.T) {
 	config.WireCrypt = false
 	config.ConnectTimeout = 3 * time.Second
 
-	manager := NewManager(config)
+	manager, err := fbservice.NewManagerConfig(config)
+	require.NoError(t, err)
 	connection := new(fakeServiceConnection)
-	manager.connect = func(_ context.Context, serviceConfig *fbconn.ServiceConfig) (serviceConnection, error) {
+	fbservice.SetConnectForTest(manager, func(_ context.Context, serviceConfig *fbconn.ServiceConfig) (fbservice.ServiceConnection, error) {
 		connection.connectionConfig = serviceConfig.ConnectionConfig.Copy()
 		return connection, nil
-	}
+	})
 
 	err = manager.Backup(context.Background(), "/data/employee.fdb", "/backup/employee.fbk")
 
@@ -235,35 +249,23 @@ func TestManagerMapsPublicConfigToConnectionConfig(t *testing.T) {
 }
 
 func TestManagerClearsDatabaseOnlyConnectionSettings(t *testing.T) {
-	config, err := ParseConfig(
+	config, err := fbservice.ParseConfig(
 		"host=localhost user=sysdba password=masterkey database=employee " +
 			"create_database=true target_session_attrs=read-write " +
-			"default_transaction_read_only=true application_name=fbservice-test",
+			"default_transaction_read_only=true application_name=fbservice-test " +
+			"autocommit=true blob_buffer_size=1 use_stream_blobs=true " +
+			"max_inline_blob_size=1 max_blob_cache_size=1 fetch_batch_size=1",
 	)
 	require.NoError(t, err)
-	requireDatabaseConnectionSettingsCleared(t, config.connectionConfig)
 
-	config.connectionConfig.Database = "employee"
-	config.connectionConfig.ValidateConnect = func(context.Context, *fbconn.FbConn) error { return nil }
-	config.connectionConfig.AfterConnect = func(context.Context, *fbconn.FbConn) error { return nil }
-	config.connectionConfig.CreateDatabase = true
-	config.connectionConfig.DefaultTransactionReadOnly = true
-	config.connectionConfig.Autocommit = true
-	config.connectionConfig.BlobBufferSize = 1
-	config.connectionConfig.UseStreamBlobs = true
-	config.connectionConfig.MaxInlineBlobSize = 1
-	config.connectionConfig.MaxBlobCacheSize = 1
-	config.connectionConfig.FetchBatchSize = 1
-	config.connectionConfig.DPB = []byte{1}
-	config.connectionConfig.RuntimeParams = map[string]string{"application_name": "fbservice-test"}
-
-	manager := NewManager(config)
+	manager, err := fbservice.NewManagerConfig(config)
+	require.NoError(t, err)
 	connection := new(fakeServiceConnection)
-	manager.connect = func(_ context.Context, serviceConfig *fbconn.ServiceConfig) (serviceConnection, error) {
+	fbservice.SetConnectForTest(manager, func(_ context.Context, serviceConfig *fbconn.ServiceConfig) (fbservice.ServiceConnection, error) {
 		connection.connectionConfig = serviceConfig.ConnectionConfig.Copy()
 		connection.expectedDatabase = serviceConfig.ExpectedDatabase
 		return connection, nil
-	}
+	})
 
 	err = manager.Backup(context.Background(), "/data/employee.fdb", "/backup/employee.fbk")
 
@@ -272,34 +274,33 @@ func TestManagerClearsDatabaseOnlyConnectionSettings(t *testing.T) {
 	requireDatabaseConnectionSettingsCleared(t, connection.connectionConfig)
 }
 
-func TestManagerRejectsConfigNotCreatedByParseConfig(t *testing.T) {
-	manager := NewManager(&Config{Host: "localhost"})
-
-	err := manager.Backup(context.Background(), "/data/employee.fdb", "/backup/employee.fbk")
+func TestNewManagerConfigRejectsConfigNotCreatedByParseConfig(t *testing.T) {
+	manager, err := fbservice.NewManagerConfig(&fbservice.Config{Host: "localhost"})
 
 	require.ErrorContains(t, err, "must be created by ParseConfig")
+	require.Nil(t, manager)
 }
 
-func TestManagerBackupRejectsNilConfig(t *testing.T) {
-	manager := NewManager(nil)
-
-	err := manager.Backup(context.Background(), "/data/employee.fdb", "/backup/employee.fbk")
+func TestNewManagerConfigRejectsNilConfig(t *testing.T) {
+	manager, err := fbservice.NewManagerConfig(nil)
 
 	require.ErrorContains(t, err, "config must not be nil")
+	require.Nil(t, manager)
 }
 
-func newTestManager(t *testing.T) (*Manager, *fakeServiceConnection) {
+func newTestManager(t *testing.T) (*fbservice.Manager, *fakeServiceConnection) {
 	t.Helper()
-	config, err := ParseConfig("firebird://sysdba:masterkey@localhost/employee")
+	config, err := fbservice.ParseConfig("firebird://sysdba:masterkey@localhost/employee")
 	require.NoError(t, err)
 
 	connection := new(fakeServiceConnection)
-	manager := NewManager(config)
-	manager.connect = func(_ context.Context, config *fbconn.ServiceConfig) (serviceConnection, error) {
+	manager, err := fbservice.NewManagerConfig(config)
+	require.NoError(t, err)
+	fbservice.SetConnectForTest(manager, func(_ context.Context, config *fbconn.ServiceConfig) (fbservice.ServiceConnection, error) {
 		connection.opened = true
 		connection.expectedDatabase = config.ExpectedDatabase
 		return connection, nil
-	}
+	})
 	return manager, connection
 }
 
@@ -313,6 +314,8 @@ type fakeServiceConnection struct {
 	restoreBackupFile string
 	restoreDatabase   string
 	restoreOptions    fbconn.RestoreOptions
+	statisticsOptions fbconn.StatisticsOptions
+	statisticsErr     error
 	connectionConfig  *fbconn.Config
 	backupErr         error
 	restoreErr        error
@@ -346,6 +349,12 @@ func (c *fakeServiceConnection) Restore(
 func (c *fakeServiceConnection) Close(context.Context) error {
 	c.closed = true
 	return c.closeErr
+}
+
+func (c *fakeServiceConnection) Statistics(_ context.Context, database string, options fbconn.StatisticsOptions) error {
+	c.database = database
+	c.statisticsOptions = options
+	return c.statisticsErr
 }
 
 func requireDatabaseConnectionSettingsCleared(t *testing.T, config *fbconn.Config) {

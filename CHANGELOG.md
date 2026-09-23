@@ -1,5 +1,47 @@
 # Change Log
 
+# [0.6.0] - 03.09.2026
+
+### Added
+
+- RS-294554: Partial service manager support (backup and restore).
+- RS-311733: Wire protocol compression support.
+- RS-311637: Multifactor authentication.
+- RS-316291, RS-328505: Support for TIME WITH TIME ZONE.
+- RS-312902: Timezone runtime parameter support.
+- RS-314208: Ability to transfer the user name to the authentication plugin.
+- RS-322771: Added the ability to pass callbacks to authentication plugins via the connection config.
+- RS-317497: Attachment ID API.
+- RS-312736: Server version API.
+- RS-317501, RS-248810: BLR module.
+- RS-308545. Port pgx 5.10.0: Struct named query args.
+
+### Improved
+
+- RS-313511, RS-323064, RS-325034, RS-323428: Massive fbtype refactoring and cleanup.
+- RS-317500: Formalize fatal server error and connection closing policy.
+- RS-312736: Make server version available in ValidateConnect.
+- RS-308545: Port pgx 5.10.0: Closed connection sentinel.
+
+### Fixed
+
+- RS-316291: TIMETZ base date for named zones. Preserve TIMETZ zone identity in strings.
+- RS-317496: Use provided port for absolute local database path.
+- RS-316290: Multiple fixes in stdlib layer.
+- RS-325029: Wire encryption negotiation after authentication plugin switch.
+- RS-328463: Materialize stdlib BLOB values before releasing connections.
+- RS-328465: Preserve stdlib ARRAY values across Rows. Next calls.
+- RS-329012: NULL handling in array encoding.
+- RS-323436: Handle returning execution errors correctly.
+- RS-308545. Port pgx 5.10.0. fix keyword/value trailing whitespace parsing.
+- RS-308545. Port pgx 5.10.0: use fresh context for fallback connect.
+- RS-308545. Port pgx 5.10.0: add connection string allowed keys.
+- RS-308545. Port pgx 5.10.0: preserve timeout error chain.
+- RS-308545. Port pgx 5.10.0: check pool connection expiry before acquire.
+- RS-308545. Port pgx 5.10.0: fix pool lifetime destroy accounting.
+- RS-308545. Port pgx 5.10.0: use atomic.Int64 for pool counters.
+- RS-308545. Port pgx 5.10.0: bound array element count while decoding.
+
 # [0.5.0] - 26.06.2026
 
 ### Added
@@ -11,7 +53,7 @@
 
 ### Improved
 - RS-307577. smallint now scanned into int16 when target type is any.
-- RS-305333. By default isc_dpb_search_path set to process name and can be overriden with application_name=.
+- RS-305333. By default isc_dpb_process_name set to process name and can be overridden with application_name=.
 - RS-303965. Port pgx v5.9.2. Optimized statement cache LRU implementation.
 - RS-303965. Port pgx v5.9.2. Optimized internal pgio append/set helpers.
 

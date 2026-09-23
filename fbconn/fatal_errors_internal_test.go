@@ -157,8 +157,8 @@ func TestStatementExecTxCloseCursorErrorKeepsConnectionOpen(t *testing.T) {
 		cleanupDone: make(chan struct{}),
 	}
 	statement := &Statement{
-		conn:         conn,
-		cursorOpened: true,
+		conn:              conn,
+		cursorTransaction: &FBTransaction{Connection: conn},
 		Description: &StatementDescription{
 			StatementInfo: &StatementInfo{},
 		},

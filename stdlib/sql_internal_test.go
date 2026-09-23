@@ -304,6 +304,146 @@ func TestStmtCloseIsIdempotentWithSharedStatement(t *testing.T) {
 	}
 }
 
+func TestStmtCloseAfterCachedStatementEvictionDoesNotLeak(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	config, err := fbx.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.DefaultQueryExecMode = fbx.QueryExecModeCacheStatement
+	config.StatementCacheCapacity = 1
+
+	nativeConn, err := fbx.ConnectConfig(ctx, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := nativeConn.Close(context.Background()); err != nil {
+			t.Errorf("close native connection: %v", err)
+		}
+	}()
+
+	conn := &Conn{
+		conn:        nativeConn,
+		psRefCounts: make(map[*fbconn.StatementDescription]int),
+	}
+	const statementSQL = "select cast('rs_328477_stdlib' as varchar(64)) from rdb$database"
+	if _, err := conn.ExecContext(ctx, statementSQL, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	driverStmt, err := conn.PrepareContext(ctx, statementSQL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stmt := driverStmt.(*Stmt)
+	if got := conn.psRefCounts[stmt.sd]; got != 1 {
+		t.Fatalf("initial reference count = %d, want 1", got)
+	}
+	if got := countNativeStatementsForSQL(t, nativeConn, statementSQL); got != 2 {
+		t.Fatalf("initial native statement count = %d, want 2", got)
+	}
+
+	const evictingSQL = "select cast('rs_328477_stdlib_evict' as varchar(64)) from rdb$database"
+	if _, err := conn.ExecContext(ctx, evictingSQL, nil); err != nil {
+		t.Fatal(err)
+	}
+	const cleanupSQL = "select cast('rs_328477_stdlib_cleanup' as varchar(64)) from rdb$database"
+	if _, err := conn.ExecContext(ctx, cleanupSQL, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := conn.psRefCounts[stmt.sd]; got != 1 {
+		t.Fatalf("reference count after cache eviction = %d, want 1", got)
+	}
+
+	if err := stmt.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := conn.psRefCounts[stmt.sd]; ok {
+		t.Fatal("reference count remains after Close")
+	}
+	if got := countNativeStatementsForSQL(t, nativeConn, statementSQL); got != 0 {
+		t.Fatalf("native statement count after Close = %d, want 0", got)
+	}
+}
+
+func TestStaleStmtCloseDoesNotDeallocateReplacement(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	nativeConn, err := fbx.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := nativeConn.Close(context.Background()); err != nil {
+			t.Errorf("close native connection: %v", err)
+		}
+	}()
+
+	conn := &Conn{
+		conn:        nativeConn,
+		psRefCounts: make(map[*fbconn.StatementDescription]int),
+	}
+	const query = "select cast(328477 as integer) from rdb$database"
+	staleDriverStmt, err := conn.PrepareContext(ctx, query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleStmt := staleDriverStmt.(*Stmt)
+
+	if err := nativeConn.DeallocateAll(ctx); err != nil {
+		t.Fatal(err)
+	}
+	replacementDriverStmt, err := conn.PrepareContext(ctx, query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacementStmt := replacementDriverStmt.(*Stmt)
+	if staleStmt.sd == replacementStmt.sd {
+		t.Fatal("replacement reused the stale statement description")
+	}
+
+	if err := staleStmt.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got := countNativeStatementsForSQL(t, nativeConn, query); got != 1 {
+		t.Fatalf("native statement count after stale Close = %d, want 1", got)
+	}
+	rows, err := replacementStmt.Query(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := replacementStmt.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got := countNativeStatementsForSQL(t, nativeConn, query); got != 0 {
+		t.Fatalf("native statement count after replacement Close = %d, want 0", got)
+	}
+}
+
+func countNativeStatementsForSQL(t testing.TB, conn *fbx.Conn, sql string) int64 {
+	t.Helper()
+
+	var count int64
+	err := conn.QueryRow(
+		context.Background(),
+		"select count(*) from mon$statements where mon$attachment_id = current_connection and cast(mon$sql_text as varchar(255)) = ?",
+		fbx.QueryExecModeExec,
+		sql,
+	).Scan(&count)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return count
+}
+
 type blockNextWriteConn struct {
 	net.Conn
 

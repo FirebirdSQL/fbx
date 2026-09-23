@@ -3,15 +3,16 @@ package zeronull
 import (
 	"database/sql/driver"
 
-	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbtype"
 )
 
+// UUID represents a UUID whose zero value is SQL NULL.
 type UUID [16]byte
 
+// SkipUnderlyingTypePlan implements [fbtype.SkipUnderlyingTypePlanner].
 func (UUID) SkipUnderlyingTypePlan() {}
 
-// ScanUUID implements the UUIDScanner interface.
+// ScanUUID implements [fbtype.UUIDScanner].
 func (u *UUID) ScanUUID(v fbtype.UUID) error {
 	if !v.Valid {
 		*u = UUID{}
@@ -23,6 +24,7 @@ func (u *UUID) ScanUUID(v fbtype.UUID) error {
 	return nil
 }
 
+// UUIDValue implements [fbtype.UUIDValuer].
 func (u UUID) UUIDValue() (fbtype.UUID, error) {
 	if u == (UUID{}) {
 		return fbtype.UUID{}, nil
@@ -30,10 +32,11 @@ func (u UUID) UUIDValue() (fbtype.UUID, error) {
 	return fbtype.UUID{Bytes: u, Valid: true}, nil
 }
 
-// Scan implements the database/sql Scanner interface.
+// Scan implements [database/sql.Scanner].
 func (u *UUID) Scan(src any) error {
+	*u = UUID{}
+
 	if src == nil {
-		*u = UUID{}
 		return nil
 	}
 
@@ -48,17 +51,12 @@ func (u *UUID) Scan(src any) error {
 	return nil
 }
 
-// Value implements the database/sql/driver Valuer interface.
+// Value implements [driver.Valuer]. It returns nil for the zero UUID and a
+// canonical UUID string otherwise.
 func (u UUID) Value() (driver.Value, error) {
 	if u == (UUID{}) {
 		return nil, nil
 	}
 
-	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_VARYING, 0, 0, 0)
-	buf, err := fbtype.UUIDCodec{}.PlanEncode(nil, typeMetadata, u).Encode(u, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return string(buf), nil
+	return fbtype.UUID{Bytes: u, Valid: true}.String(), nil
 }

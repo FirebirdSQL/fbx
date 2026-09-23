@@ -421,14 +421,17 @@ const (
 	Isc_spb_num_db  = 6
 
 	// isc_info_svc_db_stats params
-	Isc_spb_sts_data_pages      = 0x01
-	Isc_spb_sts_db_log          = 0x02
-	Isc_spb_sts_hdr_pages       = 0x04
-	Isc_spb_sts_idx_pages       = 0x08
-	Isc_spb_sts_sys_relations   = 0x10
-	Isc_spb_sts_record_versions = 0x20
-	Isc_spb_sts_table           = 0x40
-	Isc_spb_sts_nocreation      = 0x80
+	Isc_spb_sts_data_pages       = 0x01
+	Isc_spb_sts_db_log           = 0x02
+	Isc_spb_sts_hdr_pages        = 0x04
+	Isc_spb_sts_idx_pages        = 0x08
+	Isc_spb_sts_sys_relations    = 0x10
+	Isc_spb_sts_record_versions  = 0x20
+	Isc_spb_sts_table            = 0x40
+	Isc_spb_sts_nocreation       = 0x80
+	Isc_spb_sts_encryption       = 0x100
+	Isc_spb_sts_schema           = 65
+	Isc_spb_sts_parallel_workers = 100
 
 	// isc_action_svc_repair params
 	Isc_spb_rpr_validate_db      = 0x01

@@ -1,36 +1,88 @@
-package fbservice
+package fbservice_test
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx/fbconn"
+	"rdb.red-soft.ru/fbx/fbservice"
 )
 
+func TestNewManager(t *testing.T) {
+	for name, connString := range map[string]string{
+		"URL":           "firebird://service-user:service-password@service-host:4040/ignored.fdb?create_database=true",
+		"keyword/value": "host=service-host port=4040 user=service-user password=service-password database=ignored.fdb create_database=true",
+	} {
+		t.Run(name, func(t *testing.T) {
+			manager, err := fbservice.NewManager(connString)
+			require.NoError(t, err)
+			require.NotNil(t, manager)
+
+			operationCtx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			connection := new(fakeServiceConnection)
+			fbservice.SetConnectForTest(manager, func(ctx context.Context, config *fbconn.ServiceConfig) (fbservice.ServiceConnection, error) {
+				require.Equal(t, operationCtx, ctx)
+				require.NoError(t, ctx.Err())
+				connection.connectionConfig = config.ConnectionConfig.Copy()
+				connection.expectedDatabase = config.ExpectedDatabase
+				return connection, nil
+			})
+
+			err = manager.Backup(operationCtx, "/data/employee.fdb", "/backup/employee.fbk")
+
+			require.NoError(t, err)
+			require.Equal(t, "service-host", connection.connectionConfig.Host)
+			require.Equal(t, uint16(4040), connection.connectionConfig.Port)
+			require.Equal(t, "service-user", connection.connectionConfig.User)
+			require.Equal(t, "service-password", connection.connectionConfig.Password)
+			requireDatabaseConnectionSettingsCleared(t, connection.connectionConfig)
+			require.Equal(t, "/data/employee.fdb", connection.expectedDatabase)
+			require.Equal(t, "/data/employee.fdb", connection.database)
+			require.Equal(t, "/backup/employee.fbk", connection.backupFile)
+			require.True(t, connection.closed)
+		})
+	}
+}
+
+func TestNewManagerRejectsInvalidConnectionString(t *testing.T) {
+	for _, connString := range []string{"firebird://localhost:invalid/employee", "host='unterminated", "port=65536"} {
+		t.Run(connString, func(t *testing.T) {
+			manager, err := fbservice.NewManager(connString)
+
+			var parseErr *fbconn.ParseConfigError
+			require.ErrorAs(t, err, &parseErr)
+			require.Nil(t, manager)
+		})
+	}
+}
+
 func TestManagerSupportsConcurrentOperations(t *testing.T) {
-	config, err := ParseConfig("firebird://sysdba:masterkey@localhost/employee")
+	config, err := fbservice.ParseConfig("firebird://sysdba:masterkey@localhost/employee")
 	require.NoError(t, err)
 
 	const operationCount = 100
 	var opened atomic.Int64
 	var closed atomic.Int64
 
-	manager := NewManager(config)
-	manager.connect = func(
+	manager, err := fbservice.NewManagerConfig(config)
+	require.NoError(t, err)
+	fbservice.SetConnectForTest(manager, func(
 		_ context.Context,
 		config *fbconn.ServiceConfig,
-	) (serviceConnection, error) {
+	) (fbservice.ServiceConnection, error) {
 		opened.Add(1)
 		return &concurrentServiceConnection{
 			expectedDatabase: config.ExpectedDatabase,
 			closed:           &closed,
 		}, nil
-	}
+	})
 
 	var wg sync.WaitGroup
 	errs := make(chan error, operationCount)
@@ -41,11 +93,14 @@ func TestManagerSupportsConcurrentOperations(t *testing.T) {
 
 			database := fmt.Sprintf("/data/employee-%d.fdb", i)
 			backupFile := fmt.Sprintf("/backup/employee-%d.fbk", i)
-			if i%2 == 0 {
+			switch i % 3 {
+			case 0:
 				errs <- manager.Backup(context.Background(), database, backupFile)
-				return
+			case 1:
+				errs <- manager.Restore(context.Background(), backupFile, database)
+			case 2:
+				errs <- manager.Statistics(context.Background(), database, fbservice.StatisticsOptions{Output: io.Discard})
 			}
-			errs <- manager.Restore(context.Background(), backupFile, database)
 		}()
 	}
 	wg.Wait()
@@ -88,6 +143,10 @@ func (c *concurrentServiceConnection) Close(context.Context) error {
 	}
 	c.closed.Add(1)
 	return nil
+}
+
+func (c *concurrentServiceConnection) Statistics(_ context.Context, database string, _ fbconn.StatisticsOptions) error {
+	return c.recordOperation(database)
 }
 
 func (c *concurrentServiceConnection) recordOperation(database string) error {

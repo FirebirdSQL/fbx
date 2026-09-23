@@ -3,15 +3,25 @@ Package fbservice provides a high-level API for Firebird and RedDatabase
 services.
 
 A Manager stores connection settings and opens a separate service connection
-for each operation. Create a manager from a parsed configuration:
+for each operation. Create a manager directly from a connection string:
+
+	manager, err := fbservice.NewManager(os.Getenv("DATABASE_URL"))
+	if err != nil {
+		return err
+	}
+
+To customize settings, parse the configuration before creating the manager:
 
 	config, err := fbservice.ParseConfig(os.Getenv("DATABASE_URL"))
 	if err != nil {
 		return err
 	}
-	manager := fbservice.NewManager(config)
+	manager, err := fbservice.NewManagerConfig(config)
+	if err != nil {
+		return err
+	}
 
-Operations without special settings can omit their options:
+Backup and Restore without special settings can omit their options:
 
 	err = manager.Backup(ctx, database, backupFile)
 
@@ -51,7 +61,22 @@ Set AccessMode to override the access mode recorded in the backup:
 		AccessMode: fbservice.RestoreAccessModeReadOnly,
 	})
 
-Manager does not write to standard output unless an operation explicitly
+Collect a gstat report with the same Manager:
+
+	err = manager.Statistics(ctx, database, fbservice.StatisticsOptions{
+		Output:         os.Stdout,
+		DataPages:      true,
+		RecordVersions: true,
+		Tables:         []string{"EMPLOYEE"},
+	})
+
+Statistics supports Output, DataPages, HeaderPages, IndexPages,
+SystemRelations, RecordVersions, Tables, Schemas, NoCreation, Encryption and
+ParallelWorkers. Unsupported server options return errors. Output is required;
+use io.Discard to explicitly discard the report. Leaving all other options at
+their zero values selects the server's default data and index analysis.
+
+Managers do not write to standard output unless an operation explicitly
 receives os.Stdout as its output.
 */
 package fbservice

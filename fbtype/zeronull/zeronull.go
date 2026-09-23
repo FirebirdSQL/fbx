@@ -14,4 +14,6 @@ func Register(m *fbtype.Map) {
 	m.RegisterDefaultFbType(Timestamp{}, "timestamp")
 	m.RegisterDefaultFbType(Timestamptz{}, "timestamptz")
 	m.RegisterDefaultFbType(Int128{}, "int128")
+	m.RegisterDefaultFbType(UUID{}, "octets")
+	m.RegisterDefaultFbType(&UUID{}, "octets")
 }

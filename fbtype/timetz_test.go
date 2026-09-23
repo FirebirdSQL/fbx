@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -268,6 +269,22 @@ func TestTimetzCodecRoundTripString(t *testing.T) {
 			wantLocName: "Europe/Moscow",
 		},
 		{
+			name:        "single digit fields and named zone",
+			input:       "1:2:3 Europe/Moscow",
+			wantHour:    1,
+			wantMinute:  2,
+			wantSecond:  3,
+			wantLocName: "Europe/Moscow",
+		},
+		{
+			name:        "single digit fields and compact offset",
+			input:       "1:2:3+03:00",
+			wantHour:    1,
+			wantMinute:  2,
+			wantSecond:  3,
+			wantLocName: "+03:00",
+		},
+		{
 			name:        "UTC suffix",
 			input:       "12:00:00Z",
 			wantHour:    12,
@@ -467,6 +484,13 @@ func TestTimetzScanValueAndJSON(t *testing.T) {
 		t.Fatalf("decoded time differs:\n got  = %#v\n want = %#v", decoded.Time, ttz.Time)
 	}
 
+	if err := json.Unmarshal([]byte(`"1:2:3 Europe/Moscow"`), &decoded); err != nil {
+		t.Fatalf("UnmarshalJSON single-digit fields failed: %v", err)
+	}
+	if decoded.Time.Hour() != 1 || decoded.Time.Minute() != 2 || decoded.Time.Second() != 3 || decoded.Time.Location().String() != "Europe/Moscow" {
+		t.Fatalf("decoded single-digit time = %s, want 01:02:03 Europe/Moscow", decoded.Time)
+	}
+
 	if err := ttz.Scan(nil); err != nil {
 		t.Fatalf("Scan(nil) failed: %v", err)
 	}
@@ -512,6 +536,91 @@ func TestTimetzMarshalJSONPreservesNamedZone(t *testing.T) {
 	}
 	if decoded.Time.Location().String() != "Europe/Moscow" {
 		t.Fatalf("decoded location = %q, want Europe/Moscow", decoded.Time.Location().String())
+	}
+}
+
+func TestTimetzLegacyZoneRoundTrip(t *testing.T) {
+	tests := []struct {
+		name         string
+		input        string
+		want         string
+		wantLocation string
+		wantOffset   int
+	}{
+		{
+			name:         "ICU alias",
+			input:        "10:16:43 CST",
+			want:         "10:16:43.000000 CST",
+			wantLocation: "America/Chicago",
+			wantOffset:   -6 * 60 * 60,
+		},
+		{
+			name:         "fixed SystemV zone",
+			input:        "10:16:43 SystemV/CST6",
+			want:         "10:16:43.000000 SystemV/CST6",
+			wantLocation: "SystemV/CST6",
+			wantOffset:   -6 * 60 * 60,
+		},
+	}
+
+	m := NewMap()
+	metadata := NewTypeMetadata(fbproto.SQL_TYPE_TIME_TZ, 0, 0, 0)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			wire, err := m.Encode(metadata, tt.input, nil)
+			if err != nil {
+				t.Fatalf("Encode failed: %v", err)
+			}
+
+			var text string
+			if err := m.Scan(metadata, wire, &text); err != nil {
+				t.Fatalf("Scan string failed: %v", err)
+			}
+			if text != tt.want {
+				t.Fatalf("string = %q, want %q", text, tt.want)
+			}
+
+			var decoded Timetz
+			if err := m.Scan(metadata, wire, &decoded); err != nil {
+				t.Fatalf("Scan Timetz failed: %v", err)
+			}
+			if decoded.Time.Location().String() != tt.wantLocation {
+				t.Fatalf("location = %q, want %q", decoded.Time.Location(), tt.wantLocation)
+			}
+			_, offset := decoded.Time.Zone()
+			if offset != tt.wantOffset {
+				t.Fatalf("offset = %d, want %d", offset, tt.wantOffset)
+			}
+		})
+	}
+}
+
+func TestTimetzRejectsUnsupportedSystemVDSTZones(t *testing.T) {
+	zones := []string{
+		"SystemV/AST4ADT",
+		"SystemV/CST6CDT",
+		"SystemV/EST5EDT",
+		"SystemV/MST7MDT",
+		"SystemV/PST8PDT",
+		"SystemV/YST9YDT",
+	}
+
+	for _, zone := range zones {
+		t.Run(zone, func(t *testing.T) {
+			if _, _, err := parseTimetzZone(zone); err == nil || !strings.Contains(err.Error(), zone) {
+				t.Fatalf("parseTimetzZone(%q) error = %v, want error containing zone name", zone, err)
+			}
+
+			tzRaw, ok := fbproto.ResolveTzRawByLocationName(zone)
+			if !ok {
+				t.Fatalf("time zone %q is not registered", zone)
+			}
+			src := make([]byte, 8)
+			binary.BigEndian.PutUint32(src[4:8], uint32(tzRaw))
+			if _, err := decodeTimetzBinary(src); err == nil || !strings.Contains(err.Error(), zone) {
+				t.Fatalf("decodeTimetzBinary(%q) error = %v, want error containing zone name", zone, err)
+			}
+		})
 	}
 }
 

@@ -10,7 +10,7 @@ import (
 // Config contains settings used to connect to the Firebird service manager.
 //
 // Config must be created by [ParseConfig]. After parsing, its fields can be
-// modified before passing the config to [NewManager].
+// modified before passing the config to [NewManagerConfig].
 type Config struct {
 	// Host is the server hostname or Unix socket path.
 	Host string
@@ -124,6 +124,17 @@ func (c *Config) toConnectionConfig() (*fbconn.Config, error) {
 	connectionConfig.ConnectTimeout = c.ConnectTimeout
 	scrubDatabaseConnectionSettings(connectionConfig)
 	return connectionConfig, nil
+}
+
+func (c *Config) toServiceConfig(expectedDatabase string) (*fbconn.ServiceConfig, error) {
+	connectionConfig, err := c.toConnectionConfig()
+	if err != nil {
+		return nil, err
+	}
+	return &fbconn.ServiceConfig{
+		ConnectionConfig: connectionConfig,
+		ExpectedDatabase: expectedDatabase,
+	}, nil
 }
 
 func scrubDatabaseConnectionSettings(config *fbconn.Config) {

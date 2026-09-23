@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"reflect"
 	"time"
-
-	"rdb.red-soft.ru/fbx/fbproto"
 )
 
 // ErrScanTargetTypeChanged is returned by scan plans when Scan is called with a
@@ -118,46 +116,6 @@ func (plan *pointerEmptyInterfaceScanPlan) Scan(src []byte, dst any) error {
 	*ptrAny = value
 
 	return nil
-}
-
-// scanPlanString is used by [Map.planScan] as the fast path for scanning
-// Firebird TEXT and VARYING values into string-like targets. It decodes the
-// value with the charset from [TypeMetadata] before assigning it to *string,
-// **string, or [TextScanner].
-type scanPlanString struct {
-	typeId   uint32
-	length   uint32
-	encoding *fbproto.Encoding
-}
-
-func (s scanPlanString) Scan(src []byte, dst any) error {
-	if src == nil {
-		return fmt.Errorf("cannot scan NULL into %T", dst)
-	}
-
-	var tmp string
-	if err := decodeFBString(src, s.typeId == fbproto.SQL_TYPE_VARYING, s.length, s.encoding, &tmp); err != nil {
-		return err
-	}
-
-	switch d := dst.(type) {
-	case *string:
-		*d = tmp
-		return nil
-
-	case **string:
-		if *d == nil {
-			*d = new(string)
-		}
-		**d = tmp
-		return nil
-
-	case TextScanner:
-		return d.ScanText(Text{String: tmp, Valid: true})
-
-	default:
-		return fmt.Errorf("scanPlanString: cannot scan string into %T", dst)
-	}
 }
 
 // scanPlanAnyToUndecodedBytes is used by [Map.planScan] for *UndecodedBytes
@@ -640,18 +598,6 @@ func (m *Map) planScan(typeMetadata TypeMetadata, target any, depth int) ScanPla
 
 	if _, ok := target.(*UndecodedBytes); ok {
 		return scanPlanAnyToUndecodedBytes{}
-	}
-
-	isTextType := typeMetadata.TypeID == fbproto.SQL_TYPE_TEXT || typeMetadata.TypeID == fbproto.SQL_TYPE_VARYING
-	if _, ok := target.(*string); ok && isTextType {
-		charsetId := CharacterSetForType(typeMetadata.TypeID, typeMetadata.SubType, typeMetadata.Scale)
-		name, err := fbproto.CharacterSetIdIntoName(charsetId)
-		if err == nil {
-			encoding, err := fbproto.NewEncoding(name)
-			if err == nil {
-				return scanPlanString{typeId: typeMetadata.TypeID, encoding: encoding, length: typeMetadata.Length}
-			}
-		}
 	}
 
 	var dt *Type
