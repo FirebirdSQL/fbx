@@ -934,7 +934,7 @@ func (c *Conn) execPrepared(ctx context.Context, tx *dbTx, st *fbconn.Statement,
 		if sp1 != sp2 {
 			err = c.DeallocateAll(ctx)
 			if err != nil {
-				return result.QueryStatus, errors.Join(fmt.Errorf("failed to clear the statement cache after changing the search_path"), err)
+				return result.QueryStatus, errors.Join(fmt.Errorf("failed to clear the statement cache after changing the search_path"), err, c.Close(ctx))
 			}
 		}
 	}
