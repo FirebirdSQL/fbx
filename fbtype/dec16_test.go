@@ -2,6 +2,8 @@ package fbtype_test
 
 import (
 	"context"
+	"fmt"
+	"math/big"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -9,6 +11,7 @@ import (
 	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
+	"rdb.red-soft.ru/fbx/stdlib"
 )
 
 func mustDec16(t *testing.T, s string) fbtype.DecFloat16 {
@@ -567,7 +570,8 @@ func TestDecFloat16_ExponentBoundaries(t *testing.T) {
 		{"near_max", "1E+368", false},
 
 		{"underflow", "1E-399", true},
-		{"overflow", "1E+370", true},
+		{"rescaled_exponent", "1E+370", false},
+		{"overflow", "1E+385", true},
 	}
 	m := fbtype.NewMap()
 	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_DEC64, 0, 8, 0)
@@ -589,4 +593,84 @@ func TestDecFloat16_ExponentBoundaries(t *testing.T) {
 			require.Len(t, encoded, 8)
 		})
 	}
+}
+
+func TestDecFloatTextNormalization_DB(t *testing.T) {
+	fbxtest.RunWithQueryExecModes(context.Background(), t, defaultConnTestRunner, nil,
+		func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
+			if getServerMajorVersionForConn(ctx, tb, conn) <= 3 {
+				tb.Skip("DECFLOAT requires server version 4 or newer")
+			}
+			tb.Logf("server: %v", conn.ServerVersion())
+			db := stdlib.OpenDB(*conn.Config())
+			defer func() { require.NoError(tb, db.Close()) }()
+
+			for _, tt := range []struct {
+				precision          int
+				input, coefficient string
+				exponent           int32
+				negativeZero       bool
+			}{
+				{16, "1E+370", "10", 369, false},
+				{16, "1E+379", "10000000000", 369, false},
+				{16, "1E+384", "1000000000000000", 369, false},
+				{16, "-1.0E-398", "-1", -398, false},
+				{16, "10000000000E-408", "1", -398, false},
+				{16, "10000000000000000", "1000000000000000", 1, false},
+				{16, "1.2300", "12300", -4, false},
+				{16, "0E+370", "0", 369, false},
+				{16, "-0E-399", "0", -398, true},
+				{34, "1E+6112", "10", 6111, false},
+				{34, "-1E+6121", "-10000000000", 6111, false},
+				{34, "1E+6144", "1000000000000000000000000000000000", 6111, false},
+				{34, "1.0E-6176", "1", -6176, false},
+				{34, "10000000000E-6186", "1", -6176, false},
+				{34, "10000000000000000000000000000000000", "1000000000000000000000000000000000", 1, false},
+				{34, "1.2300", "12300", -4, false},
+				{34, "-0E+6112", "0", 6111, true},
+				{34, "0E-6177", "0", -6176, false},
+			} {
+				coefficient, ok := new(big.Int).SetString(tt.coefficient, 10)
+				require.True(tb, ok)
+				var want, param, literal any
+				if tt.precision == 16 {
+					want = &fbtype.DecFloat16{Int: coefficient, Exp: tt.exponent, Valid: true, NegativeZero: tt.negativeZero}
+					param, literal = new(fbtype.DecFloat16), new(fbtype.DecFloat16)
+				} else {
+					want = &fbtype.DecFloat34{Int: coefficient, Exp: tt.exponent, Valid: true, NegativeZero: tt.negativeZero}
+					param, literal = new(fbtype.DecFloat34), new(fbtype.DecFloat34)
+				}
+				query := fmt.Sprintf("select cast(? as decfloat(%d)), cast('%s' as decfloat(%d)) from rdb$database",
+					tt.precision, tt.input, tt.precision)
+				err := conn.QueryRow(ctx, query, tt.input).Scan(param, literal)
+				require.NoError(tb, err, "fbx: %s", tt.input)
+				require.Equal(tb, want, param, "fbx parameter: %s", tt.input)
+				require.Equal(tb, want, literal, "fbx SQL literal: %s", tt.input)
+
+				err = db.QueryRowContext(ctx, query, tt.input).Scan(param, literal)
+				require.NoError(tb, err, "database/sql: %s", tt.input)
+				require.Equal(tb, want, param, "database/sql parameter: %s", tt.input)
+				require.Equal(tb, want, literal, "database/sql SQL literal: %s", tt.input)
+			}
+
+			for _, tt := range []struct {
+				precision int
+				input     string
+			}{
+				{16, "1E+385"}, {16, "1E-399"}, {16, "1.2345678901234567"},
+				{34, "1E+6145"}, {34, "1E-6177"}, {34, "1.2345678901234567890123456789012345"},
+			} {
+				query := fmt.Sprintf("select cast(? as decfloat(%d)) from rdb$database", tt.precision)
+				var value string
+				err := conn.QueryRow(ctx, query, tt.input).Scan(&value)
+				require.Error(tb, err, "fbx accepted inexact value %s", tt.input)
+				err = db.QueryRowContext(ctx, query, tt.input).Scan(&value)
+				require.Error(tb, err, "database/sql accepted inexact value %s", tt.input)
+			}
+			var one int
+			require.NoError(tb, conn.QueryRow(ctx, "select 1 from rdb$database").Scan(&one))
+			require.Equal(tb, 1, one)
+			require.NoError(tb, db.QueryRowContext(ctx, "select 1 from rdb$database").Scan(&one))
+			require.Equal(tb, 1, one)
+		})
 }
