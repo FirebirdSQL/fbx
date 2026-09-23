@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -908,17 +907,35 @@ func (c *Conn) execPrepared(ctx context.Context, tx *dbTx, st *fbconn.Statement,
 
 	defer c.eqb.reset() // Allow c.eqb internal memory to be GC'ed as soon as possible.
 
+	var containsSearchPathInSql bool
+	var sp1, sp2 string
+
+	if st.Description.StatementInfo.StatementType == fbconn.StatementDDL {
+		containsSearchPathInSql = containsSearchPathChangingInSql(st.Description.SQL)
+		if containsSearchPathInSql {
+			err = c.QueryRow(ctx, "select rdb$get_context('SYSTEM', 'SEARCH_PATH') from rdb$database", QueryExecModeExec).Scan(&sp1)
+			if err != nil {
+				return fbconn.QueryStatus{}, err
+			}
+		}
+	}
+
 	var result *fbconn.Result
 	if tx != nil {
 		result = st.ExecTx(ctx, tx.tx, c.eqb.ParamValues).Read()
 	} else {
 		result = st.Exec(ctx, c.eqb.ParamValues).Read()
 	}
-	re := regexp.MustCompile(`(?i)set\s+search_path\s+to`)
-	if result.Err == nil && re.MatchString(st.Description.SQL) {
-		err = c.DeallocateAll(ctx)
+	if result.Err == nil && containsSearchPathInSql {
+		err = c.QueryRow(ctx, "select rdb$get_context('SYSTEM', 'SEARCH_PATH') from rdb$database", QueryExecModeExec).Scan(&sp2)
 		if err != nil {
-			return result.QueryStatus, err
+			return result.QueryStatus, errors.Join(fmt.Errorf("failed to clear the statement cache after changing the search_path"), err, c.Close(ctx))
+		}
+		if sp1 != sp2 {
+			err = c.DeallocateAll(ctx)
+			if err != nil {
+				return result.QueryStatus, errors.Join(fmt.Errorf("failed to clear the statement cache after changing the search_path"), err, c.Close(ctx))
+			}
 		}
 	}
 	return result.QueryStatus, result.Err
@@ -1132,6 +1149,21 @@ optionLoop:
 	if len(st.Description.Parameters) != len(args) {
 		rows.fatal(fmt.Errorf("expected %d arguments, got %d", len(st.Description.Parameters), len(args)))
 		return rows, rows.err
+	}
+
+	if st.Description.StatementInfo.StatementType == fbconn.StatementDDL &&
+		containsSearchPathChangingInSql(st.Description.SQL) {
+		if temporary {
+			err = st.Deallocate(ctx)
+			if err != nil {
+				err = errors.Join(fmt.Errorf("failed to clear the statement cache after changing the search_path"), err, c.Close(ctx))
+			}
+		}
+		err = errors.Join(fmt.Errorf(`"%s" not supported by Query method`, sql), err)
+		if c.queryTracer != nil {
+			c.queryTracer.TraceQueryEnd(ctx, c, TraceQueryEndData{Err: err})
+		}
+		return &baseRows{err: err, closed: true}, err
 	}
 
 	err = c.eqb.Build(ctx, c, tx, c.typeMap, st.Description, args)
