@@ -123,7 +123,8 @@ func (d DecFloat16) Dec16Value() (DecFloat16, error) {
 	return cloneDecFloat16(d), nil
 }
 
-// Scan implements the [database/sql.Scanner] interface.
+// Scan implements the [database/sql.Scanner] interface. Text values are rescaled
+// without rounding when needed to fit DECFLOAT(16). Errors reset d to SQL NULL.
 func (d *DecFloat16) Scan(src any) error {
 	*d = DecFloat16{}
 
@@ -179,7 +180,8 @@ func (d DecFloat16) MarshalJSON() ([]byte, error) {
 	return json.Marshal(d.String())
 }
 
-// UnmarshalJSON decodes a JSON string or null into d.
+// UnmarshalJSON decodes a JSON string or null into d using the same exact
+// conversion as [DecFloat16.Scan]. Errors reset d to SQL NULL.
 func (d *DecFloat16) UnmarshalJSON(b []byte) error {
 	*d = DecFloat16{}
 
@@ -658,44 +660,52 @@ func parseDecFloatString(s string, typeName string, coefficientDigits int, forma
 		}
 	}
 
-	coefficient, exponent, err := parseDecFloatMantissa(mantissa, coefficientDigits)
+	digits, exponent, err := parseDecFloatMantissa(mantissa, coefficientDigits)
 	if err != nil {
 		return parsedDecFloat{}, fmt.Errorf("cannot parse %s from %s: %w", typeName, quotedOriginal, err)
 	}
 
-	negativeZero := coefficient.Sign() == 0 && strings.HasPrefix(mantissa, "-")
+	var combinedExponent int64
 	if scientificExponent > 0 && exponent > math.MaxInt64-scientificExponent ||
 		scientificExponent < 0 && exponent < math.MinInt64-scientificExponent {
-		return parsedDecFloat{}, fmt.Errorf("cannot parse %s from %s: exponent is out of int64 range", typeName, quotedOriginal)
+		if digits != "0" {
+			return parsedDecFloat{}, fmt.Errorf("cannot parse %s from %s: exponent is out of int64 range", typeName, quotedOriginal)
+		}
+		combinedExponent = math.MinInt64
+	} else {
+		combinedExponent = exponent + scientificExponent
 	}
-	combinedExponent := exponent + scientificExponent
-	if combinedExponent < math.MinInt32 || combinedExponent > math.MaxInt32 {
-		return parsedDecFloat{}, fmt.Errorf("cannot parse %s from %s: exponent %d is out of int32 range", typeName, quotedOriginal, combinedExponent)
-	}
-	if err := format.ValidateFiniteCoefficientAndExponent(coefficient, int(combinedExponent)); err != nil {
+	digits, normalizedExponent, err := normalizeDecFloatText(digits, combinedExponent, coefficientDigits, format)
+	if err != nil {
 		return parsedDecFloat{}, fmt.Errorf("cannot parse %s from %s: %w", typeName, quotedOriginal, err)
 	}
 
+	coefficient, ok := new(big.Int).SetString(digits, 10)
+	if !ok {
+		return parsedDecFloat{}, fmt.Errorf("cannot parse %s from %s: invalid coefficient", typeName, quotedOriginal)
+	}
+	negative := strings.HasPrefix(mantissa, "-")
+	if negative {
+		coefficient.Neg(coefficient)
+	}
 	return parsedDecFloat{
 		coefficient:  coefficient,
-		exponent:     int32(combinedExponent),
-		negativeZero: negativeZero,
+		exponent:     normalizedExponent,
+		negativeZero: negative && coefficient.Sign() == 0,
 	}, nil
 }
 
-func parseDecFloatMantissa(s string, maxCoefficientDigits int) (*big.Int, int64, error) {
+func parseDecFloatMantissa(s string, maxCoefficientDigits int) (string, int64, error) {
 	if s == "" {
-		return nil, 0, fmt.Errorf("mantissa is empty")
+		return "", 0, fmt.Errorf("mantissa is empty")
 	}
 
-	negative := false
 	start := 0
 	if s[0] == '+' || s[0] == '-' {
-		negative = s[0] == '-'
 		start++
 	}
 	if start == len(s) {
-		return nil, 0, fmt.Errorf("mantissa has no digits")
+		return "", 0, fmt.Errorf("mantissa has no digits")
 	}
 
 	digits := make([]byte, 0, maxCoefficientDigits)
@@ -703,12 +713,13 @@ func parseDecFloatMantissa(s string, maxCoefficientDigits int) (*big.Int, int64,
 	digitSeen := false
 	nonzeroSeen := false
 	var fractionalDigits int64
+	var droppedZeros int64
 	for i := start; i < len(s); i++ {
 		ch := s[i]
 		switch {
 		case ch == '.':
 			if decimalPointSeen {
-				return nil, 0, fmt.Errorf("mantissa contains multiple decimal points")
+				return "", 0, fmt.Errorf("mantissa contains multiple decimal points")
 			}
 			decimalPointSeen = true
 		case ch >= '0' && ch <= '9':
@@ -719,29 +730,54 @@ func parseDecFloatMantissa(s string, maxCoefficientDigits int) (*big.Int, int64,
 			if ch != '0' || nonzeroSeen {
 				nonzeroSeen = true
 				if len(digits) == maxCoefficientDigits {
-					return nil, 0, fmt.Errorf("coefficient out of range: more than %d decimal digits", maxCoefficientDigits)
+					if ch != '0' {
+						return "", 0, fmt.Errorf("coefficient out of range: more than %d decimal digits", maxCoefficientDigits)
+					}
+					droppedZeros++
+					continue
 				}
 				digits = append(digits, ch)
 			}
 		default:
-			return nil, 0, fmt.Errorf("mantissa contains invalid character %q", ch)
+			return "", 0, fmt.Errorf("mantissa contains invalid character %q", ch)
 		}
 	}
 	if !digitSeen {
-		return nil, 0, fmt.Errorf("mantissa has no digits")
+		return "", 0, fmt.Errorf("mantissa has no digits")
 	}
 	if !nonzeroSeen {
-		return new(big.Int), -fractionalDigits, nil
+		return "0", -fractionalDigits, nil
 	}
+	return string(digits), droppedZeros - fractionalDigits, nil
+}
 
-	coefficient := new(big.Int)
-	if _, ok := coefficient.SetString(string(digits), 10); !ok {
-		return nil, 0, fmt.Errorf("cannot parse decimal coefficient")
+// normalizeDecFloatText fits a bounded coefficient to the exponent range exactly.
+func normalizeDecFloatText(digits string, exponent int64, precision int, format decfloat.DecimalFormat) (string, int32, error) {
+	minExponent, maxExponent := format.ExponentRange()
+	if digits == "0" {
+		exponent = max(int64(minExponent), min(exponent, int64(maxExponent)))
+		return digits, int32(exponent), nil
 	}
-	if negative {
-		coefficient.Neg(coefficient)
+	if exponent < int64(minExponent) {
+		remove := int64(minExponent) - exponent
+		trailingZeros := len(digits) - len(strings.TrimRight(digits, "0"))
+		if remove > int64(trailingZeros) {
+			return "", 0, fmt.Errorf("decfloat: exponent out of range: exp=%d allowed[%d..%d] (rescaling would require rounding)",
+				exponent, minExponent, maxExponent)
+		}
+		digits = digits[:len(digits)-int(remove)]
+		exponent = int64(minExponent)
 	}
-	return coefficient, -fractionalDigits, nil
+	if exponent > int64(maxExponent) {
+		extraZeros := exponent - int64(maxExponent)
+		if extraZeros > int64(precision-len(digits)) {
+			return "", 0, fmt.Errorf("decfloat: exponent out of range: exp=%d allowed[%d..%d] (rescaling would exceed %d decimal digits)",
+				exponent, minExponent, maxExponent, precision)
+		}
+		digits += strings.Repeat("0", int(extraZeros))
+		exponent = int64(maxExponent)
+	}
+	return digits, int32(exponent), nil
 }
 
 func parseSpecialValue(s string) (SpecialValue, bool) {

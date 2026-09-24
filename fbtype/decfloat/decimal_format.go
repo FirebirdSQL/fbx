@@ -103,6 +103,11 @@ func (f DecimalFormat) UnbiasedExponent(biased int) int {
 	return biased - f.exponentBias
 }
 
+// ExponentRange returns the inclusive bounds of the stored unbiased exponent.
+func (f DecimalFormat) ExponentRange() (min, max int) {
+	return -f.exponentBias, f.eLimit - f.exponentBias
+}
+
 // ValidateFiniteCoefficientAndExponent checks that a finite value fits f.
 func (f DecimalFormat) ValidateFiniteCoefficientAndExponent(coefficient *big.Int, exponent int) error {
 	if err := f.validate(); err != nil {
@@ -117,8 +122,7 @@ func (f DecimalFormat) ValidateFiniteCoefficientAndExponent(coefficient *big.Int
 		return fmt.Errorf("decfloat: coefficient out of range for this format (maximum %d decimal digits)", f.coefficientDigits)
 	}
 
-	minExponent := -f.exponentBias
-	maxExponent := f.eLimit - f.exponentBias
+	minExponent, maxExponent := f.ExponentRange()
 	if exponent < minExponent || exponent > maxExponent {
 		return fmt.Errorf("decfloat: exponent out of range: exp=%d allowed[%d..%d]", exponent, minExponent, maxExponent)
 	}

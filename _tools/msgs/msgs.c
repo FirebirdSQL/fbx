@@ -16,7 +16,7 @@ typedef long SLONG;
 #define FB_IMPL_MSG_SYMBOL(facility, number, symbol, text)
 
 #define FB_IMPL_MSG(facility, number, symbol, sqlCode, sqlClass, sqlSubClass, text) \
-    addMessage(make_isc_code(FB_IMPL_MSG_FACILITY_##facility, number), stringify_literal(text), sqlClass, sqlSubClass, stringify_literal(symbol));
+    addMessage(make_isc_code(FB_IMPL_MSG_FACILITY_##facility, number), text, sqlClass, sqlSubClass, stringify_literal(symbol));
 
 #define ISC_CODE 0x14000000
 

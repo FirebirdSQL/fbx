@@ -15,9 +15,12 @@ import (
 //#include "msgs.h"
 import "C"
 
-var outFile *os.File
-var sbMessages strings.Builder
-var sbCodes strings.Builder
+var (
+	outFile    *os.File
+	sbMessages strings.Builder
+	sbCodes    strings.Builder
+	paramRegex = regexp.MustCompile(`@\d+`)
+)
 
 func writeOut(val string) {
 	_, err := outFile.WriteString(val)
@@ -66,6 +69,7 @@ package fbproto
 
 type fberror struct {
 	message  string
+	params   int
 	sqlstate string
 }
 
@@ -121,14 +125,11 @@ func addMessage(code C.int, message *C.char, class *C.char, subClass *C.char, sy
 	var sub string = C.GoString(subClass)
 	var sym string = C.GoString(symbol)
 	name := fmt.Sprintf("Isc_%s", sym)
-	if code == 335545286 {
-		fmt.Println(msg)
-	}
-
-	if !strings.HasSuffix(msg, `\n"`) {
-		msg = msg[:len(msg)-1]
-		msg += `\n"`
-	}
-	sbMessages.WriteString(fmt.Sprintf("\t%s: {%s, \"%s%s\"},\n", name, msg, cl, sub))
+	msg = strings.TrimRight(msg, "\n")
+	sbMessages.WriteString(fmt.Sprintf("\t%s: {%s, %d, \"%s%s\"},\n", name, fmt.Sprintf("%#v", msg), countParameters(msg), cl, sub))
 	sbCodes.WriteString(fmt.Sprintf("\t%s = %d\n", name, int(code)))
+}
+
+func countParameters(msg string) int {
+	return len(paramRegex.FindAllString(msg, -1))
 }
