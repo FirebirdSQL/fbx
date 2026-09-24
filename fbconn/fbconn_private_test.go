@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"rdb.red-soft.ru/fbx/fbproto"
 )
 
 func TestCommandTag(t *testing.T) {
@@ -116,4 +117,38 @@ func TestActiveExplicitTxIgnoresInternalTransaction(t *testing.T) {
 
 	internalTx.Closed = true
 	require.False(t, conn.ActiveExplicitTx())
+}
+
+func TestAttachArrayMetadataRequiresMetadataForEveryArray(t *testing.T) {
+	available := &Array{}
+	descriptions := []FieldDescription{
+		{Type: fbproto.SQL_TYPE_LONG},
+		{
+			Type:              fbproto.SQL_TYPE_ARRAY,
+			OriginalTableName: "T",
+			OriginalName:      "KNOWN",
+		},
+		{
+			Type:              fbproto.SQL_TYPE_ARRAY,
+			OriginalTableName: "T",
+			OriginalName:      "MISSING",
+		},
+	}
+	arrays := map[metadataMapKey]*Array{
+		{table: "T", field: "KNOWN"}: available,
+	}
+
+	err := attachArrayMetadata(descriptions, arrays, "parameter")
+
+	require.ErrorContains(t, err, "cannot resolve array metadata for parameter 3")
+	assert.Nil(t, descriptions[0].ArrayData)
+	assert.Same(t, available, descriptions[1].ArrayData)
+	assert.Nil(t, descriptions[2].ArrayData)
+}
+
+func TestGetArrayDimensionsWithNoSources(t *testing.T) {
+	dimensions, err := (&FbConn{}).getArrayDimensions(context.Background(), nil, 5, nil)
+
+	require.NoError(t, err)
+	assert.Empty(t, dimensions)
 }
