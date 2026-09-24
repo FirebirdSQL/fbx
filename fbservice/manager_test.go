@@ -93,11 +93,20 @@ func TestManagerSupportsConcurrentOperations(t *testing.T) {
 
 			database := fmt.Sprintf("/data/employee-%d.fdb", i)
 			backupFile := fmt.Sprintf("/backup/employee-%d.fbk", i)
-			switch i % 3 {
+			switch i % 7 {
 			case 0:
 				errs <- manager.Backup(context.Background(), database, backupFile)
 			case 1:
 				errs <- manager.Restore(context.Background(), backupFile, database)
+			case 3:
+				errs <- manager.Repair(context.Background(), database, fbservice.RepairOptions{Operation: fbservice.RepairSweep})
+			case 4:
+				errs <- manager.SetDatabaseProperties(context.Background(), database, fbservice.DatabaseProperties{SQLDialect: 3})
+			case 5:
+				_, err := manager.LimboTransactions(context.Background(), database)
+				errs <- err
+			case 6:
+				errs <- manager.ResolveLimboTransaction(context.Background(), database, 42, fbservice.LimboRollback, nil)
 			case 2:
 				errs <- manager.Statistics(context.Background(), database, fbservice.StatisticsOptions{Output: io.Discard})
 			}

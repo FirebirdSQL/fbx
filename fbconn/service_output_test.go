@@ -65,7 +65,7 @@ func TestParseServiceOutput(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			data, state, err := parseServiceOutput(test.response)
+			data, state, err := parseServiceOutput(test.response, fbproto.Isc_info_svc_to_eof)
 			if test.wantError != "" {
 				require.ErrorContains(t, err, test.wantError)
 				return

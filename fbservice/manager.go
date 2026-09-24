@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"rdb.red-soft.ru/fbx/fbconn"
@@ -15,6 +16,10 @@ type serviceConnection interface {
 	Backup(context.Context, string, string, fbconn.BackupOptions) error
 	Restore(context.Context, string, string, fbconn.RestoreOptions) error
 	Statistics(context.Context, string, fbconn.StatisticsOptions) error
+	Repair(context.Context, string, fbconn.RepairOptions) error
+	SetDatabaseProperties(context.Context, string, fbconn.DatabaseProperties) error
+	LimboTransactions(context.Context, string) ([]int64, error)
+	ResolveLimboTransaction(context.Context, string, int64, fbconn.LimboTransactionAction, io.Writer) error
 	serviceCloser
 }
 
@@ -24,7 +29,7 @@ type serviceCloser interface {
 
 type connectServiceFunc func(context.Context, *fbconn.ServiceConfig) (serviceConnection, error)
 
-// Manager runs Firebird service manager backup, restore and statistics operations.
+// Manager runs Firebird backup, restore, statistics and database maintenance services.
 //
 // A Manager is safe for concurrent use. Each operation opens and closes its
 // own service connection. Manager does not limit the number of concurrent
