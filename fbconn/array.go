@@ -19,7 +19,8 @@ type metadataMapKey struct {
 	field  string
 }
 
-// Array struct contains the information about array
+// Array contains the protocol metadata needed to read or write a Firebird
+// array slice.
 type Array struct {
 	TableName         string
 	FieldName         string
@@ -33,8 +34,8 @@ type Array struct {
 	SubType           int32
 }
 
-// NewArray is a constructor for Array struct
-func NewArray(table, field string, dims []map[string]int, length uint32, scale int32, typeId, blrTypeId uint32, subType int32) *Array {
+// NewArray constructs array metadata for a table field.
+func NewArray(table, field string, dims []map[string]int, length uint32, scale int32, typeID, blrTypeID uint32, subType int32) *Array {
 
 	a := new(Array)
 
@@ -44,8 +45,8 @@ func NewArray(table, field string, dims []map[string]int, length uint32, scale i
 	a.CurrentDimensions = dims
 	a.Length = length
 	a.Scale = scale
-	a.TypeId = typeId
-	a.BlrTypeId = blrTypeId
+	a.TypeId = typeID
+	a.BlrTypeId = blrTypeID
 	a.SubType = subType
 
 	return a

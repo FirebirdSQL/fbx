@@ -242,6 +242,256 @@ func TestArraySetDimensionsOverflowDoesNotPanic(t *testing.T) {
 	assert.Len(t, a, 0)
 }
 
+func TestArrayDimensionsValidatesState(t *testing.T) {
+	maxInt := int(^uint(0) >> 1)
+
+	tests := []struct {
+		name      string
+		array     fbtype.Array[int]
+		wantDims  []fbtype.ArrayDimension
+		wantError string
+	}{
+		{
+			name: "invalid ignores stale elements and dimensions",
+			array: fbtype.Array[int]{
+				Elements: []int{1},
+				Dims:     []fbtype.ArrayDimension{{LowerBound: 1, Length: 1}},
+				Valid:    false,
+			},
+		},
+		{
+			name: "valid multidimensional array",
+			array: fbtype.Array[int]{
+				Elements: []int{1, 2, 3, 4},
+				Dims: []fbtype.ArrayDimension{
+					{LowerBound: -1, Length: 2},
+					{LowerBound: 5, Length: 2},
+				},
+				Valid: true,
+			},
+			wantDims: []fbtype.ArrayDimension{
+				{LowerBound: -1, Length: 2},
+				{LowerBound: 5, Length: 2},
+			},
+		},
+		{
+			name: "valid empty array",
+			array: fbtype.Array[int]{
+				Elements: []int{},
+				Dims:     []fbtype.ArrayDimension{{LowerBound: 1, Length: 0}},
+				Valid:    true,
+			},
+			wantDims: []fbtype.ArrayDimension{{LowerBound: 1, Length: 0}},
+		},
+		{
+			name:      "valid array without dimensions",
+			array:     fbtype.Array[int]{Valid: true},
+			wantError: "valid array must have at least one dimension",
+		},
+		{
+			name: "dimensions describe more elements",
+			array: fbtype.Array[int]{
+				Elements: []int{1},
+				Dims:     []fbtype.ArrayDimension{{LowerBound: 1, Length: 2}},
+				Valid:    true,
+			},
+			wantError: "array dimensions imply element count 2, but Elements has length 1",
+		},
+		{
+			name: "dimensions describe fewer elements",
+			array: fbtype.Array[int]{
+				Elements: []int{1, 2},
+				Dims:     []fbtype.ArrayDimension{{LowerBound: 1, Length: 1}},
+				Valid:    true,
+			},
+			wantError: "array dimensions imply element count 1, but Elements has length 2",
+		},
+		{
+			name: "negative dimension length",
+			array: fbtype.Array[int]{
+				Dims:  []fbtype.ArrayDimension{{LowerBound: 1, Length: -1}},
+				Valid: true,
+			},
+			wantError: "array dimension 0 has negative length -1",
+		},
+		{
+			name: "element count overflow",
+			array: fbtype.Array[int]{
+				Dims: []fbtype.ArrayDimension{
+					{LowerBound: 1, Length: maxInt/2 + 1},
+					{LowerBound: 1, Length: 3},
+				},
+				Valid: true,
+			},
+			wantError: "array element count overflows int at dimension 1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tt.array.Dimensions(nil)
+			if tt.wantError != "" {
+				require.ErrorContains(t, err, tt.wantError)
+				require.Nil(t, got)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantDims, got)
+		})
+	}
+}
+
+func TestArraySetDimensionsValidatesDimensions(t *testing.T) {
+	maxInt := int(^uint(0) >> 1)
+
+	tests := []struct {
+		name      string
+		dims      []fbtype.ArrayDimension
+		want      fbtype.Array[int]
+		wantError string
+	}{
+		{
+			name: "null array",
+			dims: nil,
+			want: fbtype.Array[int]{},
+		},
+		{
+			name:      "empty dimension list",
+			dims:      []fbtype.ArrayDimension{},
+			want:      fbtype.Array[int]{},
+			wantError: "non-NULL array must have at least one dimension",
+		},
+		{
+			name: "empty array",
+			dims: []fbtype.ArrayDimension{{LowerBound: 1, Length: 0}},
+			want: fbtype.Array[int]{
+				Elements: []int{},
+				Dims:     []fbtype.ArrayDimension{{LowerBound: 1, Length: 0}},
+				Valid:    true,
+			},
+		},
+		{
+			name: "multidimensional array",
+			dims: []fbtype.ArrayDimension{
+				{LowerBound: -1, Length: 2},
+				{LowerBound: 5, Length: 3},
+			},
+			want: fbtype.Array[int]{
+				Elements: make([]int, 6),
+				Dims: []fbtype.ArrayDimension{
+					{LowerBound: -1, Length: 2},
+					{LowerBound: 5, Length: 3},
+				},
+				Valid: true,
+			},
+		},
+		{
+			name:      "negative dimension length",
+			dims:      []fbtype.ArrayDimension{{LowerBound: 1, Length: -1}},
+			want:      fbtype.Array[int]{},
+			wantError: "array dimension 0 has negative length -1",
+		},
+		{
+			name: "element count overflow",
+			dims: []fbtype.ArrayDimension{
+				{LowerBound: 1, Length: maxInt/2 + 1},
+				{LowerBound: 1, Length: 3},
+			},
+			want:      fbtype.Array[int]{},
+			wantError: "array element count overflows int at dimension 1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			array := fbtype.Array[int]{
+				Elements: []int{99},
+				Dims:     []fbtype.ArrayDimension{{LowerBound: 1, Length: 1}},
+				Valid:    true,
+			}
+
+			err := array.SetDimensions(tt.dims)
+			if tt.wantError != "" {
+				require.ErrorContains(t, err, tt.wantError)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Equal(t, tt.want, array)
+		})
+	}
+}
+
+func TestMapEncodeArrayValidatesArrayWrapperState(t *testing.T) {
+	m := fbtype.NewMap()
+	arrayData, err := fbtype.NewArrayData(
+		fbproto.SQL_TYPE_LONG,
+		0,
+		4,
+		0,
+		[]map[string]int{{"Lower": 1, "Upper": 2}},
+	)
+	require.NoError(t, err)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_ARRAY, 0, 4, 0)
+	typeMetadata.SetArrayMetadata(arrayData)
+
+	tests := []struct {
+		name      string
+		array     fbtype.Array[int32]
+		wantError string
+		wantNull  bool
+	}{
+		{
+			name: "invalid ignores stale state",
+			array: fbtype.Array[int32]{
+				Elements: []int32{1},
+				Dims:     []fbtype.ArrayDimension{{LowerBound: 1, Length: 1}},
+				Valid:    false,
+			},
+			wantNull: true,
+		},
+		{
+			name: "dimensions describe more elements",
+			array: fbtype.Array[int32]{
+				Elements: []int32{1},
+				Dims:     []fbtype.ArrayDimension{{LowerBound: 1, Length: 2}},
+				Valid:    true,
+			},
+			wantError: "array dimensions imply element count 2, but Elements has length 1",
+		},
+		{
+			name: "dimensions describe fewer elements",
+			array: fbtype.Array[int32]{
+				Elements: []int32{1, 2},
+				Dims:     []fbtype.ArrayDimension{{LowerBound: 1, Length: 1}},
+				Valid:    true,
+			},
+			wantError: "array dimensions imply element count 1, but Elements has length 2",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf []byte
+			var encodeErr error
+			require.NotPanics(t, func() {
+				buf, encodeErr = m.Encode(typeMetadata, tt.array, nil)
+			})
+
+			if tt.wantError != "" {
+				require.ErrorContains(t, encodeErr, tt.wantError)
+				require.Nil(t, buf)
+				return
+			}
+
+			require.NoError(t, encodeErr)
+			if tt.wantNull {
+				require.Nil(t, buf)
+			}
+		})
+	}
+}
+
 func TestMapScanTextIntoAnyReturnsString(t *testing.T) {
 	m := fbtype.NewMap()
 	var got any

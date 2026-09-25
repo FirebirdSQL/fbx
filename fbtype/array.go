@@ -13,34 +13,34 @@ import (
 
 var errNullArrayElement = errors.New("NULL array element is not supported")
 
-// ArrayGetter is the interface for sending the array to the server
+// ArrayGetter provides array dimensions and elements for encoding.
 type ArrayGetter interface {
-
-	// Index returns the element at i.
+	// Index returns the flattened array element at i.
 	Index(i int) any
 
-	// Dimensions returns the []Dimensions of the array
+	// Dimensions returns dimensions for encoding. lowers contains the lower
+	// bounds declared by the database column. A nil result means SQL NULL.
 	Dimensions(lowers []int) ([]ArrayDimension, error)
 }
 
-// ArrayDimension is a struct for storage array dimensions
+// ArrayDimension describes one dimension of a Firebird array.
 type ArrayDimension struct {
-	LowerBound int
-	Length     int
+	LowerBound int // LowerBound is the first valid index.
+	Length     int // Length is the number of elements in the dimension.
 }
 
-// ArraySetter is the interface for getting the array from the server
+// ArraySetter prepares and exposes destinations for decoded array elements.
 type ArraySetter interface {
-	// SetDimensions prepares the value such that ScanIndex can be called for each element. This will remove any existing
-	// elements. dimensions may be nil to indicate a NULL array. If unable to exactly preserve dimensions SetDimensions
-	// may return an error or silently flatten the array dimensions.
+	// SetDimensions resets the destination before scanning an array. nil means
+	// SQL NULL. Unsupported dimensions may be flattened or rejected.
 	SetDimensions(dimensions []ArrayDimension) error
 
-	// ScanIndex returns a value usable as a scan target for i. SetDimensions must be called before ScanIndex.
+	// ScanIndex returns the scan target for flattened element i.
+	// SetDimensions must be called first.
 	ScanIndex(i int) any
 }
 
-// ArrayData is a struct for any array type.
+// ArrayData contains the element metadata and dimensions of a Firebird array.
 type ArrayData struct {
 	ElementType *Type
 	Dimensions  []ArrayDimension
@@ -50,20 +50,23 @@ type ArrayData struct {
 	TypeId      uint32
 }
 
+// ArraySQLScanner carries an encoded Firebird array and its metadata through
+// database/sql for later scanning by [Map.SQLScanner].
 type ArraySQLScanner struct {
 	ArrayData   *ArrayData
 	ArrayBuffer []byte
 }
 
-// NewArrayData is a constructor for ArrayData struct
-func NewArrayData(typeId uint32, subType int32, length uint32, scale int32, dimensionsMap []map[string]int) (*ArrayData, error) {
+// NewArrayData constructs array metadata from element metadata and inclusive
+// Lower and Upper dimension bounds.
+func NewArrayData(typeID uint32, subType int32, length uint32, scale int32, dimensionsMap []map[string]int) (*ArrayData, error) {
 	ad := new(ArrayData)
 	var err error
 
 	ad.Length = length
 	ad.Scale = scale
 	ad.SubType = subType
-	ad.TypeId = typeId
+	ad.TypeId = typeID
 
 	dims := make([]ArrayDimension, 0, len(dimensionsMap))
 	for _, elem := range dimensionsMap {
@@ -71,7 +74,7 @@ func NewArrayData(typeId uint32, subType int32, length uint32, scale int32, dime
 	}
 	ad.Dimensions = dims
 
-	ad.ElementType, err = getTypeFromMap(typeId)
+	ad.ElementType, err = getTypeFromMap(typeID)
 	if err != nil {
 		return nil, err
 	}
@@ -79,10 +82,12 @@ func NewArrayData(typeId uint32, subType int32, length uint32, scale int32, dime
 
 }
 
+// ArrayCodec encodes and decodes Firebird ARRAY values.
 type ArrayCodec struct {
 	ElementType *Type
 }
 
+// PlanEncode returns an encode plan for supported array values.
 func (ArrayCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
 	if _, err := getArrayEncodeType(value); err == nil {
 		return planEncodeArray{m: m, arrayData: typeMetadata.ArrayData}
@@ -90,6 +95,7 @@ func (ArrayCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) Encod
 	return nil
 }
 
+// PlanScan returns a scan plan for supported array targets.
 func (ArrayCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPlan {
 	if _, err := getArrayDecodeType(target); err == nil {
 		return planScanArray{m: m, arrayData: typeMetadata.ArrayData}
@@ -97,6 +103,7 @@ func (ArrayCodec) PlanScan(m *Map, typeMetadata TypeMetadata, target any) ScanPl
 	return nil
 }
 
+// DecodeDatabaseSQLValue returns an owned copy of the encoded array body.
 func (ArrayCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src []byte) (driver.Value, error) {
 	if src == nil {
 		return nil, nil
@@ -107,6 +114,7 @@ func (ArrayCodec) DecodeDatabaseSQLValue(m *Map, typeMetadata TypeMetadata, src 
 	return buf, nil
 }
 
+// DecodeValue decodes an array into a flat []any value.
 func (ArrayCodec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (any, error) {
 	if src == nil {
 		return nil, nil
@@ -225,8 +233,8 @@ func (pe planEncodeArray) Encode(value any, buf []byte) (newBuf []byte, err erro
 	return buf, nil
 }
 
-// Dimensions returns the dimensions and bounds of value. A nil-like value
-// represents a SQL NULL array and returns nil dimensions.
+// Dimensions returns array bounds as maps with "Lower" and "Upper" keys.
+// lowers supplies lower bounds for Go slices and arrays. A nil value returns nil.
 func Dimensions(value any, lowers []int) ([]map[string]int, error) {
 	if isNilValue(value) {
 		return nil, nil
@@ -533,27 +541,62 @@ func isSliceRagged(slice reflect.Value, lvl int, lens *[]int) bool {
 	return false
 }
 
+// Array represents a nullable Firebird array with explicit dimensions.
+// Valid is false for SQL NULL. Otherwise, Dims must be non-empty and their
+// lengths must match len(Elements).
 type Array[T any] struct {
 	Elements []T
 	Dims     []ArrayDimension
 	Valid    bool
 }
 
-func (a Array[T]) Dimensions(lowers []int) ([]ArrayDimension, error) {
+// Dimensions implements [ArrayGetter]. It validates that Dims describes
+// exactly the number of values in Elements.
+func (a Array[T]) Dimensions(_ []int) ([]ArrayDimension, error) {
+	if !a.Valid {
+		return nil, nil
+	}
+	if len(a.Dims) == 0 {
+		return nil, fmt.Errorf("valid array must have at least one dimension")
+	}
+
+	elementCount, err := checkedArrayElementCount(a.Dims)
+	if err != nil {
+		return nil, err
+	}
+	if elementCount != len(a.Elements) {
+		return nil, fmt.Errorf(
+			"array dimensions imply element count %d, but Elements has length %d",
+			elementCount,
+			len(a.Elements),
+		)
+	}
+
 	return a.Dims, nil
 }
 
+// Index implements [ArrayGetter].
 func (a Array[T]) Index(i int) any {
 	return a.Elements[i]
 }
 
+// SetDimensions implements [ArraySetter]. It replaces the current value and
+// treats nil dimensions as SQL NULL.
 func (a *Array[T]) SetDimensions(dimensions []ArrayDimension) error {
 	if dimensions == nil {
 		*a = Array[T]{}
 		return nil
 	}
+	if len(dimensions) == 0 {
+		*a = Array[T]{}
+		return fmt.Errorf("non-NULL array must have at least one dimension")
+	}
 
-	elementCount := allElementsCount(dimensions)
+	elementCount, err := checkedArrayElementCount(dimensions)
+	if err != nil {
+		*a = Array[T]{}
+		return err
+	}
 	*a = Array[T]{
 		Elements: make([]T, elementCount),
 		Dims:     dimensions,
@@ -563,16 +606,21 @@ func (a *Array[T]) SetDimensions(dimensions []ArrayDimension) error {
 	return nil
 }
 
+// ScanIndex implements [ArraySetter].
 func (a Array[T]) ScanIndex(i int) any {
 	return &a.Elements[i]
 }
 
+// FlatArray adapts a slice to [ArrayGetter] and [ArraySetter]. It represents a
+// nil slice as SQL NULL and flattens multidimensional values when scanning.
 type FlatArray[T any] []T
 
+// Index implements [ArrayGetter].
 func (a FlatArray[T]) Index(i int) any {
 	return a[i]
 }
 
+// Dimensions implements [ArrayGetter].
 func (a FlatArray[T]) Dimensions(lowers []int) ([]ArrayDimension, error) {
 	if a == nil {
 		return nil, nil
@@ -581,6 +629,7 @@ func (a FlatArray[T]) Dimensions(lowers []int) ([]ArrayDimension, error) {
 	return []ArrayDimension{{LowerBound: lowers[0], Length: len(a)}}, nil
 }
 
+// SetDimensions implements [ArraySetter].
 func (a *FlatArray[T]) SetDimensions(dimensions []ArrayDimension) error {
 	if dimensions == nil {
 		*a = nil
@@ -592,8 +641,35 @@ func (a *FlatArray[T]) SetDimensions(dimensions []ArrayDimension) error {
 	return nil
 }
 
+// ScanIndex implements [ArraySetter].
 func (a FlatArray[T]) ScanIndex(i int) any {
 	return &a[i]
+}
+
+func checkedArrayElementCount(dimensions []ArrayDimension) (int, error) {
+	for i, dimension := range dimensions {
+		if dimension.Length < 0 {
+			return 0, fmt.Errorf("array dimension %d has negative length %d", i, dimension.Length)
+		}
+	}
+
+	if len(dimensions) == 0 {
+		return 0, nil
+	}
+
+	maxInt := int(^uint(0) >> 1)
+	elementCount := 1
+	for i, dimension := range dimensions {
+		if dimension.Length == 0 {
+			return 0, nil
+		}
+		if elementCount > maxInt/dimension.Length {
+			return 0, fmt.Errorf("array element count overflows int at dimension %d", i)
+		}
+		elementCount *= dimension.Length
+	}
+
+	return elementCount, nil
 }
 
 func getActualSliceDimensions(dims []ArrayDimension, src []byte, typeID, length uint32) ([]realIndexes, []ArrayDimension, error) {
