@@ -492,6 +492,26 @@ func TestMapEncodeArrayValidatesArrayWrapperState(t *testing.T) {
 	}
 }
 
+func TestMapEncodeArrayWithoutMetadataReturnsError(t *testing.T) {
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_ARRAY, 0, 0, 0)
+
+	_, err := fbtype.NewMap().Encode(typeMetadata, []int32{1}, nil)
+	require.ErrorContains(t, err, "array element metadata is missing")
+}
+
+func TestMapScanArrayWithoutMetadataReturnsError(t *testing.T) {
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_ARRAY, 0, 0, 0)
+	m := fbtype.NewMap()
+	dst := []int32{1}
+
+	err := m.Scan(typeMetadata, []byte{1}, &dst)
+	require.ErrorContains(t, err, "array element metadata is missing")
+
+	err = m.Scan(typeMetadata, nil, &dst)
+	require.NoError(t, err)
+	require.Nil(t, dst)
+}
+
 func TestMapScanTextIntoAnyReturnsString(t *testing.T) {
 	m := fbtype.NewMap()
 	var got any

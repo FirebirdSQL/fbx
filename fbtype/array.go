@@ -11,7 +11,10 @@ import (
 	"rdb.red-soft.ru/fbx/fbproto"
 )
 
-var errNullArrayElement = errors.New("NULL array element is not supported")
+var (
+	errArrayMetadataMissing = errors.New("array element metadata is missing")
+	errNullArrayElement     = errors.New("NULL array element is not supported")
+)
 
 // ArrayGetter provides array dimensions and elements for encoding.
 type ArrayGetter interface {
@@ -139,6 +142,9 @@ func (ps planScanArray) Scan(src []byte, dst any) error {
 	if src == nil {
 		return array.SetDimensions(nil)
 	}
+	if ps.arrayData == nil {
+		return errArrayMetadataMissing
+	}
 
 	realIndexes, actualDims, err := getActualSliceDimensions(ps.arrayData.Dimensions, src, ps.arrayData.TypeId, ps.arrayData.Length)
 	if err != nil {
@@ -167,6 +173,9 @@ func (pe planEncodeArray) Encode(value any, buf []byte) (newBuf []byte, err erro
 	array, err := getArrayEncodeType(value)
 	if err != nil {
 		return nil, err
+	}
+	if pe.arrayData == nil {
+		return nil, errArrayMetadataMissing
 	}
 	var lowers []int
 	for _, d := range pe.arrayData.Dimensions {
