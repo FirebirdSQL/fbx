@@ -910,7 +910,7 @@ func (c *Conn) execPrepared(ctx context.Context, tx *dbTx, st *fbconn.Statement,
 	var containsSearchPathInSql bool
 	var sp1, sp2 string
 
-	if st.Description.StatementInfo.StatementType == fbconn.StatementDDL {
+	if st.Description.StatementInfo.StatementType == fbconn.StatementDDL && c.fbConn.ServerVersion().Major >= 6 {
 		containsSearchPathInSql = containsSearchPathChangingInSql(st.Description.SQL)
 		if containsSearchPathInSql {
 			err = c.QueryRow(ctx, "select rdb$get_context('SYSTEM', 'SEARCH_PATH') from rdb$database", QueryExecModeExec).Scan(&sp1)
