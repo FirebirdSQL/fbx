@@ -186,7 +186,7 @@ func (pe planEncodeArray) Encode(value any, buf []byte) (newBuf []byte, err erro
 	var lastElemType reflect.Type
 	var elem any
 	var tmpBuf []byte
-	elementTypeId := pe.arrayData.ElementType.TypeID
+	elementTypeId := pe.arrayData.TypeId
 	lenElem := pe.arrayData.Length
 
 	for i := 0; i < argumentElementCount; i++ {
@@ -332,11 +332,8 @@ func (ad *ArrayData) decodeBinary(m *Map, src []byte, array ArraySetter, realInd
 	}
 	length := int(ad.Length)
 
-	typeMetadata := NewTypeMetadata(ad.ElementType.TypeID, ad.SubType, ad.Length, ad.Scale)
-	elementScanPlan := ad.ElementType.Codec.PlanScan(m, typeMetadata, array.ScanIndex(0))
-	if elementScanPlan == nil {
-		elementScanPlan = m.PlanScan(typeMetadata, array.ScanIndex(0))
-	}
+	typeMetadata := NewTypeMetadata(ad.TypeId, ad.SubType, ad.Length, ad.Scale)
+	elementScanPlan := m.PlanScan(typeMetadata, array.ScanIndex(0))
 	if ad.TypeId == fbproto.SQL_TYPE_SHORT {
 		length = 4
 	}

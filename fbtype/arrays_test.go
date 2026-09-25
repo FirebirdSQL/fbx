@@ -2,6 +2,7 @@ package fbtype_test
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
+	"rdb.red-soft.ru/fbx/stdlib"
 )
 
 func TestArray(t *testing.T) {
@@ -43,6 +45,117 @@ func TestArray(t *testing.T) {
 
 		}
 	})
+}
+
+func TestArrayNumericAndDecimalElementsUseSubtypeCodec(t *testing.T) {
+	fractional := []fbtype.Numeric{
+		mustArrayNumeric(t, "1.23"),
+		mustArrayNumeric(t, "-4.56"),
+		mustArrayNumeric(t, "78.90"),
+	}
+	whole := []fbtype.Numeric{
+		mustArrayNumeric(t, "1"),
+		mustArrayNumeric(t, "-4"),
+		mustArrayNumeric(t, "78"),
+	}
+
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
+		const table = "array_numeric_subtype_codec"
+		columns := []struct {
+			name    string
+			sqlType string
+		}{
+			{name: "numeric_smallint", sqlType: "numeric(4,2)"},
+			{name: "numeric_integer", sqlType: "numeric(9,2)"},
+			{name: "numeric_bigint", sqlType: "numeric(18,2)"},
+			{name: "decimal_integer", sqlType: "decimal(9,2)"},
+			{name: "decimal_bigint", sqlType: "decimal(18,2)"},
+		}
+
+		definitions := []string{"id integer primary key"}
+		for _, column := range columns {
+			definitions = append(definitions, column.name+" "+column.sqlType+"[1:3]")
+		}
+		_, err := conn.Exec(ctx, "recreate table "+table+" ("+strings.Join(definitions, ", ")+")")
+		require.NoError(tb, err)
+		defer func() {
+			_, _ = conn.Exec(context.Background(), "drop table "+table)
+		}()
+
+		placeholders := strings.TrimSuffix(strings.Repeat("?, ", len(columns)+1), ", ")
+		insert := func(id int, values []fbtype.Numeric) {
+			args := make([]any, 1, len(columns)+1)
+			args[0] = id
+			for range columns {
+				args = append(args, values)
+			}
+			_, err := conn.Exec(ctx, "insert into "+table+" values ("+placeholders+")", args...)
+			require.NoError(tb, err)
+		}
+		insert(1, fractional)
+		insert(2, whole)
+
+		db := stdlib.OpenDB(*conn.Config())
+		defer func() { require.NoError(tb, db.Close()) }()
+		sqlTypeMap := fbtype.NewMap()
+		paths := []struct {
+			name string
+			scan func(query string, id int, target any) error
+		}{
+			{
+				name: "fbx",
+				scan: func(query string, id int, target any) error {
+					return conn.QueryRow(ctx, query, id).Scan(target)
+				},
+			},
+			{
+				name: "database/sql",
+				scan: func(query string, id int, target any) error {
+					return db.QueryRowContext(ctx, query, id).Scan(sqlTypeMap.SQLScanner(target))
+				},
+			},
+		}
+
+		for _, column := range columns {
+			query := "select " + column.name + " from " + table + " where id = ?"
+			for _, path := range paths {
+				label := fmt.Sprintf("%s through %s", column.sqlType, path.name)
+
+				var numerics []fbtype.Numeric
+				err = path.scan(query, 1, &numerics)
+				require.NoError(tb, err, label)
+				require.Equal(tb, fractional, numerics, label)
+
+				var text []string
+				err = path.scan(query, 1, &text)
+				require.NoError(tb, err, label)
+				require.Equal(tb, []string{"1.23", "-4.56", "78.90"}, text, label)
+
+				var floats []float64
+				err = path.scan(query, 1, &floats)
+				require.NoError(tb, err, label)
+				require.Len(tb, floats, 3, label)
+				assert.InDelta(tb, 1.23, floats[0], 1e-9, label)
+				assert.InDelta(tb, -4.56, floats[1], 1e-9, label)
+				assert.InDelta(tb, 78.9, floats[2], 1e-9, label)
+
+				var integers []int64
+				err = path.scan(query, 2, &integers)
+				require.NoError(tb, err, label)
+				require.Equal(tb, []int64{1, -4, 78}, integers, label)
+
+				err = path.scan(query, 1, &integers)
+				require.ErrorContains(tb, err, "failed to scan array element 0", label)
+			}
+		}
+	})
+}
+
+func mustArrayNumeric(t testing.TB, value string) fbtype.Numeric {
+	t.Helper()
+	var numeric fbtype.Numeric
+	require.NoError(t, numeric.Scan(value))
+	return numeric
 }
 
 func TestArrayEncodePlansAreNotMemoized(t *testing.T) {
