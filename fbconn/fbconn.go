@@ -2140,10 +2140,9 @@ func (fbConn *FbConn) getArrayDimensions(ctx context.Context, tx *FBTransaction,
 	return dimensions, nil
 }
 
-func (fbConn *FbConn) getArray(ctx context.Context, arrayId int64, datatype uint32, length, l int, sdl []byte) ([]byte, error) {
-	tx, err := fbConn.ensureInternalTransaction(ctx, nil, false)
-	if err != nil {
-		return nil, err
+func (fbConn *FbConn) getArray(ctx context.Context, tx *FBTransaction, arrayId int64, datatype uint32, length, l int, sdl []byte) ([]byte, error) {
+	if tx == nil || tx.Closed {
+		return nil, ErrTransactionClosed
 	}
 
 	opGetSlice := fbproto.OpGetSlice{
@@ -2153,12 +2152,12 @@ func (fbConn *FbConn) getArray(ctx context.Context, arrayId int64, datatype uint
 		SliceDescriptor:   sdl,
 	}
 
-	if err = fbConn.client.WriteMessage(&opGetSlice); err != nil {
+	if err := fbConn.client.WriteMessage(&opGetSlice); err != nil {
 		fbConn.asyncClose()
 		return nil, err
 	}
 
-	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+	if err := fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
 		fbConn.asyncClose()
 		return nil, err
 	}
@@ -2185,10 +2184,9 @@ func (fbConn *FbConn) getArray(ctx context.Context, arrayId int64, datatype uint
 	}
 }
 
-func (fbConn *FbConn) putArray(ctx context.Context, array []byte, length int, sdl []byte) ([]byte, error) {
-	tx, err := fbConn.ensureInternalTransaction(ctx, nil, false)
-	if err != nil {
-		return nil, err
+func (fbConn *FbConn) putArray(ctx context.Context, tx *FBTransaction, array []byte, length int, sdl []byte) ([]byte, error) {
+	if tx == nil || tx.Closed {
+		return nil, ErrTransactionClosed
 	}
 
 	opPutSlice := fbproto.OpPutSlice{
@@ -2199,12 +2197,12 @@ func (fbConn *FbConn) putArray(ctx context.Context, array []byte, length int, sd
 		Slice:             array,
 	}
 
-	if err = fbConn.client.WriteMessage(&opPutSlice); err != nil {
+	if err := fbConn.client.WriteMessage(&opPutSlice); err != nil {
 		fbConn.asyncClose()
 		return nil, err
 	}
 
-	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+	if err := fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
 		fbConn.asyncClose()
 		return nil, err
 	}
@@ -2510,7 +2508,7 @@ func (rr *ResultReader) bufferCurrentFetchRows() bool {
 		rowStart := len(rr.bufferedCols)
 		for j, elem := range row {
 			if IsArrayType(uint32(rr.fieldDescriptions[j].Type)) {
-				array, err := getArray(rr.fbConn, rr.ctx, rr.fieldDescriptions[j].ArrayData, elem)
+				array, err := getArray(rr.fbConn, rr.ctx, rr.boundTransaction, rr.fieldDescriptions[j].ArrayData, elem)
 				if err != nil {
 					rr.concludeCommand(QueryStatus{}, err)
 					return false

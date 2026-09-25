@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
 	"rdb.red-soft.ru/fbx/fbtype"
+	"rdb.red-soft.ru/fbx/fbxtest"
 )
 
 func TestArray(t *testing.T) {
@@ -40,6 +41,50 @@ func TestArray(t *testing.T) {
 			assert.Equalf(t, tt, actual, "%d", i)
 
 		}
+	})
+}
+
+func TestArrayUsesExecutionTransaction(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		const table = "array_execution_transaction"
+		_, err := conn.Exec(ctx, "recreate table "+table+" (id integer primary key, val integer[1:3])")
+		require.NoError(t, err)
+		defer func() {
+			_, _ = conn.Exec(context.Background(), "drop table "+table)
+		}()
+
+		txA, err := conn.Begin(ctx)
+		require.NoError(t, err)
+		defer func() { _ = txA.Rollback(context.Background()) }()
+
+		txB, err := conn.Begin(ctx)
+		require.NoError(t, err)
+		defer func() { _ = txB.Rollback(context.Background()) }()
+
+		first := []int32{1, 2, 3}
+		_, err = txA.Exec(ctx, "insert into "+table+" (id, val) values (?, ?)", 1, first)
+		require.NoError(t, err)
+
+		var actual []int32
+		err = txA.QueryRow(ctx, "select val from "+table+" where id = ?", 1).Scan(&actual)
+		require.NoError(t, err)
+		require.Equal(t, first, actual)
+
+		require.NoError(t, txB.Rollback(ctx))
+
+		second := []int32{4, 5, 6}
+		_, err = txA.Exec(ctx, "insert into "+table+" (id, val) values (?, ?)", 2, second)
+		require.NoError(t, err)
+
+		actual = nil
+		err = txA.QueryRow(ctx, "select val from "+table+" where id = ?", 2).Scan(&actual)
+		require.NoError(t, err)
+		require.Equal(t, second, actual)
+
+		require.NoError(t, txA.Commit(ctx))
 	})
 }
 

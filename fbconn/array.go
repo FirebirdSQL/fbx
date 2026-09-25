@@ -166,12 +166,12 @@ func getDimensionBound(value int) []byte {
 	return out
 }
 
-func putArray(fbConn *FbConn, ctx context.Context, arrayData *Array, arr []byte) ([]byte, error) {
+func putArray(fbConn *FbConn, ctx context.Context, tx *FBTransaction, arrayData *Array, arr []byte) ([]byte, error) {
 
 	sdl := arrayData.generateSDL()
 	length := arrayData.getSliceLength()
 
-	id, err := fbConn.putArray(ctx, arr, length, sdl)
+	id, err := fbConn.putArray(ctx, tx, arr, length, sdl)
 	arrayData.CurrentDimensions = arrayData.Dimensions
 	if err != nil {
 		return nil, err
@@ -179,7 +179,7 @@ func putArray(fbConn *FbConn, ctx context.Context, arrayData *Array, arr []byte)
 	return id, nil
 }
 
-func getArray(fbConn *FbConn, ctx context.Context, arrayData *Array, arrId []byte) ([]byte, error) {
+func getArray(fbConn *FbConn, ctx context.Context, tx *FBTransaction, arrayData *Array, arrId []byte) ([]byte, error) {
 	if len(arrId) == 0 {
 		return nil, nil
 	}
@@ -189,7 +189,7 @@ func getArray(fbConn *FbConn, ctx context.Context, arrayData *Array, arrId []byt
 	sdl := arrayData.generateSDL()
 	length := arrayData.getSliceLength()
 
-	array, err := fbConn.getArray(ctx, arrayId, arrayData.BlrTypeId, length, int(arrayData.Length), sdl)
+	array, err := fbConn.getArray(ctx, tx, arrayId, arrayData.BlrTypeId, length, int(arrayData.Length), sdl)
 	if err != nil {
 		return nil, err
 	}
