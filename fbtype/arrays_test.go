@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
+	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
 )
@@ -42,6 +43,64 @@ func TestArray(t *testing.T) {
 
 		}
 	})
+}
+
+func TestArrayEncodePlansAreNotMemoized(t *testing.T) {
+	m := fbtype.NewMap()
+	metadata := newArrayEncodePlanTestMetadata(t, []map[string]int{{"Lower": 1, "Upper": 3}})
+	value := []int32{1, 2, 3}
+
+	buf, err := m.Encode(metadata, value, nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, buf)
+	metadataCount, planCount := arrayEncodePlanCacheSize(m)
+
+	for range 20 {
+		metadata = newArrayEncodePlanTestMetadata(t, []map[string]int{{"Lower": 1, "Upper": 3}})
+		buf, err = m.Encode(metadata, &value, nil)
+		require.NoError(t, err)
+		require.NotEmpty(t, buf)
+	}
+
+	actualMetadataCount, actualPlanCount := arrayEncodePlanCacheSize(m)
+	require.Equal(t, metadataCount, actualMetadataCount)
+	require.Equal(t, planCount, actualPlanCount)
+}
+
+func TestUncachedArrayPlanUsesCurrentMetadata(t *testing.T) {
+	m := fbtype.NewMap()
+
+	oneElement := newArrayEncodePlanTestMetadata(t, []map[string]int{{"Lower": 1, "Upper": 1}})
+	plan := m.PlanEncode(oneElement, []int32{1, 2})
+	require.NotNil(t, plan)
+	_, err := plan.Encode([]int32{1, 2}, nil)
+	require.ErrorContains(t, err, "array too long")
+
+	threeElements := newArrayEncodePlanTestMetadata(t, []map[string]int{{"Lower": 1, "Upper": 3}})
+	plan = m.PlanEncode(threeElements, []int32{1, 2})
+	require.NotNil(t, plan)
+	metadataCount, planCount := arrayEncodePlanCacheSize(m)
+	require.Zero(t, metadataCount)
+	require.Zero(t, planCount)
+	_, err = plan.Encode([]int32{1, 2}, nil)
+	require.NoError(t, err)
+}
+
+func newArrayEncodePlanTestMetadata(t *testing.T, dimensions []map[string]int) fbtype.TypeMetadata {
+	t.Helper()
+	arrayData, err := fbtype.NewArrayData(fbproto.SQL_TYPE_LONG, 0, 4, 0, dimensions)
+	require.NoError(t, err)
+	metadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_ARRAY, 0, 8, 0)
+	metadata.SetArrayMetadata(arrayData)
+	return metadata
+}
+
+func arrayEncodePlanCacheSize(m *fbtype.Map) (metadataCount, planCount int) {
+	cache := reflect.ValueOf(m).Elem().FieldByName("memoizedEncodePlans")
+	for _, key := range cache.MapKeys() {
+		planCount += cache.MapIndex(key).Len()
+	}
+	return cache.Len(), planCount
 }
 
 func TestArrayUsesExecutionTransaction(t *testing.T) {
