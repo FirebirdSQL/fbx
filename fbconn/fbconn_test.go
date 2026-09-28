@@ -1791,8 +1791,7 @@ func TestConnCancelRequest(t *testing.T) {
 
 	errChan := make(chan error)
 	go func() {
-		// The query is actually sent when multiResult.NextResult() is called. So wait to ensure it is sent.
-		// Once Flush is available this could use that instead.
+		// Wait for NextRow to start the first fetch before canceling it.
 		time.Sleep(1 * time.Second)
 
 		err := fbConn.CancelRequest(ctx)

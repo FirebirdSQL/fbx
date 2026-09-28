@@ -10,6 +10,7 @@ const (
 	Ptype_MASK          = 0xFF
 	Pflag_compress      = 0x100
 	Pflag_win_sspi_nego = 0x200
+	StmtDeferExecute    = 4 // Prepare response: a cursor's execute response may be deferred
 
 	P_cnct_min_type = 0
 

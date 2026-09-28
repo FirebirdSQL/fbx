@@ -99,10 +99,11 @@ func (sd *StatementDescription) EncodeBatchRow(values [][]byte) ([]byte, error) 
 }
 
 type Statement struct {
-	conn        *FbConn
-	Description *StatementDescription
-	transaction *FBTransaction
-	closed      bool
+	conn         *FbConn
+	Description  *StatementDescription
+	transaction  *FBTransaction
+	closed       bool
+	deferExecute bool
 
 	// The cursor belongs to the transaction used for execution, which can
 	// differ from transaction or conn.internalTransaction. Nil means no cursor.
@@ -141,7 +142,9 @@ func (st *Statement) NewBatch(cfg BatchConfig) *Batch {
 	return b
 }
 
-// Exec executed a prepared statement inside bound transaction
+// Exec executes a prepared statement inside its bound transaction.
+// For a cursor with deferred execution, the server's execute response is read
+// by the first NextRow or Close call.
 //
 // ResultReader must be closed before FbConn can be used again.
 func (st *Statement) Exec(ctx context.Context, paramValues [][]byte) *ResultReader {
@@ -305,8 +308,7 @@ func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *
 			return rr
 		}
 	}
-
-	if err = st.conn.withWriteLockAndFlush(func() error {
+	writeExecute := func() error {
 		return st.conn.client.WriteMessage(&fbproto.OpExecute{
 			Kind:                  execKind,
 			TransactionHandle:     tx.Handle,
@@ -320,10 +322,31 @@ func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *
 			InlineBlobSize:        st.conn.inlineBlobSize,
 			ProtocolFeatures:      st.conn.protocolFeatures,
 		})
-	}); err != nil {
+	}
+	if st.deferExecute {
+		err = st.conn.withWriteLock(func() error {
+			st.conn.deferredExecutePending.Store(true)
+			if writeErr := writeExecute(); writeErr != nil {
+				st.conn.deferredExecutePending.Store(false)
+				return writeErr
+			}
+			return nil
+		})
+	} else {
+		err = st.conn.withWriteLockAndFlush(writeExecute)
+	}
+	if err != nil {
 		st.conn.asyncClose()
 		rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(ctx, err))
 		rr.closed = true
+		return rr
+	}
+	if st.deferExecute {
+		st.closed = false
+		st.cursorTransaction = tx
+		rr.cursorOpened = true
+		rr.deferredExecute = true
+		rr.queryStatus = st.conn.makeQueryStatus(st.Description.GetQueryType())
 		return rr
 	}
 
@@ -397,6 +420,26 @@ func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *
 	rr.singletonResult = st.Description.HaveSingletonResult()
 	rr.queryStatus = st.conn.makeQueryStatus(st.Description.GetQueryType())
 	return rr
+}
+
+// discardFetchAfterFailedExecute consumes the response to a fetch sent before execute failed.
+// The server normally reports "cursor is not open"; this secondary error must not
+// replace the execute error or reach the connection's error callback.
+func (fbConn *FbConn) discardFetchAfterFailedExecute() error {
+	msg, err := fbConn.peekMessage()
+	if err != nil {
+		return err
+	}
+	fbConn.peekedMsg = nil
+	switch m := msg.(type) {
+	case *fbproto.ErrorResponse:
+		return nil
+	case *fbproto.OpFetchResponse:
+		if m.EndOfCursor() {
+			return nil
+		}
+	}
+	return fmt.Errorf("unexpected response %T to fetch after failed execute", msg)
 }
 
 func (st *Statement) internalClose(ctx context.Context, closeOption int) error {

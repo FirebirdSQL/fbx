@@ -56,6 +56,9 @@ type Config struct {
 	MaxInlineBlobSize          int
 	MaxBlobCacheSize           int
 	FetchBatchSize             int
+	// PipelineExecuteFetch defers cursor Execute until the first Fetch when the
+	// server advertises support. Enabled by default; set false to disable it.
+	PipelineExecuteFetch bool
 
 	// ConstructorOptions allows to pass callbacks for setting parameters to authentication plugins.
 	ConstructorOptions map[string][]auth.ConstructorOption
@@ -258,6 +261,7 @@ func NetworkAddress(host string, port uint16) (network, address string) {
 //
 //	FBHOST, FBPORT, FBDATABASE, FBUSER, FBPASSWORD
 //	FBAPPNAME, FBTZ, FBCONNECT_TIMEOUT, FBFETCH_BATCH_SIZE, FBWIRECOMPRESSION
+//	FBPIPELINE_EXECUTE_FETCH
 //	FBTARGETSESSIONATTRS, FBOPTIONS
 //
 // Any unrecognized options are preserved in Config.RuntimeParams.
@@ -341,6 +345,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		Autocommit:                 convertToBool(settings["autocommit"], true),
 		UseStreamBlobs:             convertToBool(settings["use_stream_blobs"], true),
 		FetchBatchSize:             DefaultFetchBatchSize,
+		PipelineExecuteFetch:       convertToBool(settings["pipeline_execute_fetch"], true),
 	}
 	if s, ok := settings["max_inline_blob_size"]; ok {
 		value, err := parsePositiveIntSetting(s)
@@ -414,6 +419,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		"max_inline_blob_size":          {},
 		"max_blob_cache_size":           {},
 		"fetch_batch_size":              {},
+		"pipeline_execute_fetch":        {},
 		"target_session_attrs":          {},
 	}
 
@@ -491,19 +497,20 @@ func parseEnvSettings() map[string]string {
 	settings := make(map[string]string)
 
 	nameMap := map[string]string{
-		"FBHOST":               "host",
-		"FBPORT":               "port",
-		"FBDATABASE":           "database",
-		"FBUSER":               "user",
-		"FBPASSWORD":           "password",
-		"FBAPPNAME":            "application_name",
-		"FBCONNECT_TIMEOUT":    "connect_timeout",
-		"FBTARGETSESSIONATTRS": "target_session_attrs",
-		"FBFETCH_BATCH_SIZE":   "fetch_batch_size",
-		"FBWIRECOMPRESSION":    "wire_compression",
-		"FBTZ":                 "timezone",
-		"FBOPTIONS":            "options",
-		"FBSEARCHPATH":         "search_path",
+		"FBHOST":                   "host",
+		"FBPORT":                   "port",
+		"FBDATABASE":               "database",
+		"FBUSER":                   "user",
+		"FBPASSWORD":               "password",
+		"FBAPPNAME":                "application_name",
+		"FBCONNECT_TIMEOUT":        "connect_timeout",
+		"FBTARGETSESSIONATTRS":     "target_session_attrs",
+		"FBFETCH_BATCH_SIZE":       "fetch_batch_size",
+		"FBPIPELINE_EXECUTE_FETCH": "pipeline_execute_fetch",
+		"FBWIRECOMPRESSION":        "wire_compression",
+		"FBTZ":                     "timezone",
+		"FBOPTIONS":                "options",
+		"FBSEARCHPATH":             "search_path",
 	}
 
 	for envname, realname := range nameMap {

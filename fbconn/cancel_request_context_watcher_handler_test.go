@@ -149,6 +149,44 @@ func TestCancelRequestContextWatcherHandlerHandleCancelTimeoutDoesNotCloseConn(t
 	require.False(t, fbConn.IsClosed())
 }
 
+func TestCancelRequestContextWatcherHandlerDoesNotCancelBufferedExecute(t *testing.T) {
+	h, fbConn := newWatcherHandlerForWindowTests()
+	h.requestCancelEnabled.Store(true)
+	fbConn.deferredExecutePending.Store(true)
+
+	var calls atomic.Int32
+	h.sendCancelOperationFunc = func(_ context.Context, _ int) error {
+		calls.Add(1)
+		return nil
+	}
+
+	h.HandleCancel(context.Background())
+	h.HandleUnwatchAfterCancel()
+
+	require.Zero(t, calls.Load())
+	require.False(t, fbConn.deferredExecutePending.Load())
+	require.False(t, fbConn.IsClosed())
+	require.True(t, h.pendingCancelReset.Load())
+}
+
+func TestCancelRequestContextWatcherHandlerDoesNotDisableBeforeBufferedExecuteResponse(t *testing.T) {
+	h, fbConn := newWatcherHandlerForWindowTests()
+	h.requestCancelEnabled.Store(true)
+	fbConn.deferredExecutePending.Store(true)
+
+	var calls atomic.Int32
+	h.sendCancelOperationFunc = func(_ context.Context, _ int) error {
+		calls.Add(1)
+		return nil
+	}
+
+	h.HandleUnwatch()
+
+	require.Zero(t, calls.Load())
+	require.True(t, h.pendingCancelReset.Load())
+	require.False(t, fbConn.IsClosed())
+}
+
 func TestCancelRequestContextWatcherHandlerHandleCancelZeroDelayStillSendsCancelWithFastUnwatch(t *testing.T) {
 	const iterations = 100
 

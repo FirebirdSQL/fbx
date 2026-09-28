@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx/fbconn"
+	"rdb.red-soft.ru/fbx/fbconn/ctxwatch"
 	"rdb.red-soft.ru/fbx/internal/stmtcache"
 )
 
@@ -368,22 +369,94 @@ func TestStmtCacheSizeLimit(t *testing.T) {
 	assert.Equal(t, cacheLimit, conn.statementCache.Len())
 }
 
+type observedCancelHandler struct {
+	*fbconn.CancelRequestContextWatcherHandler
+	canceled chan struct{}
+}
+
+func (h *observedCancelHandler) HandleCancel(ctx context.Context) {
+	h.CancelRequestContextWatcherHandler.HandleCancel(ctx)
+	close(h.canceled)
+}
+
 func TestQueryExecModeExecCloseWithCanceledContextDeallocatesStatement(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		waitForCancel  bool
+		useCompression bool
+		pipeline       bool
+	}{
+		{name: "close_immediately", pipeline: true},
+		{name: "close_after_cancel_callback", waitForCancel: true, pipeline: true},
+		{name: "compressed_close_immediately", useCompression: true, pipeline: true},
+		{name: "compressed_close_after_cancel_callback", waitForCancel: true, useCompression: true, pipeline: true},
+		{name: "pipeline_disabled"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			connConfig := mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE"))
+			connConfig.DefaultQueryExecMode = QueryExecModeExec
+			connConfig.WireCompression = tc.useCompression
+			connConfig.PipelineExecuteFetch = tc.pipeline
+			canceled := make(chan struct{})
+			connConfig.BuildContextWatcherHandler = func(conn *fbconn.FbConn) ctxwatch.Handler {
+				return &observedCancelHandler{
+					CancelRequestContextWatcherHandler: &fbconn.CancelRequestContextWatcherHandler{Conn: conn},
+					canceled:                           canceled,
+				}
+			}
+			conn := mustConnect(t, connConfig)
+			defer func() { require.NoError(t, conn.Close(context.Background())) }()
+
+			sql := "select cast('query_exec_cancel_close' as varchar(64)) from rdb$database"
+			ctx, cancel := context.WithCancel(context.Background())
+			rows, err := conn.Query(ctx, sql)
+			require.NoError(t, err)
+
+			cancel()
+			if tc.waitForCancel {
+				select {
+				case <-canceled:
+				case <-time.After(time.Second):
+					t.Fatal("context cancellation was not observed")
+				}
+			}
+			rows.Close()
+			require.NoError(t, rows.Err())
+
+			assert.EqualValues(t, 0, countStatementHandlesForSQL(t, conn, sql))
+		})
+	}
+}
+
+func TestQueryExecModeExecNextWithCanceledContextKeepsConnection(t *testing.T) {
 	connConfig := mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE"))
 	connConfig.DefaultQueryExecMode = QueryExecModeExec
+	connConfig.PipelineExecuteFetch = true
+	canceled := make(chan struct{})
+	connConfig.BuildContextWatcherHandler = func(conn *fbconn.FbConn) ctxwatch.Handler {
+		return &observedCancelHandler{
+			CancelRequestContextWatcherHandler: &fbconn.CancelRequestContextWatcherHandler{Conn: conn},
+			canceled:                           canceled,
+		}
+	}
 	conn := mustConnect(t, connConfig)
-	defer func() {
-		require.NoError(t, conn.Close(context.Background()))
-	}()
+	defer func() { require.NoError(t, conn.Close(context.Background())) }()
 
-	sql := "select cast('query_exec_cancel_close' as varchar(64)) from rdb$database"
+	sql := "select cast('query_exec_cancel_next' as varchar(64)) from rdb$database"
 	ctx, cancel := context.WithCancel(context.Background())
 	rows, err := conn.Query(ctx, sql)
 	require.NoError(t, err)
 
 	cancel()
-	rows.Close()
-
+	select {
+	case <-canceled:
+	case <-time.After(time.Second):
+		t.Fatal("context cancellation was not observed")
+	}
+	require.False(t, rows.Next())
+	require.ErrorIs(t, rows.Err(), context.Canceled)
+	require.False(t, fbconn.SafeToRetry(rows.Err()))
+	require.False(t, conn.fbConn.ActiveTx(), "canceled deferred Execute must roll back the internal transaction")
 	assert.EqualValues(t, 0, countStatementHandlesForSQL(t, conn, sql))
 }
 

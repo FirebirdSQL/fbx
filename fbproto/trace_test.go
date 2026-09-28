@@ -30,8 +30,8 @@ S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlSta
 C\tCancel kind=1(disable)
 C\tCancel kind=2(enable)
 C\tExecute kind=63 stmt=2 tx=1 inBLR=12 outBLR=0 lenParameters=1 lenParamDes=1 timeout=0 cursorFlags=0 inlineBlobSize=65536
-S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 gdsCodes=0
 C\tFetch stmt=2 msgs=400 lenRowBLR=12
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 gdsCodes=0
 S\tFetchResponse status=0 msgs=1
 S\tRowData cols=1 nulls=0 [4]
 S\tFetchResponse status=0 msgs=1
@@ -65,8 +65,8 @@ S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlSta
 C\tCancel kind=1(disable)
 C\tCancel kind=2(enable)
 C\tExecute kind=63 stmt=2 tx=1 inBLR=12 outBLR=0 lenParameters=1 lenParamDes=1 timeout=0 cursorFlags=0
-S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 gdsCodes=0
 C\tFetch stmt=2 msgs=400 lenRowBLR=12
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 gdsCodes=0
 S\tFetchResponse status=0 msgs=1
 S\tRowData cols=1 nulls=0 [4]
 S\tFetchResponse status=0 msgs=1
@@ -99,8 +99,8 @@ S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlSta
 C\tCancel kind=1(disable)
 C\tCancel kind=2(enable)
 C\tExecute kind=63 stmt=2 tx=1 inBLR=12 outBLR=0 lenParameters=1 sqldata:4 '\x00\x00\x00\x03' lenParamDes=1 paramsdesc:1 496 0 0 4 false "" "" "" "" "" "" false timeout=0 cursorFlags=0 inlineBlobSize=65536
-S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 data='' gdsCodes=0
 C\tFetch stmt=2 msgs=400 lenRowBLR=12 rowBLR='\x05\x02\x04\x00\x02\x00\x08\x00\x07\x00\xffL'
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 data='' gdsCodes=0
 S\tFetchResponse status=0 msgs=1
 S\tRowData cols=1 nulls=0 [col=0 name="GENERATE_SERIES" type=496 len=4 bytes=4 val='\x00\x00\x00\x01']
 S\tFetchResponse status=0 msgs=1
@@ -133,8 +133,8 @@ S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlSta
 C\tCancel kind=1(disable)
 C\tCancel kind=2(enable)
 C\tExecute kind=63 stmt=2 tx=1 inBLR=12 outBLR=0 lenParameters=1 sqldata:4 '\x00\x00\x00\x03' lenParamDes=1 paramsdesc:1 496 0 0 4 false "" "" "" "" "" "" false timeout=0 cursorFlags=0
-S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 data='' gdsCodes=0
 C\tFetch stmt=2 msgs=400 lenRowBLR=12 rowBLR='\x05\x02\x04\x00\x02\x00\x08\x00\x07\x00\xffL'
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 data='' gdsCodes=0
 S\tFetchResponse status=0 msgs=1
 S\tRowData cols=1 nulls=0 [col=0 name="GENERATE_SERIES" type=496 len=4 bytes=4 val='\x00\x00\x00\x01']
 S\tFetchResponse status=0 msgs=1
@@ -167,8 +167,8 @@ S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlSta
 C\tCancel kind=1(disable)
 C\tCancel kind=2(enable)
 C\tExecute kind=63 stmt=2 tx=1 inBLR=12 outBLR=0 lenParameters=1 lenParamDes=1 timeout=0
-S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 gdsCodes=0
 C\tFetch stmt=2 msgs=400 lenRowBLR=12
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 gdsCodes=0
 S\tFetchResponse status=0 msgs=1
 S\tRowData cols=1 nulls=0 [4]
 S\tFetchResponse status=0 msgs=1
@@ -201,8 +201,8 @@ S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlSta
 C\tCancel kind=1(disable)
 C\tCancel kind=2(enable)
 C\tExecute kind=63 stmt=2 tx=1 inBLR=12 outBLR=0 lenParameters=1 sqldata:4 '\x00\x00\x00\x03' lenParamDes=1 paramsdesc:1 496 0 0 4 false "" "" "" "" "" "" false timeout=0
-S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 data='' gdsCodes=0
 C\tFetch stmt=2 msgs=400 lenRowBLR=12 rowBLR='\x05\x02\x04\x00\x02\x00\x08\x00\x07\x00\xffL'
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 data='' gdsCodes=0
 S\tFetchResponse status=0 msgs=1
 S\tRowData cols=1 nulls=0 [col=0 name="GENERATE_SERIES" type=496 len=4 bytes=4 val='\x00\x00\x00\x01']
 S\tFetchResponse status=0 msgs=1
@@ -235,8 +235,8 @@ S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlSta
 C\tCancel kind=1(disable)
 C\tCancel kind=2(enable)
 C\tExecute kind=63 stmt=2 tx=1 inBLR=12 outBLR=0 lenParameters=1 lenParamDes=1
-S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 gdsCodes=0
 C\tFetch stmt=2 msgs=400 lenRowBLR=12
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 gdsCodes=0
 S\tFetchResponse status=0 msgs=1
 S\tRowData cols=1 nulls=0 [4]
 S\tFetchResponse status=0 msgs=1
@@ -270,8 +270,8 @@ S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlSta
 C\tCancel kind=1(disable)
 C\tCancel kind=2(enable)
 C\tExecute kind=63 stmt=2 tx=1 inBLR=12 outBLR=0 lenParameters=1 sqldata:4 '\x00\x00\x00\x03' lenParamDes=1 paramsdesc:1 496 0 0 4 false "" "" "" "" "" "" false
-S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 data='' gdsCodes=0
 C\tFetch stmt=2 msgs=400 lenRowBLR=12 rowBLR='\x05\x02\x04\x00\x02\x00\x08\x00\x07\x00\xffL'
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 data='' gdsCodes=0
 S\tFetchResponse status=0 msgs=1
 S\tRowData cols=1 nulls=0 [col=0 name="GENERATE_SERIES" type=496 len=4 bytes=4 val='\x00\x00\x00\x01']
 S\tFetchResponse status=0 msgs=1
@@ -304,8 +304,8 @@ S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlSta
 C\tCancel kind=1(disable)
 C\tCancel kind=2(enable)
 C\tExecute kind=63 stmt=2 tx=1 inBLR=12 outBLR=0 lenParameters=1 lenParamDes=1 timeout=0 cursorFlags=0 inlineBlobSize=65536
-S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 gdsCodes=0
 C\tFetch stmt=2 msgs=400 lenRowBLR=12
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 gdsCodes=0
 S\tFetchResponse status=0 msgs=1
 S\tRowData cols=1 nulls=0 [4]
 S\tFetchResponse status=0 msgs=1
@@ -339,8 +339,8 @@ S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlSta
 C\tCancel kind=1(disable)
 C\tCancel kind=2(enable)
 C\tExecute kind=63 stmt=2 tx=1 inBLR=12 outBLR=0 lenParameters=1 sqldata:4 '\x00\x00\x00\x03' lenParamDes=1 paramsdesc:1 496 0 0 4 false "" "" "" "" "" "" false timeout=0 cursorFlags=0 inlineBlobSize=65536
-S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 data='' gdsCodes=0
 C\tFetch stmt=2 msgs=400 lenRowBLR=12 rowBLR='\x05\x02\x04\x00\x02\x00\x08\x00\x07\x00\xffL'
+S\tResponse failure=false warnings=false sqlErr=0 sqlState=00000 sqlErr=0 sqlState="00000" message="" warn="" object=1 blobId=0 lenData=0 data='' gdsCodes=0
 S\tFetchResponse status=0 msgs=1
 S\tRowData cols=1 nulls=0 [col=0 name="GENERATE_SERIES" type=496 len=4 bytes=4 val='\x00\x00\x00\x01']
 S\tFetchResponse status=0 msgs=1
@@ -458,7 +458,10 @@ func TestTrace(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	conn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
+	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	config.PipelineExecuteFetch = true
+	conn, err := fbconn.ConnectConfig(ctx, config)
 	require.NoError(t, err)
 	defer func() { _ = conn.Close(ctx) }()
 
@@ -489,7 +492,10 @@ func TestFullLogTrace(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	conn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
+	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	config.PipelineExecuteFetch = true
+	conn, err := fbconn.ConnectConfig(ctx, config)
 	require.NoError(t, err)
 	defer func() { _ = conn.Close(ctx) }()
 
