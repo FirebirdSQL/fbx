@@ -467,6 +467,20 @@ func TestAlterSessionResetDeallocateAllOnlyWhenPathChanges(t *testing.T) {
 	}
 }
 
+func TestAlterSessionReset(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
+	defer closeConn(t, conn)
+
+	if getServerMajorVersionForConn(ctx, t, conn) < 4 {
+		t.Skip("session reset supported only in Firebird/RedDatabase 4+")
+	}
+
+	mustExecCtx(ctx, t, conn, "alter session reset")
+}
+
 func TestSetSearchPathStatementSyntaxVariants(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
