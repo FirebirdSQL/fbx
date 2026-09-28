@@ -1181,4 +1181,10 @@ type wrapTx struct {
 
 func (wtx wrapTx) Commit() error { return wtx.tx.Commit(wtx.ctx) }
 
-func (wtx wrapTx) Rollback() error { return wtx.tx.Rollback(wtx.ctx) }
+func (wtx wrapTx) Rollback() error {
+	// database/sql calls Rollback after the begin context is canceled. Give
+	// cleanup its own deadline so the server confirms the rollback before reuse.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(wtx.ctx), 5*time.Second)
+	defer cancel()
+	return wtx.tx.Rollback(ctx)
+}

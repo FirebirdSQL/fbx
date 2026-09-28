@@ -1212,15 +1212,18 @@ func (fbConn *FbConn) WireCompressionEnabled() bool {
 	return fbConn != nil && fbConn.client != nil && fbConn.client.CompressionEnabled()
 }
 
-// Close closes a connection. It is safe to call Close on an already closed connection. Close attempts a clean close by
-// sending the exit message to Firebird/RedDatabase server. However, this could block so ctx is available to limit the time to wait. The
-// underlying net.Conn.Close() will always be called regardless of any other errors.
+// Close closes a connection. On an idle connection it rolls back known active
+// transactions, waits for the server to confirm detach, then sends disconnect.
+// It returns an error if the connection is busy or detach fails. Pass a context
+// with a deadline to limit network waits. Close always closes the transport;
+// calling it again after the connection is closed returns nil.
 func (fbConn *FbConn) Close(ctx context.Context) (err error) {
 	fbConn.statusMu.Lock()
 	if fbConn.status == connStatusClosed {
 		fbConn.statusMu.Unlock()
 		return nil
 	}
+	wasBusy := fbConn.status == connStatusBusy
 	fbConn.status = connStatusClosed
 	fbConn.statusMu.Unlock()
 	fbConn.clearAllInlineBlobCache()
@@ -1228,34 +1231,90 @@ func (fbConn *FbConn) Close(ctx context.Context) (err error) {
 
 	defer fbConn.closeCleanupDone()
 	defer func() {
+		// After disconnect the peer may stop reading immediately. Close the
+		// transport before releasing compression resources so zlib finalization
+		// cannot block or turn a successful disconnect into a write error.
 		err = errors.Join(err, fbConn.conn.Close())
+		_ = fbConn.withWriteLock(func() error {
+			return fbConn.client.CloseCompression()
+		})
 		fbConn.client.WaitForCompressionRead()
 	}()
+	if ctx != context.Background() {
+		// An active result may still own the previous context watch.
+		fbConn.contextWatcher.Unwatch()
+	}
+
+	// An open result can leave earlier responses on the wire. They cannot be
+	// distinguished from the detach response, so close the transport and report it.
+	if wasBusy {
+		return fmt.Errorf("cannot confirm detach while connection is busy")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
 	if ctx != context.Background() {
-		// Close may be called while a cancellable query is in progress. This will most often be triggered by panic when
-		// a defer closes the connection (possibly indirectly via a transaction or a connection pool). Unwatch to end any
-		// previous watch. It is safe to Unwatch regardless of whether a watch is already is progress.
-		fbConn.contextWatcher.Unwatch()
-
 		fbConn.contextWatcher.Watch(ctx)
 		defer fbConn.contextWatcher.Unwatch()
 	}
+	if err := fbConn.rollbackActiveTransactionsForClose(ctx); err != nil {
+		return err
+	}
 
-	// Ignore errors while terminating the protocol; the underlying connection
-	// is closed below regardless of whether the server accepted the messages.
-	_ = fbConn.withWriteLock(func() error {
-		terminateErr := fbConn.client.WriteMessage(&fbproto.OpDetach{})
-		if terminateErr == nil {
-			terminateErr = fbConn.client.WriteMessage(&fbproto.OpDisconnect{})
+	if err := fbConn.withWriteLockAndFlush(func() error {
+		return fbConn.client.WriteMessage(&fbproto.OpDetach{})
+	}); err != nil {
+		return fmt.Errorf("send detach: %w", normalizeTimeoutError(ctx, err))
+	}
+
+	msg, err := fbConn.receiveMessage()
+	if err != nil {
+		return fmt.Errorf("receive detach response: %w", normalizeTimeoutError(ctx, err))
+	}
+	switch m := msg.(type) {
+	case *fbproto.OpResponse:
+	case *fbproto.ErrorResponse:
+		return ErrorResponseToFbError(m)
+	default:
+		return fmt.Errorf("received unexpected detach response: %T", m)
+	}
+
+	// op_disconnect is terminal and has no response.
+	if err := fbConn.withWriteLockAndFlush(func() error {
+		return fbConn.client.WriteMessage(&fbproto.OpDisconnect{})
+	}); err != nil {
+		return fmt.Errorf("send disconnect: %w", normalizeTimeoutError(ctx, err))
+	}
+	return nil
+}
+
+func (fbConn *FbConn) rollbackActiveTransactionsForClose(ctx context.Context) error {
+	for tx := range fbConn.activeTransactions {
+		if tx.Closed {
+			continue
 		}
-		if terminateErr == nil {
-			terminateErr = fbConn.flushWithPotentialWriteReadDeadlockLocked()
+		if err := fbConn.withWriteLockAndFlush(func() error {
+			return fbConn.client.WriteMessage(&fbproto.OpRollback{TransactionHandle: tx.Handle})
+		}); err != nil {
+			return fmt.Errorf("rollback transaction %d before detach: %w", tx.Handle, normalizeTimeoutError(ctx, err))
 		}
-		return errors.Join(terminateErr, fbConn.client.CloseCompression())
-	})
-	// Firebird replies to op_detach, but op_disconnect is terminal and has no response.
-	// Close is best-effort, so it closes the socket instead of waiting for detach acknowledgement.
+
+		msg, err := fbConn.receiveMessage()
+		if err != nil {
+			return fmt.Errorf("receive rollback response for transaction %d: %w", tx.Handle, normalizeTimeoutError(ctx, err))
+		}
+		switch m := msg.(type) {
+		case *fbproto.OpResponse:
+			tx.Closed = true
+			delete(fbConn.activeTransactions, tx)
+			fbConn.clearInlineBlobCache(tx.Handle)
+		case *fbproto.ErrorResponse:
+			return ErrorResponseToFbError(m)
+		default:
+			return fmt.Errorf("received unexpected rollback response for transaction %d: %T", tx.Handle, m)
+		}
+	}
 	return nil
 }
 
@@ -1817,7 +1876,7 @@ func (fbConn *FbConn) ExecImmediateTx(ctx context.Context, tx *FBTransaction, sq
 	}
 	fbConn.unlock()
 	if tx != nil && tx == fbConn.internalTransaction && fbConn.config.Autocommit && !fbConn.explicitTransaction {
-		return tx.Commit(ctx)
+		return fbConn.commitInternalTx(ctx, tx)
 	}
 
 	return nil
@@ -2594,6 +2653,18 @@ func cleanupContext(parent context.Context) (context.Context, context.CancelFunc
 	return context.WithTimeout(context.WithoutCancel(parent), cleanupGracePeriod)
 }
 
+// commitInternalTx rolls back a rejected implicit commit so the next request
+// cannot reuse the failed transaction and commit its changes.
+func (fbConn *FbConn) commitInternalTx(ctx context.Context, tx *FBTransaction) error {
+	err := tx.Commit(ctx)
+	if err != nil {
+		if rbErr := fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx, err); rbErr != nil {
+			return errors.Join(err, fmt.Errorf("rollback internal tx: %w", rbErr))
+		}
+	}
+	return err
+}
+
 // rollbackInternalTxIfAutocommitOnError rolls back the connection's implicit internal
 // transaction on an error path. No-op when tx is user-supplied, already closed,
 // Autocommit is disabled, or opErr is SafeToRetry (the operation failed before
@@ -2650,7 +2721,7 @@ func (rr *ResultReader) Close() (QueryStatus, error) {
 					rr.err = errors.Join(rr.err, fmt.Errorf("rollback internal tx: %w", rbErr))
 				}
 			} else {
-				if err := rr.boundTransaction.Commit(context.Background()); err != nil {
+				if err := rr.fbConn.commitInternalTx(context.Background(), rr.boundTransaction); err != nil {
 					rr.err = err
 				}
 			}

@@ -2099,7 +2099,7 @@ func TestConnCloseWhileCancellableQueryInProgress(t *testing.T) {
 
 	closeCtx, closeCancel := context.WithCancel(ctx)
 	defer closeCancel()
-	require.NoError(t, fbConn.Close(closeCtx))
+	require.ErrorContains(t, fbConn.Close(closeCtx), "cannot confirm detach while connection is busy")
 	select {
 	case <-fbConn.CleanupDone():
 	case <-time.After(5 * time.Second):
@@ -2283,7 +2283,12 @@ func TestConnFatalServerErrorCanBeOverridden(t *testing.T) {
 
 	subject, err := fbconn.ConnectConfig(ctx, config)
 	require.NoError(t, err)
-	defer closeConn(t, subject)
+	// The server forcibly removes this attachment below, so a later clean
+	// detach cannot succeed. Close must still release the local transport.
+	defer func() {
+		_ = subject.Close(ctx)
+		require.True(t, subject.IsClosed())
+	}()
 
 	killer, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
@@ -2613,7 +2618,14 @@ func TestConnExecImmediateNoTx(t *testing.T) {
 
 	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
-	defer closeConn(t, fbConn)
+	defer func() {
+		// SET TRANSACTION sent without a transaction handle is not tracked by
+		// FbConn; the server must report it when detach is attempted.
+		var fbErr *fbconn.FbError
+		require.ErrorAs(t, fbConn.Close(ctx), &fbErr)
+		require.Contains(t, fbErr.GdsCodes, fbproto.Isc_open_trans)
+		require.True(t, fbConn.IsClosed())
+	}()
 
 	err = fbConn.ExecImmediateTx(ctx, nil, "set transaction")
 	require.NoError(t, err)

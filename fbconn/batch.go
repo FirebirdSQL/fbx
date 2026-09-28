@@ -239,7 +239,7 @@ func (b *Batch) Execute(ctx context.Context, tx *FBTransaction) (*BatchCompletio
 			if err := b.st.conn.rollbackInternalTxIfAutocommitOnError(ctx, execTx, errBatchExecutionFailed); err != nil {
 				return completion, errors.Join(errBatchExecutionFailed, fmt.Errorf("rollback internal tx: %w", err))
 			}
-		} else if err := execTx.Commit(context.Background()); err != nil {
+		} else if err := b.st.conn.commitInternalTx(context.Background(), execTx); err != nil {
 			return completion, err
 		}
 	}

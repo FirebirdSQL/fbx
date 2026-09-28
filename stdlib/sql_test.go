@@ -958,7 +958,11 @@ func TestConnBeginTxReadOnly(t *testing.T) {
 
 func TestBeginTxContextCancel(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		// The query below must wait for database/sql's asynchronous rollback,
+		// rather than opening another connection that cannot see the pending DDL.
+		db.SetMaxOpenConns(1)
 		ctx, cancelFn := context.WithCancel(context.Background())
+		defer cancelFn()
 
 		_, err := db.Exec("drop table t")
 		if err != nil {

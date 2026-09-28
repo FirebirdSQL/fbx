@@ -40,10 +40,6 @@ func (tx *FBTransaction) Commit(ctx context.Context) error {
 		defer tx.Connection.contextWatcher.Unwatch()
 	}
 
-	tx.Closed = true
-	defer tx.Connection.clearInlineBlobCache(tx.Handle)
-	delete(tx.Connection.activeTransactions, tx)
-
 	opCommit := fbproto.OpCommit{
 		TransactionHandle: tx.Handle,
 	}
@@ -65,6 +61,11 @@ func (tx *FBTransaction) Commit(ctx context.Context) error {
 		return ErrorResponseToFbError(m)
 	}
 
+	// A rejected commit leaves the server transaction active. Keep its handle
+	// until success so callers or Close can still roll it back.
+	tx.Closed = true
+	tx.Connection.clearInlineBlobCache(tx.Handle)
+	delete(tx.Connection.activeTransactions, tx)
 	return nil
 }
 
@@ -93,10 +94,6 @@ func (tx *FBTransaction) Rollback(ctx context.Context) error {
 		defer tx.Connection.contextWatcher.Unwatch()
 	}
 
-	tx.Closed = true
-	defer tx.Connection.clearInlineBlobCache(tx.Handle)
-	delete(tx.Connection.activeTransactions, tx)
-
 	opRollback := fbproto.OpRollback{
 		TransactionHandle: tx.Handle,
 	}
@@ -117,5 +114,8 @@ func (tx *FBTransaction) Rollback(ctx context.Context) error {
 		return ErrorResponseToFbError(m)
 	}
 
+	tx.Closed = true
+	tx.Connection.clearInlineBlobCache(tx.Handle)
+	delete(tx.Connection.activeTransactions, tx)
 	return nil
 }

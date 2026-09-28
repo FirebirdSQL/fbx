@@ -362,8 +362,11 @@ func connect(ctx context.Context, config *ConnConfig) (c *Conn, err error) {
 	return c, nil
 }
 
-// Close closes a connection. It is safe to call Close on an already closed
-// connection.
+// Close closes a connection. If no request is in progress, it waits for the
+// server to confirm detach and returns any error. An open result prevents
+// confirmation and causes Close to return an error. Close always closes the
+// network connection. Pass a context with a deadline to limit network waits.
+// Calling Close again after the connection is closed returns nil.
 func (c *Conn) Close(ctx context.Context) error {
 	if c.IsClosed() {
 		return nil
