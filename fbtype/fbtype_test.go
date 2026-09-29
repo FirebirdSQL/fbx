@@ -929,6 +929,34 @@ func TestMapEncodeSliceWrapperUsesReflectForUncommonTypes(t *testing.T) {
 	assert.Equal(t, "[{1 3}]|[true false true]", string(buf))
 }
 
+func TestMapFlatArrayOctetsUsesArrayInterfaces(t *testing.T) {
+	m := fbtype.NewMap()
+	arrayData, err := fbtype.NewArrayData(
+		fbproto.SQL_TYPE_TEXT,
+		fbproto.CS_BINARY,
+		2,
+		0,
+		[]map[string]int{{"Lower": 1, "Upper": 2}},
+	)
+	require.NoError(t, err)
+	metadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_ARRAY, 0, 8, 0)
+	metadata.SetArrayMetadata(arrayData)
+
+	value := fbtype.FlatArray[[]byte]{{0x01}, {0x02, 0x03}}
+	dimensions, err := fbtype.Dimensions(value, []int{1})
+	require.NoError(t, err)
+	require.Equal(t, []map[string]int{{"Lower": 1, "Upper": 2}}, dimensions)
+
+	buf, err := m.Encode(metadata, value, nil)
+	require.NoError(t, err)
+	require.Equal(t, []byte{0x01, 0x00, 0x00, 0x00, 0x02, 0x03, 0x00, 0x00}, buf)
+
+	var actual fbtype.FlatArray[[]byte]
+	err = m.Scan(metadata, buf, &actual)
+	require.NoError(t, err)
+	require.Equal(t, fbtype.FlatArray[[]byte]{{0x01, 0x00}, {0x02, 0x03}}, actual)
+}
+
 func TestMapEncodeEmptyArrayIsDistinctFromNullArray(t *testing.T) {
 	m := fbtype.NewMap()
 	arrayData, err := fbtype.NewArrayData(
@@ -953,12 +981,16 @@ func TestMapEncodeEmptyArrayIsDistinctFromNullArray(t *testing.T) {
 }
 
 func TestDimensionsAcceptsNullArray(t *testing.T) {
+	var nilSlice []int64
+	var nilSlicePointer *[]int64
 	tests := []struct {
 		name  string
 		value any
 	}{
 		{name: "untyped nil", value: nil},
 		{name: "typed nil slice", value: []int64(nil)},
+		{name: "typed nil pointer", value: nilSlicePointer},
+		{name: "pointer to typed nil slice", value: &nilSlice},
 	}
 
 	for _, tt := range tests {
@@ -968,6 +1000,14 @@ func TestDimensionsAcceptsNullArray(t *testing.T) {
 			require.Nil(t, dimensions)
 		})
 	}
+}
+
+func TestDimensionsDereferencesOrdinarySlicePointer(t *testing.T) {
+	value := []int32{1, 2, 3}
+
+	dimensions, err := fbtype.Dimensions(&value, []int{5})
+	require.NoError(t, err)
+	require.Equal(t, []map[string]int{{"Lower": 5, "Upper": 7}}, dimensions)
 }
 
 func TestMapEncodeArrayRejectsNullElements(t *testing.T) {
@@ -1154,6 +1194,25 @@ func TestMapScanPtrMultiDimSliceWrapperOverwritesRaggedDestination(t *testing.T)
 	err = m.Scan(typeMetadata, nil, &got)
 	require.NoError(t, err)
 	assert.Nil(t, got)
+}
+
+func TestArraySQLScannerOverwritesRaggedMultiDimensionalSlice(t *testing.T) {
+	m := fbtype.NewMap()
+	metadata := newArrayEncodePlanTestMetadata(t, []map[string]int{
+		{"Lower": 1, "Upper": 2},
+		{"Lower": 1, "Upper": 2},
+	})
+	want := [][]int32{{1, 2}, {3, 4}}
+	buf, err := m.Encode(metadata, want, nil)
+	require.NoError(t, err)
+
+	actual := [][]int32{{9}, {8, 7}}
+	err = m.SQLScanner(&actual).Scan(fbtype.ArraySQLScanner{
+		ArrayData:   metadata.ArrayData,
+		ArrayBuffer: buf,
+	})
+	require.NoError(t, err)
+	require.Equal(t, want, actual)
 }
 
 func TestMapScanPtrArrayWrapperFillsFixedArray(t *testing.T) {

@@ -35,24 +35,6 @@ type Array struct {
 	SubType           int32
 }
 
-// NewArray constructs array metadata for a table field.
-func NewArray(table, field string, dims []map[string]int, length uint32, scale int32, typeID, blrTypeID uint32, subType int32) *Array {
-
-	a := new(Array)
-
-	a.TableName = table
-	a.FieldName = field
-	a.Dimensions = dims
-	a.CurrentDimensions = dims
-	a.Length = length
-	a.Scale = scale
-	a.TypeId = typeID
-	a.BlrTypeId = blrTypeID
-	a.SubType = subType
-
-	return a
-}
-
 func (arr Array) getSliceLength() (int, error) {
 	const (
 		maxArrayDimensions = 16

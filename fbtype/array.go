@@ -18,10 +18,11 @@ var (
 )
 
 const (
-	maxArrayDimensions  = 16
-	minArrayBound       = -1 << 31
-	maxArrayBound       = 1<<31 - 1
-	maxArraySliceLength = 1<<31 - 1
+	maxArrayDimensions   = 16
+	maxArrayPointerDepth = 8
+	minArrayBound        = -1 << 31
+	maxArrayBound        = 1<<31 - 1
+	maxArraySliceLength  = 1<<31 - 1
 )
 
 // ArrayGetter provides array dimensions and elements for encoding.
@@ -53,12 +54,11 @@ type ArraySetter interface {
 
 // ArrayData contains the element metadata and dimensions of a Firebird array.
 type ArrayData struct {
-	ElementType *Type
-	Dimensions  []ArrayDimension
-	SubType     int32
-	Length      uint32
-	Scale       int32
-	TypeId      uint32
+	Dimensions []ArrayDimension
+	SubType    int32
+	Length     uint32
+	Scale      int32
+	TypeId     uint32
 }
 
 // ArraySQLScanner carries an encoded Firebird array and its metadata through
@@ -72,7 +72,6 @@ type ArraySQLScanner struct {
 // Lower and Upper dimension bounds.
 func NewArrayData(typeID uint32, subType int32, length uint32, scale int32, dimensionsMap []map[string]int) (*ArrayData, error) {
 	ad := new(ArrayData)
-	var err error
 
 	ad.Length = length
 	ad.Scale = scale
@@ -104,18 +103,11 @@ func NewArrayData(typeID uint32, subType int32, length uint32, scale int32, dime
 	}
 	ad.Dimensions = dims
 
-	ad.ElementType, err = getTypeFromMap(typeID)
-	if err != nil {
-		return nil, err
-	}
 	return ad, nil
-
 }
 
 // ArrayCodec encodes and decodes Firebird ARRAY values.
-type ArrayCodec struct {
-	ElementType *Type
-}
+type ArrayCodec struct{}
 
 // PlanEncode returns an encode plan for supported array values.
 func (ArrayCodec) PlanEncode(m *Map, typeMetadata TypeMetadata, value any) EncodePlan {
@@ -276,12 +268,21 @@ func (pe planEncodeArray) Encode(value any, buf []byte) (newBuf []byte, err erro
 // Dimensions returns array bounds as maps with "Lower" and "Upper" keys.
 // lowers supplies lower bounds for Go slices and arrays. A nil value returns nil.
 func Dimensions(value any, lowers []int) ([]map[string]int, error) {
+	return arrayDimensions(value, lowers, 0)
+}
+
+func arrayDimensions(value any, lowers []int, pointerDepth int) ([]map[string]int, error) {
 	if isNilValue(value) {
 		return nil, nil
 	}
 
 	array, err := getArrayEncodeType(value)
 	if err != nil {
+		targetValue := reflect.ValueOf(value)
+		_, isDriverValuer := value.(driver.Valuer)
+		if !isDriverValuer && targetValue.Kind() == reflect.Pointer && pointerDepth < maxArrayPointerDepth {
+			return arrayDimensions(targetValue.Elem().Interface(), lowers, pointerDepth+1)
+		}
 		return nil, err
 	}
 	dimensions, err := array.Dimensions(lowers)
@@ -471,6 +472,10 @@ func getArrayDecodeType(dst any) (ArraySetter, error) {
 		return (*FlatArray[time.Time])(target), nil
 	}
 
+	if a, ok := dst.(ArraySetter); ok {
+		return a, nil
+	}
+
 	targetType := targetValue.Type()
 	targetElemType := targetType.Elem()
 
@@ -478,9 +483,7 @@ func getArrayDecodeType(dst any) (ArraySetter, error) {
 		innerElement := targetElemType.Elem().Kind()
 		switch innerElement {
 		case reflect.Slice:
-			if !isRagged(targetValue.Elem()) {
-				return &anyMultiDimSliceArray{slice: targetValue.Elem()}, nil
-			}
+			return &anyMultiDimSliceArray{slice: targetValue.Elem()}, nil
 		default:
 			return &anySliceArrayReflect{slice: targetValue.Elem()}, nil
 		}
@@ -490,13 +493,7 @@ func getArrayDecodeType(dst any) (ArraySetter, error) {
 		return &anyArrayArrayReflect{array: targetValue.Elem()}, nil
 	}
 
-	a, ok := dst.(ArraySetter)
-	if !ok {
-		return nil, fmt.Errorf("unsupported argument type %T for array decode", dst)
-	}
-
-	return a, nil
-
+	return nil, fmt.Errorf("unsupported argument type %T for array decode", dst)
 }
 
 func getArrayEncodeType(dst any) (ArrayGetter, error) {
@@ -525,6 +522,10 @@ func getArrayEncodeType(dst any) (ArrayGetter, error) {
 		return (FlatArray[time.Time])(target), nil
 	}
 
+	if a, ok := dst.(ArrayGetter); ok {
+		return a, nil
+	}
+
 	targetElemType := targetValue.Type()
 
 	if targetElemType.Kind() == reflect.Slice {
@@ -544,23 +545,7 @@ func getArrayEncodeType(dst any) (ArrayGetter, error) {
 		return &anyArrayArrayReflect{array: targetValue}, nil
 	}
 
-	a, ok := dst.(ArrayGetter)
-
-	if targetElemType.Kind() != reflect.Slice && !ok {
-		return nil, fmt.Errorf("unsupported argument type %T for array encode", dst)
-	}
-
-	return a, nil
-
-}
-
-func getTypeFromMap(typeID uint32) (*Type, error) {
-	defaultMapInitOnce.Do(initDefaultMap)
-
-	if datatype, ok := defaultMap.typeidToType[typeID]; ok {
-		return datatype, nil
-	}
-	return nil, fmt.Errorf("no matching type in map by specified typeid: %d", typeID)
+	return nil, fmt.Errorf("unsupported argument type %T for array encode", dst)
 }
 
 func isRagged(slice reflect.Value) bool {
