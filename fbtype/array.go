@@ -1,6 +1,7 @@
 package fbtype
 
 import (
+	"bytes"
 	"database/sql/driver"
 	"encoding/binary"
 	"errors"
@@ -333,8 +334,10 @@ func (ad *ArrayData) encodeWithPadding(encodePlan EncodePlan, elem any) ([]byte,
 
 	l := uint32(len(buf))
 	padding := make([]byte, ad.Length-l)
-	for i := range padding {
-		padding[i] = 32
+	if ad.SubType&0xFF != fbproto.CS_BINARY {
+		for i := range padding {
+			padding[i] = 32
+		}
 	}
 	buf = append(buf, padding...)
 	if ad.Length%4 != 0 {
@@ -352,6 +355,12 @@ func (ad ArrayData) encodeVaryingType(encodePlan EncodePlan, elem any) ([]byte, 
 	}
 	if str == nil {
 		return nil, errNullArrayElement
+	}
+	if uint64(len(str)) > uint64(ad.Length) {
+		return nil, fmt.Errorf("encoded array element length %d exceeds declared length %d", len(str), ad.Length)
+	}
+	if ad.SubType&0xFF == fbproto.CS_BINARY && bytes.IndexByte(str, 0) >= 0 {
+		return nil, fmt.Errorf("VARCHAR OCTETS array elements cannot contain zero bytes")
 	}
 
 	lenElem := uint32(len(str))

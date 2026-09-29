@@ -3304,7 +3304,8 @@ func getArrayInfo(fbConn *FbConn, ctx context.Context, tx *FBTransaction, fields
 		arr.SubType = int32(binary.BigEndian.Uint32(metadata["SUBTYPE"]))
 
 		arr.Length = binary.BigEndian.Uint32(metadata["LENGTH"])
-		if arr.TypeId == fbproto.SQL_TYPE_VARYING || arr.TypeId == fbproto.SQL_TYPE_TEXT {
+		if (arr.TypeId == fbproto.SQL_TYPE_VARYING || arr.TypeId == fbproto.SQL_TYPE_TEXT) &&
+			arr.SubType&0xFF != fbproto.CS_BINARY {
 			name, err := fbproto.CharacterSetIdIntoName(arr.SubType)
 			if err != nil {
 				return nil, err

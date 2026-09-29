@@ -212,3 +212,35 @@ func TestPutArrayRestoresDimensionsAfterValidationError(t *testing.T) {
 	require.ErrorContains(t, err, "invalid bounds")
 	assert.Equal(t, declared, array.CurrentDimensions)
 }
+
+func TestArrayGenerateSDLIncludesOctetsCharacterSet(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		typeID     uint32
+		blrTypeID  uint32
+		wantBLRTag byte
+	}{
+		{name: "fixed", typeID: fbproto.SQL_TYPE_TEXT, blrTypeID: fbproto.Isc_blr_text, wantBLRTag: fbproto.Isc_blr_text2},
+		{name: "varying", typeID: fbproto.SQL_TYPE_VARYING, blrTypeID: fbproto.Isc_blr_varying, wantBLRTag: fbproto.Isc_blr_varying2},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			array := Array{
+				TableName:         "T",
+				FieldName:         "F",
+				CurrentDimensions: []map[string]int{{"Lower": 1, "Upper": 2}},
+				Length:            10,
+				BlrTypeId:         tt.blrTypeID,
+				TypeId:            tt.typeID,
+				SubType:           fbproto.CS_BINARY,
+			}
+
+			sdl := array.generateSDL()
+
+			require.GreaterOrEqual(t, len(sdl), 9)
+			assert.Equal(t, tt.wantBLRTag, sdl[3])
+			assert.Equal(t, byte(fbproto.CS_BINARY), sdl[4])
+			assert.Equal(t, byte(0), sdl[5])
+			assert.Equal(t, []byte{10, 0}, sdl[6:8])
+		})
+	}
+}

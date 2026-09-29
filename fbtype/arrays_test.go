@@ -151,6 +151,65 @@ func TestArrayNumericAndDecimalElementsUseSubtypeCodec(t *testing.T) {
 	})
 }
 
+func TestArrayOctetsElements(t *testing.T) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
+		const table = "array_octets_elements"
+		_, err := conn.Exec(ctx, "recreate table "+table+` (
+			id integer primary key,
+			fixed_octets char(10)[1:2] character set OCTETS,
+			varying_octets varchar(10)[1:2] character set OCTETS
+		)`)
+		require.NoError(tb, err)
+		defer func() {
+			_ = conn.Deallocate(context.Background(), "array_octets_insert")
+			_, _ = conn.Exec(context.Background(), "drop table "+table)
+		}()
+
+		const insertName = "array_octets_insert"
+		description, err := conn.Prepare(
+			ctx,
+			insertName,
+			"insert into "+table+" (id, fixed_octets, varying_octets) values (?, ?, ?)",
+		)
+		require.NoError(tb, err)
+		require.Len(tb, description.Parameters, 3)
+		for _, parameter := range description.Parameters[1:] {
+			require.NotNil(tb, parameter.ArrayData)
+			require.Equal(tb, int32(fbproto.CS_BINARY), parameter.ArrayData.SubType)
+			require.Equal(tb, uint32(10), parameter.ArrayData.Length)
+		}
+
+		dimensions := []fbtype.ArrayDimension{{LowerBound: 1, Length: 2}}
+		fixed := fbtype.Array[[]byte]{
+			Elements: [][]byte{
+				{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09},
+				{0xff, 0xfe, 0xfd, 0xfc, 0xfb, 0xfa, 0xf9, 0xf8, 0xf7, 0xf6},
+			},
+			Dims:  dimensions,
+			Valid: true,
+		}
+		varying := fbtype.Array[[]byte]{
+			Elements: [][]byte{{'A', 'B'}, {0xff, 0xfe, 0x7f}},
+			Dims:     dimensions,
+			Valid:    true,
+		}
+
+		_, err = conn.Exec(ctx, insertName, int32(1), fixed, varying)
+		require.NoError(tb, err)
+
+		var actualFixed fbtype.Array[[]byte]
+		var actualVarying fbtype.Array[[]byte]
+		err = conn.QueryRow(
+			ctx,
+			"select fixed_octets, varying_octets from "+table+" where id = ?",
+			int32(1),
+		).Scan(&actualFixed, &actualVarying)
+		require.NoError(tb, err)
+		require.Equal(tb, fixed, actualFixed)
+		require.Equal(tb, varying, actualVarying)
+	})
+}
+
 func mustArrayNumeric(t testing.TB, value string) fbtype.Numeric {
 	t.Helper()
 	var numeric fbtype.Numeric

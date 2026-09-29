@@ -115,6 +115,14 @@ func (arr *Array) generateSDL() []byte {
 	dimensions := arr.CurrentDimensions
 
 	dataType := byte(arr.BlrTypeId)
+	if arr.SubType&0xFF == fbproto.CS_BINARY {
+		switch arr.TypeId {
+		case fbproto.SQL_TYPE_TEXT:
+			dataType = fbproto.Isc_blr_text2
+		case fbproto.SQL_TYPE_VARYING:
+			dataType = fbproto.Isc_blr_varying2
+		}
+	}
 	length := binary.LittleEndian.AppendUint16(make([]byte, 0), uint16(arr.Length))
 
 	sdl = append(sdl, []byte{
@@ -128,6 +136,9 @@ func (arr *Array) generateSDL() []byte {
 	case fbproto.Isc_blr_short, fbproto.Isc_blr_long, fbproto.Isc_blr_int64, fbproto.Isc_blr_quad:
 		sdl = append(sdl, byte(arr.Scale))
 	case fbproto.Isc_blr_text, fbproto.Isc_blr_cstring, fbproto.Isc_blr_varying:
+		sdl = append(sdl, length...)
+	case fbproto.Isc_blr_text2, fbproto.Isc_blr_cstring2, fbproto.Isc_blr_varying2:
+		sdl = append(sdl, byte(arr.SubType), byte(arr.SubType>>8))
 		sdl = append(sdl, length...)
 	}
 
