@@ -34,7 +34,6 @@ func TestDeferredExecuteUsesFirstFetch(t *testing.T) {
 			ctx := context.Background()
 			config, err := fbconn.ParseConfig(connString)
 			require.NoError(t, err)
-			config.PipelineExecuteFetch = true
 			config.WireCompression = compression
 			config.FetchBatchSize = 4
 			var wire *writeCountConn
@@ -114,7 +113,6 @@ func TestDeferredExecuteErrorKeepsConnectionInSync(t *testing.T) {
 	ctx := context.Background()
 	config, err := fbconn.ParseConfig(connString)
 	require.NoError(t, err)
-	config.PipelineExecuteFetch = true
 	var reportedErrors int
 	config.OnFbError = func(*fbconn.FbConn, *fbconn.FbError) bool {
 		reportedErrors++
@@ -149,7 +147,6 @@ func TestDeferredExecuteErrorOnClose(t *testing.T) {
 	ctx := context.Background()
 	config, err := fbconn.ParseConfig(connString)
 	require.NoError(t, err)
-	config.PipelineExecuteFetch = true
 	conn, err := fbconn.ConnectConfig(ctx, config)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, conn.Close(ctx)) }()
@@ -166,59 +163,4 @@ func TestDeferredExecuteErrorOnClose(t *testing.T) {
 	result := st.ExecTx(ctx, tx, nil).Read()
 	require.NoError(t, result.Err)
 	require.Len(t, result.Rows, 1)
-}
-
-func TestDeferredExecuteConfig(t *testing.T) {
-	t.Setenv("FBPIPELINE_EXECUTE_FETCH", "")
-	config, err := fbconn.ParseConfig("")
-	require.NoError(t, err)
-	require.True(t, config.PipelineExecuteFetch)
-
-	config, err = fbconn.ParseConfig("pipeline_execute_fetch=true")
-	require.NoError(t, err)
-	require.True(t, config.PipelineExecuteFetch)
-	require.NotContains(t, config.RuntimeParams, "pipeline_execute_fetch")
-
-	config, err = fbconn.ParseConfig("pipeline_execute_fetch=false")
-	require.NoError(t, err)
-	require.False(t, config.PipelineExecuteFetch)
-
-	t.Setenv("FBPIPELINE_EXECUTE_FETCH", "true")
-	config, err = fbconn.ParseConfig("")
-	require.NoError(t, err)
-	require.True(t, config.PipelineExecuteFetch)
-}
-
-func TestDeferredExecuteDisabled(t *testing.T) {
-	connString := os.Getenv("FBX_TEST_DATABASE")
-	if connString == "" {
-		t.Skip("FBX_TEST_DATABASE is not set")
-	}
-	ctx := context.Background()
-	config, err := fbconn.ParseConfig(connString)
-	require.NoError(t, err)
-	config.PipelineExecuteFetch = false
-	conn, err := fbconn.ConnectConfig(ctx, config)
-	require.NoError(t, err)
-	defer func() { require.NoError(t, conn.Close(ctx)) }()
-	tx, err := conn.StartTransaction(ctx)
-	require.NoError(t, err)
-	defer func() { require.NoError(t, tx.Rollback(ctx)) }()
-	st, err := conn.PrepareTx(ctx, tx, "SELECT 1 FROM RDB$DATABASE")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, st.Deallocate(ctx)) }()
-
-	var trace bytes.Buffer
-	conn.Client().Trace(&trace, fbproto.TracerOptions{SuppressTimestamps: true})
-	rr := st.Exec(ctx, nil)
-	out := trace.String()
-	require.Contains(t, out, "C\tExecute ")
-	require.Contains(t, out, "S\tResponse ")
-	require.NotContains(t, out, "C\tFetch ")
-	result := rr.Read()
-	require.NoError(t, result.Err)
-	require.Len(t, result.Rows, 1)
-	out = trace.String()
-	require.Contains(t, out, "C\tFetch ")
-	require.Less(t, strings.Index(out, "S\tResponse "), strings.Index(out, "C\tFetch "))
 }

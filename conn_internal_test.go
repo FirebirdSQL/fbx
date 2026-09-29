@@ -384,19 +384,16 @@ func TestQueryExecModeExecCloseWithCanceledContextDeallocatesStatement(t *testin
 		name           string
 		waitForCancel  bool
 		useCompression bool
-		pipeline       bool
 	}{
-		{name: "close_immediately", pipeline: true},
-		{name: "close_after_cancel_callback", waitForCancel: true, pipeline: true},
-		{name: "compressed_close_immediately", useCompression: true, pipeline: true},
-		{name: "compressed_close_after_cancel_callback", waitForCancel: true, useCompression: true, pipeline: true},
-		{name: "pipeline_disabled"},
+		{name: "close_immediately"},
+		{name: "close_after_cancel_callback", waitForCancel: true},
+		{name: "compressed_close_immediately", useCompression: true},
+		{name: "compressed_close_after_cancel_callback", waitForCancel: true, useCompression: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			connConfig := mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE"))
 			connConfig.DefaultQueryExecMode = QueryExecModeExec
 			connConfig.WireCompression = tc.useCompression
-			connConfig.PipelineExecuteFetch = tc.pipeline
 			canceled := make(chan struct{})
 			connConfig.BuildContextWatcherHandler = func(conn *fbconn.FbConn) ctxwatch.Handler {
 				return &observedCancelHandler{
@@ -431,7 +428,6 @@ func TestQueryExecModeExecCloseWithCanceledContextDeallocatesStatement(t *testin
 func TestQueryExecModeExecNextWithCanceledContextKeepsConnection(t *testing.T) {
 	connConfig := mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE"))
 	connConfig.DefaultQueryExecMode = QueryExecModeExec
-	connConfig.PipelineExecuteFetch = true
 	canceled := make(chan struct{})
 	connConfig.BuildContextWatcherHandler = func(conn *fbconn.FbConn) ctxwatch.Handler {
 		return &observedCancelHandler{

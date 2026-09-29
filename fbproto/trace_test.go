@@ -460,7 +460,6 @@ func TestTrace(t *testing.T) {
 
 	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
-	config.PipelineExecuteFetch = true
 	conn, err := fbconn.ConnectConfig(ctx, config)
 	require.NoError(t, err)
 	defer func() { _ = conn.Close(ctx) }()
@@ -494,7 +493,6 @@ func TestFullLogTrace(t *testing.T) {
 
 	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
-	config.PipelineExecuteFetch = true
 	conn, err := fbconn.ConnectConfig(ctx, config)
 	require.NoError(t, err)
 	defer func() { _ = conn.Close(ctx) }()

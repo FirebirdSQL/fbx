@@ -1,6 +1,7 @@
 package fbconn
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -14,6 +15,93 @@ import (
 	"rdb.red-soft.ru/fbx/fbconn/ctxwatch"
 	"rdb.red-soft.ru/fbx/fbproto"
 )
+
+type deferredExecuteScriptConn struct {
+	noopConn
+	responses *bytes.Reader
+	writes    int
+}
+
+func (c *deferredExecuteScriptConn) Read(p []byte) (int, error) {
+	return c.responses.Read(p)
+}
+
+func (c *deferredExecuteScriptConn) Write(p []byte) (int, error) {
+	c.writes++
+	return len(p), nil
+}
+
+func TestDeferredExecuteFollowsPrepareResponse(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		prepareFlags  int
+		statementType int
+		wantDeferred  bool
+	}{
+		{"select_with_flag", fbproto.StmtDeferExecute, fbproto.Isc_info_sql_stmt_select, true},
+		{"select_without_flag", 0, fbproto.Isc_info_sql_stmt_select, false},
+		{"select_for_update", fbproto.StmtDeferExecute, fbproto.Isc_info_sql_stmt_select_for_upd, true},
+		{"non_cursor", fbproto.StmtDeferExecute, fbproto.Isc_info_sql_stmt_update, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var responses bytes.Buffer
+			x := fbproto.NewXDRWriter(&responses)
+			writeResponse := func(object int, data []byte) {
+				require.NoError(t, x.WriteInt32(fbproto.Op_response))
+				require.NoError(t, x.WriteInt32(object))
+				require.NoError(t, x.WriteInt64(0))
+				require.NoError(t, x.WriteBuffer(data))
+				require.NoError(t, x.WriteInt32(fbproto.Isc_arg_end))
+			}
+			writeResponse(1, nil) // Allocate.
+			writeResponse(tc.prepareFlags, nil)
+			info := tagLengthValue(fbproto.Isc_info_sql_stmt_type, tc.statementType)
+			writeResponse(0, append(info, fbproto.Isc_info_end))
+			writeResponse(0, nil) // Execute.
+			hasCursor := tc.statementType != fbproto.Isc_info_sql_stmt_update
+			if hasCursor {
+				require.NoError(t, x.WriteInt32(fbproto.Op_fetch_response))
+				require.NoError(t, x.WriteInt32(100)) // End of an empty cursor.
+				require.NoError(t, x.WriteInt32(0))
+			}
+			writeResponse(0, []byte{fbproto.Isc_info_end}) // Records on Close.
+
+			wire := &deferredExecuteScriptConn{responses: bytes.NewReader(responses.Bytes())}
+			conn := newCancelOperationTestFbConn(wire)
+			encoding, err := fbproto.NewEncoding("UTF8")
+			require.NoError(t, err)
+			conn.Encoding = encoding
+			conn.protocolVersion = fbproto.PROTOCOL_VERSION13
+			conn.activeStatements = make(map[*Statement]struct{})
+			conn.contextWatcher = ctxwatch.NewContextWatcher(&DeadlineContextWatcherHandler{Conn: wire})
+			t.Cleanup(func() {
+				conn.asyncClose()
+				waitCleanupDone(t, conn)
+			})
+			ctx := context.Background()
+			tx := &FBTransaction{Connection: conn, Handle: 1}
+			st, err := conn.PrepareTx(ctx, tx, "test statement")
+			require.NoError(t, err)
+
+			wire.writes = 0
+			rr := st.Exec(ctx, nil)
+			wantWrites := 1
+			if tc.wantDeferred {
+				wantWrites = 0
+			}
+			require.Equal(t, wantWrites, wire.writes, "Prepare must determine whether Execute is buffered")
+			require.False(t, rr.NextRow())
+			if hasCursor {
+				wantWrites++
+			}
+			require.Equal(t, wantWrites, wire.writes, "deferred Execute must share the first Fetch write")
+			_, err = rr.Close()
+			require.NoError(t, err)
+			require.Zero(t, wire.responses.Len(), "all responses must be consumed")
+			require.False(t, conn.IsClosed())
+		})
+	}
+}
 
 type deferredExecuteWriteConn struct {
 	net.Conn

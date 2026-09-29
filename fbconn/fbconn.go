@@ -1702,10 +1702,9 @@ func (fbConn *FbConn) internalPrepareTx(
 	}
 
 	st := &Statement{
-		conn:        fbConn,
-		Description: desc,
-		deferExecute: fbConn.config != nil && fbConn.config.PipelineExecuteFetch &&
-			deferExecute && fbConn.protocolVersion >= fbproto.PROTOCOL_VERSION11 && desc.HaveCursorResult(),
+		conn:         fbConn,
+		Description:  desc,
+		deferExecute: deferExecute && fbConn.protocolVersion >= fbproto.PROTOCOL_VERSION11 && desc.HaveCursorResult(),
 	}
 	if scope == statementScopeTransaction {
 		st.transaction = tx

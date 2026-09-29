@@ -19,7 +19,6 @@ func TestDeferredExecuteHighLevel(t *testing.T) {
 		t.Run(mode.String(), func(t *testing.T) {
 			config, err := fbx.ParseConfig(connString)
 			require.NoError(t, err)
-			config.PipelineExecuteFetch = true
 			config.DefaultQueryExecMode = mode
 			conn, err := fbx.ConnectConfig(ctx, config)
 			require.NoError(t, err)
