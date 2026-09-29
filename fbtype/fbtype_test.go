@@ -152,6 +152,18 @@ func (arrayGetterEncodePlan) Encode(value any, buf []byte) ([]byte, error) {
 	return append(buf, fmt.Sprintf("%v|%v", dimensions, values)...), nil
 }
 
+type dimensionsOnlyArray struct {
+	dimensions []fbtype.ArrayDimension
+}
+
+func (a dimensionsOnlyArray) Dimensions([]int) ([]fbtype.ArrayDimension, error) {
+	return a.dimensions, nil
+}
+
+func (dimensionsOnlyArray) Index(int) any {
+	panic("Index must not be called when array slice length is invalid")
+}
+
 type arraySetterScanCodec struct {
 	dimensions []fbtype.ArrayDimension
 	values     []any
@@ -227,24 +239,18 @@ func TestStringerWithUnderlyingIntEncodesAsInt(t *testing.T) {
 	assert.Equal(t, []byte{0, 0, 0, 200}, buf)
 }
 
-func TestArraySetDimensionsOverflowDoesNotPanic(t *testing.T) {
-	maxInt := int(^uint(0) >> 1)
+func TestFlatArraySetDimensionsRejectsElementCountOverflow(t *testing.T) {
 	var a fbtype.FlatArray[int]
 	var err error
 
 	require.NotPanics(t, func() {
-		err = (&a).SetDimensions([]fbtype.ArrayDimension{
-			{LowerBound: 1, Length: maxInt/2 + 1},
-			{LowerBound: 1, Length: 3},
-		})
+		err = (&a).SetDimensions(overflowingArrayDimensions())
 	})
-	require.NoError(t, err)
-	assert.Len(t, a, 0)
+	require.ErrorContains(t, err, "array element count overflows int")
+	assert.Nil(t, a)
 }
 
 func TestArrayDimensionsValidatesState(t *testing.T) {
-	maxInt := int(^uint(0) >> 1)
-
 	tests := []struct {
 		name      string
 		array     fbtype.Array[int]
@@ -317,13 +323,10 @@ func TestArrayDimensionsValidatesState(t *testing.T) {
 		{
 			name: "element count overflow",
 			array: fbtype.Array[int]{
-				Dims: []fbtype.ArrayDimension{
-					{LowerBound: 1, Length: maxInt/2 + 1},
-					{LowerBound: 1, Length: 3},
-				},
+				Dims:  overflowingArrayDimensions(),
 				Valid: true,
 			},
-			wantError: "array element count overflows int at dimension 1",
+			wantError: "array element count overflows int",
 		},
 	}
 
@@ -343,8 +346,6 @@ func TestArrayDimensionsValidatesState(t *testing.T) {
 }
 
 func TestArraySetDimensionsValidatesDimensions(t *testing.T) {
-	maxInt := int(^uint(0) >> 1)
-
 	tests := []struct {
 		name      string
 		dims      []fbtype.ArrayDimension
@@ -393,13 +394,10 @@ func TestArraySetDimensionsValidatesDimensions(t *testing.T) {
 			wantError: "array dimension 0 has negative length -1",
 		},
 		{
-			name: "element count overflow",
-			dims: []fbtype.ArrayDimension{
-				{LowerBound: 1, Length: maxInt/2 + 1},
-				{LowerBound: 1, Length: 3},
-			},
+			name:      "element count overflow",
+			dims:      overflowingArrayDimensions(),
 			want:      fbtype.Array[int]{},
-			wantError: "array element count overflows int at dimension 1",
+			wantError: "array element count overflows int",
 		},
 	}
 
@@ -489,6 +487,61 @@ func TestMapEncodeArrayValidatesArrayWrapperState(t *testing.T) {
 				require.Nil(t, buf)
 			}
 		})
+	}
+}
+
+func TestNewArrayDataValidatesDeclaredDimensions(t *testing.T) {
+	tests := []struct {
+		name       string
+		dimensions []map[string]int
+		wantError  string
+	}{
+		{
+			name:       "missing upper bound",
+			dimensions: []map[string]int{{"Lower": 1}},
+			wantError:  "must contain Lower and Upper bounds",
+		},
+		{
+			name:       "one element declaration",
+			dimensions: []map[string]int{{"Lower": 1, "Upper": 1}},
+			wantError:  "invalid bounds 1:1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := fbtype.NewArrayData(fbproto.SQL_TYPE_LONG, 0, 4, 0, tt.dimensions)
+			require.ErrorContains(t, err, tt.wantError)
+		})
+	}
+}
+
+func TestMapEncodeArrayRejectsSliceLengthOverflowBeforeReadingElements(t *testing.T) {
+	m := fbtype.NewMap()
+	arrayData, err := fbtype.NewArrayData(
+		fbproto.SQL_TYPE_LONG,
+		0,
+		4,
+		0,
+		[]map[string]int{{"Lower": 1, "Upper": 1 << 29}},
+	)
+	require.NoError(t, err)
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_ARRAY, 0, 4, 0)
+	typeMetadata.SetArrayMetadata(arrayData)
+
+	value := dimensionsOnlyArray{
+		dimensions: []fbtype.ArrayDimension{{LowerBound: 1, Length: 1 << 29}},
+	}
+	_, err = m.Encode(typeMetadata, value, nil)
+	require.ErrorContains(t, err, "array slice byte length exceeds protocol limit")
+}
+
+func overflowingArrayDimensions() []fbtype.ArrayDimension {
+	return []fbtype.ArrayDimension{
+		{LowerBound: 1, Length: 65536},
+		{LowerBound: 1, Length: 65536},
+		{LowerBound: 1, Length: 65536},
+		{LowerBound: 1, Length: 65536},
 	}
 }
 
@@ -960,7 +1013,7 @@ func TestMapEncodeArrayPreservesValidEmptyStringElement(t *testing.T) {
 		0,
 		10,
 		0,
-		[]map[string]int{{"Lower": 1, "Upper": 1}},
+		[]map[string]int{{"Lower": 1, "Upper": 2}},
 	)
 	require.NoError(t, err)
 	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_ARRAY, 0, 10, 0)

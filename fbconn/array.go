@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 
 	"rdb.red-soft.ru/fbx/fbproto"
 )
@@ -52,19 +53,61 @@ func NewArray(table, field string, dims []map[string]int, length uint32, scale i
 	return a
 }
 
-func (arr Array) getSliceLength() int {
-	elements := 1
-	for _, elem := range arr.CurrentDimensions {
-		elements *= elem["Upper"] - elem["Lower"] + 1
+func (arr Array) getSliceLength() (int, error) {
+	const (
+		maxArrayDimensions = 16
+		minArrayBound      = -1 << 31
+		maxArrayBound      = 1<<31 - 1
+		maxSliceLength     = 1<<31 - 1
+	)
+
+	if len(arr.CurrentDimensions) == 0 {
+		return 0, fmt.Errorf("array slice must have at least one dimension")
+	}
+	if len(arr.CurrentDimensions) > maxArrayDimensions {
+		return 0, fmt.Errorf("array slice has %d dimensions; maximum is %d", len(arr.CurrentDimensions), maxArrayDimensions)
 	}
 
-	length := elements * int(arr.Length)
+	elements := uint64(1)
+	for i, dimension := range arr.CurrentDimensions {
+		lower, lowerPresent := dimension["Lower"]
+		upper, upperPresent := dimension["Upper"]
+		if !lowerPresent || !upperPresent {
+			return 0, fmt.Errorf("array slice dimension %d must contain Lower and Upper bounds", i)
+		}
+		if lower < minArrayBound || lower > maxArrayBound {
+			return 0, fmt.Errorf("array slice dimension %d lower bound %d is outside int32 range", i, lower)
+		}
+		if upper < minArrayBound || upper > maxArrayBound {
+			return 0, fmt.Errorf("array slice dimension %d upper bound %d is outside int32 range", i, upper)
+		}
 
-	switch arr.TypeId {
-	case fbproto.SQL_TYPE_VARYING:
-		length += elements * 2 // for each element is specified 2 bytes of its length
+		length := int64(upper) - int64(lower) + 1
+		if length < 0 {
+			return 0, fmt.Errorf("array slice dimension %d has invalid bounds %d:%d", i, lower, upper)
+		}
+		if length == 0 {
+			elements = 0
+			continue
+		}
+		if elements > uint64(maxSliceLength)/uint64(length) {
+			return 0, fmt.Errorf("array slice element count exceeds protocol limit at dimension %d", i)
+		}
+		elements *= uint64(length)
 	}
-	return length
+
+	elementLength := uint64(arr.Length)
+	if arr.TypeId == fbproto.SQL_TYPE_VARYING {
+		elementLength += 2
+	}
+	if elements > 0 && elementLength == 0 {
+		return 0, fmt.Errorf("array element length must be greater than zero")
+	}
+	if elementLength > 0 && elements > uint64(maxSliceLength)/elementLength {
+		return 0, fmt.Errorf("array slice byte length exceeds protocol limit")
+	}
+
+	return int(elements * elementLength), nil
 }
 
 func (arr *Array) generateSDL() []byte {
@@ -168,12 +211,17 @@ func getDimensionBound(value int) []byte {
 }
 
 func putArray(fbConn *FbConn, ctx context.Context, tx *FBTransaction, arrayData *Array, arr []byte) ([]byte, error) {
+	defer func() {
+		arrayData.CurrentDimensions = arrayData.Dimensions
+	}()
 
+	length, err := arrayData.getSliceLength()
+	if err != nil {
+		return nil, err
+	}
 	sdl := arrayData.generateSDL()
-	length := arrayData.getSliceLength()
 
 	id, err := fbConn.putArray(ctx, tx, arr, length, sdl)
-	arrayData.CurrentDimensions = arrayData.Dimensions
 	if err != nil {
 		return nil, err
 	}
@@ -187,8 +235,11 @@ func getArray(fbConn *FbConn, ctx context.Context, tx *FBTransaction, arrayData 
 
 	arrayId := int64(binary.BigEndian.Uint64(arrId))
 
+	length, err := arrayData.getSliceLength()
+	if err != nil {
+		return nil, err
+	}
 	sdl := arrayData.generateSDL()
-	length := arrayData.getSliceLength()
 
 	array, err := fbConn.getArray(ctx, tx, arrayId, arrayData.BlrTypeId, length, int(arrayData.Length), sdl)
 	if err != nil {

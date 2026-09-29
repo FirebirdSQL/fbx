@@ -16,6 +16,13 @@ var (
 	errNullArrayElement     = errors.New("NULL array element is not supported")
 )
 
+const (
+	maxArrayDimensions  = 16
+	minArrayBound       = -1 << 31
+	maxArrayBound       = 1<<31 - 1
+	maxArraySliceLength = 1<<31 - 1
+)
+
 // ArrayGetter provides array dimensions and elements for encoding.
 type ArrayGetter interface {
 	// Index returns the flattened array element at i.
@@ -72,8 +79,27 @@ func NewArrayData(typeID uint32, subType int32, length uint32, scale int32, dime
 	ad.TypeId = typeID
 
 	dims := make([]ArrayDimension, 0, len(dimensionsMap))
-	for _, elem := range dimensionsMap {
-		dims = append(dims, ArrayDimension{LowerBound: elem["Lower"], Length: elem["Upper"] - elem["Lower"] + 1})
+	for i, elem := range dimensionsMap {
+		lower, lowerPresent := elem["Lower"]
+		upper, upperPresent := elem["Upper"]
+		if !lowerPresent || !upperPresent {
+			return nil, fmt.Errorf("array field dimension %d must contain Lower and Upper bounds", i)
+		}
+		if lower < minArrayBound || lower > maxArrayBound {
+			return nil, fmt.Errorf("array field dimension %d lower bound %d is outside int32 range", i, lower)
+		}
+		if upper < minArrayBound || upper > maxArrayBound {
+			return nil, fmt.Errorf("array field dimension %d upper bound %d is outside int32 range", i, upper)
+		}
+		if lower >= upper {
+			return nil, fmt.Errorf("array field dimension %d has invalid bounds %d:%d", i, lower, upper)
+		}
+
+		length64 := int64(upper) - int64(lower) + 1
+		if length64 > int64(maxIntValue()) {
+			return nil, fmt.Errorf("array field dimension %d length %d overflows int", i, length64)
+		}
+		dims = append(dims, ArrayDimension{LowerBound: lower, Length: int(length64)})
 	}
 	ad.Dimensions = dims
 
@@ -182,15 +208,19 @@ func (pe planEncodeArray) Encode(value any, buf []byte) (newBuf []byte, err erro
 		lowers = append(lowers, d.LowerBound)
 	}
 	dimensions, err := array.Dimensions(lowers)
-	if dimensions == nil {
+	if err != nil {
 		return nil, err
 	}
+	if dimensions == nil {
+		return nil, nil
+	}
 
-	argumentElementCount := allElementsCount(dimensions)
-	fieldElementCount := allElementsCount(pe.arrayData.Dimensions)
-
-	if fieldElementCount < argumentElementCount {
-		return nil, fmt.Errorf("array too long")
+	argumentElementCount, err := checkedArrayElementCount(dimensions)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateArraySliceByteLength(argumentElementCount, pe.arrayData.TypeId, pe.arrayData.Length); err != nil {
+		return nil, err
 	}
 	if argumentElementCount == 0 {
 		if buf == nil {
@@ -234,7 +264,7 @@ func (pe planEncodeArray) Encode(value any, buf []byte) (newBuf []byte, err erro
 			if errors.Is(err, errNullArrayElement) {
 				return nil, fmt.Errorf("cannot encode NULL array element at index %d", i)
 			}
-			return nil, err
+			return nil, fmt.Errorf("cannot encode array element at index %d: %w", i, err)
 		}
 		buf = append(buf, tmpBuf...)
 	}
@@ -254,12 +284,25 @@ func Dimensions(value any, lowers []int) ([]map[string]int, error) {
 		return nil, err
 	}
 	dimensions, err := array.Dimensions(lowers)
+	if err != nil {
+		return nil, err
+	}
 	if dimensions == nil {
+		return nil, nil
+	}
+	if len(dimensions) == 0 {
+		return nil, fmt.Errorf("non-NULL array must have at least one dimension")
+	}
+	if _, err := checkedArrayElementCount(dimensions); err != nil {
 		return nil, err
 	}
 	output := []map[string]int{}
-	for _, dimension := range dimensions {
-		output = append(output, map[string]int{"Lower": dimension.LowerBound, "Upper": dimension.LowerBound + dimension.Length - 1})
+	for i, dimension := range dimensions {
+		upper, err := checkedArrayDimensionUpper(i, dimension)
+		if err != nil {
+			return nil, err
+		}
+		output = append(output, map[string]int{"Lower": dimension.LowerBound, "Upper": upper})
 	}
 	return output, nil
 }
@@ -284,6 +327,9 @@ func (ad *ArrayData) encodeWithPadding(encodePlan EncodePlan, elem any) ([]byte,
 	if buf == nil {
 		return nil, errNullArrayElement
 	}
+	if uint64(len(buf)) > uint64(ad.Length) {
+		return nil, fmt.Errorf("encoded array element length %d exceeds declared length %d", len(buf), ad.Length)
+	}
 
 	l := uint32(len(buf))
 	padding := make([]byte, ad.Length-l)
@@ -299,7 +345,7 @@ func (ad *ArrayData) encodeWithPadding(encodePlan EncodePlan, elem any) ([]byte,
 	return buf, nil
 }
 
-func (ArrayData) encodeVaryingType(encodePlan EncodePlan, elem any) ([]byte, error) {
+func (ad ArrayData) encodeVaryingType(encodePlan EncodePlan, elem any) ([]byte, error) {
 	str, err := encodePlan.Encode(elem, make([]byte, 0))
 	if err != nil {
 		return nil, err
@@ -342,24 +388,33 @@ func allElementsCount(dimensions []ArrayDimension) int {
 }
 
 func (ad *ArrayData) decodeBinary(m *Map, src []byte, array ArraySetter, realIndexes []realIndexes) error {
-
-	elementCount := allElementsCount(ad.Dimensions)
+	elementCount, err := checkedDeclaredArrayElementCount(ad.Dimensions)
+	if err != nil {
+		return err
+	}
 	if elementCount == 0 {
 		return nil
 	}
 	length := int(ad.Length)
 
 	typeMetadata := NewTypeMetadata(ad.TypeId, ad.SubType, ad.Length, ad.Scale)
-	elementScanPlan := m.PlanScan(typeMetadata, array.ScanIndex(0))
+	elementTarget := array.ScanIndex(0)
+	elementScanPlan := m.PlanScan(typeMetadata, elementTarget)
+	if elementScanPlan == nil {
+		return fmt.Errorf("unable to scan array element into %T", elementTarget)
+	}
 	if ad.TypeId == fbproto.SQL_TYPE_SHORT {
 		length = 4
 	}
 	position := 0
 	var elemLen int
+	var wireElemLen int
 	if ad.TypeId == fbproto.SQL_TYPE_TEXT && length%4 != 0 {
-		elemLen = length + (4 - length&3)
+		elemLen = length
+		wireElemLen = length + (4 - length&3)
 	} else {
 		elemLen = length
+		wireElemLen = length
 	}
 	indexPosition := 0
 	for i := 0; i < elementCount && position < len(src); i++ {
@@ -368,6 +423,7 @@ func (ad *ArrayData) decodeBinary(m *Map, src []byte, array ArraySetter, realInd
 				return fmt.Errorf("array body truncated at element %d", i)
 			}
 			elemLen = int(int32(binary.BigEndian.Uint32(src[position:])))
+			wireElemLen = elemLen
 			position += 4
 		}
 		var elemSrc []byte
@@ -375,11 +431,11 @@ func (ad *ArrayData) decodeBinary(m *Map, src []byte, array ArraySetter, realInd
 			realIndexes = realIndexes[1:]
 		}
 		if elemLen >= 0 {
-			if len(src[position:]) < elemLen {
-				return fmt.Errorf("array element %d length %d exceeds remaining %d bytes", i, elemLen, len(src[position:]))
+			if len(src[position:]) < wireElemLen {
+				return fmt.Errorf("array element %d length %d exceeds remaining %d bytes", i, wireElemLen, len(src[position:]))
 			}
 			elemSrc = src[position : position+elemLen]
-			position += elemLen
+			position += wireElemLen
 		}
 		if len(realIndexes) > 0 && i >= realIndexes[0].start {
 			elem := array.ScanIndex(indexPosition)
@@ -510,6 +566,8 @@ func getArrayEncodeType(dst any) (ArrayGetter, error) {
 }
 
 func getTypeFromMap(typeID uint32) (*Type, error) {
+	defaultMapInitOnce.Do(initDefaultMap)
+
 	if datatype, ok := defaultMap.typeidToType[typeID]; ok {
 		return datatype, nil
 	}
@@ -634,6 +692,9 @@ func (a FlatArray[T]) Dimensions(lowers []int) ([]ArrayDimension, error) {
 	if a == nil {
 		return nil, nil
 	}
+	if len(lowers) == 0 {
+		return nil, fmt.Errorf("array lower bound is missing")
+	}
 
 	return []ArrayDimension{{LowerBound: lowers[0], Length: len(a)}}, nil
 }
@@ -644,8 +705,16 @@ func (a *FlatArray[T]) SetDimensions(dimensions []ArrayDimension) error {
 		*a = nil
 		return nil
 	}
+	if len(dimensions) == 0 {
+		*a = nil
+		return fmt.Errorf("non-NULL array must have at least one dimension")
+	}
 
-	elementCount := allElementsCount(dimensions)
+	elementCount, err := checkedArrayElementCount(dimensions)
+	if err != nil {
+		*a = nil
+		return err
+	}
 	*a = make(FlatArray[T], elementCount)
 	return nil
 }
@@ -655,10 +724,21 @@ func (a FlatArray[T]) ScanIndex(i int) any {
 	return &a[i]
 }
 
+func maxIntValue() int {
+	return int(^uint(0) >> 1)
+}
+
 func checkedArrayElementCount(dimensions []ArrayDimension) (int, error) {
+	if len(dimensions) > maxArrayDimensions {
+		return 0, fmt.Errorf("array has %d dimensions; maximum is %d", len(dimensions), maxArrayDimensions)
+	}
+
 	for i, dimension := range dimensions {
 		if dimension.Length < 0 {
 			return 0, fmt.Errorf("array dimension %d has negative length %d", i, dimension.Length)
+		}
+		if _, err := checkedArrayDimensionUpper(i, dimension); err != nil {
+			return 0, err
 		}
 	}
 
@@ -666,7 +746,7 @@ func checkedArrayElementCount(dimensions []ArrayDimension) (int, error) {
 		return 0, nil
 	}
 
-	maxInt := int(^uint(0) >> 1)
+	maxInt := maxIntValue()
 	elementCount := 1
 	for i, dimension := range dimensions {
 		if dimension.Length == 0 {
@@ -679,6 +759,67 @@ func checkedArrayElementCount(dimensions []ArrayDimension) (int, error) {
 	}
 
 	return elementCount, nil
+}
+
+func checkedDeclaredArrayElementCount(dimensions []ArrayDimension) (int, error) {
+	if len(dimensions) == 0 {
+		return 0, fmt.Errorf("array field must have at least one dimension")
+	}
+
+	for i, dimension := range dimensions {
+		if dimension.Length < 2 {
+			return 0, fmt.Errorf("array field dimension %d has length %d; minimum is 2", i, dimension.Length)
+		}
+	}
+
+	elementCount, err := checkedArrayElementCount(dimensions)
+	if err != nil {
+		return 0, fmt.Errorf("invalid array field metadata: %w", err)
+	}
+	return elementCount, nil
+}
+
+func checkedArrayDimensionUpper(index int, dimension ArrayDimension) (int, error) {
+	if dimension.LowerBound < minArrayBound || dimension.LowerBound > maxArrayBound {
+		return 0, fmt.Errorf("array dimension %d lower bound %d is outside int32 range", index, dimension.LowerBound)
+	}
+	if dimension.Length < 0 {
+		return 0, fmt.Errorf("array dimension %d has negative length %d", index, dimension.Length)
+	}
+
+	lower := int64(dimension.LowerBound)
+	if dimension.Length == 0 {
+		if lower == minArrayBound {
+			return 0, fmt.Errorf("array dimension %d empty upper bound is outside int32 range", index)
+		}
+		return int(lower - 1), nil
+	}
+
+	maxLength := int64(maxArrayBound) - lower + 1
+	if uint64(dimension.Length) > uint64(maxLength) {
+		return 0, fmt.Errorf("array dimension %d upper bound is outside int32 range", index)
+	}
+
+	return int(lower + int64(dimension.Length) - 1), nil
+}
+
+func validateArraySliceByteLength(elementCount int, typeID, elementLength uint32) error {
+	if elementCount < 0 {
+		return fmt.Errorf("array element count must not be negative: %d", elementCount)
+	}
+
+	length := uint64(elementLength)
+	if typeID == fbproto.SQL_TYPE_VARYING {
+		length += 2
+	}
+	if elementCount > 0 && length == 0 {
+		return fmt.Errorf("array element length must be greater than zero")
+	}
+	if length > 0 && uint64(elementCount) > uint64(maxArraySliceLength)/length {
+		return fmt.Errorf("array slice byte length exceeds protocol limit")
+	}
+
+	return nil
 }
 
 func getActualSliceDimensions(dims []ArrayDimension, src []byte, typeID, length uint32) ([]realIndexes, []ArrayDimension, error) {
@@ -702,12 +843,22 @@ type realIndexes struct {
 	end   int
 }
 
-func elementsInDimensionsCount(dimensions []ArrayDimension, start int) int {
+func elementsInDimensionsCount(dimensions []ArrayDimension, start int) (int, error) {
+	if start < 0 {
+		return 0, fmt.Errorf("array element count has negative initial value %d", start)
+	}
+
 	total := start
 	for i := 1; i < len(dimensions); i++ {
+		if dimensions[i].Length < 0 {
+			return 0, fmt.Errorf("array dimension %d has negative length %d", i, dimensions[i].Length)
+		}
+		if dimensions[i].Length != 0 && total > maxIntValue()/dimensions[i].Length {
+			return 0, fmt.Errorf("array element count overflows int at dimension %d", i)
+		}
 		total *= dimensions[i].Length
 	}
-	return total
+	return total, nil
 }
 
 func getActualArrayLength(buf []byte, typeID, length uint32) (int, error) {
@@ -718,30 +869,53 @@ func getActualArrayLength(buf []byte, typeID, length uint32) (int, error) {
 			if len(buf) < 4 {
 				return 0, fmt.Errorf("length of decoded buffer is less than expected")
 			}
-			l := int(binary.BigEndian.Uint32(buf[:4])) + 4
-			if len(buf) < l {
+			elementLength := uint64(binary.BigEndian.Uint32(buf[:4])) + 4
+			if elementLength > uint64(len(buf)) {
 				return 0, fmt.Errorf("length of decoded buffer is less than expected")
 			}
-			buf = buf[l:]
+			buf = buf[int(elementLength):]
 			count++
 		}
 	case fbproto.SQL_TYPE_BOOLEAN, fbproto.SQL_TYPE_SHORT:
+		if len(buf)%4 != 0 {
+			return 0, fmt.Errorf("array body length %d is not divisible by element length 4", len(buf))
+		}
 		count = len(buf) / 4
 	default:
 		if length < 1 {
 			return 0, fmt.Errorf("length of element must not be less than 1")
 		}
-		count = len(buf) / int(length)
+		elementLength := int(length)
+		if typeID == fbproto.SQL_TYPE_TEXT && elementLength%4 != 0 {
+			elementLength += 4 - elementLength%4
+		}
+		if len(buf)%elementLength != 0 {
+			return 0, fmt.Errorf("array body length %d is not divisible by element length %d", len(buf), elementLength)
+		}
+		count = len(buf) / elementLength
 	}
 	return count, nil
 }
 
 func getActualArrayDimensions(dims []ArrayDimension, fact int) ([]ArrayDimension, error) {
-	expected := allElementsCount(dims)
+	expected, err := checkedDeclaredArrayElementCount(dims)
+	if err != nil {
+		return nil, err
+	}
+	if fact < 0 {
+		return nil, fmt.Errorf("actual array element count must not be negative: %d", fact)
+	}
+	if fact > expected {
+		return nil, fmt.Errorf("array body contains %d elements, but field holds at most %d", fact, expected)
+	}
+
 	less := expected - fact
 	factDims := make([]ArrayDimension, len(dims))
 	for i := range dims {
-		elementsCount := elementsInDimensionsCount(dims[i:], 1)
+		elementsCount, err := elementsInDimensionsCount(dims[i:], 1)
+		if err != nil {
+			return nil, err
+		}
 		if elementsCount <= 0 {
 			return nil, fmt.Errorf("number of elements in dimensions must not be less than 1")
 		}
@@ -761,7 +935,11 @@ func getActualSlice(sliceOut []realIndexes, dims, factDims []ArrayDimension, now
 				return nil, 0, err
 			}
 		}
-		nowPos += elementsInDimensionsCount(dims, dims[0].Length-factDims[0].Length)
+		skipped, err := elementsInDimensionsCount(dims, dims[0].Length-factDims[0].Length)
+		if err != nil {
+			return nil, 0, err
+		}
+		nowPos += skipped
 	} else if len(dims) == 1 {
 		realIndexes := realIndexes{
 			start: nowPos,

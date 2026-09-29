@@ -46,7 +46,7 @@ func TestArrayDecodeBinaryStaticElementLengthExceedsRemaining(t *testing.T) {
 func newMalformedArrayData(typeID uint32, length uint32) *ArrayData {
 	return &ArrayData{
 		ElementType: &Type{Name: "array element", TypeID: typeID, Codec: TextCodec{}},
-		Dimensions:  []ArrayDimension{{LowerBound: 1, Length: 1}},
+		Dimensions:  []ArrayDimension{{LowerBound: 1, Length: 2}},
 		Length:      length,
 		TypeId:      typeID,
 	}

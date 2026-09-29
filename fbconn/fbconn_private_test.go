@@ -152,3 +152,63 @@ func TestGetArrayDimensionsWithNoSources(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, dimensions)
 }
+
+func TestArraySliceLengthValidatesBoundsAndOverflow(t *testing.T) {
+	tests := []struct {
+		name              string
+		currentDimensions []map[string]int
+		length            uint32
+		want              int
+		wantError         string
+	}{
+		{
+			name:              "negative lower bound",
+			currentDimensions: []map[string]int{{"Lower": -1, "Upper": 1}},
+			length:            4,
+			want:              12,
+		},
+		{
+			name:              "empty slice",
+			currentDimensions: []map[string]int{{"Lower": 1, "Upper": 0}},
+			length:            4,
+		},
+		{
+			name:              "invalid empty range",
+			currentDimensions: []map[string]int{{"Lower": 2, "Upper": 0}},
+			length:            4,
+			wantError:         "invalid bounds 2:0",
+		},
+		{
+			name:              "byte length exceeds protocol limit",
+			currentDimensions: []map[string]int{{"Lower": 1, "Upper": 1 << 30}},
+			length:            4,
+			wantError:         "byte length exceeds protocol limit",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			array := Array{CurrentDimensions: tt.currentDimensions, Length: tt.length}
+			got, err := array.getSliceLength()
+			if tt.wantError != "" {
+				require.ErrorContains(t, err, tt.wantError)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestPutArrayRestoresDimensionsAfterValidationError(t *testing.T) {
+	declared := []map[string]int{{"Lower": 1, "Upper": 3}}
+	array := &Array{
+		Dimensions:        declared,
+		CurrentDimensions: []map[string]int{{"Lower": 2, "Upper": 0}},
+		Length:            4,
+	}
+
+	_, err := putArray(nil, context.Background(), nil, array, nil)
+	require.ErrorContains(t, err, "invalid bounds")
+	assert.Equal(t, declared, array.CurrentDimensions)
+}

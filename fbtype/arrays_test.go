@@ -180,23 +180,20 @@ func TestArrayEncodePlansAreNotMemoized(t *testing.T) {
 	require.Equal(t, planCount, actualPlanCount)
 }
 
-func TestUncachedArrayPlanUsesCurrentMetadata(t *testing.T) {
+func TestArrayEncodeDoesNotValidateFieldBounds(t *testing.T) {
 	m := fbtype.NewMap()
 
-	oneElement := newArrayEncodePlanTestMetadata(t, []map[string]int{{"Lower": 1, "Upper": 1}})
-	plan := m.PlanEncode(oneElement, []int32{1, 2})
+	twoElements := newArrayEncodePlanTestMetadata(t, []map[string]int{{"Lower": 1, "Upper": 2}})
+	value := fbtype.Array[int32]{
+		Elements: []int32{1, 2, 3},
+		Dims:     []fbtype.ArrayDimension{{LowerBound: 0, Length: 3}},
+		Valid:    true,
+	}
+	plan := m.PlanEncode(twoElements, value)
 	require.NotNil(t, plan)
-	_, err := plan.Encode([]int32{1, 2}, nil)
-	require.ErrorContains(t, err, "array too long")
-
-	threeElements := newArrayEncodePlanTestMetadata(t, []map[string]int{{"Lower": 1, "Upper": 3}})
-	plan = m.PlanEncode(threeElements, []int32{1, 2})
-	require.NotNil(t, plan)
-	metadataCount, planCount := arrayEncodePlanCacheSize(m)
-	require.Zero(t, metadataCount)
-	require.Zero(t, planCount)
-	_, err = plan.Encode([]int32{1, 2}, nil)
+	buf, err := plan.Encode(value, nil)
 	require.NoError(t, err)
+	require.Len(t, buf, 12)
 }
 
 func newArrayEncodePlanTestMetadata(t *testing.T, dimensions []map[string]int) fbtype.TypeMetadata {
