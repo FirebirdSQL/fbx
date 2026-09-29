@@ -1086,6 +1086,24 @@ func TestMapScanMultiDimensionalSliceUsesMultiDimensionalWrapper(t *testing.T) {
 	assert.Equal(t, [][]int16{{1, 2}, {3, 4}}, got)
 }
 
+func TestMapScanMultiDimensionalSliceRejectsDimensionMismatch(t *testing.T) {
+	m := fbtype.NewMap()
+	typeID := uint32(999982)
+	m.RegisterType(&fbtype.Type{
+		Name:   "array_setter_scan_dimension_mismatch_test",
+		TypeID: typeID,
+		Codec: arraySetterScanCodec{
+			dimensions: []fbtype.ArrayDimension{{LowerBound: 1, Length: 2}},
+			values:     []any{int16(1), int16(2)},
+		},
+	})
+
+	got := [][]int16{{9}}
+	err := m.Scan(fbtype.NewTypeMetadata(typeID, 0, 0, 0), []byte{1}, &got)
+	require.ErrorContains(t, err, "firebird array has 1 dimensions but slice has 2 dimensions")
+	assert.Nil(t, got)
+}
+
 func TestMapEncodeMultiDimensionalSliceUsesMultiDimensionalWrapper(t *testing.T) {
 	m := fbtype.NewMap()
 	typeID := uint32(999984)
@@ -1095,6 +1113,10 @@ func TestMapEncodeMultiDimensionalSliceUsesMultiDimensionalWrapper(t *testing.T)
 	buf, err := m.Encode(typeMetadata, [][]int16{{1, 2}, {3, 4}}, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "[{1 2} {1 2}]|[1 2 3 4]", string(buf))
+
+	buf, err = m.Encode(typeMetadata, [][][]int16{{}, {}}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "[{1 2} {1 0} {1 0}]|[]", string(buf))
 }
 
 func TestMapEncodeArrayWrapperUsesReflectForFixedArray(t *testing.T) {

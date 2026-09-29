@@ -367,26 +367,6 @@ func (ad ArrayData) encodeVaryingType(encodePlan EncodePlan, elem any) ([]byte, 
 	return buf, nil
 }
 
-func allElementsCount(dimensions []ArrayDimension) int {
-	if len(dimensions) == 0 {
-		return 0
-	}
-
-	maxInt := int(^uint(0) >> 1)
-	elementCount := 1
-	for _, d := range dimensions {
-		if d.Length <= 0 {
-			return 0
-		}
-		if elementCount > maxInt/d.Length {
-			return 0
-		}
-		elementCount *= d.Length
-	}
-
-	return elementCount
-}
-
 func (ad *ArrayData) decodeBinary(m *Map, src []byte, array ArraySetter, realIndexes []realIndexes) error {
 	elementCount, err := checkedDeclaredArrayElementCount(ad.Dimensions)
 	if err != nil {
