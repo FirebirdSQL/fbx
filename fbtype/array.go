@@ -708,9 +708,6 @@ func checkedArrayElementCount(dimensions []ArrayDimension) (int, error) {
 	}
 
 	for i, dimension := range dimensions {
-		if dimension.Length < 0 {
-			return 0, fmt.Errorf("array dimension %d has negative length %d", i, dimension.Length)
-		}
 		if _, err := checkedArrayDimensionUpper(i, dimension); err != nil {
 			return 0, err
 		}

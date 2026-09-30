@@ -181,8 +181,6 @@ func (arr *Array) generateSDL(dimensions []map[string]int) []byte {
 
 func getDimensionBound(value int) []byte {
 	out := []byte{}
-	valByte := make([]byte, 4)
-	binary.BigEndian.PutUint32(valByte, uint32(value))
 
 	if -128 <= value && value <= 127 {
 		out = append(out, fbproto.Isc_sdl_tiny_integer)
