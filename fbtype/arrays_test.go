@@ -151,6 +151,49 @@ func TestArrayNumericAndDecimalElementsUseSubtypeCodec(t *testing.T) {
 	})
 }
 
+func TestArrayInt128BackedElements(t *testing.T) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
+		if getServerMajorVersionForConn(ctx, tb, conn) <= 3 {
+			tb.Skip("INT128 is not supported by server engine version <= 3")
+		}
+
+		const table = "array_int128_backed_elements"
+		_, err := conn.Exec(ctx, "recreate table "+table+` (
+			id integer primary key,
+			int128_values int128[1:2],
+			numeric_values numeric(38,2)[1:2]
+		)`)
+		require.NoError(tb, err)
+		defer func() {
+			_, _ = conn.Exec(context.Background(), "drop table "+table, fbx.QueryExecModeExec)
+		}()
+
+		int128Values := []int64{1, -2}
+		numericValues := []fbtype.Numeric{
+			mustArrayNumeric(tb, "1.23"),
+			mustArrayNumeric(tb, "-4.56"),
+		}
+		_, err = conn.Exec(
+			ctx,
+			"insert into "+table+" (id, int128_values, numeric_values) values (?, ?, ?)",
+			1,
+			int128Values,
+			numericValues,
+		)
+		require.NoError(tb, err)
+
+		var actualInt128 []int64
+		var actualNumeric []fbtype.Numeric
+		err = conn.QueryRow(ctx,
+			"select int128_values, numeric_values from "+table+" where id = ?",
+			1,
+		).Scan(&actualInt128, &actualNumeric)
+		require.NoError(tb, err)
+		require.Equal(tb, int128Values, actualInt128)
+		require.Equal(tb, numericValues, actualNumeric)
+	})
+}
+
 func TestArrayOctetsElements(t *testing.T) {
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
 		const table = "array_octets_elements"

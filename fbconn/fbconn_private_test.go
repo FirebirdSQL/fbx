@@ -2,6 +2,7 @@ package fbconn
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -268,6 +269,29 @@ func TestArrayGenerateSDLIncludesOctetsCharacterSet(t *testing.T) {
 			assert.Equal(t, byte(fbproto.CS_BINARY), sdl[4])
 			assert.Equal(t, byte(0), sdl[5])
 			assert.Equal(t, []byte{10, 0}, sdl[6:8])
+		})
+	}
+}
+
+func TestArrayGenerateSDLIncludesInt128Scale(t *testing.T) {
+	for _, scale := range []int32{0, -2} {
+		t.Run(fmt.Sprintf("scale_%d", scale), func(t *testing.T) {
+			array := Array{
+				TableName: "T",
+				FieldName: "F",
+				Length:    16,
+				Scale:     scale,
+				BlrTypeId: fbproto.Isc_blr_int128,
+				TypeId:    fbproto.SQL_TYPE_INT128,
+			}
+			dimensions := []map[string]int{{"Lower": 1, "Upper": 2}}
+
+			sdl := array.generateSDL(dimensions)
+
+			require.GreaterOrEqual(t, len(sdl), 7)
+			assert.Equal(t, byte(fbproto.Isc_blr_int128), sdl[3])
+			assert.Equal(t, byte(scale), sdl[4])
+			assert.Equal(t, byte(fbproto.Isc_sdl_relation), sdl[5])
 		})
 	}
 }

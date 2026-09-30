@@ -114,7 +114,7 @@ func (arr *Array) generateSDL(dimensions []map[string]int) []byte {
 	}...)
 
 	switch dataType {
-	case fbproto.Isc_blr_short, fbproto.Isc_blr_long, fbproto.Isc_blr_int64, fbproto.Isc_blr_quad:
+	case fbproto.Isc_blr_short, fbproto.Isc_blr_long, fbproto.Isc_blr_int64, fbproto.Isc_blr_quad, fbproto.Isc_blr_int128:
 		sdl = append(sdl, byte(arr.Scale))
 	case fbproto.Isc_blr_text, fbproto.Isc_blr_cstring, fbproto.Isc_blr_varying:
 		sdl = append(sdl, length...)
