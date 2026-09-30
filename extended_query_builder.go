@@ -15,12 +15,19 @@ import (
 type ExtendedQueryBuilder struct {
 	ParamValues     [][]byte
 	paramValueBytes []byte
+	arrayParameters []*fbconn.Array
 }
 
 // Build sets ParamValues for use with *FbConn.ExecParams or *FbConn.ExecPrepared. If
 // sd is nil then QueryExecModeExec behavior will be used.
 func (pb *ExtendedQueryBuilder) Build(ctx context.Context, conn *Conn, tx *dbTx, m *fbtype.Map, sd *fbconn.StatementDescription, args []any) error {
 	pb.reset()
+	buildSucceeded := false
+	defer func() {
+		if !buildSucceeded {
+			pb.reset()
+		}
+	}()
 
 	if sd == nil {
 		for i := range args {
@@ -31,6 +38,7 @@ func (pb *ExtendedQueryBuilder) Build(ctx context.Context, conn *Conn, tx *dbTx,
 				return err
 			}
 		}
+		buildSucceeded = true
 		return nil
 	}
 
@@ -47,6 +55,9 @@ func (pb *ExtendedQueryBuilder) Build(ctx context.Context, conn *Conn, tx *dbTx,
 			sd.Parameters[i].Scale,
 		)
 		if arr != nil {
+			arr.CurrentDimensions = arr.Dimensions
+			pb.arrayParameters = append(pb.arrayParameters, arr)
+
 			arrayData, err := fbtype.NewArrayData(arr.TypeId, arr.SubType, arr.Length, arr.Scale, arr.Dimensions)
 			if err != nil {
 				return err
@@ -71,6 +82,7 @@ func (pb *ExtendedQueryBuilder) Build(ctx context.Context, conn *Conn, tx *dbTx,
 		}
 	}
 
+	buildSucceeded = true
 	return nil
 }
 
@@ -87,6 +99,16 @@ func (pb *ExtendedQueryBuilder) appendParam(ctx context.Context, conn *Conn, tx 
 
 // reset readies pb to build another query.
 func (pb *ExtendedQueryBuilder) reset() {
+	for _, array := range pb.arrayParameters {
+		array.CurrentDimensions = array.Dimensions
+	}
+	clear(pb.arrayParameters)
+	if cap(pb.arrayParameters) > 64 {
+		pb.arrayParameters = make([]*fbconn.Array, 0, 64)
+	} else {
+		pb.arrayParameters = pb.arrayParameters[:0]
+	}
+
 	pb.ParamValues = pb.ParamValues[0:0]
 	pb.paramValueBytes = pb.paramValueBytes[0:0]
 

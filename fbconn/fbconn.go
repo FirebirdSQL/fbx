@@ -3375,7 +3375,29 @@ func attachArrayMetadata(descriptions []FieldDescription, arrays map[metadataMap
 				key.field,
 			)
 		}
-		descriptions[i].ArrayData = arrayData
+		descriptions[i].ArrayData = cloneArrayMetadata(arrayData)
 	}
 	return nil
+}
+
+func cloneArrayMetadata(arrayData *Array) *Array {
+	cloned := *arrayData
+	cloned.Dimensions = cloneArrayDimensions(arrayData.Dimensions)
+	cloned.CurrentDimensions = cloned.Dimensions
+	return &cloned
+}
+
+func cloneArrayDimensions(dimensions []map[string]int) []map[string]int {
+	if dimensions == nil {
+		return nil
+	}
+
+	cloned := make([]map[string]int, len(dimensions))
+	for i, dimension := range dimensions {
+		cloned[i] = make(map[string]int, len(dimension))
+		for name, bound := range dimension {
+			cloned[i][name] = bound
+		}
+	}
+	return cloned
 }

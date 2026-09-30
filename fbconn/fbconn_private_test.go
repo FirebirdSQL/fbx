@@ -120,7 +120,11 @@ func TestActiveExplicitTxIgnoresInternalTransaction(t *testing.T) {
 }
 
 func TestAttachArrayMetadataRequiresMetadataForEveryArray(t *testing.T) {
-	available := &Array{}
+	declared := []map[string]int{{"Lower": 1, "Upper": 4}}
+	available := &Array{
+		Dimensions:        declared,
+		CurrentDimensions: []map[string]int{{"Lower": 1, "Upper": 2}},
+	}
 	descriptions := []FieldDescription{
 		{Type: fbproto.SQL_TYPE_LONG},
 		{
@@ -142,8 +146,31 @@ func TestAttachArrayMetadataRequiresMetadataForEveryArray(t *testing.T) {
 
 	require.ErrorContains(t, err, "cannot resolve array metadata for parameter 3")
 	assert.Nil(t, descriptions[0].ArrayData)
-	assert.Same(t, available, descriptions[1].ArrayData)
+	require.NotNil(t, descriptions[1].ArrayData)
+	assert.NotSame(t, available, descriptions[1].ArrayData)
+	assert.Equal(t, declared, descriptions[1].ArrayData.Dimensions)
+	assert.Equal(t, declared, descriptions[1].ArrayData.CurrentDimensions)
 	assert.Nil(t, descriptions[2].ArrayData)
+
+	descriptions[1].ArrayData.Dimensions[0]["Lower"] = 2
+	assert.Equal(t, 1, available.Dimensions[0]["Lower"])
+}
+
+func TestAttachArrayMetadataCreatesIndependentCopies(t *testing.T) {
+	dimensions := []map[string]int{{"Lower": 1, "Upper": 4}}
+	descriptions := []FieldDescription{
+		{Type: fbproto.SQL_TYPE_ARRAY, OriginalTableName: "T", OriginalName: "A"},
+		{Type: fbproto.SQL_TYPE_ARRAY, OriginalTableName: "T", OriginalName: "A"},
+	}
+	arrays := map[metadataMapKey]*Array{
+		{table: "T", field: "A"}: {Dimensions: dimensions, CurrentDimensions: dimensions},
+	}
+
+	require.NoError(t, attachArrayMetadata(descriptions, arrays, "parameter"))
+	require.NotSame(t, descriptions[0].ArrayData, descriptions[1].ArrayData)
+
+	descriptions[0].ArrayData.CurrentDimensions = []map[string]int{{"Lower": 1, "Upper": 2}}
+	assert.Equal(t, dimensions, descriptions[1].ArrayData.CurrentDimensions)
 }
 
 func TestGetArrayDimensionsWithNoSources(t *testing.T) {
@@ -189,7 +216,7 @@ func TestArraySliceLengthValidatesBoundsAndOverflow(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			array := Array{CurrentDimensions: tt.currentDimensions, Length: tt.length}
-			got, err := array.getSliceLength()
+			got, err := array.getSliceLength(tt.currentDimensions)
 			if tt.wantError != "" {
 				require.ErrorContains(t, err, tt.wantError)
 				return
@@ -234,7 +261,7 @@ func TestArrayGenerateSDLIncludesOctetsCharacterSet(t *testing.T) {
 				SubType:           fbproto.CS_BINARY,
 			}
 
-			sdl := array.generateSDL()
+			sdl := array.generateSDL(array.CurrentDimensions)
 
 			require.GreaterOrEqual(t, len(sdl), 9)
 			assert.Equal(t, tt.wantBLRTag, sdl[3])

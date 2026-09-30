@@ -35,7 +35,7 @@ type Array struct {
 	SubType           int32
 }
 
-func (arr Array) getSliceLength() (int, error) {
+func (arr Array) getSliceLength(dimensions []map[string]int) (int, error) {
 	const (
 		maxArrayDimensions = 16
 		minArrayBound      = -1 << 31
@@ -43,15 +43,15 @@ func (arr Array) getSliceLength() (int, error) {
 		maxSliceLength     = 1<<31 - 1
 	)
 
-	if len(arr.CurrentDimensions) == 0 {
+	if len(dimensions) == 0 {
 		return 0, fmt.Errorf("array slice must have at least one dimension")
 	}
-	if len(arr.CurrentDimensions) > maxArrayDimensions {
-		return 0, fmt.Errorf("array slice has %d dimensions; maximum is %d", len(arr.CurrentDimensions), maxArrayDimensions)
+	if len(dimensions) > maxArrayDimensions {
+		return 0, fmt.Errorf("array slice has %d dimensions; maximum is %d", len(dimensions), maxArrayDimensions)
 	}
 
 	elements := uint64(1)
-	for i, dimension := range arr.CurrentDimensions {
+	for i, dimension := range dimensions {
 		lower, lowerPresent := dimension["Lower"]
 		upper, upperPresent := dimension["Upper"]
 		if !lowerPresent || !upperPresent {
@@ -92,9 +92,8 @@ func (arr Array) getSliceLength() (int, error) {
 	return int(elements * elementLength), nil
 }
 
-func (arr *Array) generateSDL() []byte {
+func (arr *Array) generateSDL(dimensions []map[string]int) []byte {
 	sdl := []byte{}
-	dimensions := arr.CurrentDimensions
 
 	dataType := byte(arr.BlrTypeId)
 	if arr.SubType&0xFF == fbproto.CS_BINARY {
@@ -208,11 +207,11 @@ func putArray(fbConn *FbConn, ctx context.Context, tx *FBTransaction, arrayData 
 		arrayData.CurrentDimensions = arrayData.Dimensions
 	}()
 
-	length, err := arrayData.getSliceLength()
+	length, err := arrayData.getSliceLength(arrayData.CurrentDimensions)
 	if err != nil {
 		return nil, err
 	}
-	sdl := arrayData.generateSDL()
+	sdl := arrayData.generateSDL(arrayData.CurrentDimensions)
 
 	id, err := fbConn.putArray(ctx, tx, arr, length, sdl)
 	if err != nil {
@@ -228,11 +227,11 @@ func getArray(fbConn *FbConn, ctx context.Context, tx *FBTransaction, arrayData 
 
 	arrayId := int64(binary.BigEndian.Uint64(arrId))
 
-	length, err := arrayData.getSliceLength()
+	length, err := arrayData.getSliceLength(arrayData.Dimensions)
 	if err != nil {
 		return nil, err
 	}
-	sdl := arrayData.generateSDL()
+	sdl := arrayData.generateSDL(arrayData.Dimensions)
 
 	array, err := fbConn.getArray(ctx, tx, arrayId, arrayData.BlrTypeId, length, int(arrayData.Length), sdl)
 	if err != nil {

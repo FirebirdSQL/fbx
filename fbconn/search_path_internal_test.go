@@ -76,8 +76,8 @@ func TestArraySDLIncludesSchema(t *testing.T) {
 	withSchema.Schema = "MY_SCHEMA"
 	withoutSchema := base
 
-	sdlWith := withSchema.generateSDL()
-	sdlWithout := withoutSchema.generateSDL()
+	sdlWith := withSchema.generateSDL(withSchema.CurrentDimensions)
+	sdlWithout := withoutSchema.generateSDL(withoutSchema.CurrentDimensions)
 
 	schemaItem := append([]byte{fbproto.Isc_sdl_schema, byte(len("MY_SCHEMA"))}, []byte("MY_SCHEMA")...)
 	assert.True(t, bytes.Contains(sdlWith, schemaItem))

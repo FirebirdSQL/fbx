@@ -316,6 +316,54 @@ func TestArrayUsesExecutionTransaction(t *testing.T) {
 	})
 }
 
+func TestArrayDimensionsAreResetAfterEncodingError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	defaultConnTestRunner.RunTest(ctx, t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		const (
+			table         = "array_dimensions_after_encode_error"
+			statementName = "array_dimensions_after_encode_error_update"
+		)
+
+		_, err := conn.Exec(ctx, "recreate table "+table+" (id integer primary key, val integer[1:4])")
+		require.NoError(t, err)
+		defer func() {
+			_, _ = conn.Exec(context.Background(), "drop table "+table, fbx.QueryExecModeExec)
+		}()
+
+		original := []int32{11, 22, 33, 44}
+		_, err = conn.Exec(ctx, "insert into "+table+" (id, val) values (?, ?)", 1, original)
+		require.NoError(t, err)
+
+		description, err := conn.Prepare(ctx, statementName,
+			"update "+table+" set val = ? where id = ? returning old.val")
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, conn.Deallocate(context.Background(), statementName))
+		}()
+
+		require.Len(t, description.Parameters, 2)
+		require.Len(t, description.Fields, 1)
+		require.NotNil(t, description.Parameters[0].ArrayData)
+		require.NotNil(t, description.Fields[0].ArrayData)
+		require.NotSame(t, description.Parameters[0].ArrayData, description.Fields[0].ArrayData)
+
+		var ignored []int32
+		err = conn.QueryRow(ctx, statementName, []int32{8, 9}, "bad integer").Scan(&ignored)
+		require.Error(t, err)
+		require.Equal(t,
+			description.Parameters[0].ArrayData.Dimensions,
+			description.Parameters[0].ArrayData.CurrentDimensions,
+		)
+
+		var actual []int32
+		err = conn.QueryRow(ctx, statementName, nil, 1).Scan(&actual)
+		require.NoError(t, err)
+		require.Equal(t, original, actual)
+	})
+}
+
 func TestArrayFlatArrayVarchar(t *testing.T) {
 	testCases := [][]string{
 		nil,
