@@ -120,13 +120,65 @@ func TestArrayEncodeFixedOctetsPadsWithZero(t *testing.T) {
 	require.Equal(t, []byte{0x01, 0x00, 0x00, 0x00, 0x02, 0x03, 0x00, 0x00}, buf)
 }
 
-func TestArrayEncodeVaryingOctetsRejectsZeroByte(t *testing.T) {
+func TestArrayEncodeVaryingRejectsZeroByte(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name    string
+		subType int32
+		value   any
+	}{
+		{
+			name:    "text",
+			subType: fbproto.CS_NONE,
+			value: Array[string]{
+				Elements: []string{"a\x00b", "ok"},
+				Dims:     []ArrayDimension{{LowerBound: 1, Length: 2}},
+				Valid:    true,
+			},
+		},
+		{
+			name:    "octets",
+			subType: fbproto.CS_BINARY,
+			value: Array[[]byte]{
+				Elements: [][]byte{{0x01, 0x00}, {0x02}},
+				Dims:     []ArrayDimension{{LowerBound: 1, Length: 2}},
+				Valid:    true,
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			m := NewMap()
+			arrayData, err := NewArrayData(
+				fbproto.SQL_TYPE_VARYING,
+				testCase.subType,
+				3,
+				0,
+				[]map[string]int{{"Lower": 1, "Upper": 2}},
+			)
+			require.NoError(t, err)
+			metadata := NewTypeMetadata(fbproto.SQL_TYPE_ARRAY, 0, 8, 0)
+			metadata.SetArrayMetadata(arrayData)
+
+			_, err = m.Encode(metadata, testCase.value, nil)
+
+			require.ErrorContains(t, err, "cannot encode array element at index 0")
+			require.ErrorContains(t, err, "VARCHAR array elements cannot contain zero bytes")
+		})
+	}
+}
+
+func TestArrayEncodeVaryingAllowsEmptyAndRegularStrings(t *testing.T) {
 	t.Parallel()
 
 	m := NewMap()
 	arrayData, err := NewArrayData(
 		fbproto.SQL_TYPE_VARYING,
-		fbproto.CS_BINARY,
+		fbproto.CS_NONE,
 		3,
 		0,
 		[]map[string]int{{"Lower": 1, "Upper": 2}},
@@ -134,16 +186,19 @@ func TestArrayEncodeVaryingOctetsRejectsZeroByte(t *testing.T) {
 	require.NoError(t, err)
 	metadata := NewTypeMetadata(fbproto.SQL_TYPE_ARRAY, 0, 8, 0)
 	metadata.SetArrayMetadata(arrayData)
-	value := Array[[]byte]{
-		Elements: [][]byte{{0x01, 0x00}, {0x02}},
+	value := Array[string]{
+		Elements: []string{"", "abc"},
 		Dims:     []ArrayDimension{{LowerBound: 1, Length: 2}},
 		Valid:    true,
 	}
 
-	_, err = m.Encode(metadata, value, nil)
+	buf, err := m.Encode(metadata, value, nil)
 
-	require.ErrorContains(t, err, "cannot encode array element at index 0")
-	require.ErrorContains(t, err, "VARCHAR OCTETS array elements cannot contain zero bytes")
+	require.NoError(t, err)
+	require.Equal(t, []byte{
+		0, 0, 0, 0,
+		0, 0, 0, 3, 'a', 'b', 'c', 0,
+	}, buf)
 }
 
 func newMalformedArrayData(typeID uint32, length uint32) *ArrayData {

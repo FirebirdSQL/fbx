@@ -454,6 +454,38 @@ func TestArrayFlatArrayVarchar(t *testing.T) {
 	})
 }
 
+func TestArrayVarcharRejectsZeroByte(t *testing.T) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		const table = "array_varchar_zero_byte"
+		_, err := conn.Exec(ctx, "recreate table "+table+" (id integer primary key, val varchar(10)[1:2])")
+		require.NoError(t, err)
+		defer func() {
+			_, _ = conn.Exec(context.Background(), "drop table "+table, fbx.QueryExecModeExec)
+		}()
+
+		_, err = conn.Exec(ctx,
+			"insert into "+table+" (id, val) values (?, ?)",
+			1,
+			[]string{"a\x00b", "ok"},
+		)
+		require.ErrorContains(t, err, "cannot encode array element at index 0")
+		require.ErrorContains(t, err, "VARCHAR array elements cannot contain zero bytes")
+
+		expected := []string{"", "ok"}
+		_, err = conn.Exec(ctx,
+			"insert into "+table+" (id, val) values (?, ?)",
+			2,
+			expected,
+		)
+		require.NoError(t, err)
+
+		var actual []string
+		err = conn.QueryRow(ctx, "select val from "+table+" where id = ?", 2).Scan(&actual)
+		require.NoError(t, err)
+		require.Equal(t, expected, actual)
+	})
+}
+
 func TestArrayArray(t *testing.T) {
 	ctr := defaultConnTestRunner
 	ctr.AfterConnect = func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
