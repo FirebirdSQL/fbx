@@ -305,6 +305,7 @@ func newTestManager(t *testing.T) (*fbservice.Manager, *fakeServiceConnection) {
 }
 
 type fakeServiceConnection struct {
+	fakeTraceConnection
 	opened            bool
 	closed            bool
 	expectedDatabase  string

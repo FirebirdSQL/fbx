@@ -229,6 +229,15 @@ func runServiceActionProbeServer(conn net.Conn) serviceActionProbeResult {
 }
 
 func runServiceActionProbeServerWithOutput(conn net.Conn, output string) serviceActionProbeResult {
+	return runServiceActionProbeServerWithResponses(conn, [][]byte{
+		{fbproto.Isc_info_truncated},
+		{fbproto.Isc_info_svc_to_eof, 0, 0, fbproto.Isc_info_svc_timeout},
+		serviceOutputResponse([]byte(output)),
+		{fbproto.Isc_info_svc_to_eof, 0, 0, fbproto.Isc_info_end},
+	})
+}
+
+func runServiceActionProbeServerWithResponses(conn net.Conn, responses [][]byte) serviceActionProbeResult {
 	encoding, err := fbproto.NewEncoding("UTF8")
 	if err != nil {
 		return serviceActionProbeResult{err: err}
@@ -256,12 +265,6 @@ func runServiceActionProbeServerWithOutput(conn net.Conn, output string) service
 		return serviceActionProbeResult{err: err}
 	}
 
-	responses := [][]byte{
-		{fbproto.Isc_info_truncated},
-		{fbproto.Isc_info_svc_to_eof, 0, 0, fbproto.Isc_info_svc_timeout},
-		serviceOutputResponse([]byte(output)),
-		{fbproto.Isc_info_svc_to_eof, 0, 0, fbproto.Isc_info_end},
-	}
 	result := serviceActionProbeResult{actionSPB: actionSPB}
 	for _, response := range responses {
 		sendItems, receiveItems, bufferLength, err := readProbeServiceInfo(r, 42)

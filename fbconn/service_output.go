@@ -84,11 +84,10 @@ func writeServiceOutput(ctx context.Context, output io.Writer, chunk []byte) err
 
 func buildServiceOutputSendItems() []byte {
 	return fbproto.NewXPBWriter().
-		AppendByte(fbproto.Isc_spb_utf8_filename).
-		AppendInt32(0).
 		AppendByte(fbproto.Isc_info_svc_timeout).
+		AppendInt16(4).
 		AppendInt32(1).
-		AppendByte(1).
+		AppendByte(fbproto.Isc_info_end).
 		Bytes()
 }
 
@@ -126,7 +125,7 @@ func parseServiceOutput(response []byte) ([]byte, serviceOutputState, error) {
 			return nil, 0, errors.New("service output response has no end marker")
 		}
 		switch response[3] {
-		case fbproto.Isc_info_svc_timeout:
+		case fbproto.Isc_info_svc_timeout, fbproto.Isc_info_data_not_ready:
 			return nil, serviceOutputTimeout, nil
 		case fbproto.Isc_info_end:
 			return nil, serviceOutputComplete, nil
