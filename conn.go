@@ -13,6 +13,7 @@ import (
 
 	"rdb.red-soft.ru/fbx/fbconn"
 	"rdb.red-soft.ru/fbx/fbtype"
+	"rdb.red-soft.ru/fbx/internal/operationerror"
 	"rdb.red-soft.ru/fbx/internal/stmtcache"
 )
 
@@ -844,7 +845,7 @@ optionLoop:
 			cleanupCtx, cancel := cleanupContext(ctx)
 			defer cancel()
 			if cleanupErr := st.Deallocate(cleanupCtx); cleanupErr != nil {
-				err = errors.Join(err, cleanupErr)
+				err = operationerror.Join(err, cleanupErr)
 			}
 		}()
 	}
@@ -932,12 +933,12 @@ func (c *Conn) execPrepared(ctx context.Context, tx *dbTx, st *fbconn.Statement,
 	if result.Err == nil && containsSearchPathInSql {
 		err = c.QueryRow(ctx, "select rdb$get_context('SYSTEM', 'SEARCH_PATH') from rdb$database", QueryExecModeExec).Scan(&sp2)
 		if err != nil {
-			return result.QueryStatus, errors.Join(fmt.Errorf("failed to clear the statement cache after changing the search_path"), err, c.Close(ctx))
+			return result.QueryStatus, operationerror.WithRetry(errors.Join(fmt.Errorf("failed to clear the statement cache after changing the search_path"), err, c.Close(ctx)), false)
 		}
 		if sp1 != sp2 {
 			err = c.DeallocateAll(ctx)
 			if err != nil {
-				return result.QueryStatus, errors.Join(fmt.Errorf("failed to clear the statement cache after changing the search_path"), err, c.Close(ctx))
+				return result.QueryStatus, operationerror.WithRetry(errors.Join(fmt.Errorf("failed to clear the statement cache after changing the search_path"), err, c.Close(ctx)), false)
 			}
 		}
 	}
@@ -1159,7 +1160,7 @@ optionLoop:
 		if temporary {
 			err = st.Deallocate(ctx)
 			if err != nil {
-				err = errors.Join(fmt.Errorf("failed to clear the statement cache after changing the search_path"), err, c.Close(ctx))
+				err = operationerror.WithRetry(errors.Join(fmt.Errorf("failed to clear the statement cache after changing the search_path"), err, c.Close(ctx)), false)
 			}
 		}
 		err = errors.Join(fmt.Errorf(`"%s" not supported by Query method`, sql), err)

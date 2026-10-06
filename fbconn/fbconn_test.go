@@ -2619,11 +2619,11 @@ func TestConnExecImmediateNoTx(t *testing.T) {
 	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
 	defer func() {
-		// SET TRANSACTION sent without a transaction handle is not tracked by
-		// FbConn; the server must report it when detach is attempted.
-		var fbErr *fbconn.FbError
-		require.ErrorAs(t, fbConn.Close(ctx), &fbErr)
-		require.Contains(t, fbErr.GdsCodes, fbproto.Isc_open_trans)
+		// The transaction handle returned by SET TRANSACTION is retained so
+		// Close can confirm rollback before detach.
+		require.True(t, fbConn.ActiveTx())
+		require.NoError(t, fbConn.Close(ctx))
+		require.False(t, fbConn.ActiveTx())
 		require.True(t, fbConn.IsClosed())
 	}()
 

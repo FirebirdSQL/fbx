@@ -12,6 +12,7 @@ import (
 
 	"rdb.red-soft.ru/fbx/fbconn"
 	"rdb.red-soft.ru/fbx/fbtype"
+	"rdb.red-soft.ru/fbx/internal/operationerror"
 )
 
 // Rows is the result set returned from *Conn.Query. Rows must be closed before
@@ -181,9 +182,7 @@ func (rows *baseRows) Close() {
 		}
 		var closeErr error
 		rows.commandTag, closeErr = rows.resultReader.Close()
-		if rows.err == nil {
-			rows.err = closeErr
-		}
+		rows.err = closeErr
 	}
 
 	var statementErr error
@@ -196,10 +195,8 @@ func (rows *baseRows) Close() {
 			statementErr = rows.boundStatement.CloseCursor(rows.ctx)
 		}
 	}
-	if rows.err == nil {
-		rows.err = statementErr
-	} else if rows.ownsStatement && statementErr != nil {
-		rows.err = errors.Join(rows.err, statementErr)
+	if rows.err == nil || rows.ownsStatement {
+		rows.err = operationerror.Join(rows.err, statementErr)
 	}
 
 	if rows.err != nil && rows.conn != nil && rows.sql != "" {

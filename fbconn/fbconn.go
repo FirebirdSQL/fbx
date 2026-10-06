@@ -22,6 +22,7 @@ import (
 	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbproto/auth"
 	"rdb.red-soft.ru/fbx/fbproto/wirecrypt"
+	"rdb.red-soft.ru/fbx/internal/operationerror"
 )
 
 const (
@@ -1580,7 +1581,7 @@ func (fbConn *FbConn) Prepare(ctx context.Context, sql string) (*Statement, erro
 	st, err := fbConn.prepareTx(ctx, tx, sql, statementScopeConnection)
 	if err != nil {
 		if rbErr := fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx, err); rbErr != nil {
-			err = errors.Join(err, fmt.Errorf("rollback internal tx: %w", rbErr))
+			err = operationerror.Join(err, fmt.Errorf("rollback internal tx: %w", rbErr))
 		}
 		return nil, err
 	}
@@ -1793,7 +1794,7 @@ func (fbConn *FbConn) ExecImmediate(ctx context.Context, sql string) error {
 	}
 	if err := fbConn.ExecImmediateTx(ctx, tx, sql); err != nil {
 		if rbErr := fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx, err); rbErr != nil {
-			err = errors.Join(err, fmt.Errorf("rollback internal tx: %w", rbErr))
+			err = operationerror.Join(err, fmt.Errorf("rollback internal tx: %w", rbErr))
 		}
 		return err
 	}
@@ -1802,6 +1803,9 @@ func (fbConn *FbConn) ExecImmediate(ctx context.Context, sql string) error {
 
 // ExecImmediateTx executes statement immediate inside specified transaction
 func (fbConn *FbConn) ExecImmediateTx(ctx context.Context, tx *FBTransaction, sql string) error {
+	if tx != nil && tx.Closed {
+		return ErrTransactionClosed
+	}
 	var err error
 	watched := false
 
@@ -1842,7 +1846,7 @@ func (fbConn *FbConn) ExecImmediateTx(ctx context.Context, tx *FBTransaction, sq
 		}
 		fbConn.unlock()
 		fbConn.asyncClose()
-		return err
+		return operationerror.WithRetry(err, false)
 	}
 
 	msg, err := fbConn.receiveMessage()
@@ -1852,11 +1856,12 @@ func (fbConn *FbConn) ExecImmediateTx(ctx context.Context, tx *FBTransaction, sq
 		}
 		fbConn.unlock()
 		fbConn.asyncClose()
-		return normalizeTimeoutError(ctx, err)
+		return operationerror.WithRetry(normalizeTimeoutError(ctx, err), false)
 	}
 
 	switch m := msg.(type) {
 	case *fbproto.OpResponse:
+		fbConn.recordSQLTransaction(tx, m.Object)
 	case *fbproto.ErrorResponse:
 		if watched {
 			fbConn.contextWatcher.Unwatch()
@@ -1868,14 +1873,15 @@ func (fbConn *FbConn) ExecImmediateTx(ctx context.Context, tx *FBTransaction, sq
 			fbConn.contextWatcher.Unwatch()
 		}
 		fbConn.unlock()
-		panic(fmt.Sprintf("wrong response message type %T instead expected OpResponse or ErrorResponse", m))
+		fbConn.asyncClose()
+		return fmt.Errorf("unexpected execute response: %T", m)
 	}
 
 	if watched {
 		fbConn.contextWatcher.Unwatch()
 	}
 	fbConn.unlock()
-	if tx != nil && tx == fbConn.internalTransaction && fbConn.config.Autocommit && !fbConn.explicitTransaction {
+	if tx != nil && !tx.Closed && tx == fbConn.internalTransaction && fbConn.config.Autocommit && !fbConn.explicitTransaction {
 		return fbConn.commitInternalTx(ctx, tx)
 	}
 
@@ -1922,7 +1928,7 @@ func (fbConn *FbConn) ExecParamsTx(ctx context.Context, tx *FBTransaction, sql s
 	st, err := fbConn.PrepareTx(ctx, tx, sql)
 	if err != nil {
 		if rbErr := fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx, err); rbErr != nil {
-			err = errors.Join(err, fmt.Errorf("rollback internal tx: %w", rbErr))
+			err = operationerror.Join(err, fmt.Errorf("rollback internal tx: %w", rbErr))
 		}
 		res := ResultReader{
 			fbConn: fbConn,
@@ -1936,11 +1942,11 @@ func (fbConn *FbConn) ExecParamsTx(ctx context.Context, tx *FBTransaction, sql s
 	rr := st.Exec(ctx, paramValues)
 	if rr.err != nil {
 		cleanupCtx, cancel := cleanupContext(ctx)
-		_ = st.Deallocate(cleanupCtx)
+		rr.err = operationerror.Join(rr.err, st.Deallocate(cleanupCtx))
 		cancel()
 
 		if rbErr := fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx, rr.err); rbErr != nil {
-			rr.err = errors.Join(rr.err, fmt.Errorf("rollback internal tx: %w", rbErr))
+			rr.err = operationerror.Join(rr.err, fmt.Errorf("rollback internal tx: %w", rbErr))
 		}
 		return rr
 	}
@@ -2315,7 +2321,8 @@ type ResultReader struct {
 	eoc                  bool
 	rowsInfoPopulated    bool
 
-	boundTransaction *FBTransaction
+	boundTransaction   *FBTransaction
+	sqlMayHaveExecuted bool
 
 	ownsStatement *Statement
 }
@@ -2638,6 +2645,9 @@ func (rr *ResultReader) Values() [][]byte {
 // SetCallerErr propagates an error from upstream callers (e.g., higher-level row
 // scan processing in fbx that detects a failure not visible to fbconn) into the ResultReader.
 func (rr *ResultReader) SetCallerErr(err error) {
+	if rr.sqlMayHaveExecuted {
+		err = operationerror.WithRetry(err, false)
+	}
 	if err != nil && rr.err == nil {
 		rr.err = err
 	}
@@ -2657,12 +2667,15 @@ func cleanupContext(parent context.Context) (context.Context, context.CancelFunc
 // cannot reuse the failed transaction and commit its changes.
 func (fbConn *FbConn) commitInternalTx(ctx context.Context, tx *FBTransaction) error {
 	err := tx.Commit(ctx)
-	if err != nil {
-		if rbErr := fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx, err); rbErr != nil {
-			return errors.Join(err, fmt.Errorf("rollback internal tx: %w", rbErr))
+	if err == nil {
+		return nil
+	}
+	if !fbConn.IsClosed() {
+		if rbErr := fbConn.rollbackOwnedInternalTx(ctx, tx); rbErr != nil {
+			err = operationerror.Join(err, fmt.Errorf("rollback internal tx: %w", rbErr))
 		}
 	}
-	return err
+	return &fbconnError{err: err, safeToRetry: false}
 }
 
 // rollbackInternalTxIfAutocommitOnError rolls back the connection's implicit internal
@@ -2670,13 +2683,18 @@ func (fbConn *FbConn) commitInternalTx(ctx context.Context, tx *FBTransaction) e
 // Autocommit is disabled, or opErr is SafeToRetry (the operation failed before
 // reaching the server, so server-side tx state cannot have changed).
 func (fbConn *FbConn) rollbackInternalTxIfAutocommitOnError(ctx context.Context, tx *FBTransaction, opErr error) error {
+	if SafeToRetry(opErr) {
+		return nil
+	}
+	return fbConn.rollbackOwnedInternalTx(ctx, tx)
+}
+
+// rollbackOwnedInternalTx resolves the owned transaction independently of retry.
+func (fbConn *FbConn) rollbackOwnedInternalTx(ctx context.Context, tx *FBTransaction) error {
 	if tx == nil || tx != fbConn.internalTransaction || tx.Closed {
 		return nil
 	}
-	if !fbConn.config.Autocommit || fbConn.explicitTransaction {
-		return nil
-	}
-	if SafeToRetry(opErr) {
+	if !fbConn.config.Autocommit || fbConn.explicitTransaction || fbConn.IsClosed() {
 		return nil
 	}
 	cleanupCtx, cancel := cleanupContext(ctx)
@@ -2698,7 +2716,7 @@ func (rr *ResultReader) Close() (QueryStatus, error) {
 			rr.drainCurrentFetch()
 			if rr.err == nil {
 				if err := rr.populateRowsAffected(); err != nil {
-					rr.err = err
+					rr.SetCallerErr(err)
 				}
 			}
 		}
@@ -2709,20 +2727,20 @@ func (rr *ResultReader) Close() (QueryStatus, error) {
 
 		if rr.ownsStatement != nil && !rr.ownsStatement.closed {
 			ctx, cancel := cleanupContext(rr.ctx)
-			if dErr := rr.ownsStatement.Deallocate(ctx); dErr != nil && rr.err == nil {
-				rr.err = dErr
+			if dErr := rr.ownsStatement.Deallocate(ctx); dErr != nil {
+				rr.err = operationerror.Join(rr.err, dErr)
 			}
 			cancel()
 		}
 
-		if rr.boundTransaction != nil && rr.boundTransaction == rr.fbConn.internalTransaction && rr.fbConn.config.Autocommit && !rr.fbConn.explicitTransaction {
+		if rr.boundTransaction != nil && !rr.boundTransaction.Closed && rr.boundTransaction == rr.fbConn.internalTransaction && rr.fbConn.config.Autocommit && !rr.fbConn.explicitTransaction {
 			if rr.err != nil {
 				if rbErr := rr.fbConn.rollbackInternalTxIfAutocommitOnError(rr.ctx, rr.boundTransaction, rr.err); rbErr != nil {
-					rr.err = errors.Join(rr.err, fmt.Errorf("rollback internal tx: %w", rbErr))
+					rr.err = operationerror.Join(rr.err, fmt.Errorf("rollback internal tx: %w", rbErr))
 				}
 			} else {
 				if err := rr.fbConn.commitInternalTx(context.Background(), rr.boundTransaction); err != nil {
-					rr.err = err
+					rr.SetCallerErr(err)
 				}
 			}
 		}
@@ -2736,7 +2754,7 @@ func (rr *ResultReader) closeWithoutCommit() (QueryStatus, error) {
 			rr.drainCurrentFetch()
 			if rr.err == nil {
 				if err := rr.populateRowsAffected(); err != nil {
-					rr.err = err
+					rr.SetCallerErr(err)
 				}
 			}
 		}
@@ -2769,6 +2787,9 @@ func (rr *ResultReader) populateRowsAffected() error {
 }
 
 func (rr *ResultReader) concludeCommand(queryStatus QueryStatus, err error) {
+	if rr.sqlMayHaveExecuted {
+		err = operationerror.WithRetry(err, false)
+	}
 	// Keep the first error that is recorded. Store the error before checking if the command is already concluded to
 	// allow for receiving an error after CommandComplete but before ReadyForQuery.
 	if err != nil && rr.err == nil {

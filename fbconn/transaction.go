@@ -3,8 +3,10 @@ package fbconn
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"rdb.red-soft.ru/fbx/fbproto"
+	"rdb.red-soft.ru/fbx/internal/operationerror"
 )
 
 type FBTransaction struct {
@@ -47,25 +49,27 @@ func (tx *FBTransaction) Commit(ctx context.Context) error {
 		return tx.Connection.client.WriteMessage(&opCommit)
 	}); err != nil {
 		tx.Connection.asyncClose()
-		return err
+		return operationerror.WithRetry(err, false)
 	}
 
 	msg, err := tx.Connection.receiveMessage()
 	if err != nil {
 		tx.Connection.asyncClose()
-		return normalizeTimeoutError(ctx, err)
+		return operationerror.WithRetry(normalizeTimeoutError(ctx, err), false)
 	}
 
 	switch m := msg.(type) {
+	case *fbproto.OpResponse:
 	case *fbproto.ErrorResponse:
 		return ErrorResponseToFbError(m)
+	default:
+		tx.Connection.asyncClose()
+		return fmt.Errorf("unexpected transaction response: %T", msg)
 	}
 
 	// A rejected commit leaves the server transaction active. Keep its handle
 	// until success so callers or Close can still roll it back.
-	tx.Closed = true
-	tx.Connection.clearInlineBlobCache(tx.Handle)
-	delete(tx.Connection.activeTransactions, tx)
+	tx.markClosed()
 	return nil
 }
 
@@ -101,21 +105,45 @@ func (tx *FBTransaction) Rollback(ctx context.Context) error {
 		return tx.Connection.client.WriteMessage(&opRollback)
 	}); err != nil {
 		tx.Connection.asyncClose()
-		return err
+		return operationerror.WithRetry(err, false)
 	}
 
 	msg, err := tx.Connection.receiveMessage()
 	if err != nil {
 		tx.Connection.asyncClose()
-		return normalizeTimeoutError(ctx, err)
+		return operationerror.WithRetry(normalizeTimeoutError(ctx, err), false)
 	}
 	switch m := msg.(type) {
+	case *fbproto.OpResponse:
 	case *fbproto.ErrorResponse:
 		return ErrorResponseToFbError(m)
+	default:
+		tx.Connection.asyncClose()
+		return fmt.Errorf("unexpected transaction response: %T", msg)
 	}
 
+	tx.markClosed()
+	return nil
+}
+
+func (tx *FBTransaction) markClosed() {
 	tx.Closed = true
 	tx.Connection.clearInlineBlobCache(tx.Handle)
 	delete(tx.Connection.activeTransactions, tx)
-	return nil
+}
+
+// recordSQLTransaction applies the handle returned by a successful Execute.
+// A zero handle ends the supplied transaction; a new handle without an input
+// transaction must be retained for pool validation and connection cleanup.
+func (fbConn *FbConn) recordSQLTransaction(tx *FBTransaction, handle int) {
+	if tx != nil {
+		if handle == 0 {
+			tx.markClosed()
+		}
+		return
+	}
+	if handle != 0 {
+		sqlTx := &FBTransaction{Connection: fbConn, Handle: handle}
+		fbConn.activeTransactions[sqlTx] = struct{}{}
+	}
 }
