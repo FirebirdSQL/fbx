@@ -90,6 +90,11 @@ func TestServiceMaintenanceIntegration(t *testing.T) {
 			currentMode = options.OnlineMode
 		}
 	}
+	shutdown := func(t *testing.T, options fbservice.ShutdownOptions) {
+		t.Helper()
+		require.NoError(t, manager.Shutdown(ctx, config.Database, options))
+		currentMode = options.Mode
+	}
 	header := func(t *testing.T) string {
 		t.Helper()
 		var out bytes.Buffer
@@ -196,7 +201,7 @@ func TestServiceMaintenanceIntegration(t *testing.T) {
 						set(t, fbservice.DatabaseProperties{OnlineMode: fbservice.DatabaseModeNormal})
 						checkMode(t, fbservice.DatabaseModeNormal)
 					})
-					set(t, fbservice.DatabaseProperties{Shutdown: &fbservice.ShutdownOptions{Mode: mode, Method: method, Timeout: 1}})
+					shutdown(t, fbservice.ShutdownOptions{Mode: mode, Method: method, Timeout: 1})
 					checkMode(t, mode)
 				})
 			}
@@ -208,7 +213,7 @@ func TestServiceMaintenanceIntegration(t *testing.T) {
 						set(t, fbservice.DatabaseProperties{OnlineMode: fbservice.DatabaseModeNormal})
 					}
 				})
-				set(t, fbservice.DatabaseProperties{Shutdown: &fbservice.ShutdownOptions{Mode: fbservice.DatabaseModeFull, Method: fbservice.ShutdownForce}})
+				shutdown(t, fbservice.ShutdownOptions{Mode: fbservice.DatabaseModeFull, Method: fbservice.ShutdownForce})
 				set(t, fbservice.DatabaseProperties{OnlineMode: mode})
 				checkMode(t, mode)
 			})
@@ -216,12 +221,12 @@ func TestServiceMaintenanceIntegration(t *testing.T) {
 		require.Equal(t, 1, queryInt(t, "select count(*) from MAINT_DATA"))
 	})
 	t.Run("sweep advances oldest transaction", func(t *testing.T) {
-		for name, options := range map[string]fbservice.RepairOptions{
-			"defaults": {Operation: fbservice.RepairSweep},
-			"timeout":  {Operation: fbservice.RepairSweep, SweepTimeout: 2},
+		for name, options := range map[string]fbservice.SweepOptions{
+			"defaults": {},
+			"timeout":  {Timeout: 2},
 		} {
 			t.Run(name, func(t *testing.T) {
-				if options.SweepTimeout > 0 {
+				if options.Timeout > 0 {
 					requireMaintenanceFeature(t, server, caps.sweepTimeout, "sweep timeout")
 				}
 				c, err := fbx.ConnectConfig(ctx, config)
@@ -240,7 +245,7 @@ func TestServiceMaintenanceIntegration(t *testing.T) {
 					return n
 				}
 				before := oldest()
-				require.NoError(t, manager.Repair(ctx, config.Database, options))
+				require.NoError(t, manager.Sweep(ctx, config.Database, options))
 				require.Greater(t, oldest(), before)
 				require.Equal(t, 0, queryInt(t, "select count(*) from MAINT_DATA where ID=999"))
 			})
@@ -260,7 +265,15 @@ func TestServiceMaintenanceIntegration(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				var out bytes.Buffer
 				options.Output = &out
-				require.NoError(t, manager.Repair(ctx, config.Database, options), "operation %d: %s", options.Operation, out.String())
+				var err error
+				if options.Operation == fbservice.RepairValidate {
+					err = manager.Validate(ctx, config.Database, fbservice.ValidateOptions{
+						Full: options.Full, ReadOnly: options.ReadOnly, IgnoreChecksums: options.IgnoreChecksums, Output: &out,
+					})
+				} else {
+					err = manager.Repair(ctx, config.Database, options)
+				}
+				require.NoError(t, err, "operation %d: %s", options.Operation, out.String())
 				require.Equal(t, 1, queryInt(t, "select count(*) from MAINT_DATA"))
 			})
 		}

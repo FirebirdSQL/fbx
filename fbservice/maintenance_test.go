@@ -198,6 +198,15 @@ type maintenanceCall func(context.Context, *fbservice.Manager, string) error
 
 func maintenanceCalls() map[string]maintenanceCall {
 	return map[string]maintenanceCall{
+		"validate": func(ctx context.Context, m *fbservice.Manager, db string) error {
+			return m.Validate(ctx, db)
+		},
+		"sweep": func(ctx context.Context, m *fbservice.Manager, db string) error {
+			return m.Sweep(ctx, db)
+		},
+		"shutdown": func(ctx context.Context, m *fbservice.Manager, db string) error {
+			return m.Shutdown(ctx, db, fbservice.ShutdownOptions{Mode: fbservice.DatabaseModeFull, Method: fbservice.ShutdownForce})
+		},
 		"repair": func(ctx context.Context, m *fbservice.Manager, db string) error {
 			return m.Repair(ctx, db, fbservice.RepairOptions{Operation: fbservice.RepairValidate})
 		},

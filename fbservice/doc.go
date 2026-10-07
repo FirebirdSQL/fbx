@@ -78,33 +78,38 @@ their zero values selects the server's default data and index analysis.
 Managers do not write to standard output unless an operation explicitly
 receives os.Stdout as its output.
 
-Run gfix maintenance with Repair:
+Validate a database with Validate:
 
-	err = manager.Repair(ctx, database, fbservice.RepairOptions{
-		Operation: fbservice.RepairValidate,
-		Full:      true,
-		ReadOnly:  true,
-		Output:    os.Stdout,
+	err = manager.Validate(ctx, database, fbservice.ValidateOptions{
+		Full:     true,
+		ReadOnly: true,
+		Output:   os.Stdout,
 	})
 
-Repair also supports RepairSweep, RepairMend, RepairKillShadows,
+Validate and Sweep accept at most one options value. Omitting it selects the
+server defaults and discards service output. Validation may repair minor damage
+unless ReadOnly is set. Inspect validation reports even if the call succeeds.
+
+Repair remains available for all maintenance actions, including RepairValidate,
+RepairSweep, RepairMend, RepairKillShadows,
 RepairUpgradeODS and RepairFixICU. Mend can discard damaged records.
 ODS upgrades require server support (Firebird 5+); ICU repair requires
-Firebird 3+. Unsupported actions return server errors. Validation reports should
-be inspected even if the call succeeds.
+Firebird 3+. Unsupported actions return server errors.
 
 Sweep supports parallel execution on Firebird 5+:
 
-	err = manager.Repair(ctx, database, fbservice.RepairOptions{
-		Operation:       fbservice.RepairSweep,
+	err = manager.Sweep(ctx, database, fbservice.SweepOptions{
 		ParallelWorkers: 4,
 	})
+
+For a sweep using the server defaults, call manager.Sweep(ctx, database).
 
 ParallelWorkers accepts 0..32767; zero omits the parameter. Server configuration
 may impose a lower limit. For compatibility, sweep uses a legacy parameter on
 server versions before 5 and the standard parameter on 5+.
 
-SweepTimeout is an optional server extension that limits sweep in whole seconds.
+SweepOptions.Timeout (RepairOptions.SweepTimeout) is an optional server extension
+that limits sweep in whole seconds.
 It requires server support and is sent only on server versions 6+; on older
 servers it is omitted. Its range is 0..2147483 seconds, with zero omitting the
 limit. This is independent of the context deadline.
@@ -122,11 +127,9 @@ PageBuffers, SQLDialect, ReserveSpace, Shutdown and OnlineMode. ActivateShadow
 uses the shadow file path as the database argument. For example, shut down a
 database immediately and later return it to normal operation:
 
-	err = manager.SetDatabaseProperties(ctx, database, fbservice.DatabaseProperties{
-		Shutdown: &fbservice.ShutdownOptions{
-			Mode:   fbservice.DatabaseModeFull,
-			Method: fbservice.ShutdownForce,
-		},
+	err = manager.Shutdown(ctx, database, fbservice.ShutdownOptions{
+		Mode:   fbservice.DatabaseModeFull,
+		Method: fbservice.ShutdownForce,
 	})
 	err = manager.SetDatabaseProperties(ctx, database, fbservice.DatabaseProperties{
 		OnlineMode: fbservice.DatabaseModeNormal,

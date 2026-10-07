@@ -86,8 +86,9 @@ const (
 	ShutdownDenyTransactions
 )
 
-// ShutdownOptions controls a database shutdown. Timeout is in whole seconds;
-// zero requests immediate shutdown. Mode and Method must be set explicitly.
+// ShutdownOptions controls [Manager.Shutdown] or DatabaseProperties.Shutdown.
+// Timeout is in whole seconds; zero requests immediate shutdown.
+// Mode and Method must be set explicitly.
 type ShutdownOptions struct {
 	Mode    DatabaseMode
 	Method  ShutdownMethod
@@ -119,6 +120,7 @@ type DatabaseProperties struct {
 }
 
 // Repair performs a gfix action on database, a server-side path or alias.
+// Use [Manager.Validate] or [Manager.Sweep] for those common actions.
 // It validates options before connecting and closes the service connection
 // before returning. Validation may repair minor damage unless ReadOnly is set.
 // Mend may lose data by marking corrupt records unavailable. UpgradeODS and
@@ -173,6 +175,7 @@ func (m *Manager) Repair(ctx context.Context, database string, options RepairOpt
 
 // SetDatabaseProperties changes one database property through gfix. The target
 // is a server-side path or alias (the shadow path when ActivateShadow is set).
+// Use [Manager.Shutdown] to request shutdown directly.
 // It validates the request before connecting and closes its service connection.
 // Unsupported options return server errors. Output and cancellation behave as
 // in Repair. Shutdown.Timeout is a server timeout, independent of ctx.
