@@ -154,12 +154,13 @@ func TestManagerMaintenanceValidation(t *testing.T) {
 	ctx := context.Background()
 	for _, options := range []fbservice.RepairOptions{
 		{}, {Operation: 255}, {Operation: fbservice.RepairSweep, Full: true},
-		{Operation: fbservice.RepairMend, ReadOnly: true}, {Operation: fbservice.RepairSweep, IgnoreChecksums: true},
+		{Operation: fbservice.RepairMend, ReadOnly: true}, {Operation: fbservice.RepairFixICU, IgnoreChecksums: true},
 		{Operation: fbservice.RepairValidate, ParallelWorkers: 1}, {Operation: fbservice.RepairSweep, ParallelWorkers: -1},
 		{Operation: fbservice.RepairSweep, SweepTimeout: -1}, {Operation: fbservice.RepairSweep, SweepTimeout: 2147484},
 		{Operation: fbservice.RepairFixICU, SweepTimeout: 1}, {Operation: fbservice.RepairValidate, SweepTimeout: 1},
 	} {
 		manager, conn := newTestManager(t)
+		options.Output = io.Discard
 		require.Error(t, manager.Repair(ctx, "db", options))
 		require.False(t, conn.opened)
 	}
@@ -199,7 +200,7 @@ type maintenanceCall func(context.Context, *fbservice.Manager, string) error
 func maintenanceCalls() map[string]maintenanceCall {
 	return map[string]maintenanceCall{
 		"validate": func(ctx context.Context, m *fbservice.Manager, db string) error {
-			return m.Validate(ctx, db)
+			return m.Validate(ctx, db, fbservice.ValidateOptions{Output: io.Discard})
 		},
 		"sweep": func(ctx context.Context, m *fbservice.Manager, db string) error {
 			return m.Sweep(ctx, db)
@@ -208,7 +209,7 @@ func maintenanceCalls() map[string]maintenanceCall {
 			return m.Shutdown(ctx, db, fbservice.ShutdownOptions{Mode: fbservice.DatabaseModeFull, Method: fbservice.ShutdownForce})
 		},
 		"repair": func(ctx context.Context, m *fbservice.Manager, db string) error {
-			return m.Repair(ctx, db, fbservice.RepairOptions{Operation: fbservice.RepairValidate})
+			return m.Repair(ctx, db, fbservice.RepairOptions{Operation: fbservice.RepairValidate, Output: io.Discard})
 		},
 		"properties": func(ctx context.Context, m *fbservice.Manager, db string) error {
 			return m.SetDatabaseProperties(ctx, db, fbservice.DatabaseProperties{SQLDialect: 3})

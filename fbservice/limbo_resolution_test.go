@@ -65,12 +65,29 @@ func TestManagerResolveLimboTransactionChecked(t *testing.T) {
 		})
 	}
 
-	t.Run("nil output", func(t *testing.T) {
-		manager, operation, _, _ := newLimboResolutionManager(t, nil)
-		result, err := manager.ResolveLimboTransactionChecked(context.Background(), "db", 42, fbservice.LimboRecover, nil)
+	t.Run("optional output", func(t *testing.T) {
+		for _, action := range []fbservice.LimboTransactionAction{fbservice.LimboCommit, fbservice.LimboRollback} {
+			manager, operation, _, _ := newLimboResolutionManager(t, nil)
+			result, err := manager.ResolveLimboTransactionChecked(context.Background(), "db", 42, action, nil)
+			require.NoError(t, err)
+			require.Equal(t, fbservice.LimboResolutionNotListed, result.Status)
+			require.Nil(t, operation.limboOutput)
+		}
+	})
+	t.Run("explicitly discarded recovery report", func(t *testing.T) {
+		manager, operation, _, events := newLimboResolutionManager(t, nil)
+		result, err := manager.ResolveLimboTransactionChecked(context.Background(), "db", 42, fbservice.LimboRecover, io.Discard)
 		require.NoError(t, err)
 		require.Equal(t, fbservice.LimboResolutionNotListed, result.Status)
-		require.Nil(t, operation.limboOutput)
+		require.Equal(t, io.Discard, operation.limboOutput)
+		require.Equal(t, []string{"open action", "resolve", "close action", "open check", "check", "close check"}, *events)
+	})
+	t.Run("missing recovery report", func(t *testing.T) {
+		manager, _, _, events := newLimboResolutionManager(t, nil)
+		result, err := manager.ResolveLimboTransactionChecked(context.Background(), "db", 42, fbservice.LimboRecover, nil)
+		require.ErrorContains(t, err, "output must not be nil")
+		require.Equal(t, fbservice.LimboResolution{}, result)
+		require.Empty(t, *events, "neither the action nor the check should open a connection")
 	})
 }
 
@@ -153,7 +170,7 @@ func TestManagerResolveLimboTransactionCheckedCancellation(t *testing.T) {
 				check.cancelOnCall = cancel
 				wantEvents = []string{"open action", "resolve", "close action", "open check", "check", "close check"}
 			}
-			result, err := manager.ResolveLimboTransactionChecked(ctx, "db", 42, fbservice.LimboRecover, nil)
+			result, err := manager.ResolveLimboTransactionChecked(ctx, "db", 42, fbservice.LimboRecover, io.Discard)
 			require.ErrorIs(t, err, context.Canceled)
 			require.Equal(t, fbservice.LimboResolution{}, result)
 			require.Equal(t, wantEvents, *events)

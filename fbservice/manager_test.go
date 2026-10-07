@@ -111,13 +111,13 @@ func TestManagerSupportsConcurrentOperations(t *testing.T) {
 				_, err := manager.LimboTransactionDetails(context.Background(), database)
 				errs <- err
 			case 8:
-				errs <- manager.Validate(context.Background(), database)
+				errs <- manager.Validate(context.Background(), database, fbservice.ValidateOptions{Output: io.Discard})
 			case 9:
 				errs <- manager.Sweep(context.Background(), database)
 			case 10:
 				errs <- manager.Shutdown(context.Background(), database, fbservice.ShutdownOptions{Mode: fbservice.DatabaseModeFull, Method: fbservice.ShutdownForce})
 			case 11:
-				_, err := manager.ResolveLimboTransactionChecked(context.Background(), database, 42, fbservice.LimboRecover, nil)
+				_, err := manager.ResolveLimboTransactionChecked(context.Background(), database, 42, fbservice.LimboRecover, io.Discard)
 				errs <- err
 			case 2:
 				errs <- manager.Statistics(context.Background(), database, fbservice.StatisticsOptions{Output: io.Discard})

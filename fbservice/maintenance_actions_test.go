@@ -14,8 +14,8 @@ func TestManagerMaintenanceActions(t *testing.T) {
 	ctx := context.Background()
 	t.Run("validate", func(t *testing.T) {
 		manager, conn := newTestManager(t)
-		require.NoError(t, manager.Validate(ctx, "db"))
-		require.Equal(t, fbconn.RepairOptions{Operation: fbconn.RepairValidate}, conn.repairOptions)
+		require.NoError(t, manager.Validate(ctx, "db", fbservice.ValidateOptions{Output: io.Discard}))
+		require.Equal(t, fbconn.RepairOptions{Operation: fbconn.RepairValidate, Output: io.Discard}, conn.repairOptions)
 		require.True(t, conn.closed)
 
 		manager, conn = newTestManager(t)
@@ -37,10 +37,10 @@ func TestManagerMaintenanceActions(t *testing.T) {
 
 		manager, conn = newTestManager(t)
 		require.NoError(t, manager.Sweep(ctx, "db", fbservice.SweepOptions{
-			ParallelWorkers: 32767, Timeout: 2147483, Output: io.Discard,
+			IgnoreChecksums: true, ParallelWorkers: 32767, Timeout: 2147483, Output: io.Discard,
 		}))
 		require.Equal(t, fbconn.RepairOptions{
-			Operation: fbconn.RepairSweep, ParallelWorkers: 32767, SweepTimeout: 2147483, Output: io.Discard,
+			Operation: fbconn.RepairSweep, IgnoreChecksums: true, ParallelWorkers: 32767, SweepTimeout: 2147483, Output: io.Discard,
 		}, conn.repairOptions)
 		require.Equal(t, "db", conn.expectedDatabase)
 		require.Equal(t, "db", conn.database)

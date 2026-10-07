@@ -6,13 +6,14 @@ import (
 	"io"
 )
 
-// ValidateOptions controls [Manager.Validate]. The zero value selects page
-// validation and discards the report. Validation may repair minor damage unless
-// ReadOnly is set. Inspect the report even if the call succeeds.
+// ValidateOptions controls [Manager.Validate]. Output must be set explicitly.
+// Validation may repair minor damage unless ReadOnly is set.
+// Inspect the report even if the call succeeds.
 type ValidateOptions struct {
-	// Output receives the report. Nil discards it. Writes are synchronous;
-	// shared writers must be safe for concurrent use. The caller owns Output,
-	// which may contain a partial report on error.
+	// Output receives the report and must not be nil. Use io.Discard to explicitly
+	// discard the report. Writes are synchronous; shared writers must be safe
+	// for concurrent use. The caller owns Output, which may contain a partial
+	// report on error.
 	Output io.Writer
 	// Full validates records as well as pages.
 	Full bool
@@ -24,6 +25,7 @@ type ValidateOptions struct {
 
 // Validate validates database, a server-side path or alias. It accepts at most
 // one [ValidateOptions] value and runs [Manager.Repair] with RepairValidate.
+// Options must include a non-nil Output; use io.Discard to discard the report.
 // Request validation, connection ownership and cancellation behave as in Repair.
 func (m *Manager) Validate(ctx context.Context, database string, options ...ValidateOptions) error {
 	if len(options) > 1 {
@@ -49,6 +51,8 @@ type SweepOptions struct {
 	// shared writers must be safe for concurrent use. The caller owns Output,
 	// which may contain partial output on error.
 	Output io.Writer
+	// IgnoreChecksums ignores checksum errors while reading database pages.
+	IgnoreChecksums bool
 	// ParallelWorkers requests 0..32767 workers. Zero omits the parameter.
 	// The server configuration may impose a lower limit. Unsupported parallel
 	// sweep requests return server errors.
@@ -74,6 +78,7 @@ func (m *Manager) Sweep(ctx context.Context, database string, options ...SweepOp
 	return m.Repair(ctx, database, RepairOptions{
 		Operation:       RepairSweep,
 		Output:          option.Output,
+		IgnoreChecksums: option.IgnoreChecksums,
 		ParallelWorkers: option.ParallelWorkers,
 		SweepTimeout:    option.Timeout,
 	})

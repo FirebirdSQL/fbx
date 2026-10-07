@@ -20,13 +20,14 @@ func TestBuildRepairActionSPB(t *testing.T) {
 		options RepairOptions
 		want    []byte
 	}{
-		"validate":              {RepairOptions{Operation: RepairValidate}, []byte{108, 1, 0, 0, 0}},
-		"full read only ignore": {RepairOptions{Operation: RepairValidate, Full: true, ReadOnly: true, IgnoreChecksums: true}, []byte{108, 177, 0, 0, 0}},
-		"sweep":                 {RepairOptions{Operation: RepairSweep, ParallelWorkers: 1}, []byte{108, 2, 0, 0, 0, 52, 1, 0, 0, 0}},
-		"mend":                  {RepairOptions{Operation: RepairMend}, []byte{108, 4, 0, 0, 0}},
-		"kill shadows":          {RepairOptions{Operation: RepairKillShadows}, []byte{108, 64, 0, 0, 0}},
-		"ICU":                   {RepairOptions{Operation: RepairFixICU}, []byte{108, 0, 8, 0, 0}},
-		"ODS":                   {RepairOptions{Operation: RepairUpgradeODS}, []byte{108, 0, 16, 0, 0}},
+		"validate":               {RepairOptions{Operation: RepairValidate}, []byte{108, 1, 0, 0, 0}},
+		"full read only ignore":  {RepairOptions{Operation: RepairValidate, Full: true, ReadOnly: true, IgnoreChecksums: true}, []byte{108, 177, 0, 0, 0}},
+		"sweep":                  {RepairOptions{Operation: RepairSweep, ParallelWorkers: 1}, []byte{108, 2, 0, 0, 0, 52, 1, 0, 0, 0}},
+		"sweep ignore checksums": {RepairOptions{Operation: RepairSweep, IgnoreChecksums: true}, []byte{108, 34, 0, 0, 0}},
+		"mend":                   {RepairOptions{Operation: RepairMend}, []byte{108, 4, 0, 0, 0}},
+		"kill shadows":           {RepairOptions{Operation: RepairKillShadows}, []byte{108, 64, 0, 0, 0}},
+		"ICU":                    {RepairOptions{Operation: RepairFixICU}, []byte{108, 0, 8, 0, 0}},
+		"ODS":                    {RepairOptions{Operation: RepairUpgradeODS}, []byte{108, 0, 16, 0, 0}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			got, err := buildRepairActionSPB("db", tt.options, ServerVersion{Major: 6})

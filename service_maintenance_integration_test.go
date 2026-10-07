@@ -222,8 +222,9 @@ func TestServiceMaintenanceIntegration(t *testing.T) {
 	})
 	t.Run("sweep advances oldest transaction", func(t *testing.T) {
 		for name, options := range map[string]fbservice.SweepOptions{
-			"defaults": {},
-			"timeout":  {Timeout: 2},
+			"defaults":         {},
+			"timeout":          {Timeout: 2},
+			"ignore checksums": {IgnoreChecksums: true},
 		} {
 			t.Run(name, func(t *testing.T) {
 				if options.Timeout > 0 {
@@ -294,7 +295,10 @@ func TestServiceMaintenanceIntegration(t *testing.T) {
 			require.ErrorAs(t, err, &serverErr)
 		}
 		require.True(t, err != nil || report.Len() > 0, "the corrupt fixture must produce validation diagnostics")
-		require.NoError(t, manager.Repair(ctx, damaged, fbservice.RepairOptions{Operation: fbservice.RepairMend, IgnoreChecksums: true}))
+		var mendReport bytes.Buffer
+		require.NoError(t, manager.Repair(ctx, damaged, fbservice.RepairOptions{
+			Operation: fbservice.RepairMend, IgnoreChecksums: true, Output: &mendReport,
+		}), "%s", mendReport.String())
 		backup := filepath.Join(directory, "mended.fbk")
 		require.NoError(t, manager.Backup(ctx, damaged, backup, fbservice.BackupOptions{IgnoreChecksums: true}))
 		info, err := os.Stat(backup)

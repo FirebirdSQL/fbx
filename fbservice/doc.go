@@ -86,15 +86,20 @@ Validate a database with Validate:
 		Output:   os.Stdout,
 	})
 
-Validate and Sweep accept at most one options value. Omitting it selects the
-server defaults and discards service output. Validation may repair minor damage
-unless ReadOnly is set. Inspect validation reports even if the call succeeds.
+Validate and Sweep accept at most one options value. Validate requires a
+non-nil Output; use io.Discard to explicitly discard the report. Sweep without
+options selects the server defaults and discards service output. Validation may
+repair minor damage unless ReadOnly is set. Inspect validation reports even if
+the call succeeds.
 
 Repair remains available for all maintenance actions, including RepairValidate,
 RepairSweep, RepairMend, RepairKillShadows,
 RepairUpgradeODS and RepairFixICU. Mend can discard damaged records.
 ODS upgrades require server support (Firebird 5+); ICU repair requires
 Firebird 3+. Unsupported actions return server errors.
+RepairValidate and RepairMend require a non-nil Output; use io.Discard to
+explicitly discard their reports. IgnoreChecksums is accepted for validation,
+sweep and mend, including through ValidateOptions and SweepOptions.
 
 Sweep supports parallel execution on Firebird 5+:
 
@@ -145,7 +150,10 @@ The driver does not infer committed or rolled-back states from missing fields.
 Advice is the server's recommendation, not confirmation of a completed action.
 
 After deciding the appropriate outcome, pass an ID to ResolveLimboTransaction
-with LimboCommit, LimboRollback or LimboRecover and an optional output writer.
+with LimboCommit, LimboRollback or LimboRecover. LimboRecover requires a non-nil
+output writer; use io.Discard to explicitly discard the report. Output is
+optional for LimboCommit and LimboRollback. The same rule applies to
+ResolveLimboTransactionChecked.
 A nil error confirms that the service action completed without an error.
 Automatic recovery uses other participants' states and can leave a transaction
 unresolved.

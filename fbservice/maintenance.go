@@ -24,13 +24,15 @@ const (
 
 // RepairOptions controls [Manager.Repair]. Operation must be set explicitly.
 // Full and ReadOnly apply only to validation. IgnoreChecksums applies to
-// validation and mend. ParallelWorkers applies to sweep and ICU repair;
+// validation, sweep and mend. ParallelWorkers applies to sweep and ICU repair;
 // SweepTimeout applies only to sweep.
 // Output belongs to the caller and may contain a partial report on error.
 // Shared writers must be safe for concurrent use.
 type RepairOptions struct {
 	Operation RepairOperation
-	// Output receives the report. Nil discards it. Writes are synchronous.
+	// Output receives the report and is required for RepairValidate and RepairMend.
+	// Use io.Discard to explicitly discard those reports. For other actions, nil
+	// discards service output. Writes are synchronous.
 	Output          io.Writer
 	Full            bool // Validate records as well as pages.
 	ReadOnly        bool // Check without repairing the database.
@@ -138,8 +140,8 @@ func (m *Manager) Repair(ctx context.Context, database string, options RepairOpt
 	if (options.Full || options.ReadOnly) && options.Operation != RepairValidate {
 		return errors.New("full and read-only repair options require validation")
 	}
-	if options.IgnoreChecksums && options.Operation != RepairValidate && options.Operation != RepairMend {
-		return errors.New("ignore checksums requires validation or mend")
+	if options.IgnoreChecksums && options.Operation != RepairValidate && options.Operation != RepairSweep && options.Operation != RepairMend {
+		return errors.New("ignore checksums requires validation, sweep or mend")
 	}
 	// gfix stores the worker count in a signed 16-bit field.
 	if options.ParallelWorkers < 0 || options.ParallelWorkers > 32767 {
@@ -153,6 +155,9 @@ func (m *Manager) Repair(ctx context.Context, database string, options RepairOpt
 	}
 	if options.SweepTimeout != 0 && options.Operation != RepairSweep {
 		return errors.New("sweep timeout requires sweep")
+	}
+	if (options.Operation == RepairValidate || options.Operation == RepairMend) && options.Output == nil {
+		return errors.New("repair output must not be nil for validation or mend; use io.Discard to discard the report")
 	}
 	if err := ctx.Err(); err != nil {
 		return err
@@ -177,8 +182,9 @@ func (m *Manager) Repair(ctx context.Context, database string, options RepairOpt
 // is a server-side path or alias (the shadow path when ActivateShadow is set).
 // Use [Manager.Shutdown] to request shutdown directly.
 // It validates the request before connecting and closes its service connection.
-// Unsupported options return server errors. Output and cancellation behave as
-// in Repair. Shutdown.Timeout is a server timeout, independent of ctx.
+// Unsupported options return server errors. Output may be nil to discard service
+// output. Cancellation behaves as in Repair. Shutdown.Timeout is a server timeout,
+// independent of ctx.
 func (m *Manager) SetDatabaseProperties(ctx context.Context, database string, options DatabaseProperties) (err error) {
 	if err := validateMaintenanceDatabase(database); err != nil {
 		return err
@@ -311,11 +317,12 @@ func (m *Manager) LimboTransactions(ctx context.Context, database string) (ids [
 }
 
 // ResolveLimboTransaction commits, rolls back or automatically recovers a
-// prepared transaction. ID must be positive. Output may be nil to discard the
-// report. A nil error only confirms that the service action completed without
-// an error; recovery can leave a transaction unresolved. Use
-// [Manager.ResolveLimboTransactionChecked] for a structured result after checking
-// the limbo list. Unsupported actions return server errors.
+// prepared transaction. ID must be positive. LimboRecover requires a non-nil
+// output; use io.Discard to explicitly discard the report. For LimboCommit and
+// LimboRollback, output may be nil. A nil error only confirms that the service
+// action completed without an error; recovery can leave a transaction unresolved.
+// Use [Manager.ResolveLimboTransactionChecked] for a structured result after
+// checking the limbo list. Unsupported actions return server errors.
 // Resource ownership and cancellation behave as in Repair.
 func (m *Manager) ResolveLimboTransaction(ctx context.Context, database string, id int64, action LimboTransactionAction, output io.Writer) (err error) {
 	if err := validateMaintenanceDatabase(database); err != nil {
@@ -326,6 +333,9 @@ func (m *Manager) ResolveLimboTransaction(ctx context.Context, database string, 
 	}
 	if action < LimboCommit || action > LimboRecover {
 		return errors.New("invalid limbo transaction action")
+	}
+	if action == LimboRecover && output == nil {
+		return errors.New("limbo recovery output must not be nil; use io.Discard to discard the report")
 	}
 	if err := ctx.Err(); err != nil {
 		return err
