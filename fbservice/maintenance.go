@@ -285,6 +285,7 @@ const (
 
 // LimboTransactions returns top-level IDs of transactions in limbo, including
 // 64-bit IDs. Participant IDs are not returned as separate transactions.
+// Use [Manager.LimboTransactionDetails] for participant states and recovery advice.
 // On error no list is returned. The service connection is closed before return.
 func (m *Manager) LimboTransactions(ctx context.Context, database string) (ids []int64, err error) {
 	if err := validateMaintenanceDatabase(database); err != nil {

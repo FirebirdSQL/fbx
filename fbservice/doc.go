@@ -132,9 +132,17 @@ database immediately and later return it to normal operation:
 		OnlineMode: fbservice.DatabaseModeNormal,
 	})
 
-LimboTransactions returns transaction IDs (including 64-bit IDs). After deciding
-the appropriate outcome, pass an ID to ResolveLimboTransaction with LimboCommit,
-LimboRollback or LimboRecover and an optional output writer. Automatic recovery
+LimboTransactions returns transaction IDs (including 64-bit IDs).
+LimboTransactionDetails returns structured information about all transactions:
+their top-level ID, the Distributed flag, Participants and recovery Advice.
+Each participant has an ID, State, HostSite, RemoteSite and DatabasePath.
+Missing or unavailable states are LimboStateUnknown; missing or unavailable
+advice is LimboAdviceUnknown. Missing participant IDs and strings are zero values.
+The driver does not infer committed or rolled-back states from missing fields.
+Advice is the server's recommendation, not confirmation of a completed action.
+
+After deciding the appropriate outcome, pass an ID to ResolveLimboTransaction
+with LimboCommit, LimboRollback or LimboRecover and an optional output writer. Automatic recovery
 uses other participants' states and can leave a transaction unresolved. Inspect
 the report and query the list again. Context cancellation does not roll back
 maintenance actions already performed by the server.

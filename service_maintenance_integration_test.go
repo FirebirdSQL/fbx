@@ -339,15 +339,24 @@ func TestServiceMaintenanceIntegration(t *testing.T) {
 		ids, err := manager.LimboTransactions(ctx, config.Database)
 		require.NoError(t, err)
 		require.Empty(t, ids)
+		details, err := manager.LimboTransactionDetails(ctx, config.Database)
+		require.NoError(t, err)
+		require.Empty(t, details)
 		for _, action := range []fbservice.LimboTransactionAction{fbservice.LimboCommit, fbservice.LimboRollback} {
 			id := prepareMaintenanceTransaction(t, ctx, config.Config, config.Database)
 			ids, err = manager.LimboTransactions(ctx, config.Database)
 			require.NoError(t, err)
 			require.Equal(t, []int64{id}, ids)
+			details, err = manager.LimboTransactionDetails(ctx, config.Database)
+			require.NoError(t, err)
+			require.Equal(t, []fbservice.LimboTransaction{{ID: id}}, details)
 			require.NoError(t, manager.ResolveLimboTransaction(ctx, config.Database, id, action, nil))
 			ids, err = manager.LimboTransactions(ctx, config.Database)
 			require.NoError(t, err)
 			require.Empty(t, ids)
+			details, err = manager.LimboTransactionDetails(ctx, config.Database)
+			require.NoError(t, err)
+			require.Empty(t, details)
 			want := 0
 			if action == fbservice.LimboCommit {
 				want = 1
@@ -386,6 +395,30 @@ func TestServiceMaintenanceIntegration(t *testing.T) {
 				ids, err := manager.LimboTransactions(ctx, config.Database)
 				require.NoError(t, err)
 				require.Equal(t, []int64{id}, ids)
+				details, err := manager.LimboTransactionDetails(ctx, config.Database)
+				require.NoError(t, err)
+				require.Len(t, details, 1)
+				require.Equal(t, id, details[0].ID)
+				require.True(t, details[0].Distributed)
+				require.Len(t, details[0].Participants, 2)
+				wantAdvice := fbservice.LimboAdviceRollback
+				wantState := fbservice.LimboStateRolledBack
+				if commit {
+					wantAdvice, wantState = fbservice.LimboAdviceCommit, fbservice.LimboStateCommitted
+				}
+				require.Equal(t, wantAdvice, details[0].Advice)
+				states := make([]fbservice.LimboTransactionState, 0, 2)
+				for _, participant := range details[0].Participants {
+					require.Positive(t, participant.ID)
+					require.NotEmpty(t, participant.DatabasePath)
+					states = append(states, participant.State)
+				}
+				// A completed participant may no longer have an RDB$TRANSACTIONS
+				// record. The service then omits its state instead of confirming it.
+				if slices.Contains(states, fbservice.LimboStateUnknown) {
+					wantState = fbservice.LimboStateUnknown
+				}
+				require.ElementsMatch(t, []fbservice.LimboTransactionState{fbservice.LimboStatePrepared, wantState}, states)
 				var output bytes.Buffer
 				require.NoError(t, manager.ResolveLimboTransaction(ctx, config.Database, id, fbservice.LimboRecover, &output), output.String())
 				ids, err = manager.LimboTransactions(ctx, config.Database)

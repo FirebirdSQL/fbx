@@ -24,6 +24,10 @@ func (c *fakeServiceConnection) LimboTransactions(_ context.Context, database st
 	c.database = database
 	return []int64{42, 1 << 40}, c.maintenanceErr
 }
+func (c *fakeServiceConnection) LimboTransactionDetails(_ context.Context, database string) ([]fbconn.LimboTransaction, error) {
+	c.database = database
+	return c.limboDetails, c.maintenanceErr
+}
 func (c *fakeServiceConnection) ResolveLimboTransaction(_ context.Context, database string, id int64, action fbconn.LimboTransactionAction, output io.Writer) error {
 	c.database, c.transactionID, c.limboAction, c.limboOutput = database, id, action, output
 	return c.maintenanceErr
@@ -35,6 +39,9 @@ func (c *concurrentServiceConnection) SetDatabaseProperties(_ context.Context, d
 	return c.recordOperation(database)
 }
 func (c *concurrentServiceConnection) LimboTransactions(_ context.Context, database string) ([]int64, error) {
+	return nil, c.recordOperation(database)
+}
+func (c *concurrentServiceConnection) LimboTransactionDetails(_ context.Context, database string) ([]fbconn.LimboTransaction, error) {
 	return nil, c.recordOperation(database)
 }
 func (c *concurrentServiceConnection) ResolveLimboTransaction(_ context.Context, database string, _ int64, _ fbconn.LimboTransactionAction, _ io.Writer) error {
@@ -193,6 +200,10 @@ func maintenanceCalls() map[string]maintenanceCall {
 			_, err := m.LimboTransactions(ctx, db)
 			return err
 		},
+		"limbo details": func(ctx context.Context, m *fbservice.Manager, db string) error {
+			_, err := m.LimboTransactionDetails(ctx, db)
+			return err
+		},
 		"resolve": func(ctx context.Context, m *fbservice.Manager, db string) error {
 			return m.ResolveLimboTransaction(ctx, db, 42, fbservice.LimboCommit, nil)
 		},
@@ -307,6 +318,11 @@ func (c *maintenanceCancelConnection) SetDatabaseProperties(ctx context.Context,
 }
 
 func (c *maintenanceCancelConnection) LimboTransactions(ctx context.Context, _ string) ([]int64, error) {
+	c.cancel()
+	return nil, ctx.Err()
+}
+
+func (c *maintenanceCancelConnection) LimboTransactionDetails(ctx context.Context, _ string) ([]fbconn.LimboTransaction, error) {
 	c.cancel()
 	return nil, ctx.Err()
 }

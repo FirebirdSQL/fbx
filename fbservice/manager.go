@@ -19,6 +19,7 @@ type serviceConnection interface {
 	Repair(context.Context, string, fbconn.RepairOptions) error
 	SetDatabaseProperties(context.Context, string, fbconn.DatabaseProperties) error
 	LimboTransactions(context.Context, string) ([]int64, error)
+	LimboTransactionDetails(context.Context, string) ([]fbconn.LimboTransaction, error)
 	ResolveLimboTransaction(context.Context, string, int64, fbconn.LimboTransactionAction, io.Writer) error
 	serviceCloser
 }

@@ -312,6 +312,7 @@ type fakeServiceConnection struct {
 	transactionID     int64
 	limboAction       fbconn.LimboTransactionAction
 	limboOutput       io.Writer
+	limboDetails      []fbconn.LimboTransaction
 	opened            bool
 	closed            bool
 	expectedDatabase  string

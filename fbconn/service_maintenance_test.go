@@ -143,9 +143,7 @@ func TestBuildResolveLimboActionSPB(t *testing.T) {
 
 func TestLimboTransactionWriterFragments(t *testing.T) {
 	// Single and distributed 32/64-bit IDs, participant IDs, all variable metadata.
-	data := []byte{19, 255, 255, 255, 255, 20, 42, 0, 0, 0, 18, 7, 0, 0, 0, 21, 22, 29, 30,
-		26, 3, 0, 'a', 'b', 'c', 27, 0, 0, 28, 2, 0, 'd', 'b', 47, 0, 0, 0, 0, 0, 1, 0, 0,
-		48, 0, 0, 0, 0, 0, 2, 0, 0, 46, 1, 0, 0, 0, 0, 0, 0, 0}
+	data, want := limboDetailsProbeData()
 	for size := 1; size <= len(data); size++ {
 		var w limboTransactionWriter
 		for offset := 0; offset < len(data); offset += size {
@@ -155,7 +153,7 @@ func TestLimboTransactionWriterFragments(t *testing.T) {
 			require.Equal(t, len(p), n)
 		}
 		require.Empty(t, w.pending)
-		require.Equal(t, []int64{math.MaxUint32, 42, 1 << 40, 2 << 40}, w.ids)
+		require.Equal(t, want, w.transactions)
 	}
 	for _, data := range [][]byte{{255}, {47, 255, 255, 255, 255, 255, 255, 255, 255}} {
 		var w limboTransactionWriter
@@ -200,6 +198,7 @@ func TestServiceConnMaintenanceOutput(t *testing.T) {
 }
 
 func TestServiceConnLimboTransactions(t *testing.T) {
+	data, _ := limboDetailsProbeData()
 	for name, tt := range map[string]struct {
 		chunks  [][]byte
 		want    []int64
@@ -207,6 +206,7 @@ func TestServiceConnLimboTransactions(t *testing.T) {
 	}{
 		"empty":            {},
 		"fragmented":       {chunks: [][]byte{{19, 42}, {0, 0, 0, 47, 0}, {0, 0, 0, 0, 1, 0, 0}}, want: []int64{42, 1 << 40}},
+		"distributed":      {chunks: [][]byte{data}, want: []int64{math.MaxUint32, 42, 1 << 40, 2 << 40, 99, 100}},
 		"truncated ID":     {chunks: [][]byte{{19, 1, 0}}, wantErr: "truncated transaction information"},
 		"truncated string": {chunks: [][]byte{{26, 10, 0, 'a'}}, wantErr: "truncated transaction information"},
 		"unknown tag":      {chunks: [][]byte{{255}}, wantErr: "unknown limbo information tag"},
