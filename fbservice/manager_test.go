@@ -93,7 +93,7 @@ func TestManagerSupportsConcurrentOperations(t *testing.T) {
 
 			database := fmt.Sprintf("/data/employee-%d.fdb", i)
 			backupFile := fmt.Sprintf("/backup/employee-%d.fbk", i)
-			switch i % 8 {
+			switch i % 9 {
 			case 0:
 				errs <- manager.Backup(context.Background(), database, backupFile)
 			case 1:
@@ -110,6 +110,9 @@ func TestManagerSupportsConcurrentOperations(t *testing.T) {
 			case 7:
 				_, err := manager.LimboTransactionDetails(context.Background(), database)
 				errs <- err
+			case 8:
+				_, err := manager.ResolveLimboTransactionChecked(context.Background(), database, 42, fbservice.LimboRecover, nil)
+				errs <- err
 			case 2:
 				errs <- manager.Statistics(context.Background(), database, fbservice.StatisticsOptions{Output: io.Discard})
 			}
@@ -121,8 +124,11 @@ func TestManagerSupportsConcurrentOperations(t *testing.T) {
 	for err := range errs {
 		require.NoError(t, err)
 	}
-	require.Equal(t, int64(operationCount), opened.Load())
-	require.Equal(t, int64(operationCount), closed.Load())
+	// A checked resolution opens one connection for the action and another for
+	// the list query; each connection still runs just one service action.
+	wantConnections := int64(operationCount + operationCount/9)
+	require.Equal(t, wantConnections, opened.Load())
+	require.Equal(t, wantConnections, closed.Load())
 }
 
 type concurrentServiceConnection struct {

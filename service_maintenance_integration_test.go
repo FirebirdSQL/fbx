@@ -350,7 +350,10 @@ func TestServiceMaintenanceIntegration(t *testing.T) {
 			details, err = manager.LimboTransactionDetails(ctx, config.Database)
 			require.NoError(t, err)
 			require.Equal(t, []fbservice.LimboTransaction{{ID: id}}, details)
-			require.NoError(t, manager.ResolveLimboTransaction(ctx, config.Database, id, action, nil))
+			result, err := manager.ResolveLimboTransactionChecked(ctx, config.Database, id, action, nil)
+			require.NoError(t, err)
+			require.Equal(t, fbservice.LimboResolutionNotListed, result.Status)
+			require.Nil(t, result.Transaction)
 			ids, err = manager.LimboTransactions(ctx, config.Database)
 			require.NoError(t, err)
 			require.Empty(t, ids)
@@ -373,7 +376,9 @@ func TestServiceMaintenanceIntegration(t *testing.T) {
 			require.NoError(t, manager.ResolveLimboTransaction(cleanup, config.Database, id, fbservice.LimboRollback, nil))
 		})
 		var output bytes.Buffer
-		err := manager.ResolveLimboTransaction(ctx, config.Database, id, fbservice.LimboRecover, &output)
+		result, err := manager.ResolveLimboTransactionChecked(ctx, config.Database, id, fbservice.LimboRecover, &output)
+		require.Equal(t, fbservice.LimboResolutionUnknown, result.Status)
+		require.Nil(t, result.Transaction)
 		var serverErr *fbconn.FbError
 		require.ErrorAs(t, err, &serverErr, output.String())
 		// gfix can report the transaction prompt (message 91, no named constant)
@@ -420,7 +425,10 @@ func TestServiceMaintenanceIntegration(t *testing.T) {
 				}
 				require.ElementsMatch(t, []fbservice.LimboTransactionState{fbservice.LimboStatePrepared, wantState}, states)
 				var output bytes.Buffer
-				require.NoError(t, manager.ResolveLimboTransaction(ctx, config.Database, id, fbservice.LimboRecover, &output), output.String())
+				result, err := manager.ResolveLimboTransactionChecked(ctx, config.Database, id, fbservice.LimboRecover, &output)
+				require.NoError(t, err, output.String())
+				require.Equal(t, fbservice.LimboResolutionNotListed, result.Status)
+				require.Nil(t, result.Transaction)
 				ids, err = manager.LimboTransactions(ctx, config.Database)
 				require.NoError(t, err)
 				require.Empty(t, ids, output.String())

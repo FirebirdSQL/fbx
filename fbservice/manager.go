@@ -32,8 +32,10 @@ type connectServiceFunc func(context.Context, *fbconn.ServiceConfig) (serviceCon
 
 // Manager runs Firebird backup, restore, statistics and database maintenance services.
 //
-// A Manager is safe for concurrent use. Each operation opens and closes its
-// own service connection. Manager does not limit the number of concurrent
+// A Manager is safe for concurrent use. Each service action opens and closes
+// its own service connection. Checked limbo resolution uses two consecutive
+// connections: one for the action and one for its verification.
+// Manager does not limit the number of concurrent
 // service actions; callers are responsible for limiting them according to the
 // server's capacity.
 type Manager struct {
@@ -43,8 +45,8 @@ type Manager struct {
 
 // NewManager parses connString with [ParseConfig] and returns a service manager.
 //
-// Construction does not open a connection. Each operation
-// opens its own service connection using the context passed to that operation.
+// Construction does not open a connection. Each service action opens its own
+// connection using the context passed to the operation.
 func NewManager(connString string) (*Manager, error) {
 	config, err := ParseConfig(connString)
 	if err != nil {
@@ -58,8 +60,8 @@ func NewManager(connString string) (*Manager, error) {
 // Config must be non-nil and created by [ParseConfig]. NewManagerConfig copies
 // config. Later changes to config do not affect the manager.
 //
-// Construction does not open a connection. Each operation
-// opens its own service connection using the context passed to that operation.
+// Construction does not open a connection. Each service action opens its own
+// connection using the context passed to the operation.
 func NewManagerConfig(config *Config) (*Manager, error) {
 	if _, err := config.toConnectionConfig(); err != nil {
 		return nil, err

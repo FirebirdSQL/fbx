@@ -180,9 +180,17 @@ func TestManagerMaintenanceValidation(t *testing.T) {
 		manager, conn := newTestManager(t)
 		require.Error(t, manager.ResolveLimboTransaction(ctx, "db", id, fbservice.LimboCommit, nil))
 		require.False(t, conn.opened)
+		result, err := manager.ResolveLimboTransactionChecked(ctx, "db", id, fbservice.LimboCommit, nil)
+		require.Error(t, err)
+		require.Equal(t, fbservice.LimboResolution{}, result)
+		require.False(t, conn.opened)
 	}
 	manager, conn := newTestManager(t)
 	require.Error(t, manager.ResolveLimboTransaction(ctx, "db", 1, 255, nil))
+	require.False(t, conn.opened)
+	result, err := manager.ResolveLimboTransactionChecked(ctx, "db", 1, 255, nil)
+	require.Error(t, err)
+	require.Equal(t, fbservice.LimboResolution{}, result)
 	require.False(t, conn.opened)
 }
 
@@ -206,6 +214,10 @@ func maintenanceCalls() map[string]maintenanceCall {
 		},
 		"resolve": func(ctx context.Context, m *fbservice.Manager, db string) error {
 			return m.ResolveLimboTransaction(ctx, db, 42, fbservice.LimboCommit, nil)
+		},
+		"resolve checked": func(ctx context.Context, m *fbservice.Manager, db string) error {
+			_, err := m.ResolveLimboTransactionChecked(ctx, db, 42, fbservice.LimboCommit, nil)
+			return err
 		},
 	}
 }

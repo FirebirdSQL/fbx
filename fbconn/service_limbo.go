@@ -106,8 +106,9 @@ func (c *ServiceConn) LimboTransactionDetails(ctx context.Context, database stri
 
 // ResolveLimboTransaction finishes a prepared transaction. Small IDs use the
 // 32-bit SPB tags for older servers; larger IDs require 64-bit transaction support.
-// A successful service request does not guarantee the outcome of automatic
-// recovery; inspect Output and query LimboTransactions again for unresolved IDs.
+// A nil error only confirms that the service action completed without an error.
+// Automatic recovery can leave a transaction unresolved; inspect Output and
+// query LimboTransactions again for unresolved IDs.
 // Output and cancellation behave as in Repair.
 func (c *ServiceConn) ResolveLimboTransaction(ctx context.Context, database string, id int64, action LimboTransactionAction, output io.Writer) error {
 	spb, err := buildResolveLimboActionSPB(database, id, action)

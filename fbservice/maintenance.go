@@ -309,8 +309,10 @@ func (m *Manager) LimboTransactions(ctx context.Context, database string) (ids [
 
 // ResolveLimboTransaction commits, rolls back or automatically recovers a
 // prepared transaction. ID must be positive. Output may be nil to discard the
-// report. Recovery can leave a transaction unresolved; inspect the report and
-// query LimboTransactions afterwards. Unsupported actions return server errors.
+// report. A nil error only confirms that the service action completed without
+// an error; recovery can leave a transaction unresolved. Use
+// [Manager.ResolveLimboTransactionChecked] for a structured result after checking
+// the limbo list. Unsupported actions return server errors.
 // Resource ownership and cancellation behave as in Repair.
 func (m *Manager) ResolveLimboTransaction(ctx context.Context, database string, id int64, action LimboTransactionAction, output io.Writer) (err error) {
 	if err := validateMaintenanceDatabase(database); err != nil {

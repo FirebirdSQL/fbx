@@ -2,7 +2,7 @@
 Package fbservice provides a high-level API for Firebird services.
 
 A Manager stores connection settings and opens a separate service connection
-for each operation. Create a manager directly from a connection string:
+for each service action. Create a manager directly from a connection string:
 
 	manager, err := fbservice.NewManager(os.Getenv("DATABASE_URL"))
 	if err != nil {
@@ -142,9 +142,29 @@ The driver does not infer committed or rolled-back states from missing fields.
 Advice is the server's recommendation, not confirmation of a completed action.
 
 After deciding the appropriate outcome, pass an ID to ResolveLimboTransaction
-with LimboCommit, LimboRollback or LimboRecover and an optional output writer. Automatic recovery
-uses other participants' states and can leave a transaction unresolved. Inspect
-the report and query the list again. Context cancellation does not roll back
-maintenance actions already performed by the server.
+with LimboCommit, LimboRollback or LimboRecover and an optional output writer.
+A nil error confirms that the service action completed without an error.
+Automatic recovery uses other participants' states and can leave a transaction
+unresolved.
+
+ResolveLimboTransactionChecked runs the action once, closes its service
+connection, then obtains a fresh limbo list using another service connection:
+
+	result, err := manager.ResolveLimboTransactionChecked(ctx, database, id, LimboRecover, io.Discard)
+
+On a nil error, result.Status is LimboResolutionNotListed if the ID is absent
+from the returned limbo list, or LimboResolutionUnresolved if it remains.
+An unresolved result includes the remaining details in result.Transaction.
+Servers may limit the list without signalling truncation. Absence therefore
+does not prove commit, rollback or completion in this or other participant
+databases. The list is a snapshot and can change when another administrator
+resolves a transaction.
+
+If the action or subsequent check fails, Status is LimboResolutionUnknown and
+Transaction is nil. In particular, an error during the check does not imply
+that the preceding action failed or that it is safe to repeat. Context
+cancellation does not roll back maintenance actions already performed by the
+server. Errors preserve their causes for errors.Is and errors.As, but
+fbconn.SafeToRetry is false for this compound call.
 */
 package fbservice
