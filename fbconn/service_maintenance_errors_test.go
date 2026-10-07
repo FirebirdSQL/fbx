@@ -139,7 +139,8 @@ func TestServiceConnMaintenanceServerErrors(t *testing.T) {
 				done := make(chan error, 1)
 				go func() {
 					defer func() { _ = server.Close() }()
-					done <- runMaintenanceServerErrorProbe(server, duringOutput, name == "limbo")
+					done <- runMaintenanceServerErrorProbe(server, duringOutput, name == "limbo",
+						[]int{fbproto.Isc_arg_gds, fbproto.Isc_bad_spb_form, fbproto.Isc_arg_end})
 				}()
 				conn, ctx := newStatisticsProbeConnection(t, client)
 				err := call(ctx, conn, nil)
@@ -158,7 +159,47 @@ func TestServiceConnMaintenanceServerErrors(t *testing.T) {
 	}
 }
 
-func runMaintenanceServerErrorProbe(conn net.Conn, duringOutput, limbo bool) error {
+func TestServiceConnRepairValidationMessages(t *testing.T) {
+	for _, duringOutput := range []bool{false, true} {
+		name := "start"
+		if duringOutput {
+			name = "output"
+		}
+		t.Run(name, func(t *testing.T) {
+			client, server := net.Pipe()
+			t.Cleanup(func() { _ = server.Close() })
+			done := make(chan error, 1)
+			go func() {
+				defer func() { _ = server.Close() }()
+				done <- runMaintenanceServerErrorProbe(server, duringOutput, false, []int{
+					fbproto.Isc_arg_gds, 335740952, // gfix_summary
+					fbproto.Isc_arg_gds, 335740984, // gfix_blob_err
+					fbproto.Isc_arg_number, 3,
+					fbproto.Isc_arg_gds, 335741050, // gfix_pip_err
+					fbproto.Isc_arg_number, 7,
+					fbproto.Isc_arg_end,
+				})
+			}()
+			conn, ctx := newStatisticsProbeConnection(t, client)
+			err := conn.Repair(ctx, "db", RepairOptions{Operation: RepairValidate, ReadOnly: true})
+			var serverErr *FbError
+			require.ErrorAs(t, err, &serverErr)
+			require.Equal(t, []int{335740952, 335740984, 335741050}, serverErr.GdsCodes)
+			require.Equal(t, "Summary of validation errors\n\tNumber of Blob page errors\t: 3\n\tNumber of inventory page errors\t: 7", serverErr.Message)
+			require.Equal(t, "HY000", serverErr.Code)
+			require.False(t, SafeToRetry(err))
+			require.NoError(t, conn.Close(ctx))
+			select {
+			case err := <-done:
+				require.NoError(t, err)
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			}
+		})
+	}
+}
+
+func runMaintenanceServerErrorProbe(conn net.Conn, duringOutput, limbo bool, status []int) error {
 	encoding, err := fbproto.NewEncoding("UTF8")
 	if err != nil {
 		return err
@@ -199,7 +240,7 @@ func runMaintenanceServerErrorProbe(conn net.Conn, duringOutput, limbo bool) err
 	if err := w.WriteBuffer(nil); err != nil {
 		return err
 	}
-	for _, v := range []int{fbproto.Isc_arg_gds, fbproto.Isc_bad_spb_form, fbproto.Isc_arg_end} {
+	for _, v := range status {
 		if err := w.WriteInt32(v); err != nil {
 			return err
 		}

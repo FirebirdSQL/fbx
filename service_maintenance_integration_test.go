@@ -398,10 +398,14 @@ func TestServiceMaintenanceIntegration(t *testing.T) {
 		require.Nil(t, result.Transaction)
 		var serverErr *fbconn.FbError
 		require.ErrorAs(t, err, &serverErr, output.String())
-		// gfix can report the transaction prompt (message 91, no named constant)
+		// gfix can report the transaction prompt
 		// before the unexpected-end-of-input error: Services API cannot answer it.
-		require.True(t, slices.Contains(serverErr.GdsCodes, 335741019) ||
+		require.True(t, slices.Contains(serverErr.GdsCodes, fbproto.Isc_gfix_trn2) ||
 			slices.Contains(serverErr.GdsCodes, fbproto.Isc_gfix_unexp_eoi), "unexpected recovery error: %v", err)
+		require.NotContains(t, serverErr.Message, "unknown gds_code")
+		if slices.Contains(serverErr.GdsCodes, fbproto.Isc_gfix_trn2) {
+			require.Contains(t, serverErr.Message, fmt.Sprintf("Transaction %d:", id))
+		}
 		ids, err := manager.LimboTransactions(ctx, config.Database)
 		require.NoError(t, err)
 		require.Equal(t, []int64{id}, ids, "recovery must not guess commit or rollback without a decision")

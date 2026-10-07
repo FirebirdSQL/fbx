@@ -220,7 +220,7 @@ func readStatusVector(x *XDRReader, encoding *Encoding) (statusVectorResult, err
 			sv.SqlState = "HY000"
 			for _, gdsCode := range sv.GdsCodes {
 				if msg, ok := errmsgs[gdsCode]; ok {
-					if msg.sqlstate == "00000" {
+					if msg.sqlstate == "" || msg.sqlstate == "00000" {
 						continue
 					}
 					sv.SqlState = msg.sqlstate

@@ -11,9 +11,11 @@ typedef long SLONG;
 
 #define stringify_literal(x) #x
 
-#define FB_IMPL_MSG_NO_SYMBOL(facility, number, text)
+#define FB_IMPL_MSG_NO_SYMBOL(facility, number, text) \
+    addMessage(make_isc_code(FB_IMPL_MSG_FACILITY_##facility, number), text, "", "", "");
 
-#define FB_IMPL_MSG_SYMBOL(facility, number, symbol, text)
+#define FB_IMPL_MSG_SYMBOL(facility, number, symbol, text) \
+    addMessage(make_isc_code(FB_IMPL_MSG_FACILITY_##facility, number), text, "", "", stringify_literal(symbol));
 
 #define FB_IMPL_MSG(facility, number, symbol, sqlCode, sqlClass, sqlSubClass, text) \
     addMessage(make_isc_code(FB_IMPL_MSG_FACILITY_##facility, number), text, sqlClass, sqlSubClass, stringify_literal(symbol));
