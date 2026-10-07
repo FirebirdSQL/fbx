@@ -1640,55 +1640,49 @@ func (fbConn *FbConn) internalPrepareTx(
 		StatementInfo:   &statementInfo,
 	}
 
-	// checking if arrays in fields and parameters and getting array metadata
-
 	var tables, fields []string
+	var hasArrays bool
+	collectArrayIdentifiers := func(description FieldDescription) {
+		if !description.IsArray() {
+			return
+		}
+		hasArrays = true
+		if description.OriginalTableName != "" && !slices.Contains(tables, description.OriginalTableName) {
+			tables = append(tables, description.OriginalTableName)
+		}
+		if description.OriginalName != "" && !slices.Contains(fields, description.OriginalName) {
+			fields = append(fields, description.OriginalName)
+		}
+	}
 
 	for _, field := range desc.Fields {
-		if field.Type == fbproto.SQL_TYPE_ARRAY {
-			if !slices.Contains(tables, field.OriginalTableName) {
-				tables = append(tables, field.OriginalTableName)
-			}
-			if !slices.Contains(fields, field.OriginalName) {
-				fields = append(fields, field.OriginalName)
-			}
-		}
+		collectArrayIdentifiers(field)
 	}
-
 	for _, param := range desc.Parameters {
-		if param.Type == fbproto.SQL_TYPE_ARRAY {
-			if !slices.Contains(tables, param.OriginalTableName) {
-				tables = append(tables, param.OriginalTableName)
-			}
-			if !slices.Contains(fields, param.OriginalName) {
-				fields = append(fields, param.OriginalName)
-			}
-		}
+		collectArrayIdentifiers(param)
 	}
 
-	if tables != nil {
-		arr, err := getArrayInfo(fbConn, ctx, tx, fields, tables)
+	if hasArrays {
+		arrays := map[metadataMapKey]*Array{}
+		if len(tables) > 0 && len(fields) > 0 {
+			arrays, err = getArrayInfo(fbConn, ctx, tx, fields, tables)
+		}
 		if err != nil {
 			if cleanupErr := fbConn.freeStatementHandleLocked(statementHandle); cleanupErr != nil {
 				return nil, errors.Join(err, cleanupErr)
 			}
 			return nil, err
 		}
-		for i := range desc.Fields {
-			metadataKey := metadataMapKey{
-				schema: desc.Fields[i].Schema,
-				table:  desc.Fields[i].OriginalTableName,
-				field:  desc.Fields[i].OriginalName,
-			}
-			desc.Fields[i].ArrayData = arr[metadataKey]
+
+		err = attachArrayMetadata(desc.Fields, arrays, "result field")
+		if err == nil {
+			err = attachArrayMetadata(desc.Parameters, arrays, "parameter")
 		}
-		for i := range desc.Parameters {
-			metadataKey := metadataMapKey{
-				schema: desc.Parameters[i].Schema,
-				table:  desc.Parameters[i].OriginalTableName,
-				field:  desc.Parameters[i].OriginalName,
+		if err != nil {
+			if cleanupErr := fbConn.freeStatementHandleLocked(statementHandle); cleanupErr != nil {
+				return nil, errors.Join(err, cleanupErr)
 			}
-			desc.Parameters[i].ArrayData = arr[metadataKey]
+			return nil, err
 		}
 	}
 
@@ -1946,6 +1940,9 @@ func (fbConn *FbConn) Disconnect(ctx context.Context) error {
 }
 
 func (fbConn *FbConn) getArrayMetadata(ctx context.Context, tx *FBTransaction, serverVersion int, tableNames, fieldNames []string) ([]map[string][]byte, []dimensionsMapKey, error) {
+	if len(tableNames) == 0 || len(fieldNames) == 0 {
+		return nil, nil, nil
+	}
 
 	tables := ""
 	for _, table := range tableNames {
@@ -2063,6 +2060,9 @@ func (fbConn *FbConn) getArrayMetadata(ctx context.Context, tx *FBTransaction, s
 }
 
 func (fbConn *FbConn) getArrayDimensions(ctx context.Context, tx *FBTransaction, serverVersion int, sources []dimensionsMapKey) (map[dimensionsMapKey][][]int, error) {
+	if len(sources) == 0 {
+		return map[dimensionsMapKey][][]int{}, nil
+	}
 
 	sourcesString := ""
 	schemasString := ""
@@ -2140,10 +2140,9 @@ func (fbConn *FbConn) getArrayDimensions(ctx context.Context, tx *FBTransaction,
 	return dimensions, nil
 }
 
-func (fbConn *FbConn) getArray(ctx context.Context, arrayId int64, datatype uint32, length, l int, sdl []byte) ([]byte, error) {
-	tx, err := fbConn.ensureInternalTransaction(ctx, nil, false)
-	if err != nil {
-		return nil, err
+func (fbConn *FbConn) getArray(ctx context.Context, tx *FBTransaction, arrayId int64, datatype uint32, length, l int, sdl []byte) ([]byte, error) {
+	if tx == nil || tx.Closed {
+		return nil, ErrTransactionClosed
 	}
 
 	opGetSlice := fbproto.OpGetSlice{
@@ -2153,12 +2152,12 @@ func (fbConn *FbConn) getArray(ctx context.Context, arrayId int64, datatype uint
 		SliceDescriptor:   sdl,
 	}
 
-	if err = fbConn.client.WriteMessage(&opGetSlice); err != nil {
+	if err := fbConn.client.WriteMessage(&opGetSlice); err != nil {
 		fbConn.asyncClose()
 		return nil, err
 	}
 
-	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+	if err := fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
 		fbConn.asyncClose()
 		return nil, err
 	}
@@ -2185,10 +2184,9 @@ func (fbConn *FbConn) getArray(ctx context.Context, arrayId int64, datatype uint
 	}
 }
 
-func (fbConn *FbConn) putArray(ctx context.Context, array []byte, length int, sdl []byte) ([]byte, error) {
-	tx, err := fbConn.ensureInternalTransaction(ctx, nil, false)
-	if err != nil {
-		return nil, err
+func (fbConn *FbConn) putArray(ctx context.Context, tx *FBTransaction, array []byte, length int, sdl []byte) ([]byte, error) {
+	if tx == nil || tx.Closed {
+		return nil, ErrTransactionClosed
 	}
 
 	opPutSlice := fbproto.OpPutSlice{
@@ -2199,12 +2197,12 @@ func (fbConn *FbConn) putArray(ctx context.Context, array []byte, length int, sd
 		Slice:             array,
 	}
 
-	if err = fbConn.client.WriteMessage(&opPutSlice); err != nil {
+	if err := fbConn.client.WriteMessage(&opPutSlice); err != nil {
 		fbConn.asyncClose()
 		return nil, err
 	}
 
-	if err = fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+	if err := fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
 		fbConn.asyncClose()
 		return nil, err
 	}
@@ -2510,7 +2508,7 @@ func (rr *ResultReader) bufferCurrentFetchRows() bool {
 		rowStart := len(rr.bufferedCols)
 		for j, elem := range row {
 			if IsArrayType(uint32(rr.fieldDescriptions[j].Type)) {
-				array, err := getArray(rr.fbConn, rr.ctx, rr.fieldDescriptions[j].ArrayData, elem)
+				array, err := getArray(rr.fbConn, rr.ctx, rr.boundTransaction, rr.fieldDescriptions[j].ArrayData, elem)
 				if err != nil {
 					rr.concludeCommand(QueryStatus{}, err)
 					return false
@@ -3306,7 +3304,8 @@ func getArrayInfo(fbConn *FbConn, ctx context.Context, tx *FBTransaction, fields
 		arr.SubType = int32(binary.BigEndian.Uint32(metadata["SUBTYPE"]))
 
 		arr.Length = binary.BigEndian.Uint32(metadata["LENGTH"])
-		if arr.TypeId == fbproto.SQL_TYPE_VARYING || arr.TypeId == fbproto.SQL_TYPE_TEXT {
+		if (arr.TypeId == fbproto.SQL_TYPE_VARYING || arr.TypeId == fbproto.SQL_TYPE_TEXT) &&
+			arr.SubType&0xFF != fbproto.CS_BINARY {
 			name, err := fbproto.CharacterSetIdIntoName(arr.SubType)
 			if err != nil {
 				return nil, err
@@ -3331,7 +3330,16 @@ func getArrayInfo(fbConn *FbConn, ctx context.Context, tx *FBTransaction, fields
 			source: strings.TrimSpace(string(metadata["SOURCE"])),
 			schema: strings.TrimSpace(string(metadata["SCHEMA"])),
 		}
-		for _, dimension := range dimensions[dimensionsKey] {
+		arrayDimensions, ok := dimensions[dimensionsKey]
+		if !ok || len(arrayDimensions) == 0 {
+			return nil, fmt.Errorf(
+				"array metadata for schema %q, table %q, field %q has no dimensions",
+				arr.Schema,
+				arr.TableName,
+				arr.FieldName,
+			)
+		}
+		for _, dimension := range arrayDimensions {
 			arr.Dimensions = append(arr.Dimensions,
 				map[string]int{
 					"Lower": dimension[0],
@@ -3343,4 +3351,53 @@ func getArrayInfo(fbConn *FbConn, ctx context.Context, tx *FBTransaction, fields
 		arrays[metadataKey] = &arr
 	}
 	return arrays, nil
+}
+
+func attachArrayMetadata(descriptions []FieldDescription, arrays map[metadataMapKey]*Array, target string) error {
+	for i := range descriptions {
+		if !descriptions[i].IsArray() {
+			continue
+		}
+
+		key := metadataMapKey{
+			schema: descriptions[i].Schema,
+			table:  descriptions[i].OriginalTableName,
+			field:  descriptions[i].OriginalName,
+		}
+		arrayData, ok := arrays[key]
+		if !ok || arrayData == nil {
+			return fmt.Errorf(
+				"cannot resolve array metadata for %s %d (schema %q, table %q, field %q)",
+				target,
+				i+1,
+				key.schema,
+				key.table,
+				key.field,
+			)
+		}
+		descriptions[i].ArrayData = cloneArrayMetadata(arrayData)
+	}
+	return nil
+}
+
+func cloneArrayMetadata(arrayData *Array) *Array {
+	cloned := *arrayData
+	cloned.Dimensions = cloneArrayDimensions(arrayData.Dimensions)
+	cloned.CurrentDimensions = cloned.Dimensions
+	return &cloned
+}
+
+func cloneArrayDimensions(dimensions []map[string]int) []map[string]int {
+	if dimensions == nil {
+		return nil
+	}
+
+	cloned := make([]map[string]int, len(dimensions))
+	for i, dimension := range dimensions {
+		cloned[i] = make(map[string]int, len(dimension))
+		for name, bound := range dimension {
+			cloned[i][name] = bound
+		}
+	}
+	return cloned
 }

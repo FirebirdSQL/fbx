@@ -194,6 +194,7 @@ func TestOctetsRoundTripBytes(t *testing.T) {
 			input []byte
 		}{
 			{name: "non-empty", input: []byte{1, 2, 3, 4}},
+			{name: "embedded zero", input: []byte{0, 'A', 0, 'B'}},
 			{name: "empty", input: []byte{}},
 			{name: "nil", input: nil},
 		}

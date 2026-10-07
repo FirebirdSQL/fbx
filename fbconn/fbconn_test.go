@@ -475,6 +475,56 @@ func TestConnPrepareSyntaxError(t *testing.T) {
 	ensureConnValid(t, fbConn)
 }
 
+func TestPrepareMergeWithArrayParametersHandlesMissingMetadata(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	conn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	defer closeConn(t, conn)
+
+	const table = "fbx_array_metadata_prepare"
+	require.NoError(t, conn.ExecImmediate(ctx,
+		"recreate table "+table+" (id int primary key, val int[1:3])",
+	))
+	defer func() {
+		_ = conn.ExecImmediate(context.Background(), "drop table "+table)
+	}()
+
+	baselineStatements := countIdleStatements(t, conn, ctx)
+	subjectID := subjectAttachmentID(t, conn)
+
+	const mergeSQL = `merge into fbx_array_metadata_prepare t
+using (select cast(? as int) id from rdb$database) s
+    on t.id = s.id
+when matched then
+    update set val = ?
+when not matched then
+    insert (id, val) values (s.id, ?)`
+
+	st, prepareErr := conn.Prepare(ctx, mergeSQL)
+	if prepareErr == nil {
+		require.NotNil(t, st)
+		require.Len(t, st.Description.Parameters, 3)
+		require.NotNil(t, st.Description.Parameters[1].ArrayData)
+		require.NotNil(t, st.Description.Parameters[2].ArrayData)
+		require.NoError(t, st.Deallocate(ctx))
+		if conn.ActiveTx() {
+			require.NoError(t, conn.Rollback(ctx))
+		}
+	} else {
+		require.Nil(t, st)
+		require.ErrorContains(t, prepareErr, "cannot resolve array metadata for parameter 2")
+	}
+
+	assert.False(t, conn.ActiveTx(), "Prepare path must leave no internal transaction after cleanup")
+	assert.Equal(t, 0, activeTxCountOnServer(t, subjectID),
+		"Prepare path must not leak its internal transaction on the server")
+	assert.Equal(t, baselineStatements, countIdleStatements(t, conn, ctx),
+		"Prepare path must free its server-side statement handle")
+	ensureConnValid(t, conn)
+}
+
 func TestConnPrepareContextPrecanceled(t *testing.T) {
 	t.Parallel()
 

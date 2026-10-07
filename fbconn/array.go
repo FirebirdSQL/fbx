@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 
 	"rdb.red-soft.ru/fbx/fbproto"
 )
@@ -19,7 +20,8 @@ type metadataMapKey struct {
 	field  string
 }
 
-// Array struct contains the information about array
+// Array contains the protocol metadata needed to read or write a Firebird
+// array slice.
 type Array struct {
 	TableName         string
 	FieldName         string
@@ -33,44 +35,75 @@ type Array struct {
 	SubType           int32
 }
 
-// NewArray is a constructor for Array struct
-func NewArray(table, field string, dims []map[string]int, length uint32, scale int32, typeId, blrTypeId uint32, subType int32) *Array {
+func (arr Array) getSliceLength(dimensions []map[string]int) (int, error) {
+	const (
+		maxArrayDimensions = 16
+		minArrayBound      = -1 << 31
+		maxArrayBound      = 1<<31 - 1
+		maxSliceLength     = 1<<31 - 1
+	)
 
-	a := new(Array)
-
-	a.TableName = table
-	a.FieldName = field
-	a.Dimensions = dims
-	a.CurrentDimensions = dims
-	a.Length = length
-	a.Scale = scale
-	a.TypeId = typeId
-	a.BlrTypeId = blrTypeId
-	a.SubType = subType
-
-	return a
-}
-
-func (arr Array) getSliceLength() int {
-	elements := 1
-	for _, elem := range arr.CurrentDimensions {
-		elements *= elem["Upper"] - elem["Lower"] + 1
+	if len(dimensions) == 0 {
+		return 0, fmt.Errorf("array slice must have at least one dimension")
+	}
+	if len(dimensions) > maxArrayDimensions {
+		return 0, fmt.Errorf("array slice has %d dimensions; maximum is %d", len(dimensions), maxArrayDimensions)
 	}
 
-	length := elements * int(arr.Length)
+	elements := uint64(1)
+	for i, dimension := range dimensions {
+		lower, lowerPresent := dimension["Lower"]
+		upper, upperPresent := dimension["Upper"]
+		if !lowerPresent || !upperPresent {
+			return 0, fmt.Errorf("array slice dimension %d must contain Lower and Upper bounds", i)
+		}
+		if lower < minArrayBound || lower > maxArrayBound {
+			return 0, fmt.Errorf("array slice dimension %d lower bound %d is outside int32 range", i, lower)
+		}
+		if upper < minArrayBound || upper > maxArrayBound {
+			return 0, fmt.Errorf("array slice dimension %d upper bound %d is outside int32 range", i, upper)
+		}
 
-	switch arr.TypeId {
-	case fbproto.SQL_TYPE_VARYING:
-		length += elements * 2 // for each element is specified 2 bytes of its length
+		length := int64(upper) - int64(lower) + 1
+		if length < 0 {
+			return 0, fmt.Errorf("array slice dimension %d has invalid bounds %d:%d", i, lower, upper)
+		}
+		if length == 0 {
+			elements = 0
+			continue
+		}
+		if elements > uint64(maxSliceLength)/uint64(length) {
+			return 0, fmt.Errorf("array slice element count exceeds protocol limit at dimension %d", i)
+		}
+		elements *= uint64(length)
 	}
-	return length
+
+	elementLength := uint64(arr.Length)
+	if arr.TypeId == fbproto.SQL_TYPE_VARYING {
+		elementLength += 2
+	}
+	if elements > 0 && elementLength == 0 {
+		return 0, fmt.Errorf("array element length must be greater than zero")
+	}
+	if elementLength > 0 && elements > uint64(maxSliceLength)/elementLength {
+		return 0, fmt.Errorf("array slice byte length exceeds protocol limit")
+	}
+
+	return int(elements * elementLength), nil
 }
 
-func (arr *Array) generateSDL() []byte {
+func (arr *Array) generateSDL(dimensions []map[string]int) []byte {
 	sdl := []byte{}
-	dimensions := arr.CurrentDimensions
 
 	dataType := byte(arr.BlrTypeId)
+	if arr.SubType&0xFF == fbproto.CS_BINARY {
+		switch arr.TypeId {
+		case fbproto.SQL_TYPE_TEXT:
+			dataType = fbproto.Isc_blr_text2
+		case fbproto.SQL_TYPE_VARYING:
+			dataType = fbproto.Isc_blr_varying2
+		}
+	}
 	length := binary.LittleEndian.AppendUint16(make([]byte, 0), uint16(arr.Length))
 
 	sdl = append(sdl, []byte{
@@ -81,9 +114,12 @@ func (arr *Array) generateSDL() []byte {
 	}...)
 
 	switch dataType {
-	case fbproto.Isc_blr_short, fbproto.Isc_blr_long, fbproto.Isc_blr_int64, fbproto.Isc_blr_quad:
+	case fbproto.Isc_blr_short, fbproto.Isc_blr_long, fbproto.Isc_blr_int64, fbproto.Isc_blr_quad, fbproto.Isc_blr_int128:
 		sdl = append(sdl, byte(arr.Scale))
 	case fbproto.Isc_blr_text, fbproto.Isc_blr_cstring, fbproto.Isc_blr_varying:
+		sdl = append(sdl, length...)
+	case fbproto.Isc_blr_text2, fbproto.Isc_blr_cstring2, fbproto.Isc_blr_varying2:
+		sdl = append(sdl, byte(arr.SubType), byte(arr.SubType>>8))
 		sdl = append(sdl, length...)
 	}
 
@@ -145,8 +181,6 @@ func (arr *Array) generateSDL() []byte {
 
 func getDimensionBound(value int) []byte {
 	out := []byte{}
-	valByte := make([]byte, 4)
-	binary.BigEndian.PutUint32(valByte, uint32(value))
 
 	if -128 <= value && value <= 127 {
 		out = append(out, fbproto.Isc_sdl_tiny_integer)
@@ -166,30 +200,38 @@ func getDimensionBound(value int) []byte {
 	return out
 }
 
-func putArray(fbConn *FbConn, ctx context.Context, arrayData *Array, arr []byte) ([]byte, error) {
+func putArray(fbConn *FbConn, ctx context.Context, tx *FBTransaction, arrayData *Array, arr []byte) ([]byte, error) {
+	defer func() {
+		arrayData.CurrentDimensions = arrayData.Dimensions
+	}()
 
-	sdl := arrayData.generateSDL()
-	length := arrayData.getSliceLength()
+	length, err := arrayData.getSliceLength(arrayData.CurrentDimensions)
+	if err != nil {
+		return nil, err
+	}
+	sdl := arrayData.generateSDL(arrayData.CurrentDimensions)
 
-	id, err := fbConn.putArray(ctx, arr, length, sdl)
-	arrayData.CurrentDimensions = arrayData.Dimensions
+	id, err := fbConn.putArray(ctx, tx, arr, length, sdl)
 	if err != nil {
 		return nil, err
 	}
 	return id, nil
 }
 
-func getArray(fbConn *FbConn, ctx context.Context, arrayData *Array, arrId []byte) ([]byte, error) {
+func getArray(fbConn *FbConn, ctx context.Context, tx *FBTransaction, arrayData *Array, arrId []byte) ([]byte, error) {
 	if len(arrId) == 0 {
 		return nil, nil
 	}
 
 	arrayId := int64(binary.BigEndian.Uint64(arrId))
 
-	sdl := arrayData.generateSDL()
-	length := arrayData.getSliceLength()
+	length, err := arrayData.getSliceLength(arrayData.Dimensions)
+	if err != nil {
+		return nil, err
+	}
+	sdl := arrayData.generateSDL(arrayData.Dimensions)
 
-	array, err := fbConn.getArray(ctx, arrayId, arrayData.BlrTypeId, length, int(arrayData.Length), sdl)
+	array, err := fbConn.getArray(ctx, tx, arrayId, arrayData.BlrTypeId, length, int(arrayData.Length), sdl)
 	if err != nil {
 		return nil, err
 	}
