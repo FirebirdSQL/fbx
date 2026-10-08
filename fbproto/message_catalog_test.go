@@ -51,8 +51,11 @@ func TestMessageCatalogComplete(t *testing.T) {
 				message, ok := errmsgs[code]
 				if !ok {
 					t.Errorf("missing %s message %d (gds code %d)", match[2], number, code)
-				} else if match[1] != "" && message.sqlstate != "" {
-					t.Errorf("gds code %d has no source SQLSTATE, got %q", code, message.sqlstate)
+				} else {
+					require.Len(t, message.sqlstate, 5, "gds code %d", code)
+					if match[1] != "" && message.sqlstate != "00000" {
+						t.Errorf("gds code %d has no source SQLSTATE, want 00000, got %q", code, message.sqlstate)
+					}
 				}
 				count++
 			}
