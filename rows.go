@@ -228,7 +228,8 @@ func (rows *baseRows) Err() error {
 }
 
 // fatal signals an error occurred after the query was sent to the server. It
-// closes the rows automatically.
+// closes the rows automatically. Err returns the error after cleanup, including
+// the ResultReader's retry decision.
 func (rows *baseRows) fatal(err error) {
 	if rows.err != nil {
 		return
@@ -261,7 +262,7 @@ func (rows *baseRows) Scan(dest ...any) error {
 	if len(fieldDescriptions) != len(values) {
 		err := fmt.Errorf("number of field descriptions must equal number of values, got %d and %d", len(fieldDescriptions), len(values))
 		rows.fatal(err)
-		return err
+		return rows.Err()
 	}
 
 	if len(dest) == 1 {
@@ -269,15 +270,16 @@ func (rows *baseRows) Scan(dest ...any) error {
 			err := rc.ScanRow(rows)
 			if err != nil {
 				rows.fatal(err)
+				return rows.Err()
 			}
-			return err
+			return nil
 		}
 	}
 
 	if len(fieldDescriptions) != len(dest) {
 		err := fmt.Errorf("number of field descriptions must equal number of destinations, got %d and %d", len(fieldDescriptions), len(dest))
 		rows.fatal(err)
-		return err
+		return rows.Err()
 	}
 
 	if rows.scanPlans == nil {
@@ -296,7 +298,7 @@ func (rows *baseRows) Scan(dest ...any) error {
 				if err != nil {
 					err = ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: err}
 					rows.fatal(err)
-					return err
+					return rows.Err()
 				}
 				typeMetadata.SetArrayMetadata(arrayData)
 			}
@@ -314,7 +316,7 @@ func (rows *baseRows) Scan(dest ...any) error {
 			if err != nil {
 				err = ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: err}
 				rows.fatal(err)
-				return err
+				return rows.Err()
 			}
 			continue
 		}
@@ -332,7 +334,7 @@ func (rows *baseRows) Scan(dest ...any) error {
 				if err != nil {
 					err = ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: err}
 					rows.fatal(err)
-					return err
+					return rows.Err()
 				}
 				typeMetadata.SetArrayMetadata(arrayData)
 			}
@@ -345,7 +347,7 @@ func (rows *baseRows) Scan(dest ...any) error {
 		if err != nil {
 			err = ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: err}
 			rows.fatal(err)
-			return err
+			return rows.Err()
 		}
 	}
 
