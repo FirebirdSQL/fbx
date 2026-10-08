@@ -146,19 +146,20 @@ func TestAsyncCloseWaitsForCompressionRead(t *testing.T) {
 }
 
 func TestCloseUnblocksCompressedReadBeforeCleanup(t *testing.T) {
-	testSynchronousCloseUnblocksCompressedReadBeforeCleanup(t, func(fbConn *FbConn) error {
+	testSynchronousCloseUnblocksCompressedReadBeforeCleanup(t, "cannot confirm detach while connection is busy", func(fbConn *FbConn) error {
 		return fbConn.Close(context.Background())
 	})
 }
 
 func TestServiceConnCloseUnblocksCompressedReadBeforeCleanup(t *testing.T) {
-	testSynchronousCloseUnblocksCompressedReadBeforeCleanup(t, func(fbConn *FbConn) error {
+	testSynchronousCloseUnblocksCompressedReadBeforeCleanup(t, "", func(fbConn *FbConn) error {
 		return (&ServiceConn{conn: fbConn}).Close(context.Background())
 	})
 }
 
 func testSynchronousCloseUnblocksCompressedReadBeforeCleanup(
 	t *testing.T,
+	expectedCloseError string,
 	closeConnection func(*FbConn) error,
 ) {
 	t.Helper()
@@ -167,6 +168,8 @@ func testSynchronousCloseUnblocksCompressedReadBeforeCleanup(
 	defer transport.releaseRead()
 
 	fbConn := newCancelOperationTestFbConn(transport)
+	// Model an unfinished request: its read could consume the detach response.
+	fbConn.status = connStatusBusy
 	require.NoError(t, fbConn.client.EnableCompression())
 
 	readDone := make(chan error, 1)
@@ -207,7 +210,11 @@ func testSynchronousCloseUnblocksCompressedReadBeforeCleanup(
 	}
 	select {
 	case err := <-closeDone:
-		require.NoError(t, err)
+		if expectedCloseError == "" {
+			require.NoError(t, err)
+		} else {
+			require.ErrorContains(t, err, expectedCloseError)
+		}
 	case <-time.After(time.Second):
 		t.Fatal("Close did not return after the compressed read finished")
 	}

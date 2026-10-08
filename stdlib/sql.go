@@ -36,6 +36,11 @@
 // [RegisterConnConfig] only when the configuration must be passed to
 // [sql.Open].
 //
+// Use [sql.Tx] for transactions. Connections with active transactions or unfinished
+// queries are discarded rather than returned to the pool. An error is converted
+// to [driver.ErrBadConn] only when the complete query is safe to retry. A lost
+// commit response or cleanup error after execution does not authorize retry.
+//
 //	connConfig, err := fbx.ParseConfig(os.Getenv("DATABASE_URL"))
 //	if err != nil {
 //		return err
@@ -505,6 +510,12 @@ func (c *Conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, e
 	if err != nil {
 		return nil, err
 	}
+	// Preparation needs a metadata transaction, but the connection-scoped
+	// statement outlives it. End only the implicit transaction before pooling;
+	// Conn.Commit leaves an explicit sql.Tx transaction active.
+	if err := c.conn.Commit(ctx); err != nil && !errors.Is(err, fbconn.ErrTransactionClosed) {
+		return nil, err
+	}
 	c.psRefCounts[sd]++
 
 	return &Stmt{sd: sd, conn: c}, nil
@@ -619,10 +630,10 @@ func (c *Conn) Ping(ctx context.Context) error {
 	return nil
 }
 
-// IsValid implements [driver.Validator]. It prevents a native connection that
-// was closed by a fatal operation from being returned to the database/sql pool.
+// IsValid implements [driver.Validator]. Only idle connections without active
+// transactions can return to the database/sql pool.
 func (c *Conn) IsValid() bool {
-	return !c.conn.IsClosed()
+	return !c.conn.IsClosed() && !c.conn.FbConn().IsBusy() && !c.conn.FbConn().ActiveTx()
 }
 
 // CheckNamedValue implements [driver.NamedValueChecker]. Values are left
@@ -633,7 +644,7 @@ func (c *Conn) CheckNamedValue(*driver.NamedValue) error {
 }
 
 // ResetSession implements [driver.SessionResetter]. It rejects connections
-// with an active explicit transaction, optionally checks liveness, and then
+// with an unfinished operation or any active transaction, checks liveness, and then
 // invokes the function configured by [OptionResetSession].
 func (c *Conn) ResetSession(ctx context.Context) error {
 	if c.conn.IsClosed() {
@@ -642,7 +653,7 @@ func (c *Conn) ResetSession(ctx context.Context) error {
 
 	// Discard connection if it has an open transaction. This can happen if the
 	// application did not properly commit or rollback a transaction.
-	if c.conn.FbConn().ActiveExplicitTx() {
+	if c.conn.FbConn().IsBusy() || c.conn.FbConn().ActiveTx() {
 		return driver.ErrBadConn
 	}
 
@@ -1181,4 +1192,10 @@ type wrapTx struct {
 
 func (wtx wrapTx) Commit() error { return wtx.tx.Commit(wtx.ctx) }
 
-func (wtx wrapTx) Rollback() error { return wtx.tx.Rollback(wtx.ctx) }
+func (wtx wrapTx) Rollback() error {
+	// database/sql calls Rollback after the begin context is canceled. Give
+	// cleanup its own deadline so the server confirms the rollback before reuse.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(wtx.ctx), 5*time.Second)
+	defer cancel()
+	return wtx.tx.Rollback(ctx)
+}

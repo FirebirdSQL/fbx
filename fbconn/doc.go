@@ -29,6 +29,18 @@ interrupting the query in such a way as to close the connection.
 The CancelRequest method may be used to request the server cancel an in-progress query without forcing the
 client to abort.
 
+Transaction and Error State
+
+Commit and rollback require the expected server confirmation before their handles
+are removed from the connection. A confirmed server rejection keeps a low-level
+transaction active. Transport errors or unexpected transaction responses close
+the connection; closing it does not establish whether commit succeeded.
+
+[SafeToRetry] describes the complete failed call. Errors after SQL may have been
+sent, including commit and resource cleanup errors, cannot authorize repeating
+that SQL. A failed internal autocommit uses a separate bounded context for rollback
+on a usable connection, so the next query cannot inherit its changes.
+
 Low-level event operations such as QueueEvent and CancelEvent use the context provided by the caller while waiting for
 the connection to become available and while waiting for the server response. Passing context.Background() means there
 is no driver-side timeout for those operations. Applications that need bounded waiting should pass a context with

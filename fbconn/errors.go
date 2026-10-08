@@ -14,7 +14,10 @@ import (
 	"rdb.red-soft.ru/fbx/fbproto"
 )
 
-// SafeToRetry checks if the err is guaranteed to have occurred before sending any data to the server.
+// SafeToRetry reports whether the failed call is guaranteed not to have sent its
+// SQL or transaction command. For a call that executes SQL and then commits or
+// cleans up resources, the decision covers the complete call. False means that
+// safe retry is not guaranteed; it does not prove that the command executed.
 func SafeToRetry(err error) bool {
 	var retryableErr interface{ SafeToRetry() bool }
 	if errors.As(err, &retryableErr) {
