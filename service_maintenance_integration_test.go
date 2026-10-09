@@ -352,6 +352,13 @@ func TestServiceMaintenanceIntegration(t *testing.T) {
 		require.Equal(t, beforeRelations, afterRelations)
 		require.NoError(t, fbx.DropDatabaseConfig(ctx, oldConfig))
 	})
+	t.Run("connection loss before prepare", func(t *testing.T) {
+		id := crashMaintenanceClient(t, ctx, config.Config, maintenanceClientScenario{Database: config.Database})
+		ids, err := manager.LimboTransactions(ctx, config.Database)
+		require.NoError(t, err)
+		require.Empty(t, ids, "an unprepared transaction must not survive a client crash")
+		require.Equal(t, 0, queryInt(t, fmt.Sprintf("select count(*) from MAINT_DATA where ID=%d", id)))
+	})
 	t.Run("limbo commit and rollback", func(t *testing.T) {
 		ids, err := manager.LimboTransactions(ctx, config.Database)
 		require.NoError(t, err)
@@ -360,7 +367,7 @@ func TestServiceMaintenanceIntegration(t *testing.T) {
 		require.NoError(t, err)
 		require.Empty(t, details)
 		for _, action := range []fbservice.LimboTransactionAction{fbservice.LimboCommit, fbservice.LimboRollback} {
-			id := prepareMaintenanceTransaction(t, ctx, config.Config, config.Database)
+			id := crashMaintenanceClient(t, ctx, config.Config, maintenanceClientScenario{Database: config.Database, Prepare: true})
 			ids, err = manager.LimboTransactions(ctx, config.Database)
 			require.NoError(t, err)
 			require.Equal(t, []int64{id}, ids)
@@ -386,12 +393,15 @@ func TestServiceMaintenanceIntegration(t *testing.T) {
 		require.Equal(t, 2, queryInt(t, "select count(*) from MAINT_DATA"))
 	})
 	t.Run("limbo recovery without a distributed decision", func(t *testing.T) {
-		id := prepareMaintenanceTransaction(t, ctx, config.Config, config.Database)
+		id := crashMaintenanceClient(t, ctx, config.Config, maintenanceClientScenario{Database: config.Database, Prepare: true})
 		t.Cleanup(func() {
 			cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			require.NoError(t, manager.ResolveLimboTransaction(cleanup, config.Database, id, fbservice.LimboRollback, nil))
 		})
+		ids, err := manager.LimboTransactions(ctx, config.Database)
+		require.NoError(t, err)
+		require.Equal(t, []int64{id}, ids, "the client crash must leave the prepared transaction in limbo")
 		var output bytes.Buffer
 		result, err := manager.ResolveLimboTransactionChecked(ctx, config.Database, id, fbservice.LimboRecover, &output)
 		require.Equal(t, fbservice.LimboResolutionUnknown, result.Status)
@@ -406,7 +416,7 @@ func TestServiceMaintenanceIntegration(t *testing.T) {
 		if slices.Contains(serverErr.GdsCodes, fbproto.Isc_gfix_trn2) {
 			require.Contains(t, serverErr.Message, fmt.Sprintf("Transaction %d:", id))
 		}
-		ids, err := manager.LimboTransactions(ctx, config.Database)
+		ids, err = manager.LimboTransactions(ctx, config.Database)
 		require.NoError(t, err)
 		require.Equal(t, []int64{id}, ids, "recovery must not guess commit or rollback without a decision")
 	})
@@ -554,31 +564,4 @@ func (p maintenancePrepareTransaction) Write(w *fbproto.XDRWriter) error {
 		return w.WriteBuffer(p.description)
 	}
 	return nil
-}
-
-func prepareMaintenanceTransaction(t *testing.T, ctx context.Context, config fbconn.Config, database string) int64 {
-	t.Helper()
-	config.Database = database
-	c, err := fbconn.ConnectConfig(ctx, &config)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		require.NoError(t, c.Close(cleanup))
-	})
-	tx, err := c.StartTransaction(ctx)
-	require.NoError(t, err)
-	result := c.ExecTx(ctx, tx, "select cast(current_transaction as varchar(30)) from RDB$DATABASE").Read()
-	require.NoError(t, result.Err)
-	id, err := strconv.ParseInt(strings.TrimSpace(string(result.Rows[0][0])), 10, 64)
-	require.NoError(t, err)
-	result = c.ExecTx(ctx, tx, fmt.Sprintf("insert into MAINT_DATA values (%d)", id)).Read()
-	require.NoError(t, result.Err)
-	require.NoError(t, c.Client().WriteMessage(maintenancePrepareTransaction{handle: tx.Handle}))
-	require.NoError(t, c.Client().Flush())
-	message, err := c.ReceiveMessage(ctx)
-	require.NoError(t, err)
-	require.IsType(t, &fbproto.OpResponse{}, message)
-	require.NoError(t, c.Close(ctx))
-	return id
 }
