@@ -124,10 +124,13 @@ func addMessage(code C.int, message *C.char, class *C.char, subClass *C.char, sy
 	var cl string = C.GoString(class)
 	var sub string = C.GoString(subClass)
 	var sym string = C.GoString(symbol)
-	name := fmt.Sprintf("Isc_%s", sym)
+	name := fmt.Sprintf("%d", int(code))
+	if sym != "" {
+		name = fmt.Sprintf("Isc_%s", sym)
+		sbCodes.WriteString(fmt.Sprintf("\t%s = %d\n", name, int(code)))
+	}
 	msg = strings.TrimRight(msg, "\n")
 	sbMessages.WriteString(fmt.Sprintf("\t%s: {%s, %d, \"%s%s\"},\n", name, fmt.Sprintf("%#v", msg), countParameters(msg), cl, sub))
-	sbCodes.WriteString(fmt.Sprintf("\t%s = %d\n", name, int(code)))
 }
 
 func countParameters(msg string) int {
