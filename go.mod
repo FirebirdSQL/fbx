@@ -7,7 +7,7 @@ require (
 	github.com/nakagami/chacha20 v0.1.0
 	github.com/stretchr/testify v1.12.1
 	gitlab.com/nyarla/go-crypt v0.0.0-20160106005555-d9a5dc2b789b
-	golang.org/x/sync v0.23.0
+	golang.org/x/sync v0.24.0
 	golang.org/x/text v0.42.0
 	modernc.org/mathutil v1.7.1
 )
