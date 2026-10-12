@@ -88,11 +88,10 @@ func writeServiceOutput(ctx context.Context, output io.Writer, chunk []byte) err
 
 func buildServiceOutputSendItems() []byte {
 	return fbproto.NewXPBWriter().
-		AppendByte(fbproto.Isc_spb_utf8_filename).
-		AppendInt32(0).
 		AppendByte(fbproto.Isc_info_svc_timeout).
+		AppendInt16(4).
 		AppendInt32(1).
-		AppendByte(1).
+		AppendByte(fbproto.Isc_info_end).
 		Bytes()
 }
 

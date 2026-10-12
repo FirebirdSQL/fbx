@@ -15,7 +15,7 @@ Firebird values, tracing hooks, and modern Red Database / Firebird features.
 - Concurrency-safe `fbxpool` connection pool for application workloads, with lifecycle hooks, health checks, configurable ping behavior, acquire tracing, release tracing, and pool statistics.
 - URL and keyword/value connection strings, environment variable support, and multi-host fallback configuration.
 - Database creation and deletion through `CreateDatabase`, `DropDatabase`, and related config helpers.
-- Services manager API for server-side backup, restore, database statistics and gfix maintenance through `fbservice.Manager`.
+- Services manager API for server-side backup, restore, database statistics, gfix maintenance, and trace session management through `fbservice.Manager`, including background streaming with `TraceStartSession` and access to the session ID and completion errors.
 - Firebird `POST_EVENT` subscriptions through `fbevent.Manager`, including one-shot waits, callback listeners, channel subscriptions, and pgx-like notifications.
 - Red Database / Firebird 6 schema-qualified identifiers.
 - Prepared statements, statement cache, configurable statement cache size, and configurable query execution mode.
@@ -37,7 +37,7 @@ Firebird values, tracing hooks, and modern Red Database / Firebird features.
 - Geometric and spatial type support.
 - SQL/JSON value mapping and helper APIs.
 - ROW and structured value support.
-- Services manager API for trace, online validation, and user-management workflows.
+- Services manager API for online validation and user-management workflows.
 - Bidirectional result-set navigation for server-side scrollable cursors.
 - Two-phase commit and distributed transaction support.
 

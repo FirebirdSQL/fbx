@@ -16,6 +16,11 @@ type serviceConnection interface {
 	Backup(context.Context, string, string, fbconn.BackupOptions) error
 	Restore(context.Context, string, string, fbconn.RestoreOptions) error
 	Statistics(context.Context, string, fbconn.StatisticsOptions) error
+	TraceStart(context.Context, string, string, fbconn.TraceOptions) error
+	TraceStop(context.Context, int, fbconn.TraceOptions) error
+	TraceSuspend(context.Context, int, fbconn.TraceOptions) error
+	TraceResume(context.Context, int, fbconn.TraceOptions) error
+	TraceList(context.Context, fbconn.TraceOptions) error
 	Repair(context.Context, string, fbconn.RepairOptions) error
 	SetDatabaseProperties(context.Context, string, fbconn.DatabaseProperties) error
 	LimboTransactions(context.Context, string) ([]int64, error)
@@ -30,7 +35,7 @@ type serviceCloser interface {
 
 type connectServiceFunc func(context.Context, *fbconn.ServiceConfig) (serviceConnection, error)
 
-// Manager runs Firebird backup, restore, statistics and database maintenance services.
+// Manager runs Firebird backup, restore, statistics, trace and database maintenance services.
 //
 // A Manager is safe for concurrent use. Each service action opens and closes
 // its own service connection. Checked limbo resolution uses two consecutive

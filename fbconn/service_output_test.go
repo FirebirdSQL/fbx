@@ -33,6 +33,11 @@ func TestParseServiceOutput(t *testing.T) {
 			wantState: serviceOutputTimeout,
 		},
 		{
+			name:      "data not ready",
+			response:  []byte{fbproto.Isc_info_svc_to_eof, 0, 0, fbproto.Isc_info_data_not_ready, fbproto.Isc_info_end},
+			wantState: serviceOutputTimeout,
+		},
+		{
 			name:      "truncated",
 			response:  []byte{fbproto.Isc_info_truncated},
 			wantState: serviceOutputTruncated,
@@ -79,8 +84,8 @@ func TestParseServiceOutput(t *testing.T) {
 
 func TestBuildServiceOutputSendItems(t *testing.T) {
 	require.Equal(t, []byte{
-		fbproto.Isc_spb_utf8_filename, 0, 0, 0, 0,
-		fbproto.Isc_info_svc_timeout, 1, 0, 0, 0, 1,
+		fbproto.Isc_info_svc_timeout, 4, 0, 1, 0, 0, 0,
+		fbproto.Isc_info_end,
 	}, buildServiceOutputSendItems())
 }
 

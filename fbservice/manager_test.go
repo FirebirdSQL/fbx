@@ -138,6 +138,7 @@ func TestManagerSupportsConcurrentOperations(t *testing.T) {
 }
 
 type concurrentServiceConnection struct {
+	fakeTraceConnection
 	expectedDatabase string
 	operationCalled  bool
 	closed           *atomic.Int64
