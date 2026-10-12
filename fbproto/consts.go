@@ -398,6 +398,8 @@ const (
 	Isc_spb_rpr_rollback_trans_64    = 50
 	Isc_spb_rpr_recover_two_phase_64 = 51
 	Isc_spb_rpr_par_workers          = 52
+	Isc_spb_rpr_par_workers_rs       = 100 // Red Database legacy parallel sweep
+	Isc_spb_rpr_sweep_timeout        = 101 // Red Database sweep timeout in seconds
 
 	// Parameters for isc_spb_prp_reserve_space *
 	Isc_spb_prp_res_use_full = 35
@@ -442,6 +444,8 @@ const (
 	Isc_spb_rpr_ignore_checksum  = 0x20
 	Isc_spb_rpr_kill_shadows     = 0x40
 	Isc_spb_rpr_full             = 0x80
+	Isc_spb_rpr_icu              = 0x0800
+	Isc_spb_rpr_upgrade_db       = 0x1000
 
 	// BLR params
 	Isc_blr_short           = 7

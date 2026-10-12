@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"math"
 	"strconv"
 	"strings"
@@ -306,6 +307,13 @@ func newTestManager(t *testing.T) (*fbservice.Manager, *fakeServiceConnection) {
 
 type fakeServiceConnection struct {
 	fakeTraceConnection
+	repairOptions     fbconn.RepairOptions
+	properties        fbconn.DatabaseProperties
+	maintenanceErr    error
+	transactionID     int64
+	limboAction       fbconn.LimboTransactionAction
+	limboOutput       io.Writer
+	limboDetails      []fbconn.LimboTransaction
 	opened            bool
 	closed            bool
 	expectedDatabase  string

@@ -62,14 +62,22 @@ func TestStatementInfoParsesRelationSchema(t *testing.T) {
 }
 
 func TestArraySDLIncludesSchema(t *testing.T) {
-
 	dims := []map[string]int{{"Lower": 1, "Upper": 3}}
-	withSchema := NewArray("T_ARR", "VAL", dims, 2, 0, fbproto.SQL_TYPE_SHORT, fbproto.Isc_blr_short, 0)
+	base := Array{
+		TableName:         "T_ARR",
+		FieldName:         "VAL",
+		Dimensions:        dims,
+		CurrentDimensions: dims,
+		Length:            2,
+		BlrTypeId:         fbproto.Isc_blr_short,
+		TypeId:            fbproto.SQL_TYPE_SHORT,
+	}
+	withSchema := base
 	withSchema.Schema = "MY_SCHEMA"
-	withoutSchema := NewArray("T_ARR", "VAL", dims, 2, 0, fbproto.SQL_TYPE_SHORT, fbproto.Isc_blr_short, 0)
+	withoutSchema := base
 
-	sdlWith := withSchema.generateSDL()
-	sdlWithout := withoutSchema.generateSDL()
+	sdlWith := withSchema.generateSDL(withSchema.CurrentDimensions)
+	sdlWithout := withoutSchema.generateSDL(withoutSchema.CurrentDimensions)
 
 	schemaItem := append([]byte{fbproto.Isc_sdl_schema, byte(len("MY_SCHEMA"))}, []byte("MY_SCHEMA")...)
 	assert.True(t, bytes.Contains(sdlWith, schemaItem))

@@ -113,5 +113,26 @@ Transactions are started by calling [Conn.Begin].
 	if err != nil {
 		return err
 	}
+
+A native transaction remains active after a confirmed server rejection of commit
+on a usable connection, so it can still be rolled back. A transport error while
+waiting for commit leaves its outcome unknown and closes the connection.
+
+# Errors and Retries
+
+[fbconn.SafeToRetry] applies to the complete call, including SQL execution,
+commit, and resource cleanup. Once SQL may have been sent, a later error does not
+authorize repeating the call. A false result means that safe retry is not
+guaranteed; it does not mean that the SQL succeeded.
+
+A non-nil error does not prove that changes were rolled back. A lost commit
+response leaves the outcome unknown. An error freeing a statement after a
+confirmed commit does not undo the saved changes. Cleanup errors preserve the
+original error and cannot turn an unsafe retry into a safe one.
+
+A failed autocommit resolves the driver's internal transaction before another
+query can use it. Rollback uses a separate, bounded context after cancellation;
+if it cannot be confirmed, the connection is closed. User-managed transactions
+remain the caller's responsibility.
 */
 package fbx

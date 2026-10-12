@@ -9,6 +9,7 @@ import (
 
 	"rdb.red-soft.ru/fbx/fbconn"
 	"rdb.red-soft.ru/fbx/fbproto"
+	"rdb.red-soft.ru/fbx/internal/operationerror"
 )
 
 // TxIsoLevel is the transaction isolation level ([fbx.Serializable], [fbx.RepeatableRead], [fbx.ReadCommitted])
@@ -253,11 +254,11 @@ func (tx *dbTx) Commit(ctx context.Context) error {
 	err := tx.tx.Commit(ctx)
 	if err != nil {
 		tx.closed = tx.tx.Closed || tx.conn.IsClosed()
-		return errors.Join(cleanupErr, err)
+		return operationerror.Join(err, cleanupErr)
 	}
 
 	tx.closed = true
-	return cleanupErr
+	return operationerror.WithRetry(cleanupErr, false)
 }
 
 // Rollback rolls back the transaction. Rollback will return ErrTxClosed if the
@@ -275,10 +276,10 @@ func (tx *dbTx) Rollback(ctx context.Context) error {
 	if err != nil {
 		// A rollback failure leaves the connection in an undefined state.
 		tx.conn.die()
-		return errors.Join(cleanupErr, err)
+		return operationerror.Join(err, cleanupErr)
 	}
 
-	return cleanupErr
+	return operationerror.WithRetry(cleanupErr, false)
 }
 
 // Exec delegates to the underlying *Conn
@@ -534,15 +535,18 @@ func BeginTxFunc(
 
 func beginFuncExec(ctx context.Context, tx Tx, fn func(Tx) error) (err error) {
 	defer func() {
-		rollbackErr := tx.Rollback(ctx)
+		cleanupCtx, cancel := cleanupContext(ctx)
+		defer cancel()
+		rollbackErr := tx.Rollback(cleanupCtx)
 		if rollbackErr != nil && !errors.Is(rollbackErr, ErrTxClosed) {
-			err = rollbackErr
+			err = operationerror.Join(err, rollbackErr)
 		}
+		// The callback may have executed SQL even if commit was not sent.
+		err = operationerror.WithRetry(err, false)
 	}()
 
 	fErr := fn(tx)
 	if fErr != nil {
-		_ = tx.Rollback(ctx) // ignore rollback error as there is already an error to return
 		return fErr
 	}
 

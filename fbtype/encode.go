@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"reflect"
 	"time"
+
+	"rdb.red-soft.ru/fbx/fbproto"
 )
 
 // PlanEncode returns an EncodePlan for encoding value with the given Firebird
@@ -18,6 +20,10 @@ func (m *Map) planEncodeDepth(typeMetadata TypeMetadata, value any, depth int) E
 	// Guard against infinite recursion.
 	if depth > 8 {
 		return nil
+	}
+
+	if typeMetadata.TypeID == fbproto.SQL_TYPE_ARRAY {
+		return m.planEncode(typeMetadata, value, depth)
 	}
 
 	typeidMemo := m.memoizedEncodePlans[typeMetadata]

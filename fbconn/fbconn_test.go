@@ -475,6 +475,56 @@ func TestConnPrepareSyntaxError(t *testing.T) {
 	ensureConnValid(t, fbConn)
 }
 
+func TestPrepareMergeWithArrayParametersHandlesMissingMetadata(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	conn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	defer closeConn(t, conn)
+
+	const table = "fbx_array_metadata_prepare"
+	require.NoError(t, conn.ExecImmediate(ctx,
+		"recreate table "+table+" (id int primary key, val int[1:3])",
+	))
+	defer func() {
+		_ = conn.ExecImmediate(context.Background(), "drop table "+table)
+	}()
+
+	baselineStatements := countIdleStatements(t, conn, ctx)
+	subjectID := subjectAttachmentID(t, conn)
+
+	const mergeSQL = `merge into fbx_array_metadata_prepare t
+using (select cast(? as int) id from rdb$database) s
+    on t.id = s.id
+when matched then
+    update set val = ?
+when not matched then
+    insert (id, val) values (s.id, ?)`
+
+	st, prepareErr := conn.Prepare(ctx, mergeSQL)
+	if prepareErr == nil {
+		require.NotNil(t, st)
+		require.Len(t, st.Description.Parameters, 3)
+		require.NotNil(t, st.Description.Parameters[1].ArrayData)
+		require.NotNil(t, st.Description.Parameters[2].ArrayData)
+		require.NoError(t, st.Deallocate(ctx))
+		if conn.ActiveTx() {
+			require.NoError(t, conn.Rollback(ctx))
+		}
+	} else {
+		require.Nil(t, st)
+		require.ErrorContains(t, prepareErr, "cannot resolve array metadata for parameter 2")
+	}
+
+	assert.False(t, conn.ActiveTx(), "Prepare path must leave no internal transaction after cleanup")
+	assert.Equal(t, 0, activeTxCountOnServer(t, subjectID),
+		"Prepare path must not leak its internal transaction on the server")
+	assert.Equal(t, baselineStatements, countIdleStatements(t, conn, ctx),
+		"Prepare path must free its server-side statement handle")
+	ensureConnValid(t, conn)
+}
+
 func TestConnPrepareContextPrecanceled(t *testing.T) {
 	t.Parallel()
 
@@ -2099,7 +2149,7 @@ func TestConnCloseWhileCancellableQueryInProgress(t *testing.T) {
 
 	closeCtx, closeCancel := context.WithCancel(ctx)
 	defer closeCancel()
-	require.NoError(t, fbConn.Close(closeCtx))
+	require.ErrorContains(t, fbConn.Close(closeCtx), "cannot confirm detach while connection is busy")
 	select {
 	case <-fbConn.CleanupDone():
 	case <-time.After(5 * time.Second):
@@ -2283,7 +2333,12 @@ func TestConnFatalServerErrorCanBeOverridden(t *testing.T) {
 
 	subject, err := fbconn.ConnectConfig(ctx, config)
 	require.NoError(t, err)
-	defer closeConn(t, subject)
+	// The server forcibly removes this attachment below, so a later clean
+	// detach cannot succeed. Close must still release the local transport.
+	defer func() {
+		_ = subject.Close(ctx)
+		require.True(t, subject.IsClosed())
+	}()
 
 	killer, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
@@ -2613,7 +2668,14 @@ func TestConnExecImmediateNoTx(t *testing.T) {
 
 	fbConn, err := fbconn.Connect(ctx, os.Getenv("FBX_TEST_DATABASE"))
 	require.NoError(t, err)
-	defer closeConn(t, fbConn)
+	defer func() {
+		// The transaction handle returned by SET TRANSACTION is retained so
+		// Close can confirm rollback before detach.
+		require.True(t, fbConn.ActiveTx())
+		require.NoError(t, fbConn.Close(ctx))
+		require.False(t, fbConn.ActiveTx())
+		require.True(t, fbConn.IsClosed())
+	}()
 
 	err = fbConn.ExecImmediateTx(ctx, nil, "set transaction")
 	require.NoError(t, err)

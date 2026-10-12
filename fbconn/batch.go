@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"rdb.red-soft.ru/fbx/fbproto"
+	"rdb.red-soft.ru/fbx/internal/operationerror"
 )
 
 type BatchConfig struct {
@@ -214,7 +215,9 @@ func (b *Batch) Execute(ctx context.Context, tx *FBTransaction) (*BatchCompletio
 	}
 
 	var completion *BatchCompletion
+	executeAttempted := false
 	err = b.withConn(ctx, func() error {
+		executeAttempted = true
 		if err := b.st.conn.client.WriteMessage(&fbproto.OpBatchExec{
 			StatementHandle:   b.st.Description.StatementHandle,
 			TransactionHandle: execTx.Handle,
@@ -231,15 +234,18 @@ func (b *Batch) Execute(ctx context.Context, tx *FBTransaction) (*BatchCompletio
 		return err
 	})
 	if err != nil {
+		if executeAttempted {
+			return nil, operationerror.WithRetry(err, false)
+		}
 		return nil, err
 	}
 
 	if execTx == b.st.conn.internalTransaction && b.st.conn.config.Autocommit && !b.st.conn.explicitTransaction {
 		if completion.HasErrors() {
 			if err := b.st.conn.rollbackInternalTxIfAutocommitOnError(ctx, execTx, errBatchExecutionFailed); err != nil {
-				return completion, errors.Join(errBatchExecutionFailed, fmt.Errorf("rollback internal tx: %w", err))
+				return completion, operationerror.Join(errBatchExecutionFailed, fmt.Errorf("rollback internal tx: %w", err))
 			}
-		} else if err := execTx.Commit(context.Background()); err != nil {
+		} else if err := b.st.conn.commitInternalTx(context.Background(), execTx); err != nil {
 			return completion, err
 		}
 	}

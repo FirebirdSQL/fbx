@@ -2,6 +2,7 @@ package fbtype_test
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -10,7 +11,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"rdb.red-soft.ru/fbx"
+	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbtype"
+	"rdb.red-soft.ru/fbx/fbxtest"
+	"rdb.red-soft.ru/fbx/stdlib"
 )
 
 func TestArray(t *testing.T) {
@@ -40,6 +44,362 @@ func TestArray(t *testing.T) {
 			assert.Equalf(t, tt, actual, "%d", i)
 
 		}
+	})
+}
+
+func TestArrayNumericAndDecimalElementsUseSubtypeCodec(t *testing.T) {
+	fractional := []fbtype.Numeric{
+		mustArrayNumeric(t, "1.23"),
+		mustArrayNumeric(t, "-4.56"),
+		mustArrayNumeric(t, "78.90"),
+	}
+	whole := []fbtype.Numeric{
+		mustArrayNumeric(t, "1"),
+		mustArrayNumeric(t, "-4"),
+		mustArrayNumeric(t, "78"),
+	}
+
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
+		const table = "array_numeric_subtype_codec"
+		columns := []struct {
+			name    string
+			sqlType string
+		}{
+			{name: "numeric_smallint", sqlType: "numeric(4,2)"},
+			{name: "numeric_integer", sqlType: "numeric(9,2)"},
+			{name: "numeric_bigint", sqlType: "numeric(18,2)"},
+			{name: "decimal_integer", sqlType: "decimal(9,2)"},
+			{name: "decimal_bigint", sqlType: "decimal(18,2)"},
+		}
+
+		definitions := []string{"id integer primary key"}
+		for _, column := range columns {
+			definitions = append(definitions, column.name+" "+column.sqlType+"[1:3]")
+		}
+		_, err := conn.Exec(ctx, "recreate table "+table+" ("+strings.Join(definitions, ", ")+")")
+		require.NoError(tb, err)
+		defer func() {
+			_, _ = conn.Exec(context.Background(), "drop table "+table)
+		}()
+
+		placeholders := strings.TrimSuffix(strings.Repeat("?, ", len(columns)+1), ", ")
+		insert := func(id int, values []fbtype.Numeric) {
+			args := make([]any, 1, len(columns)+1)
+			args[0] = id
+			for range columns {
+				args = append(args, values)
+			}
+			_, err := conn.Exec(ctx, "insert into "+table+" values ("+placeholders+")", args...)
+			require.NoError(tb, err)
+		}
+		insert(1, fractional)
+		insert(2, whole)
+
+		db := stdlib.OpenDB(*conn.Config())
+		defer func() { require.NoError(tb, db.Close()) }()
+		sqlTypeMap := fbtype.NewMap()
+		paths := []struct {
+			name string
+			scan func(query string, id int, target any) error
+		}{
+			{
+				name: "fbx",
+				scan: func(query string, id int, target any) error {
+					return conn.QueryRow(ctx, query, id).Scan(target)
+				},
+			},
+			{
+				name: "database/sql",
+				scan: func(query string, id int, target any) error {
+					return db.QueryRowContext(ctx, query, id).Scan(sqlTypeMap.SQLScanner(target))
+				},
+			},
+		}
+
+		for _, column := range columns {
+			query := "select " + column.name + " from " + table + " where id = ?"
+			for _, path := range paths {
+				label := fmt.Sprintf("%s through %s", column.sqlType, path.name)
+
+				var numerics []fbtype.Numeric
+				err = path.scan(query, 1, &numerics)
+				require.NoError(tb, err, label)
+				require.Equal(tb, fractional, numerics, label)
+
+				var text []string
+				err = path.scan(query, 1, &text)
+				require.NoError(tb, err, label)
+				require.Equal(tb, []string{"1.23", "-4.56", "78.90"}, text, label)
+
+				var floats []float64
+				err = path.scan(query, 1, &floats)
+				require.NoError(tb, err, label)
+				require.Len(tb, floats, 3, label)
+				assert.InDelta(tb, 1.23, floats[0], 1e-9, label)
+				assert.InDelta(tb, -4.56, floats[1], 1e-9, label)
+				assert.InDelta(tb, 78.9, floats[2], 1e-9, label)
+
+				var integers []int64
+				err = path.scan(query, 2, &integers)
+				require.NoError(tb, err, label)
+				require.Equal(tb, []int64{1, -4, 78}, integers, label)
+
+				err = path.scan(query, 1, &integers)
+				require.ErrorContains(tb, err, "failed to scan array element 0", label)
+			}
+		}
+	})
+}
+
+func TestArrayInt128BackedElements(t *testing.T) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
+		if getServerMajorVersionForConn(ctx, tb, conn) <= 3 {
+			tb.Skip("INT128 is not supported by server engine version <= 3")
+		}
+
+		const table = "array_int128_backed_elements"
+		_, err := conn.Exec(ctx, "recreate table "+table+` (
+			id integer primary key,
+			int128_values int128[1:2],
+			numeric_values numeric(38,2)[1:2]
+		)`)
+		require.NoError(tb, err)
+		defer func() {
+			_, _ = conn.Exec(context.Background(), "drop table "+table, fbx.QueryExecModeExec)
+		}()
+
+		int128Values := []int64{1, -2}
+		numericValues := []fbtype.Numeric{
+			mustArrayNumeric(tb, "1.23"),
+			mustArrayNumeric(tb, "-4.56"),
+		}
+		_, err = conn.Exec(
+			ctx,
+			"insert into "+table+" (id, int128_values, numeric_values) values (?, ?, ?)",
+			1,
+			int128Values,
+			numericValues,
+		)
+		require.NoError(tb, err)
+
+		var actualInt128 []int64
+		var actualNumeric []fbtype.Numeric
+		err = conn.QueryRow(ctx,
+			"select int128_values, numeric_values from "+table+" where id = ?",
+			1,
+		).Scan(&actualInt128, &actualNumeric)
+		require.NoError(tb, err)
+		require.Equal(tb, int128Values, actualInt128)
+		require.Equal(tb, numericValues, actualNumeric)
+	})
+}
+
+func TestArrayOctetsElements(t *testing.T) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {
+		const table = "array_octets_elements"
+		_, err := conn.Exec(ctx, "recreate table "+table+` (
+			id integer primary key,
+			fixed_octets char(10)[1:2] character set OCTETS,
+			varying_octets varchar(10)[1:2] character set OCTETS
+		)`)
+		require.NoError(tb, err)
+		defer func() {
+			_ = conn.Deallocate(context.Background(), "array_octets_insert")
+			_, _ = conn.Exec(context.Background(), "drop table "+table)
+		}()
+
+		const insertName = "array_octets_insert"
+		description, err := conn.Prepare(
+			ctx,
+			insertName,
+			"insert into "+table+" (id, fixed_octets, varying_octets) values (?, ?, ?)",
+		)
+		require.NoError(tb, err)
+		require.Len(tb, description.Parameters, 3)
+		for _, parameter := range description.Parameters[1:] {
+			require.NotNil(tb, parameter.ArrayData)
+			require.Equal(tb, int32(fbproto.CS_BINARY), parameter.ArrayData.SubType)
+			require.Equal(tb, uint32(10), parameter.ArrayData.Length)
+		}
+
+		dimensions := []fbtype.ArrayDimension{{LowerBound: 1, Length: 2}}
+		fixed := fbtype.Array[[]byte]{
+			Elements: [][]byte{
+				{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09},
+				{0xff, 0xfe, 0xfd, 0xfc, 0xfb, 0xfa, 0xf9, 0xf8, 0xf7, 0xf6},
+			},
+			Dims:  dimensions,
+			Valid: true,
+		}
+		varying := fbtype.Array[[]byte]{
+			Elements: [][]byte{{'A', 'B'}, {0xff, 0xfe, 0x7f}},
+			Dims:     dimensions,
+			Valid:    true,
+		}
+
+		_, err = conn.Exec(ctx, insertName, int32(1), fixed, varying)
+		require.NoError(tb, err)
+
+		var actualFixed fbtype.Array[[]byte]
+		var actualVarying fbtype.Array[[]byte]
+		err = conn.QueryRow(
+			ctx,
+			"select fixed_octets, varying_octets from "+table+" where id = ?",
+			int32(1),
+		).Scan(&actualFixed, &actualVarying)
+		require.NoError(tb, err)
+		require.Equal(tb, fixed, actualFixed)
+		require.Equal(tb, varying, actualVarying)
+	})
+}
+
+func mustArrayNumeric(t testing.TB, value string) fbtype.Numeric {
+	t.Helper()
+	var numeric fbtype.Numeric
+	require.NoError(t, numeric.Scan(value))
+	return numeric
+}
+
+func TestArrayEncodePlansAreNotMemoized(t *testing.T) {
+	m := fbtype.NewMap()
+	metadata := newArrayEncodePlanTestMetadata(t, []map[string]int{{"Lower": 1, "Upper": 3}})
+	value := []int32{1, 2, 3}
+
+	buf, err := m.Encode(metadata, value, nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, buf)
+	metadataCount, planCount := arrayEncodePlanCacheSize(m)
+
+	for range 20 {
+		metadata = newArrayEncodePlanTestMetadata(t, []map[string]int{{"Lower": 1, "Upper": 3}})
+		buf, err = m.Encode(metadata, &value, nil)
+		require.NoError(t, err)
+		require.NotEmpty(t, buf)
+	}
+
+	actualMetadataCount, actualPlanCount := arrayEncodePlanCacheSize(m)
+	require.Equal(t, metadataCount, actualMetadataCount)
+	require.Equal(t, planCount, actualPlanCount)
+}
+
+func TestArrayEncodeDoesNotValidateFieldBounds(t *testing.T) {
+	m := fbtype.NewMap()
+
+	twoElements := newArrayEncodePlanTestMetadata(t, []map[string]int{{"Lower": 1, "Upper": 2}})
+	value := fbtype.Array[int32]{
+		Elements: []int32{1, 2, 3},
+		Dims:     []fbtype.ArrayDimension{{LowerBound: 0, Length: 3}},
+		Valid:    true,
+	}
+	plan := m.PlanEncode(twoElements, value)
+	require.NotNil(t, plan)
+	buf, err := plan.Encode(value, nil)
+	require.NoError(t, err)
+	require.Len(t, buf, 12)
+}
+
+func newArrayEncodePlanTestMetadata(t *testing.T, dimensions []map[string]int) fbtype.TypeMetadata {
+	t.Helper()
+	arrayData, err := fbtype.NewArrayData(fbproto.SQL_TYPE_LONG, 0, 4, 0, dimensions)
+	require.NoError(t, err)
+	metadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_ARRAY, 0, 8, 0)
+	metadata.SetArrayMetadata(arrayData)
+	return metadata
+}
+
+func arrayEncodePlanCacheSize(m *fbtype.Map) (metadataCount, planCount int) {
+	cache := reflect.ValueOf(m).Elem().FieldByName("memoizedEncodePlans")
+	for _, key := range cache.MapKeys() {
+		planCount += cache.MapIndex(key).Len()
+	}
+	return cache.Len(), planCount
+}
+
+func TestArrayUsesExecutionTransaction(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		const table = "array_execution_transaction"
+		_, err := conn.Exec(ctx, "recreate table "+table+" (id integer primary key, val integer[1:3])")
+		require.NoError(t, err)
+		defer func() {
+			_, _ = conn.Exec(context.Background(), "drop table "+table)
+		}()
+
+		txA, err := conn.Begin(ctx)
+		require.NoError(t, err)
+		defer func() { _ = txA.Rollback(context.Background()) }()
+
+		txB, err := conn.Begin(ctx)
+		require.NoError(t, err)
+		defer func() { _ = txB.Rollback(context.Background()) }()
+
+		first := []int32{1, 2, 3}
+		_, err = txA.Exec(ctx, "insert into "+table+" (id, val) values (?, ?)", 1, first)
+		require.NoError(t, err)
+
+		var actual []int32
+		err = txA.QueryRow(ctx, "select val from "+table+" where id = ?", 1).Scan(&actual)
+		require.NoError(t, err)
+		require.Equal(t, first, actual)
+
+		require.NoError(t, txB.Rollback(ctx))
+
+		second := []int32{4, 5, 6}
+		_, err = txA.Exec(ctx, "insert into "+table+" (id, val) values (?, ?)", 2, second)
+		require.NoError(t, err)
+
+		actual = nil
+		err = txA.QueryRow(ctx, "select val from "+table+" where id = ?", 2).Scan(&actual)
+		require.NoError(t, err)
+		require.Equal(t, second, actual)
+
+		require.NoError(t, txA.Commit(ctx))
+	})
+}
+
+func TestArrayDimensionsAreResetAfterEncodingError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	defaultConnTestRunner.RunTest(ctx, t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		const (
+			table         = "array_dims_encode_err"
+			statementName = "array_dims_err_update"
+		)
+
+		_, err := conn.Exec(ctx, "recreate table "+table+" (id integer primary key, val integer[1:4])")
+		require.NoError(t, err)
+		defer func() {
+			_, _ = conn.Exec(context.Background(), "drop table "+table, fbx.QueryExecModeExec)
+		}()
+
+		original := []int32{11, 22, 33, 44}
+		_, err = conn.Exec(ctx, "insert into "+table+" (id, val) values (?, ?)", 1, original)
+		require.NoError(t, err)
+
+		description, err := conn.Prepare(ctx, statementName,
+			"update "+table+" set val = ? where id = ?")
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, conn.Deallocate(context.Background(), statementName))
+		}()
+
+		require.Len(t, description.Parameters, 2)
+		require.NotNil(t, description.Parameters[0].ArrayData)
+
+		_, err = conn.Exec(ctx, statementName, []int32{8, 9}, "bad integer")
+		require.Error(t, err)
+		require.Equal(t,
+			description.Parameters[0].ArrayData.Dimensions,
+			description.Parameters[0].ArrayData.CurrentDimensions,
+		)
+
+		var actual []int32
+		err = conn.QueryRow(ctx, "select val from "+table+" where id = ?", 1).Scan(&actual)
+		require.NoError(t, err)
+		require.Equal(t, original, actual)
 	})
 }
 
@@ -87,6 +447,38 @@ func TestArrayFlatArrayVarchar(t *testing.T) {
 				}
 			}
 		}
+	})
+}
+
+func TestArrayVarcharRejectsZeroByte(t *testing.T) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		const table = "array_varchar_zero_byte"
+		_, err := conn.Exec(ctx, "recreate table "+table+" (id integer primary key, val varchar(10)[1:2])")
+		require.NoError(t, err)
+		defer func() {
+			_, _ = conn.Exec(context.Background(), "drop table "+table, fbx.QueryExecModeExec)
+		}()
+
+		_, err = conn.Exec(ctx,
+			"insert into "+table+" (id, val) values (?, ?)",
+			1,
+			[]string{"a\x00b", "ok"},
+		)
+		require.ErrorContains(t, err, "cannot encode array element at index 0")
+		require.ErrorContains(t, err, "VARCHAR array elements cannot contain zero bytes")
+
+		expected := []string{"", "ok"}
+		_, err = conn.Exec(ctx,
+			"insert into "+table+" (id, val) values (?, ?)",
+			2,
+			expected,
+		)
+		require.NoError(t, err)
+
+		var actual []string
+		err = conn.QueryRow(ctx, "select val from "+table+" where id = ?", 2).Scan(&actual)
+		require.NoError(t, err)
+		require.Equal(t, expected, actual)
 	})
 }
 

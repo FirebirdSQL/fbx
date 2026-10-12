@@ -3,10 +3,10 @@ package fbconn
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 
 	"rdb.red-soft.ru/fbx/fbproto"
+	"rdb.red-soft.ru/fbx/internal/operationerror"
 )
 
 const (
@@ -179,7 +179,7 @@ func (st *Statement) Exec(ctx context.Context, paramValues [][]byte) *ResultRead
 	rr = st.ExecTx(ctx, tx, paramValues)
 	if rr.err != nil {
 		if rbErr := st.conn.rollbackInternalTxIfAutocommitOnError(ctx, tx, rr.err); rbErr != nil {
-			rr.err = errors.Join(rr.err, fmt.Errorf("rollback internal tx: %w", rbErr))
+			rr.err = operationerror.Join(rr.err, fmt.Errorf("rollback internal tx: %w", rbErr))
 		}
 	}
 	return rr
@@ -271,7 +271,7 @@ func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *
 
 	for i, param := range st.Description.Parameters {
 		if param.IsArray() && paramValues[i] != nil {
-			arrayId, err := putArray(st.conn, ctx, param.ArrayData, paramValues[i])
+			arrayId, err := putArray(st.conn, ctx, tx, param.ArrayData, paramValues[i])
 			if err != nil {
 				rr.concludeCommand(QueryStatus{}, err)
 				rr.closed = true
@@ -306,6 +306,7 @@ func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *
 		}
 	}
 
+	rr.sqlMayHaveExecuted = true
 	if err = st.conn.withWriteLockAndFlush(func() error {
 		return st.conn.client.WriteMessage(&fbproto.OpExecute{
 			Kind:                  execKind,
@@ -358,6 +359,7 @@ func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *
 			}
 			switch d := dataResp.(type) {
 			case *fbproto.OpResponse:
+				st.conn.recordSQLTransaction(tx, d.Object)
 				rr.singleton = row
 			case *fbproto.ErrorResponse:
 				rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(d))
@@ -374,17 +376,24 @@ func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *
 			rr.closed = true
 			return rr
 		default:
-			panic(fmt.Sprintf("unexpected response type %T", msg))
+			st.conn.asyncClose()
+			rr.concludeCommand(QueryStatus{}, fmt.Errorf("unexpected execute response: %T", msg))
+			rr.closed = true
+			return rr
 		}
 	} else {
 		switch r := msg.(type) {
 		case *fbproto.OpResponse:
+			st.conn.recordSQLTransaction(tx, r.Object)
 		case *fbproto.ErrorResponse:
 			rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(r))
 			rr.closed = true
 			return rr
 		default:
-			panic(fmt.Sprintf("unexpected response type %T", msg))
+			st.conn.asyncClose()
+			rr.concludeCommand(QueryStatus{}, fmt.Errorf("unexpected execute response: %T", msg))
+			rr.closed = true
+			return rr
 		}
 	}
 

@@ -93,11 +93,32 @@ func TestManagerSupportsConcurrentOperations(t *testing.T) {
 
 			database := fmt.Sprintf("/data/employee-%d.fdb", i)
 			backupFile := fmt.Sprintf("/backup/employee-%d.fbk", i)
-			switch i % 3 {
+			switch i % 12 {
 			case 0:
 				errs <- manager.Backup(context.Background(), database, backupFile)
 			case 1:
 				errs <- manager.Restore(context.Background(), backupFile, database)
+			case 3:
+				errs <- manager.Repair(context.Background(), database, fbservice.RepairOptions{Operation: fbservice.RepairSweep})
+			case 4:
+				errs <- manager.SetDatabaseProperties(context.Background(), database, fbservice.DatabaseProperties{SQLDialect: 3})
+			case 5:
+				_, err := manager.LimboTransactions(context.Background(), database)
+				errs <- err
+			case 6:
+				errs <- manager.ResolveLimboTransaction(context.Background(), database, 42, fbservice.LimboRollback, nil)
+			case 7:
+				_, err := manager.LimboTransactionDetails(context.Background(), database)
+				errs <- err
+			case 8:
+				errs <- manager.Validate(context.Background(), database, fbservice.ValidateOptions{Output: io.Discard})
+			case 9:
+				errs <- manager.Sweep(context.Background(), database)
+			case 10:
+				errs <- manager.Shutdown(context.Background(), database, fbservice.ShutdownOptions{Mode: fbservice.DatabaseModeFull, Method: fbservice.ShutdownForce})
+			case 11:
+				_, err := manager.ResolveLimboTransactionChecked(context.Background(), database, 42, fbservice.LimboRecover, io.Discard)
+				errs <- err
 			case 2:
 				errs <- manager.Statistics(context.Background(), database, fbservice.StatisticsOptions{Output: io.Discard})
 			}
@@ -109,8 +130,11 @@ func TestManagerSupportsConcurrentOperations(t *testing.T) {
 	for err := range errs {
 		require.NoError(t, err)
 	}
-	require.Equal(t, int64(operationCount), opened.Load())
-	require.Equal(t, int64(operationCount), closed.Load())
+	// A checked resolution opens one connection for the action and another for
+	// the list query; each connection still runs just one service action.
+	wantConnections := int64(operationCount + operationCount/12)
+	require.Equal(t, wantConnections, opened.Load())
+	require.Equal(t, wantConnections, closed.Load())
 }
 
 type concurrentServiceConnection struct {
