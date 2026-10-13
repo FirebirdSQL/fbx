@@ -563,3 +563,56 @@ func TestScanErrorRollsBackInternalTxAutocommit(t *testing.T) {
 	assert.EqualValues(t, 0, count,
 		"scan-time error must roll back the implicit internal tx, dropping the setup INSERT")
 }
+
+type earlyExecErrorTracer struct {
+	starts  int
+	ends    int
+	endData TraceQueryEndData
+}
+
+func (t *earlyExecErrorTracer) TraceQueryStart(ctx context.Context, conn *Conn, data TraceQueryStartData) context.Context {
+	t.starts++
+	return ctx
+}
+
+func (t *earlyExecErrorTracer) TraceQueryEnd(ctx context.Context, conn *Conn, data TraceQueryEndData) {
+	t.ends++
+	t.endData = data
+}
+
+func TestExecTraceEndsWhenInvalidatedStatementDeallocateFails(t *testing.T) {
+	ctx := context.Background()
+	tracer := &earlyExecErrorTracer{}
+	connConfig := mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE"))
+	connConfig.DefaultQueryExecMode = QueryExecModeCacheStatement
+	connConfig.StatementCacheCapacity = 1
+	connConfig.Tracer = tracer
+
+	conn := mustConnect(t, connConfig)
+	defer conn.Close(ctx)
+
+	const cachedSQL = "select 'early_trace_deallocate' from rdb$database"
+	_, err := conn.Exec(ctx, cachedSQL)
+	require.NoError(t, err)
+	st := conn.statementCache.Get(cachedSQL)
+	require.NotNil(t, st)
+	conn.statementCache.Invalidate(cachedSQL)
+	require.Same(t, st, conn.statementCache.GetInvalidatedBySQL(cachedSQL))
+
+	tracer.starts = 0
+	tracer.ends = 0
+
+	const notCachedSQL = "select 'early_trace_not_executed' from rdb$database"
+	canceledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	_, err = conn.Exec(canceledCtx, notCachedSQL)
+	require.ErrorIs(t, err, context.Canceled)
+
+	require.Equal(t, 1, tracer.starts)
+	require.Equal(t, 1, tracer.ends)
+	require.Equal(t, err, tracer.endData.Err)
+	require.Zero(t, tracer.endData.QueryStatus)
+	// Deallocation failed before RemoveInvalidated, so the new statement was not prepared.
+	require.Same(t, st, conn.statementCache.GetInvalidatedBySQL(cachedSQL))
+	require.Nil(t, conn.statementCache.Get(notCachedSQL))
+}
