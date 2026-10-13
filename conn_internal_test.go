@@ -589,7 +589,9 @@ func TestExecTraceEndsWhenInvalidatedStatementDeallocateFails(t *testing.T) {
 	connConfig.Tracer = tracer
 
 	conn := mustConnect(t, connConfig)
-	defer conn.Close(ctx)
+	defer func() {
+		require.NoError(t, conn.Close(ctx))
+	}()
 
 	const cachedSQL = "select 'early_trace_deallocate' from rdb$database"
 	_, err := conn.Exec(ctx, cachedSQL)
