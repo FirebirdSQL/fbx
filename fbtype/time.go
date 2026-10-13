@@ -2,7 +2,6 @@ package fbtype
 
 import (
 	"database/sql/driver"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -371,11 +370,11 @@ func (c TimeCodec) DecodeValue(m *Map, typeMetadata TypeMetadata, src []byte) (a
 }
 
 func decodeTimeBinary(src []byte) (int64, string, error) {
-	if len(src) != 4 {
-		return 0, "", fmt.Errorf("fbtype: invalid length for Firebird TIME: %d", len(src))
+	ticks, err := fbio.Uint32BEExact(src)
+	if err != nil {
+		return 0, "", fmt.Errorf("fbtype: Firebird TIME: %w", err)
 	}
 
-	ticks := binary.BigEndian.Uint32(src)
 	usec := int64(ticks) * 100
 	if err := validateTimeMicroseconds(usec); err != nil {
 		return 0, "", err

@@ -1,10 +1,12 @@
 package fbtype_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -14,6 +16,7 @@ import (
 	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
+	"rdb.red-soft.ru/fbx/internal/fbio"
 )
 
 func TestTimestampCodec(t *testing.T) {
@@ -389,9 +392,31 @@ func TestTimestampCodecRejectsMalformedBinary(t *testing.T) {
 	codec := &fbtype.TimestampCodec{}
 
 	t.Run("invalid length", func(t *testing.T) {
-		var got fbtype.Timestamp
-		err := codec.PlanScan(nil, typeMetadata, &got).Scan([]byte{0, 0, 0}, &got)
-		assert.Error(t, err)
+		for n := 0; n <= 9; n++ {
+			if n == 8 {
+				continue
+			}
+			t.Run(fmt.Sprintf("%d_bytes", n), func(t *testing.T) {
+				src := bytes.Repeat([]byte{0xff}, n)
+				initial := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+				gotTime := initial
+				gotTimestamp := fbtype.Timestamp{Time: initial, Valid: true}
+				gotString := "unchanged"
+				for _, target := range []any{&gotTime, &gotTimestamp, &gotString} {
+					plan := codec.PlanScan(nil, typeMetadata, target)
+					require.NotNil(t, plan)
+					err := plan.Scan(src, target)
+					if n < 8 {
+						require.ErrorIs(t, err, fbio.ErrInsufficientBytes, "target %T", target)
+					} else {
+						require.ErrorContains(t, err, "unexpected trailing bytes", "target %T", target)
+					}
+				}
+				require.Equal(t, initial, gotTime)
+				require.Equal(t, fbtype.Timestamp{Time: initial, Valid: true}, gotTimestamp)
+				require.Equal(t, "unchanged", gotString)
+			})
+		}
 	})
 
 	t.Run("time out of range", func(t *testing.T) {
@@ -417,6 +442,23 @@ func TestTimestampCodecRejectsMalformedBinary(t *testing.T) {
 		err := codec.PlanScan(nil, typeMetadata, &got).Scan(src, &got)
 		assert.Error(t, err)
 	})
+}
+
+func TestTimestampCodecCheckedReadPreservesDateAndLocation(t *testing.T) {
+	metadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TIMESTAMP, 0, 8, 0)
+	src := timestampWireBytes(-1, 100)
+	for _, location := range []*time.Location{time.UTC, time.FixedZone("UTC+03", 3*60*60)} {
+		t.Run(location.String(), func(t *testing.T) {
+			codec := &fbtype.TimestampCodec{ScanLocation: location}
+			want := time.Date(1858, 11, 16, 0, 0, 0, 100000, location)
+			value, err := codec.DecodeValue(nil, metadata, src)
+			require.NoError(t, err)
+			require.Equal(t, want, value)
+			sqlValue, err := codec.DecodeDatabaseSQLValue(nil, metadata, src)
+			require.NoError(t, err)
+			require.Equal(t, want, sqlValue)
+		})
+	}
 }
 
 func TestTimestampCodecEncodeRejectsDateOutOfRange(t *testing.T) {

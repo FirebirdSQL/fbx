@@ -2,7 +2,6 @@ package fbtype
 
 import (
 	"database/sql/driver"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -354,12 +353,12 @@ func decodeTimetzBinary(src []byte) (Timetz, error) {
 	if src == nil {
 		return Timetz{}, nil
 	}
-	if len(src) != 8 {
-		return Timetz{}, fmt.Errorf("invalid length for timetz: %v", len(src))
+	r := fbio.NewReader(src)
+	ticks := r.Uint32BE()
+	tzVal := r.Uint32BE()
+	if err := r.Finish(); err != nil {
+		return Timetz{}, fmt.Errorf("timetz: %w", err)
 	}
-
-	ticks := binary.BigEndian.Uint32(src[0:4])
-	tzVal := binary.BigEndian.Uint32(src[4:8])
 
 	usec := int64(ticks) * 100
 	if usec < 0 || usec >= microsecondsPerDay {

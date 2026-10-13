@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+
+	"rdb.red-soft.ru/fbx/internal/fbio"
 )
 
 var (
@@ -822,13 +824,15 @@ func ParseInt128(s string) (Int128, error) {
 }
 
 func int128SetFromBinary(dst *big.Int, src []byte) error {
-	if len(src) != 16 {
-		return fmt.Errorf("invalid length for int128: %v", len(src))
+	r := fbio.NewReader(src)
+	b := r.Bytes(16)
+	if err := r.Finish(); err != nil {
+		return fmt.Errorf("int128: %w", err)
 	}
 
-	dst.SetBytes(src)
+	dst.SetBytes(b)
 
-	if src[0]&0x80 != 0 {
+	if b[0]&0x80 != 0 {
 		dst.Sub(dst, int128TwoPow128)
 	}
 
@@ -869,12 +873,12 @@ func appendInt128BinaryFromUint64(buf []byte, v uint64) []byte {
 }
 
 func int128FitsInt64FromBinary(src []byte) (int64, bool, error) {
-	if len(src) != 16 {
-		return 0, false, fmt.Errorf("invalid length for int128: %v", len(src))
+	r := fbio.NewReader(src)
+	hiU := r.Uint64BE()
+	loU := r.Uint64BE()
+	if err := r.Finish(); err != nil {
+		return 0, false, fmt.Errorf("int128: %w", err)
 	}
-
-	hiU := binary.BigEndian.Uint64(src[:8])
-	loU := binary.BigEndian.Uint64(src[8:])
 
 	signBit := loU >> 63
 
@@ -893,16 +897,16 @@ func int128FitsInt64FromBinary(src []byte) (int64, bool, error) {
 }
 
 func int128FitsUint64FromBinary(src []byte) (uint64, bool, error) {
-	if len(src) != 16 {
-		return 0, false, fmt.Errorf("invalid length for int128: %v", len(src))
+	r := fbio.NewReader(src)
+	hiU := r.Uint64BE()
+	loU := r.Uint64BE()
+	if err := r.Finish(); err != nil {
+		return 0, false, fmt.Errorf("int128: %w", err)
 	}
 
-	hiU := binary.BigEndian.Uint64(src[:8])
 	if hiU != 0 {
 		return 0, false, nil
 	}
-
-	loU := binary.BigEndian.Uint64(src[8:])
 
 	return loU, true, nil
 }

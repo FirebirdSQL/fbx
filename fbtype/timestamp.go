@@ -2,7 +2,6 @@ package fbtype
 
 import (
 	"database/sql/driver"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -300,12 +299,12 @@ func encodeTimestampBinary(t time.Time, buf []byte) ([]byte, error) {
 }
 
 func decodeTimestampBinary(src []byte, location *time.Location) (time.Time, error) {
-	if len(src) != 8 {
-		return time.Time{}, fmt.Errorf("invalid length for TIMESTAMP: %d", len(src))
+	r := fbio.NewReader(src)
+	dayOffset := r.Int32BE()
+	ticks := r.Uint32BE()
+	if err := r.Finish(); err != nil {
+		return time.Time{}, fmt.Errorf("TIMESTAMP: %w", err)
 	}
-
-	dayOffset := int32(binary.BigEndian.Uint32(src[0:4]))
-	ticks := binary.BigEndian.Uint32(src[4:8])
 
 	tDate, err := firebirdDateFromDayOffset(dayOffset)
 	if err != nil {

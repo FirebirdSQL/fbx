@@ -1,14 +1,18 @@
 package fbtype
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"rdb.red-soft.ru/fbx/fbproto"
+	"rdb.red-soft.ru/fbx/internal/fbio"
 )
 
 func assertSameTimetzClockAndOffset(t *testing.T, got, want time.Time) {
@@ -438,14 +442,49 @@ func TestTimetzCodecEncodeInvalidString(t *testing.T) {
 }
 
 func TestDecodeTimetzBinaryRejectsInvalidInput(t *testing.T) {
-	if _, err := decodeTimetzBinary([]byte{1, 2, 3}); err == nil {
-		t.Fatalf("decodeTimetzBinary expected length error, got nil")
+	for n := 0; n <= 9; n++ {
+		if n == 8 {
+			continue
+		}
+		t.Run(fmt.Sprintf("%d_bytes", n), func(t *testing.T) {
+			got, err := decodeTimetzBinary(bytes.Repeat([]byte{0xff}, n))
+			if n < 8 {
+				if !errors.Is(err, fbio.ErrInsufficientBytes) {
+					t.Fatalf("error = %v, want ErrInsufficientBytes", err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), "unexpected trailing bytes") {
+				t.Fatalf("error = %v, want trailing bytes error", err)
+			}
+			if got != (Timetz{}) {
+				t.Fatalf("result = %+v, want zero value", got)
+			}
+		})
+	}
+	if got, err := decodeTimetzBinary(nil); err != nil || got != (Timetz{}) {
+		t.Fatalf("decodeTimetzBinary(nil) = %+v, %v, want zero value, nil", got, err)
 	}
 
 	src := make([]byte, 8)
 	binary.BigEndian.PutUint32(src[0:4], uint32(microsecondsPerDay/100))
 	if _, err := decodeTimetzBinary(src); err == nil {
 		t.Fatalf("decodeTimetzBinary expected time-of-day range error, got nil")
+	}
+}
+
+func TestDecodeTimetzBinaryCheckedReadPreservesZoneField(t *testing.T) {
+	const tzRaw = 1439 + 3*60
+	src := binary.BigEndian.AppendUint32(nil, 1)
+	src = binary.BigEndian.AppendUint32(src, 0xabcd0000|tzRaw)
+	got, err := decodeTimetzBinary(src)
+	if err != nil {
+		t.Fatalf("decodeTimetzBinary failed: %v", err)
+	}
+	if !got.Valid || got.tzRaw != tzRaw {
+		t.Fatalf("result = %+v, want valid value with tzRaw %d", got, tzRaw)
+	}
+	const want = "2020-01-01T03:00:00.0001+03:00"
+	if formatted := got.Time.Format(time.RFC3339Nano); formatted != want {
+		t.Fatalf("time = %s, want %s", formatted, want)
 	}
 }
 

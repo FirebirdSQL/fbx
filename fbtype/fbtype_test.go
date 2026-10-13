@@ -4,11 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -16,6 +19,7 @@ import (
 	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
+	"rdb.red-soft.ru/fbx/internal/fbio"
 )
 
 var defaultConnTestRunner fbxtest.ConnTestRunner
@@ -634,6 +638,124 @@ func TestDefaultMapGoTextValuesUseVarchar(t *testing.T) {
 		require.True(t, ok, "value type %T", value)
 		require.Equal(t, "varchar", dataType.Name, "value type %T", value)
 		require.Equal(t, uint32(fbproto.SQL_TYPE_VARYING), dataType.TypeID, "value type %T", value)
+	}
+}
+
+func TestScalarCodecsCheckedRead(t *testing.T) {
+	integerTargets := []any{
+		int8(42), uint8(42), int16(42), uint16(42), int32(42), uint32(42),
+		int64(42), uint64(42), int(42), uint(42),
+		fbtype.Int8{Int64: 42, Valid: true}, "unchanged", fbtype.Text{String: "unchanged", Valid: true},
+	}
+	initialTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	for _, tt := range []struct {
+		name         string
+		codec        fbtype.Codec
+		metadata     fbtype.TypeMetadata
+		src          []byte
+		want         any
+		wantSQL      any
+		targetValues []any
+	}{
+		{
+			name: "smallint", codec: fbtype.Int4Codec{},
+			metadata: fbtype.NewTypeMetadata(fbproto.SQL_TYPE_SHORT, 0, 2, 0),
+			src:      []byte{0xff, 0xff, 0xff, 0x85}, want: int16(-123), wantSQL: int64(-123),
+			targetValues: integerTargets,
+		},
+		{
+			name: "integer", codec: fbtype.Int4Codec{},
+			metadata:     fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 0, 4, 0),
+			src:          []byte{0x80, 0, 0, 0},
+			want:         int32(math.MinInt32),
+			wantSQL:      int64(math.MinInt32),
+			targetValues: integerTargets,
+		},
+		{
+			name: "bigint", codec: fbtype.Int8Codec{},
+			metadata:     fbtype.NewTypeMetadata(fbproto.SQL_TYPE_INT64, 0, 8, 0),
+			src:          []byte{0x80, 0, 0, 0, 0, 0, 0, 0},
+			want:         int64(math.MinInt64),
+			wantSQL:      int64(math.MinInt64),
+			targetValues: integerTargets,
+		},
+		{
+			name: "double", codec: fbtype.Float8Codec{},
+			metadata: fbtype.NewTypeMetadata(fbproto.SQL_TYPE_DOUBLE, 0, 8, 0),
+			src:      binary.BigEndian.AppendUint64(nil, math.Float64bits(-123)),
+			want:     float64(-123), wantSQL: float64(-123),
+			targetValues: []any{
+				float64(42), fbtype.Float8{Float64: 42, Valid: true}, fbtype.Int8{Int64: 42, Valid: true},
+				"unchanged", fbtype.Text{String: "unchanged", Valid: true},
+			},
+		},
+		{
+			name: "date", codec: fbtype.DateCodec{},
+			metadata: fbtype.NewTypeMetadata(fbproto.SQL_TYPE_DATE, 0, 4, 0),
+			src:      []byte{0xff, 0xff, 0xff, 0xff},
+			want:     time.Date(1858, 11, 16, 0, 0, 0, 0, time.UTC),
+			wantSQL:  time.Date(1858, 11, 16, 0, 0, 0, 0, time.UTC),
+			targetValues: []any{
+				fbtype.Date{Time: initialTime, Valid: true}, initialTime, "unchanged",
+			},
+		},
+		{
+			name: "time", codec: fbtype.TimeCodec{},
+			metadata: fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TIME, 0, 4, 0),
+			src:      []byte{0, 0, 0, 1},
+			want:     fbtype.Time{Microseconds: 100, Valid: true},
+			wantSQL:  time.Date(2000, 1, 1, 0, 0, 0, 100000, time.UTC),
+			targetValues: []any{
+				fbtype.Time{Microseconds: 4200, Valid: true}, initialTime,
+				"unchanged", fbtype.Text{String: "unchanged", Valid: true},
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			m := fbtype.NewMap()
+			value, err := tt.codec.DecodeValue(m, tt.metadata, tt.src)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, value)
+			sqlValue, err := tt.codec.DecodeDatabaseSQLValue(m, tt.metadata, tt.src)
+			require.NoError(t, err)
+			require.Equal(t, tt.wantSQL, sqlValue)
+
+			value, err = tt.codec.DecodeValue(m, tt.metadata, nil)
+			require.NoError(t, err)
+			require.Nil(t, value)
+			sqlValue, err = tt.codec.DecodeDatabaseSQLValue(m, tt.metadata, nil)
+			require.NoError(t, err)
+			require.Nil(t, sqlValue)
+
+			for n := 0; n <= len(tt.src)+1; n++ {
+				if n == len(tt.src) {
+					continue
+				}
+				t.Run(fmt.Sprintf("%d_bytes", n), func(t *testing.T) {
+					src := make([]byte, n)
+					copy(src, tt.src)
+					value, err := tt.codec.DecodeValue(m, tt.metadata, src)
+					require.ErrorIs(t, err, fbio.ErrInvalidLength)
+					require.Nil(t, value)
+					sqlValue, err := tt.codec.DecodeDatabaseSQLValue(m, tt.metadata, src)
+					require.ErrorIs(t, err, fbio.ErrInvalidLength)
+					require.Nil(t, sqlValue)
+
+					for _, initial := range tt.targetValues {
+						t.Run(fmt.Sprintf("%T", initial), func(t *testing.T) {
+							dst := reflect.New(reflect.TypeOf(initial))
+							dst.Elem().Set(reflect.ValueOf(initial))
+							plan := tt.codec.PlanScan(m, tt.metadata, dst.Interface())
+							require.NotNil(t, plan)
+							err := plan.Scan(src, dst.Interface())
+							require.ErrorIs(t, err, fbio.ErrInvalidLength)
+							require.Equal(t, initial, dst.Elem().Interface(), "malformed input changed destination")
+						})
+					}
+				})
+			}
+		})
 	}
 }
 

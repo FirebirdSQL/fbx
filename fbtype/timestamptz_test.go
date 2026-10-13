@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"rdb.red-soft.ru/fbx/fbproto"
+	"rdb.red-soft.ru/fbx/internal/fbio"
 )
 
 func mustLoadLocation(t *testing.T, name string) *time.Location {
@@ -470,8 +473,26 @@ func TestTimestamptzCodecScansStringPreservesNamedZone(t *testing.T) {
 }
 
 func TestDecodeTimestamptzBinaryRejectsInvalidInput(t *testing.T) {
-	if _, err := decodeTimestamptzBinary([]byte{1, 2, 3}); err == nil {
-		t.Fatalf("decodeTimestamptzBinary expected length error, got nil")
+	for n := 0; n <= 13; n++ {
+		if n == 12 {
+			continue
+		}
+		t.Run(fmt.Sprintf("%d_bytes", n), func(t *testing.T) {
+			got, err := decodeTimestamptzBinary(bytes.Repeat([]byte{0xff}, n))
+			if n < 12 {
+				if !errors.Is(err, fbio.ErrInsufficientBytes) {
+					t.Fatalf("error = %v, want ErrInsufficientBytes", err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), "unexpected trailing bytes") {
+				t.Fatalf("error = %v, want trailing bytes error", err)
+			}
+			if got != (Timestamptz{}) {
+				t.Fatalf("result = %+v, want zero value", got)
+			}
+		})
+	}
+	if got, err := decodeTimestamptzBinary(nil); err != nil || got != (Timestamptz{}) {
+		t.Fatalf("decodeTimestamptzBinary(nil) = %+v, %v, want zero value, nil", got, err)
 	}
 
 	src := make([]byte, 12)
@@ -484,6 +505,24 @@ func TestDecodeTimestamptzBinaryRejectsInvalidInput(t *testing.T) {
 	binary.BigEndian.PutUint32(src[0:4], uint32(1<<31-1))
 	if _, err := decodeTimestamptzBinary(src); err == nil {
 		t.Fatalf("decodeTimestamptzBinary expected date range error, got nil")
+	}
+}
+
+func TestDecodeTimestamptzBinaryCheckedReadPreservesDateAndZone(t *testing.T) {
+	const tzRaw = 1439 + 3*60
+	src := binary.BigEndian.AppendUint32(nil, 0xffffffff)
+	src = binary.BigEndian.AppendUint32(src, 1)
+	src = binary.BigEndian.AppendUint32(src, 0xabcd0000|tzRaw)
+	got, err := decodeTimestamptzBinary(src)
+	if err != nil {
+		t.Fatalf("decodeTimestamptzBinary failed: %v", err)
+	}
+	if !got.Valid || got.tzRaw != tzRaw {
+		t.Fatalf("result = %+v, want valid value with tzRaw %d", got, tzRaw)
+	}
+	const want = "1858-11-16T03:00:00.0001+03:00"
+	if formatted := got.Time.Format(time.RFC3339Nano); formatted != want {
+		t.Fatalf("time = %s, want %s", formatted, want)
 	}
 }
 

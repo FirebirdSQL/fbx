@@ -1,8 +1,11 @@
 package fbtype_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"math"
 	"math/big"
 	"testing"
@@ -12,7 +15,106 @@ import (
 	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
+	"rdb.red-soft.ru/fbx/internal/fbio"
 )
+
+func TestInt128BinaryReadRejectsInvalidLength(t *testing.T) {
+	m := fbtype.NewMap()
+	metadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_INT128, 0, 16, 0)
+	for n := 0; n <= 17; n++ {
+		if n == 16 {
+			continue
+		}
+		t.Run(fmt.Sprintf("%d_bytes", n), func(t *testing.T) {
+			src := bytes.Repeat([]byte{0xff}, n)
+			dst := big.NewInt(42)
+			i, u := int64(42), uint64(42)
+			for _, target := range []any{dst, &i, &u} {
+				err := m.Scan(metadata, src, target)
+				if n < 16 {
+					require.ErrorIs(t, err, fbio.ErrInsufficientBytes, "target %T", target)
+				} else {
+					require.ErrorContains(t, err, "unexpected trailing bytes", "target %T", target)
+				}
+			}
+			require.Equal(t, "42", dst.String())
+			require.Equal(t, int64(42), i)
+			require.Equal(t, uint64(42), u)
+		})
+	}
+}
+
+func TestInt128BinaryReadBoundaries(t *testing.T) {
+	m := fbtype.NewMap()
+	metadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_INT128, 0, 16, 0)
+	for _, tt := range []struct {
+		name     string
+		hi, lo   uint64
+		decimal  string
+		fitsInt  bool
+		wantInt  int64
+		fitsUint bool
+		wantUint uint64
+	}{
+		{name: "zero", decimal: "0", fitsInt: true, fitsUint: true},
+		{
+			name: "byte order", lo: 0x0102030405060708, decimal: "72623859790382856",
+			fitsInt: true, wantInt: 0x0102030405060708, fitsUint: true, wantUint: 0x0102030405060708,
+		},
+		{
+			name: "max int64", lo: math.MaxInt64, decimal: "9223372036854775807",
+			fitsInt: true, wantInt: math.MaxInt64, fitsUint: true, wantUint: math.MaxInt64,
+		},
+		{
+			name: "above max int64", lo: 1 << 63, decimal: "9223372036854775808",
+			fitsUint: true, wantUint: 1 << 63,
+		},
+		{
+			name: "max uint64", lo: math.MaxUint64, decimal: "18446744073709551615",
+			fitsUint: true, wantUint: math.MaxUint64,
+		},
+		{name: "above max uint64", hi: 1, decimal: "18446744073709551616"},
+		{
+			name: "negative one", hi: math.MaxUint64, lo: math.MaxUint64, decimal: "-1",
+			fitsInt: true, wantInt: -1,
+		},
+		{
+			name: "min int64", hi: math.MaxUint64, lo: 1 << 63, decimal: "-9223372036854775808",
+			fitsInt: true, wantInt: math.MinInt64,
+		},
+		{name: "below min int64", hi: math.MaxUint64, lo: math.MaxInt64, decimal: "-9223372036854775809"},
+		{name: "min int128", hi: 1 << 63, decimal: "-170141183460469231731687303715884105728"},
+		{name: "max int128", hi: math.MaxInt64, lo: math.MaxUint64, decimal: "170141183460469231731687303715884105727"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			src := binary.BigEndian.AppendUint64(nil, tt.hi)
+			src = binary.BigEndian.AppendUint64(src, tt.lo)
+			var dst big.Int
+			require.NoError(t, m.Scan(metadata, src, &dst))
+			require.Equal(t, tt.decimal, dst.String())
+
+			i := int64(42)
+			err := m.Scan(metadata, src, &i)
+			if tt.fitsInt {
+				require.NoError(t, err)
+				require.Equal(t, tt.wantInt, i)
+			} else {
+				require.ErrorContains(t, err, "value is out of range for int64")
+				require.Equal(t, int64(42), i)
+			}
+
+			u := uint64(42)
+			err = m.Scan(metadata, src, &u)
+			if tt.fitsUint {
+				require.NoError(t, err)
+				require.Equal(t, tt.wantUint, u)
+			} else {
+				require.ErrorContains(t, err, "value is out of range for uint64")
+				require.Equal(t, uint64(42), u)
+			}
+		})
+	}
+}
 
 func TestInt128Transcode(t *testing.T) {
 	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, tb testing.TB, conn *fbx.Conn) {

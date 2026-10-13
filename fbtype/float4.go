@@ -2,7 +2,6 @@ package fbtype
 
 import (
 	"database/sql/driver"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -237,11 +236,12 @@ func (scanPlanBinaryFloat4ToFloat32) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
-	if len(src) != 4 {
-		return fmt.Errorf("invalid length for float4: %v", len(src))
+	bits, err := fbio.Uint32BEExact(src)
+	if err != nil {
+		return fmt.Errorf("float4: %w", err)
 	}
 
-	*f = math.Float32frombits(binary.BigEndian.Uint32(src))
+	*f = math.Float32frombits(bits)
 
 	return nil
 }
@@ -258,11 +258,12 @@ func (scanPlanBinaryFloat4ToFloat64Scanner) Scan(src []byte, dst any) error {
 		return s.ScanFloat64(Float8{})
 	}
 
-	if len(src) != 4 {
-		return fmt.Errorf("invalid length for float4: %v", len(src))
+	bits, err := fbio.Uint32BEExact(src)
+	if err != nil {
+		return fmt.Errorf("float4: %w", err)
 	}
 
-	f32 := math.Float32frombits(binary.BigEndian.Uint32(src))
+	f32 := math.Float32frombits(bits)
 	return s.ScanFloat64(Float8{Float64: float64(f32), Valid: true})
 }
 
@@ -278,11 +279,12 @@ func (scanPlanBinaryFloat4ToInt64Scanner) Scan(src []byte, dst any) error {
 		return s.ScanInt64(Int8{})
 	}
 
-	if len(src) != 4 {
-		return fmt.Errorf("invalid length for float4: %v", len(src))
+	bits, err := fbio.Uint32BEExact(src)
+	if err != nil {
+		return fmt.Errorf("float4: %w", err)
 	}
 
-	f32 := math.Float32frombits(binary.BigEndian.Uint32(src))
+	f32 := math.Float32frombits(bits)
 	i64, err := float64ToInt64(float64(f32))
 	if err != nil {
 		return err
@@ -303,11 +305,12 @@ func (scanPlanBinaryFloat4ToTextScanner) Scan(src []byte, dst any) error {
 		return s.ScanText(Text{})
 	}
 
-	if len(src) != 4 {
-		return fmt.Errorf("invalid length for float4: %v", len(src))
+	bits, err := fbio.Uint32BEExact(src)
+	if err != nil {
+		return fmt.Errorf("float4: %w", err)
 	}
 
-	f32 := math.Float32frombits(binary.BigEndian.Uint32(src))
+	f32 := math.Float32frombits(bits)
 
 	return s.ScanText(Text{String: strconv.FormatFloat(float64(f32), 'f', -1, 32), Valid: true})
 }
@@ -324,12 +327,12 @@ func (scanPlanBinaryFloat4ToString) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into *string")
 	}
 
-	if len(src) != 4 {
-		return fmt.Errorf("invalid length for float4: %v", len(src))
+	bits, err := fbio.Uint32BEExact(src)
+	if err != nil {
+		return fmt.Errorf("float4: %w", err)
 	}
 
-	ui32 := binary.BigEndian.Uint32(src)
-	f32 := math.Float32frombits(ui32)
+	f32 := math.Float32frombits(bits)
 
 	*target = strconv.FormatFloat(float64(f32), 'f', -1, 32)
 	return nil
