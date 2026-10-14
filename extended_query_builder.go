@@ -2,6 +2,7 @@ package fbx
 
 import (
 	"context"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"io"
@@ -158,6 +159,16 @@ func (pb *ExtendedQueryBuilder) encodeBlobParam(ctx context.Context, conn *Conn,
 	}
 	if typeMetadata.TypeID != 0 && !fbconn.IsBlobType(typeMetadata.TypeID) {
 		return nil, fmt.Errorf("blob argument is not compatible with typeid %d", typeMetadata.TypeID)
+	}
+	if valuer, ok := arg.(driver.Valuer); ok {
+		var err error
+		arg, err = valuer.Value()
+		if err != nil {
+			return nil, fmt.Errorf("error reading driver.Valuer value: %w", err)
+		}
+		if isNilArg(arg) {
+			return nil, nil
+		}
 	}
 	switch v := arg.(type) {
 	case []byte:

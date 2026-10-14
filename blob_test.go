@@ -3,6 +3,7 @@ package fbx_test
 import (
 	"bytes"
 	"context"
+	"database/sql/driver"
 	"fmt"
 	"io"
 	"os"
@@ -287,6 +288,64 @@ func TestBlobExecParamFromFile(t *testing.T) {
 		err = conn.QueryRow(ctx, fmt.Sprintf("select bin_blob from %s where id = ?", table), 1).Scan(&readBytes)
 		require.NoError(t, err)
 		require.Equal(t, data, readBytes)
+	})
+}
+
+type byteValuer struct {
+}
+
+func (byteValuer) Value() (driver.Value, error) {
+	return makeBlobData(2048 + 7), nil
+}
+
+type stringValuer struct {
+}
+
+func (stringValuer) Value() (driver.Value, error) {
+	return "text-blob-a", nil
+}
+
+type nilValuer struct {
+}
+
+func (nilValuer) Value() (driver.Value, error) {
+	return nil, nil
+}
+
+func TestBlobExecWithDriverValuer(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	runWithBlobStreamModes(ctx, t, func(ctx context.Context, t testing.TB, config *fbx.ConnConfig) {
+		config.DefaultQueryExecMode = fbx.QueryExecModeCacheStatement
+	}, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		table := createBlobTestTable(ctx, t, conn)
+		dataA := byteValuer{}
+		textA := stringValuer{}
+		dataB := nilValuer{}
+		textB := nilValuer{}
+
+		_, err := conn.Exec(ctx, fmt.Sprintf("insert into %s (id, bin_blob, txt_blob) values (?, ?, ?)", table), 1, dataA, textA)
+		require.NoError(t, err)
+
+		_, err = conn.Exec(ctx, fmt.Sprintf("insert into %s (id, bin_blob, txt_blob) values (?, ?, ?)", table), 2, dataB, textB)
+		require.NoError(t, err)
+
+		var readBytes []byte
+		var readText string
+		err = conn.QueryRow(ctx, fmt.Sprintf("select bin_blob, txt_blob from %s where id = ?", table), 1).Scan(&readBytes, &readText)
+		require.NoError(t, err)
+		valDataA, _ := dataA.Value()
+		valTextA, _ := textA.Value()
+		require.Equal(t, valDataA, readBytes)
+		require.Equal(t, valTextA, readText)
+
+		var readNilBytes []byte
+		var readNilText []byte
+		err = conn.QueryRow(ctx, fmt.Sprintf("select bin_blob, txt_blob from %s where id = ?", table), 2).Scan(&readNilBytes, &readNilText)
+		require.NoError(t, err)
+		require.Nil(t, readNilBytes)
+		require.Nil(t, readNilText)
 	})
 }
 
