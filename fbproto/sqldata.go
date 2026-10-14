@@ -95,6 +95,9 @@ func ReadRowData(x *XDRReader, rowDescriptor []FieldDescriptor, scratch *rowScra
 				if err != nil {
 					return nil, err
 				}
+				if n < 0 {
+					return nil, fmt.Errorf("invalid row field length %d for column %d", n, i)
+				}
 				data = scratch.take(i, n)
 				if err = x.ReadBytesInto(data); err != nil {
 					return nil, err
