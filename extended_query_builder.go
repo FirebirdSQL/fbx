@@ -160,7 +160,8 @@ func (pb *ExtendedQueryBuilder) encodeBlobParam(ctx context.Context, conn *Conn,
 	if typeMetadata.TypeID != 0 && !fbconn.IsBlobType(typeMetadata.TypeID) {
 		return nil, fmt.Errorf("blob argument is not compatible with typeid %d", typeMetadata.TypeID)
 	}
-	if valuer, ok := arg.(driver.Valuer); ok {
+	_, isIoReader := arg.(io.Reader)
+	if valuer, ok := arg.(driver.Valuer); ok && !isIoReader {
 		var err error
 		arg, err = valuer.Value()
 		if err != nil {
@@ -293,7 +294,22 @@ func isNilArg(arg any) bool {
 	}
 	v := reflect.ValueOf(arg)
 	switch v.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Map, reflect.Pointer, reflect.Interface, reflect.Slice:
+	case reflect.Pointer:
+		iface := reflect.TypeOf((*driver.Valuer)(nil)).Elem()
+		t := reflect.TypeOf(arg)
+		if t.Implements(iface) {
+			if t.Elem().Implements(iface) {
+				return v.IsNil()
+			}
+			return false
+		}
+		return v.IsNil()
+	case reflect.Slice, reflect.Map:
+		if _, ok := arg.(driver.Valuer); ok {
+			return false
+		}
+		return v.IsNil()
+	case reflect.Chan, reflect.Func, reflect.Interface:
 		return v.IsNil()
 	default:
 		return false
