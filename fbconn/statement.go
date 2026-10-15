@@ -330,7 +330,7 @@ func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *
 
 	msg, err := st.conn.receiveMessage()
 	if err != nil {
-		st.conn.asyncClose()
+		st.conn.asyncCloseAfterRead(err)
 		rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(ctx, err))
 		rr.closed = true
 		return rr
@@ -352,7 +352,7 @@ func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *
 				err = fmt.Errorf("unexpected SQL response message count: %d", r.Messages)
 			}
 			if err != nil {
-				st.conn.asyncClose()
+				st.conn.asyncCloseAfterRead(err)
 				rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(ctx, err))
 				rr.closed = true
 				return rr
@@ -474,6 +474,9 @@ func (st *Statement) deallocateLocked(ctx context.Context) error {
 	if st.closed {
 		return nil
 	}
+	if st.conn.IsClosed() {
+		return ErrConnClosed
+	}
 	if err := st.conn.client.WriteMessage(&fbproto.OpFreeStatement{
 		StatementHandle: st.Description.StatementHandle,
 		Option:          fbproto.DSQL_drop,
@@ -502,6 +505,9 @@ func (st *Statement) CloseCursor(ctx context.Context) error {
 // statement handle that has no corresponding *Statement Go object yet. Caller must
 // hold the conn lock. On any wire error the conn is asyncClose'd.
 func (fbConn *FbConn) freeStatementHandleLocked(handle int) error {
+	if fbConn.IsClosed() {
+		return ErrConnClosed
+	}
 	if err := fbConn.client.WriteMessage(&fbproto.OpFreeStatement{
 		StatementHandle: handle,
 		Option:          fbproto.DSQL_drop,
