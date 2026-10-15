@@ -1237,9 +1237,10 @@ func TestPoolAcquireUnlimitedLifetimeDoesNotExpire(t *testing.T) {
 	for range 5 {
 		c, err = pool.Acquire(ctx)
 		require.NoError(t, err)
-		require.Same(t, firstConn, c.Conn())
+		actualConn := c.Conn()
 		c.Release()
 		waitForReleaseToComplete()
+		require.Same(t, firstConn, actualConn)
 	}
 
 	stats := pool.Stat()
