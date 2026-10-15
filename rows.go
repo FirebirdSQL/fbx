@@ -884,11 +884,13 @@ func lookupNamedStructFields(
 	// for a type only once, cache it by type, then use that to compute the column -> fields
 	// mapping for a given set of columns.
 	fieldStack := make([]int, 0, 1)
+	checked := make(map[int]bool)
 	fields, missingField := computeNamedStructFields(
 		fldDescs,
 		t,
 		make([]structRowField, len(fldDescs)),
 		&fieldStack,
+		checked,
 	)
 	for i, f := range fields {
 		if f.path == nil {
@@ -933,6 +935,7 @@ func computeNamedStructFields(
 	t reflect.Type,
 	fields []structRowField,
 	fieldStack *[]int,
+	checked map[int]bool,
 ) ([]structRowField, string) {
 	var missingField string
 	tail := len(*fieldStack)
@@ -952,6 +955,7 @@ func computeNamedStructFields(
 				sf.Type,
 				fields,
 				fieldStack,
+				checked,
 			)
 			if missingField == "" {
 				missingField = missingSubField
@@ -969,15 +973,18 @@ func computeNamedStructFields(
 			if !dbTagPresent {
 				colName = sf.Name
 			}
-			fpos := fieldPosByName(fldDescs, colName, !dbTagPresent)
+			fpos, exactMatch := fieldPosByName(fldDescs, colName, !dbTagPresent)
 			if fpos == -1 {
 				if missingField == "" {
 					missingField = colName
 				}
 				continue
 			}
-			fields[fpos] = structRowField{
-				path: append([]int(nil), *fieldStack...),
+			if wasExact, ok := checked[fpos]; !ok || !wasExact && exactMatch {
+				fields[fpos] = structRowField{
+					path: append([]int(nil), *fieldStack...),
+				}
+				checked[fpos] = exactMatch
 			}
 		}
 	}
@@ -988,20 +995,27 @@ func computeNamedStructFields(
 
 const structTagKey = "db"
 
-func fieldPosByName(fldDescs []fbconn.FieldDescription, field string, normalize bool) (i int) {
+func fieldPosByName(fldDescs []fbconn.FieldDescription, field string, normalize bool) (i int, exactMatch bool) {
 	i = -1
 
 	if normalize {
 		field = strings.ReplaceAll(field, "_", "")
+	} else {
+		// Explicit db tags can distinguish quoted identifiers that differ only by case.
+		for i, desc := range fldDescs {
+			if desc.Name == field {
+				return i, true
+			}
+		}
 	}
 	for i, desc := range fldDescs {
 		if normalize {
 			if strings.EqualFold(strings.ReplaceAll(desc.Name, "_", ""), field) {
-				return i
+				return i, false
 			}
 		} else {
-			if desc.Name == field {
-				return i
+			if strings.EqualFold(desc.Name, field) {
+				return i, false
 			}
 		}
 	}
