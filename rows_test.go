@@ -877,6 +877,25 @@ func TestRowToStructByNameDbTagsPreferExactMatch(t *testing.T) {
 	})
 }
 
+func TestRowToStructByNameDbTagsPreferExact(t *testing.T) {
+	type Inner struct{ Name string }
+	type record struct {
+		Inner
+		Name string
+	}
+
+	sql := `select 'east' as NAME from rdb$database`
+
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		rows, err := conn.Query(ctx, sql)
+		require.NoError(t, err)
+		got, err := fbx.CollectOneRow(rows, fbx.RowToStructByName[record])
+		require.NoError(t, err)
+		require.Equal(t, record{Name: "east"}, got)
+
+	})
+}
+
 func TestRowToStructByNameEmbeddedDbTagKeepsExactMatch(t *testing.T) {
 	const query = `select 'east' as "REGION" from rdb$database`
 
@@ -908,7 +927,7 @@ func TestRowToStructByNameEmbeddedDbTagKeepsExactMatch(t *testing.T) {
 		})
 	})
 
-	t.Run("first if same/all exact", func(t *testing.T) {
+	t.Run("last if same/all exact", func(t *testing.T) {
 		type record struct {
 			First  string `db:"REGION"`
 			Second string `db:"REGION"`
@@ -918,11 +937,11 @@ func TestRowToStructByNameEmbeddedDbTagKeepsExactMatch(t *testing.T) {
 			require.NoError(t, err)
 			got, err := fbx.CollectOneRow(rows, fbx.RowToStructByName[record])
 			require.NoError(t, err)
-			require.Equal(t, record{First: "east"}, got)
+			require.Equal(t, record{Second: "east"}, got)
 		})
 	})
 
-	t.Run("first if same/all inexact", func(t *testing.T) {
+	t.Run("last if same/all inexact", func(t *testing.T) {
 		type record struct {
 			First  string `db:"region"`
 			Second string `db:"region"`
@@ -932,7 +951,7 @@ func TestRowToStructByNameEmbeddedDbTagKeepsExactMatch(t *testing.T) {
 			require.NoError(t, err)
 			got, err := fbx.CollectOneRow(rows, fbx.RowToStructByName[record])
 			require.NoError(t, err)
-			require.Equal(t, record{First: "east"}, got)
+			require.Equal(t, record{Second: "east"}, got)
 		})
 	})
 
@@ -969,6 +988,24 @@ func TestRowToStructByNameEmbeddedDbTagKeepsExactMatch(t *testing.T) {
 			got, err := fbx.CollectOneRow(rows, fbx.RowToStructByName[record])
 			require.NoError(t, err)
 			require.Equal(t, record{Inner: Inner{Region: "east"}}, got)
+		})
+	})
+
+	t.Run("embedded then outer", func(t *testing.T) {
+		type Inner struct {
+			Region string `db:"REGION"`
+		}
+		type record struct {
+			Inner
+			Region string `db:"REGION"`
+		}
+
+		defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+			rows, err := conn.Query(ctx, query)
+			require.NoError(t, err)
+			got, err := fbx.CollectOneRow(rows, fbx.RowToStructByName[record])
+			require.NoError(t, err)
+			require.Equal(t, record{Region: "east"}, got)
 		})
 	})
 }

@@ -884,13 +884,13 @@ func lookupNamedStructFields(
 	// for a type only once, cache it by type, then use that to compute the column -> fields
 	// mapping for a given set of columns.
 	fieldStack := make([]int, 0, 1)
-	checked := make(map[int]bool)
+	checkedIndexes := make(map[int]bool)
 	fields, missingField := computeNamedStructFields(
 		fldDescs,
 		t,
 		make([]structRowField, len(fldDescs)),
 		&fieldStack,
-		checked,
+		checkedIndexes,
 	)
 	for i, f := range fields {
 		if f.path == nil {
@@ -935,7 +935,7 @@ func computeNamedStructFields(
 	t reflect.Type,
 	fields []structRowField,
 	fieldStack *[]int,
-	checked map[int]bool,
+	checkedIndexes map[int]bool,
 ) ([]structRowField, string) {
 	var missingField string
 	tail := len(*fieldStack)
@@ -955,7 +955,7 @@ func computeNamedStructFields(
 				sf.Type,
 				fields,
 				fieldStack,
-				checked,
+				checkedIndexes,
 			)
 			if missingField == "" {
 				missingField = missingSubField
@@ -980,11 +980,11 @@ func computeNamedStructFields(
 				}
 				continue
 			}
-			if wasExact, ok := checked[fpos]; !ok || !wasExact && exactMatch {
+			if wasExact, ok := checkedIndexes[fpos]; !ok || !wasExact && exactMatch || wasExact == exactMatch {
 				fields[fpos] = structRowField{
 					path: append([]int(nil), *fieldStack...),
 				}
-				checked[fpos] = exactMatch
+				checkedIndexes[fpos] = exactMatch
 			}
 		}
 	}
