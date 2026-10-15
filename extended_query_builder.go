@@ -293,11 +293,12 @@ func isNilArg(arg any) bool {
 		return true
 	}
 	v := reflect.ValueOf(arg)
+	_, isIoReader := arg.(io.Reader)
 	switch v.Kind() {
 	case reflect.Pointer:
 		iface := reflect.TypeOf((*driver.Valuer)(nil)).Elem()
 		t := reflect.TypeOf(arg)
-		if t.Implements(iface) {
+		if t.Implements(iface) && !isIoReader {
 			if t.Elem().Implements(iface) {
 				return v.IsNil()
 			}

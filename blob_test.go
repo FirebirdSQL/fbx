@@ -442,6 +442,24 @@ func TestBlobExecReaderPreferredOverDriverValuer(t *testing.T) {
 	})
 }
 
+func TestBlobExecNilReaderValuer(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	runWithBlobStreamModes(ctx, t, func(ctx context.Context, t testing.TB, config *fbx.ConnConfig) {
+		config.DefaultQueryExecMode = fbx.QueryExecModeCacheStatement
+	}, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		table := createBlobTestTable(ctx, t, conn)
+
+		_, err := conn.Exec(ctx, fmt.Sprintf("insert into %s (id, bin_blob) values (?, ?)", table), 1, (*readerValuer)(nil))
+		require.NoError(t, err)
+
+		var got []byte
+		require.NoError(t, conn.QueryRow(ctx, fmt.Sprintf("select bin_blob from %s where id = ?", table), 1).Scan(&got))
+		require.Nil(t, got)
+	})
+}
+
 func runWithBlobStreamModes(
 	ctx context.Context,
 	t *testing.T,
