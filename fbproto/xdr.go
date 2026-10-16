@@ -119,6 +119,9 @@ func (x *XDRReader) ReadBufferInto(dst *[]byte) ([]byte, error) {
 }
 
 func (x *XDRReader) ReadBytes(len int64) ([]byte, error) {
+	if len < 0 {
+		return nil, fmt.Errorf("invalid buffer length %d", len)
+	}
 	buf := make([]byte, len)
 	_, err := io.ReadFull(x.reader, buf)
 	return buf, err
