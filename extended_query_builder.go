@@ -305,12 +305,12 @@ func isNilArg(arg any) bool {
 			return false
 		}
 		return v.IsNil()
-	case reflect.Slice, reflect.Map:
+	case reflect.Slice, reflect.Map, reflect.Chan, reflect.Func:
 		if _, ok := arg.(driver.Valuer); ok {
 			return false
 		}
 		return v.IsNil()
-	case reflect.Chan, reflect.Func, reflect.Interface:
+	case reflect.Interface:
 		return v.IsNil()
 	default:
 		return false

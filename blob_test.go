@@ -337,6 +337,26 @@ func (nilMapValuer) Value() (driver.Value, error) {
 	return []byte("nil-map-value"), nil
 }
 
+type nilFuncValuer func()
+
+func (nilFuncValuer) Value() (driver.Value, error) {
+	return []byte("nil-func-value"), nil
+}
+
+type nilChanValuer chan struct{}
+
+func (nilChanValuer) Value() (driver.Value, error) {
+	return []byte("nil-chan-value"), nil
+}
+
+type nilFuncErrorValuer func()
+
+func (nilFuncErrorValuer) Value() (driver.Value, error) {
+	return nil, errNilFuncValuer
+}
+
+var errNilFuncValuer = errors.New("nil func valuer failure")
+
 type readerValuer struct {
 	*bytes.Reader
 	value driver.Value
@@ -411,9 +431,22 @@ func TestBlobExecNilDriverValuer(t *testing.T) {
 		require.NoError(t, conn.QueryRow(ctx, fmt.Sprintf("select bin_blob from %s where id = ?", table), 3).Scan(&got))
 		require.Equal(t, []byte("nil-map-value"), got)
 
-		_, err = conn.Exec(ctx, fmt.Sprintf("insert into %s (id, txt_blob) values (?, ?)", table), 4, (*valueReceiverValuer)(nil))
+		_, err = conn.Exec(ctx, fmt.Sprintf("insert into %s (id, bin_blob) values (?, ?)", table), 4, nilFuncValuer(nil))
 		require.NoError(t, err)
-		require.NoError(t, conn.QueryRow(ctx, fmt.Sprintf("select txt_blob from %s where id = ?", table), 4).Scan(&got))
+		require.NoError(t, conn.QueryRow(ctx, fmt.Sprintf("select bin_blob from %s where id = ?", table), 4).Scan(&got))
+		require.Equal(t, []byte("nil-func-value"), got)
+
+		_, err = conn.Exec(ctx, fmt.Sprintf("insert into %s (id, bin_blob) values (?, ?)", table), 5, nilChanValuer(nil))
+		require.NoError(t, err)
+		require.NoError(t, conn.QueryRow(ctx, fmt.Sprintf("select bin_blob from %s where id = ?", table), 5).Scan(&got))
+		require.Equal(t, []byte("nil-chan-value"), got)
+
+		_, err = conn.Exec(ctx, fmt.Sprintf("insert into %s (id, bin_blob) values (?, ?)", table), 6, nilFuncErrorValuer(nil))
+		require.ErrorIs(t, err, errNilFuncValuer)
+
+		_, err = conn.Exec(ctx, fmt.Sprintf("insert into %s (id, txt_blob) values (?, ?)", table), 7, (*valueReceiverValuer)(nil))
+		require.NoError(t, err)
+		require.NoError(t, conn.QueryRow(ctx, fmt.Sprintf("select txt_blob from %s where id = ?", table), 7).Scan(&got))
 		require.Nil(t, got)
 	})
 }
