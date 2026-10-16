@@ -306,7 +306,7 @@ func isNilArg(arg any) bool {
 		}
 		return v.IsNil()
 	case reflect.Slice, reflect.Map, reflect.Chan, reflect.Func:
-		if _, ok := arg.(driver.Valuer); ok {
+		if _, ok := arg.(driver.Valuer); ok && !isIoReader {
 			return false
 		}
 		return v.IsNil()
