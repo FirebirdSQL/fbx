@@ -3,6 +3,8 @@ package fbx_test
 import (
 	"bytes"
 	"context"
+	"database/sql/driver"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -287,6 +289,274 @@ func TestBlobExecParamFromFile(t *testing.T) {
 		err = conn.QueryRow(ctx, fmt.Sprintf("select bin_blob from %s where id = ?", table), 1).Scan(&readBytes)
 		require.NoError(t, err)
 		require.Equal(t, data, readBytes)
+	})
+}
+
+type byteValuer struct {
+}
+
+func (byteValuer) Value() (driver.Value, error) {
+	return makeBlobData(2048 + 7), nil
+}
+
+type stringValuer struct {
+}
+
+func (stringValuer) Value() (driver.Value, error) {
+	return "text-blob-a", nil
+}
+
+type nilValuer struct {
+}
+
+func (nilValuer) Value() (driver.Value, error) {
+	return nil, nil
+}
+
+type nilPointerValuer struct{}
+
+func (*nilPointerValuer) Value() (driver.Value, error) {
+	return []byte("nil-pointer-value"), nil
+}
+
+type valueReceiverValuer string
+
+func (v valueReceiverValuer) Value() (driver.Value, error) {
+	return string(v), nil
+}
+
+type nilSliceValuer []byte
+
+func (nilSliceValuer) Value() (driver.Value, error) {
+	return []byte("nil-slice-value"), nil
+}
+
+type nilMapValuer map[string]string
+
+func (nilMapValuer) Value() (driver.Value, error) {
+	return []byte("nil-map-value"), nil
+}
+
+type nilFuncValuer func()
+
+func (nilFuncValuer) Value() (driver.Value, error) {
+	return []byte("nil-func-value"), nil
+}
+
+type nilChanValuer chan struct{}
+
+func (nilChanValuer) Value() (driver.Value, error) {
+	return []byte("nil-chan-value"), nil
+}
+
+type nilFuncErrorValuer func()
+
+func (nilFuncErrorValuer) Value() (driver.Value, error) {
+	return nil, errNilFuncValuer
+}
+
+var errNilFuncValuer = errors.New("nil func valuer failure")
+
+type readerValuer struct {
+	*bytes.Reader
+	value driver.Value
+	err   error
+	calls int
+}
+
+func (v *readerValuer) Value() (driver.Value, error) {
+	v.calls++
+	return v.value, v.err
+}
+
+func TestBlobExecWithDriverValuer(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	runWithBlobStreamModes(ctx, t, func(ctx context.Context, t testing.TB, config *fbx.ConnConfig) {
+		config.DefaultQueryExecMode = fbx.QueryExecModeCacheStatement
+	}, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		table := createBlobTestTable(ctx, t, conn)
+		dataA := byteValuer{}
+		textA := stringValuer{}
+		dataB := nilValuer{}
+		textB := nilValuer{}
+
+		_, err := conn.Exec(ctx, fmt.Sprintf("insert into %s (id, bin_blob, txt_blob) values (?, ?, ?)", table), 1, dataA, textA)
+		require.NoError(t, err)
+
+		_, err = conn.Exec(ctx, fmt.Sprintf("insert into %s (id, bin_blob, txt_blob) values (?, ?, ?)", table), 2, dataB, textB)
+		require.NoError(t, err)
+
+		var readBytes []byte
+		var readText string
+		err = conn.QueryRow(ctx, fmt.Sprintf("select bin_blob, txt_blob from %s where id = ?", table), 1).Scan(&readBytes, &readText)
+		require.NoError(t, err)
+		valDataA, _ := dataA.Value()
+		valTextA, _ := textA.Value()
+		require.Equal(t, valDataA, readBytes)
+		require.Equal(t, valTextA, readText)
+
+		var readNilBytes []byte
+		var readNilText []byte
+		err = conn.QueryRow(ctx, fmt.Sprintf("select bin_blob, txt_blob from %s where id = ?", table), 2).Scan(&readNilBytes, &readNilText)
+		require.NoError(t, err)
+		require.Nil(t, readNilBytes)
+		require.Nil(t, readNilText)
+	})
+}
+
+func TestBlobExecNilDriverValuer(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	runWithBlobStreamModes(ctx, t, func(ctx context.Context, t testing.TB, config *fbx.ConnConfig) {
+		config.DefaultQueryExecMode = fbx.QueryExecModeCacheStatement
+	}, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		table := createBlobTestTable(ctx, t, conn)
+
+		_, err := conn.Exec(ctx, fmt.Sprintf("insert into %s (id, bin_blob) values (?, ?)", table), 1, (*nilPointerValuer)(nil))
+		require.NoError(t, err)
+		var got []byte
+		require.NoError(t, conn.QueryRow(ctx, fmt.Sprintf("select bin_blob from %s where id = ?", table), 1).Scan(&got))
+		require.Equal(t, []byte("nil-pointer-value"), got)
+
+		_, err = conn.Exec(ctx, fmt.Sprintf("insert into %s (id, bin_blob) values (?, ?)", table), 2, nilSliceValuer(nil))
+		require.NoError(t, err)
+		require.NoError(t, conn.QueryRow(ctx, fmt.Sprintf("select bin_blob from %s where id = ?", table), 2).Scan(&got))
+		require.Equal(t, []byte("nil-slice-value"), got)
+
+		_, err = conn.Exec(ctx, fmt.Sprintf("insert into %s (id, bin_blob) values (?, ?)", table), 3, nilMapValuer(nil))
+		require.NoError(t, err)
+		require.NoError(t, conn.QueryRow(ctx, fmt.Sprintf("select bin_blob from %s where id = ?", table), 3).Scan(&got))
+		require.Equal(t, []byte("nil-map-value"), got)
+
+		_, err = conn.Exec(ctx, fmt.Sprintf("insert into %s (id, bin_blob) values (?, ?)", table), 4, nilFuncValuer(nil))
+		require.NoError(t, err)
+		require.NoError(t, conn.QueryRow(ctx, fmt.Sprintf("select bin_blob from %s where id = ?", table), 4).Scan(&got))
+		require.Equal(t, []byte("nil-func-value"), got)
+
+		_, err = conn.Exec(ctx, fmt.Sprintf("insert into %s (id, bin_blob) values (?, ?)", table), 5, nilChanValuer(nil))
+		require.NoError(t, err)
+		require.NoError(t, conn.QueryRow(ctx, fmt.Sprintf("select bin_blob from %s where id = ?", table), 5).Scan(&got))
+		require.Equal(t, []byte("nil-chan-value"), got)
+
+		_, err = conn.Exec(ctx, fmt.Sprintf("insert into %s (id, bin_blob) values (?, ?)", table), 6, nilFuncErrorValuer(nil))
+		require.ErrorIs(t, err, errNilFuncValuer)
+
+		_, err = conn.Exec(ctx, fmt.Sprintf("insert into %s (id, txt_blob) values (?, ?)", table), 7, (*valueReceiverValuer)(nil))
+		require.NoError(t, err)
+		require.NoError(t, conn.QueryRow(ctx, fmt.Sprintf("select txt_blob from %s where id = ?", table), 7).Scan(&got))
+		require.Nil(t, got)
+	})
+}
+
+func TestBlobExecReaderPreferredOverDriverValuer(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	runWithBlobStreamModes(ctx, t, func(ctx context.Context, t testing.TB, config *fbx.ConnConfig) {
+		config.DefaultQueryExecMode = fbx.QueryExecModeCacheStatement
+	}, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		table := createBlobTestTable(ctx, t, conn)
+		v := &readerValuer{
+			Reader: bytes.NewReader([]byte("reader-data")),
+			value:  []byte("valuer-data"),
+			err:    errors.New("valuer should not be called"),
+		}
+
+		_, err := conn.Exec(ctx, fmt.Sprintf("insert into %s (id, bin_blob) values (?, ?)", table), 1, v)
+		require.NoError(t, err)
+		require.Zero(t, v.calls)
+
+		var got []byte
+		require.NoError(t, conn.QueryRow(ctx, fmt.Sprintf("select bin_blob from %s where id = ?", table), 1).Scan(&got))
+		require.Equal(t, []byte("reader-data"), got)
+	})
+}
+
+func TestBlobExecNilReaderValuer(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	runWithBlobStreamModes(ctx, t, func(ctx context.Context, t testing.TB, config *fbx.ConnConfig) {
+		config.DefaultQueryExecMode = fbx.QueryExecModeCacheStatement
+	}, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		table := createBlobTestTable(ctx, t, conn)
+
+		_, err := conn.Exec(ctx, fmt.Sprintf("insert into %s (id, bin_blob) values (?, ?)", table), 1, (*readerValuer)(nil))
+		require.NoError(t, err)
+
+		var got []byte
+		require.NoError(t, conn.QueryRow(ctx, fmt.Sprintf("select bin_blob from %s where id = ?", table), 1).Scan(&got))
+		require.Nil(t, got)
+	})
+}
+
+type nilSliceReaderValuer []byte
+
+func (nilSliceReaderValuer) Value() (driver.Value, error) {
+	return []byte("slice-reader-valuer"), nil
+}
+
+func (s nilSliceReaderValuer) Read(p []byte) (int, error) {
+	if len(s) == 0 {
+		return 0, io.EOF
+	}
+	n := copy(p, s)
+	return n, io.EOF
+}
+
+type nilMapReaderValuer map[string]string
+
+func (nilMapReaderValuer) Value() (driver.Value, error) {
+	return []byte("map-reader-valuer"), nil
+}
+
+func (nilMapReaderValuer) Read([]byte) (int, error) {
+	return 0, io.EOF
+}
+
+type nilFuncReaderValuer func()
+
+func (nilFuncReaderValuer) Value() (driver.Value, error) {
+	return []byte("func-reader-valuer"), nil
+}
+
+func (nilFuncReaderValuer) Read([]byte) (int, error) {
+	return 0, io.EOF
+}
+
+type nilChanReaderValuer chan struct{}
+
+func (nilChanReaderValuer) Value() (driver.Value, error) {
+	return []byte("chan-reader-valuer"), nil
+}
+
+func (nilChanReaderValuer) Read([]byte) (int, error) {
+	return 0, io.EOF
+}
+
+func TestBlobExecNilReaderValuerKinds(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	runWithBlobStreamModes(ctx, t, func(ctx context.Context, t testing.TB, config *fbx.ConnConfig) {
+		config.DefaultQueryExecMode = fbx.QueryExecModeCacheStatement
+	}, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		table := createBlobTestTable(ctx, t, conn)
+		for i, arg := range []any{
+			nilSliceReaderValuer(nil),
+			nilMapReaderValuer(nil),
+			nilFuncReaderValuer(nil),
+			nilChanReaderValuer(nil),
+		} {
+			_, err := conn.Exec(ctx, fmt.Sprintf("insert into %s (id, bin_blob) values (?, ?)", table), i+1, arg)
+			require.NoError(t, err)
+			var got []byte
+			require.NoError(t, conn.QueryRow(ctx, fmt.Sprintf("select bin_blob from %s where id = ?", table), i+1).Scan(&got))
+			require.Nil(t, got, "%T", arg)
+		}
 	})
 }
 

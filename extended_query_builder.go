@@ -2,6 +2,7 @@ package fbx
 
 import (
 	"context"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"io"
@@ -159,6 +160,17 @@ func (pb *ExtendedQueryBuilder) encodeBlobParam(ctx context.Context, conn *Conn,
 	if typeMetadata.TypeID != 0 && !fbconn.IsBlobType(typeMetadata.TypeID) {
 		return nil, fmt.Errorf("blob argument is not compatible with typeid %d", typeMetadata.TypeID)
 	}
+	_, isIoReader := arg.(io.Reader)
+	if valuer, ok := arg.(driver.Valuer); ok && !isIoReader {
+		var err error
+		arg, err = valuer.Value()
+		if err != nil {
+			return nil, fmt.Errorf("error reading driver.Valuer value: %w", err)
+		}
+		if isNilArg(arg) {
+			return nil, nil
+		}
+	}
 	switch v := arg.(type) {
 	case []byte:
 		if !fbconn.IsBlobType(typeMetadata.TypeID) {
@@ -281,8 +293,24 @@ func isNilArg(arg any) bool {
 		return true
 	}
 	v := reflect.ValueOf(arg)
+	_, isIoReader := arg.(io.Reader)
 	switch v.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Map, reflect.Pointer, reflect.Interface, reflect.Slice:
+	case reflect.Pointer:
+		iface := reflect.TypeOf((*driver.Valuer)(nil)).Elem()
+		t := reflect.TypeOf(arg)
+		if t.Implements(iface) && !isIoReader {
+			if t.Elem().Implements(iface) {
+				return v.IsNil()
+			}
+			return false
+		}
+		return v.IsNil()
+	case reflect.Slice, reflect.Map, reflect.Chan, reflect.Func:
+		if _, ok := arg.(driver.Valuer); ok && !isIoReader {
+			return false
+		}
+		return v.IsNil()
+	case reflect.Interface:
 		return v.IsNil()
 	default:
 		return false
