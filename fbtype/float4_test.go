@@ -5,12 +5,14 @@ import (
 	"encoding/binary"
 	"errors"
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 
 	"rdb.red-soft.ru/fbx/fbproto"
 	"rdb.red-soft.ru/fbx/fbtype"
 	"rdb.red-soft.ru/fbx/fbxtest"
+	"rdb.red-soft.ru/fbx/internal/fbio"
 )
 
 func TestFloat4Codec(t *testing.T) {
@@ -122,6 +124,93 @@ func TestFloat4ScanPlansReportTargetTypeChanged(t *testing.T) {
 				t.Fatalf("error = %v, want ErrScanTargetTypeChanged", err)
 			}
 		})
+	}
+}
+
+func TestFloat4CodecScanBinary(t *testing.T) {
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_FLOAT, 0, 4, 0)
+	src := []byte{0xc2, 0xf6, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff}
+	floatTarget := float32(42)
+	stringTarget := "unchanged"
+
+	for _, tt := range []struct {
+		name     string
+		target   any
+		want     any
+		wantNull any
+	}{
+		{"float32", &floatTarget, float32(-123), nil},
+		{"Float64Scanner", &fbtype.Float4{Float32: 42, Valid: true}, fbtype.Float4{Float32: -123, Valid: true}, fbtype.Float4{}},
+		{"Int64Scanner", &fbtype.Int8{Int64: 42, Valid: true}, fbtype.Int8{Int64: -123, Valid: true}, fbtype.Int8{}},
+		{"TextScanner", &fbtype.Text{String: "unchanged", Valid: true}, fbtype.Text{String: "-123", Valid: true}, fbtype.Text{}},
+		{"string", &stringTarget, "-123", nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			plan := fbtype.Float4Codec{}.PlanScan(fbtype.NewMap(), typeMetadata, tt.target)
+			if plan == nil {
+				t.Fatal("expected scan plan, got nil")
+			}
+
+			before := reflect.ValueOf(tt.target).Elem().Interface()
+			for _, n := range []int{0, 1, 2, 3, 5, 8} {
+				err := plan.Scan(src[:n], tt.target)
+				if !errors.Is(err, fbio.ErrInvalidLength) {
+					t.Fatalf("Scan(%d bytes) error = %v, want ErrInvalidLength", n, err)
+				}
+				if got := reflect.ValueOf(tt.target).Elem().Interface(); !reflect.DeepEqual(got, before) {
+					t.Fatalf("Scan(%d bytes) changed destination to %v, want %v", n, got, before)
+				}
+			}
+
+			if err := plan.Scan(src[:4], tt.target); err != nil {
+				t.Fatalf("Scan failed: %v", err)
+			}
+			if got := reflect.ValueOf(tt.target).Elem().Interface(); !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("Scan = %v, want %v", got, tt.want)
+			}
+
+			err := plan.Scan(nil, tt.target)
+			want := tt.wantNull
+			if tt.wantNull == nil {
+				if err == nil {
+					t.Fatal("Scan(NULL) succeeded for a non-nullable destination")
+				}
+				want = tt.want
+			} else if err != nil {
+				t.Fatalf("Scan(NULL) failed: %v", err)
+			}
+			if got := reflect.ValueOf(tt.target).Elem().Interface(); !reflect.DeepEqual(got, want) {
+				t.Fatalf("Scan(NULL) destination = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+func TestFloat4CodecDecodeDatabaseSQLValue(t *testing.T) {
+	c := fbtype.Float4Codec{}
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_FLOAT, 0, 4, 0)
+	src := []byte{0x3f, 0xa0, 0x00, 0x00}
+
+	value, err := c.DecodeDatabaseSQLValue(m, typeMetadata, src)
+	if err != nil || value != float64(1.25) {
+		t.Fatalf("DecodeDatabaseSQLValue = %v (%T), %v, want float64(1.25), nil", value, value, err)
+	}
+	value, err = c.DecodeDatabaseSQLValue(m, typeMetadata, nil)
+	if err != nil || value != nil {
+		t.Fatalf("DecodeDatabaseSQLValue(NULL) = %v, %v, want nil, nil", value, err)
+	}
+
+	for _, n := range []int{0, 1, 2, 3, 5, 8} {
+		src := make([]byte, n)
+		value, err := c.DecodeDatabaseSQLValue(m, typeMetadata, src)
+		if value != nil || !errors.Is(err, fbio.ErrInvalidLength) {
+			t.Errorf("DecodeDatabaseSQLValue(%d bytes) = %v, %v, want nil, ErrInvalidLength", n, value, err)
+		}
+		value, err = c.DecodeValue(m, typeMetadata, src)
+		if value != nil || !errors.Is(err, fbio.ErrInvalidLength) {
+			t.Errorf("DecodeValue(%d bytes) = %v, %v, want nil, ErrInvalidLength", n, value, err)
+		}
 	}
 }
 

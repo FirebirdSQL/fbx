@@ -2,7 +2,6 @@ package fbtype
 
 import (
 	"database/sql/driver"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -235,11 +234,12 @@ func (scanPlanBinaryFloat8ToFloat64) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
-	if len(src) != 8 {
-		return fmt.Errorf("invalid length for float8: %v", len(src))
+	bits, err := fbio.Uint64BEExact(src)
+	if err != nil {
+		return fmt.Errorf("float8: %w", err)
 	}
 
-	*f = math.Float64frombits(binary.BigEndian.Uint64(src))
+	*f = math.Float64frombits(bits)
 
 	return nil
 }
@@ -256,11 +256,12 @@ func (scanPlanBinaryFloat8ToFloat64Scanner) Scan(src []byte, dst any) error {
 		return s.ScanFloat64(Float8{})
 	}
 
-	if len(src) != 8 {
-		return fmt.Errorf("invalid length for float8: %v", len(src))
+	bits, err := fbio.Uint64BEExact(src)
+	if err != nil {
+		return fmt.Errorf("float8: %w", err)
 	}
 
-	f64 := math.Float64frombits(binary.BigEndian.Uint64(src))
+	f64 := math.Float64frombits(bits)
 	return s.ScanFloat64(Float8{Float64: f64, Valid: true})
 }
 
@@ -276,11 +277,12 @@ func (scanPlanBinaryFloat8ToInt64Scanner) Scan(src []byte, dst any) error {
 		return s.ScanInt64(Int8{})
 	}
 
-	if len(src) != 8 {
-		return fmt.Errorf("invalid length for float8: %v", len(src))
+	bits, err := fbio.Uint64BEExact(src)
+	if err != nil {
+		return fmt.Errorf("float8: %w", err)
 	}
 
-	f64 := math.Float64frombits(binary.BigEndian.Uint64(src))
+	f64 := math.Float64frombits(bits)
 	i64, err := float64ToInt64(f64)
 	if err != nil {
 		return err
@@ -301,12 +303,12 @@ func (scanPlanBinaryFloat8ToString) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into *string")
 	}
 
-	if len(src) != 8 {
-		return fmt.Errorf("invalid length for float8: %v", len(src))
+	bits, err := fbio.Uint64BEExact(src)
+	if err != nil {
+		return fmt.Errorf("float8: %w", err)
 	}
 
-	ui64 := binary.BigEndian.Uint64(src)
-	f64 := math.Float64frombits(ui64)
+	f64 := math.Float64frombits(bits)
 
 	*target = strconv.FormatFloat(f64, 'f', -1, 64)
 	return nil
@@ -324,11 +326,12 @@ func (scanPlanBinaryFloat8ToTextScanner) Scan(src []byte, dst any) error {
 		return s.ScanText(Text{})
 	}
 
-	if len(src) != 8 {
-		return fmt.Errorf("invalid length for float8: %v", len(src))
+	bits, err := fbio.Uint64BEExact(src)
+	if err != nil {
+		return fmt.Errorf("float8: %w", err)
 	}
 
-	f64 := math.Float64frombits(binary.BigEndian.Uint64(src))
+	f64 := math.Float64frombits(bits)
 
 	return s.ScanText(Text{String: strconv.FormatFloat(f64, 'f', -1, 64), Valid: true})
 }

@@ -2,7 +2,6 @@ package fbtype
 
 import (
 	"database/sql/driver"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -227,11 +226,12 @@ func (scanPlanBinaryDateToDateScanner) Scan(src []byte, dst any) error {
 		return scanner.ScanDate(Date{})
 	}
 
-	if len(src) != 4 {
-		return fmt.Errorf("fbtype: invalid length for Firebird DATE: %d", len(src))
+	bits, err := fbio.Uint32BEExact(src)
+	if err != nil {
+		return fmt.Errorf("fbtype: Firebird DATE: %w", err)
 	}
 
-	dayOffset := int32(binary.BigEndian.Uint32(src))
+	dayOffset := int32(bits)
 	t, err := firebirdDateFromDayOffset(dayOffset)
 	if err != nil {
 		return err
@@ -252,11 +252,12 @@ func (scanPlanBinaryDateToTime) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into *time.Time")
 	}
 
-	if len(src) != 4 {
-		return fmt.Errorf("fbtype: invalid length for Firebird DATE: %d", len(src))
+	bits, err := fbio.Uint32BEExact(src)
+	if err != nil {
+		return fmt.Errorf("fbtype: Firebird DATE: %w", err)
 	}
 
-	dayOffset := int32(binary.BigEndian.Uint32(src))
+	dayOffset := int32(bits)
 	date, err := firebirdDateFromDayOffset(dayOffset)
 	if err != nil {
 		return err
@@ -279,11 +280,12 @@ func (scanPlanBinaryDateToString) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into *string")
 	}
 
-	if len(src) != 4 {
-		return fmt.Errorf("fbtype: invalid length for Firebird DATE: %d", len(src))
+	bits, err := fbio.Uint32BEExact(src)
+	if err != nil {
+		return fmt.Errorf("fbtype: Firebird DATE: %w", err)
 	}
 
-	dayOffset := int32(binary.BigEndian.Uint32(src))
+	dayOffset := int32(bits)
 	date, err := firebirdDateFromDayOffset(dayOffset)
 	if err != nil {
 		return err

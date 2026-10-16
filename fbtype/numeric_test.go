@@ -1,6 +1,7 @@
 package fbtype_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -302,6 +303,48 @@ func TestNumericCodecRejectsTypeLengthMismatch(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid storage length 16")
 	assert.Equal(t, fbtype.Numeric{}, got)
+}
+
+func TestNumericCheckedReadPreservesSignAndScale(t *testing.T) {
+	m := fbtype.NewMap()
+	codec := fbtype.NumericCodec{}
+	for _, tt := range []struct {
+		name          string
+		typeID        uint32
+		storageLength uint32
+		wireLength    int
+	}{
+		{"smallint", fbproto.SQL_TYPE_SHORT, 2, 4},
+		{"integer", fbproto.SQL_TYPE_LONG, 4, 4},
+		{"bigint", fbproto.SQL_TYPE_INT64, 8, 8},
+		{"int128", fbproto.SQL_TYPE_INT128, 16, 16},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			src := bytes.Repeat([]byte{0xff}, tt.wireLength)
+			src[len(src)-2], src[len(src)-1] = 0xcf, 0xc7
+			want := fbtype.Numeric{Int: big.NewInt(-12345), Exp: -2, Valid: true}
+
+			var direct fbtype.Numeric
+			require.NoError(t, fbtype.DecodeNumericBinaryFB(&direct, src, -2))
+			require.Equal(t, want, direct)
+
+			for _, subtype := range []int32{1, 2} {
+				t.Run(fmt.Sprintf("subtype_%d", subtype), func(t *testing.T) {
+					metadata := fbtype.NewTypeMetadata(tt.typeID, subtype, tt.storageLength, -2)
+					var scanned fbtype.Numeric
+					require.NoError(t, m.Scan(metadata, src, &scanned))
+					require.Equal(t, want, scanned)
+
+					value, err := codec.DecodeValue(m, metadata, src)
+					require.NoError(t, err)
+					require.Equal(t, want, value)
+					sqlValue, err := codec.DecodeDatabaseSQLValue(m, metadata, src)
+					require.NoError(t, err)
+					require.Equal(t, "-123.45", sqlValue)
+				})
+			}
+		})
+	}
 }
 
 func TestNumericCodec(t *testing.T) {

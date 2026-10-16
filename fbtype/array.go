@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"rdb.red-soft.ru/fbx/fbproto"
+	"rdb.red-soft.ru/fbx/internal/fbio"
 )
 
 var (
@@ -385,7 +386,7 @@ func (ad *ArrayData) decodeBinary(m *Map, src []byte, array ArraySetter, realInd
 	if elementCount == 0 {
 		return nil
 	}
-	length := int(ad.Length)
+	r := fbio.NewReader(src)
 
 	typeMetadata := NewTypeMetadata(ad.TypeId, ad.SubType, ad.Length, ad.Scale)
 	elementTarget := array.ScanIndex(0)
@@ -393,39 +394,35 @@ func (ad *ArrayData) decodeBinary(m *Map, src []byte, array ArraySetter, realInd
 	if elementScanPlan == nil {
 		return fmt.Errorf("unable to scan array element into %T", elementTarget)
 	}
-	if ad.TypeId == fbproto.SQL_TYPE_SHORT {
-		length = 4
-	}
-	position := 0
-	var elemLen int
-	var wireElemLen int
-	if ad.TypeId == fbproto.SQL_TYPE_TEXT && length%4 != 0 {
-		elemLen = length
-		wireElemLen = length + (4 - length&3)
-	} else {
-		elemLen = length
-		wireElemLen = length
+	elemLen := int(ad.Length)
+	padding := 0
+	switch ad.TypeId {
+	case fbproto.SQL_TYPE_SHORT:
+		elemLen = 4
+	case fbproto.SQL_TYPE_TEXT:
+		padding = (4 - elemLen) & 3
+	case fbproto.SQL_TYPE_BOOLEAN:
+		padding = 3
 	}
 	indexPosition := 0
-	for i := 0; i < elementCount && position < len(src); i++ {
+	for i := 0; i < elementCount && r.Remaining() > 0; i++ {
 		if ad.TypeId == fbproto.SQL_TYPE_VARYING {
-			if len(src[position:]) < 4 {
-				return fmt.Errorf("array body truncated at element %d", i)
+			length := r.Uint32BE()
+			if err := r.Err(); err != nil {
+				return fmt.Errorf("array body truncated at element %d: %w", i, err)
 			}
-			elemLen = int(int32(binary.BigEndian.Uint32(src[position:])))
-			wireElemLen = elemLen
-			position += 4
+			if uint64(length) > uint64(r.Remaining()) {
+				return fmt.Errorf("array element %d length %d exceeds remaining %d bytes: %w", i, length, r.Remaining(), fbio.ErrInsufficientBytes)
+			}
+			elemLen = int(length)
 		}
-		var elemSrc []byte
+		elemSrc := r.Bytes(elemLen)
+		r.Bytes(padding)
+		if err := r.Err(); err != nil {
+			return fmt.Errorf("array element %d: %w", i, err)
+		}
 		if len(realIndexes) > 1 && i > realIndexes[0].end {
 			realIndexes = realIndexes[1:]
-		}
-		if elemLen >= 0 {
-			if len(src[position:]) < wireElemLen {
-				return fmt.Errorf("array element %d length %d exceeds remaining %d bytes", i, wireElemLen, len(src[position:]))
-			}
-			elemSrc = src[position : position+elemLen]
-			position += wireElemLen
 		}
 		if len(realIndexes) > 0 && i >= realIndexes[0].start {
 			elem := array.ScanIndex(indexPosition)
@@ -435,14 +432,11 @@ func (ad *ArrayData) decodeBinary(m *Map, src []byte, array ArraySetter, realInd
 			}
 			indexPosition++
 		}
-		if ad.TypeId == fbproto.SQL_TYPE_BOOLEAN {
-			if len(src[position:]) < 3 {
-				return fmt.Errorf("array boolean element %d padding exceeds remaining %d bytes", i, len(src[position:]))
-			}
-			position += 3 // skip padding
-		}
 	}
 
+	if err := r.Finish(); err != nil {
+		return fmt.Errorf("array: %w", err)
+	}
 	return nil
 }
 
@@ -836,16 +830,20 @@ func getActualArrayLength(buf []byte, typeID, length uint32) (int, error) {
 	count := 0
 	switch typeID {
 	case fbproto.SQL_TYPE_VARYING:
-		for len(buf) > 0 {
-			if len(buf) < 4 {
-				return 0, fmt.Errorf("length of decoded buffer is less than expected")
+		r := fbio.NewReader(buf)
+		for r.Remaining() > 0 {
+			elementLength := r.Uint32BE()
+			if err := r.Err(); err != nil {
+				return 0, fmt.Errorf("array body truncated at element %d: %w", count, err)
 			}
-			elementLength := uint64(binary.BigEndian.Uint32(buf[:4])) + 4
-			if elementLength > uint64(len(buf)) {
-				return 0, fmt.Errorf("length of decoded buffer is less than expected")
+			if uint64(elementLength) > uint64(r.Remaining()) {
+				return 0, fmt.Errorf("array element %d length %d exceeds remaining %d bytes: %w", count, elementLength, r.Remaining(), fbio.ErrInsufficientBytes)
 			}
-			buf = buf[int(elementLength):]
+			r.Bytes(int(elementLength))
 			count++
+		}
+		if err := r.Finish(); err != nil {
+			return 0, fmt.Errorf("array: %w", err)
 		}
 	case fbproto.SQL_TYPE_BOOLEAN, fbproto.SQL_TYPE_SHORT:
 		if len(buf)%4 != 0 {

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"rdb.red-soft.ru/fbx/fbproto"
+	"rdb.red-soft.ru/fbx/internal/fbio"
 )
 
 var big10 *big.Int = big.NewInt(10)
@@ -789,11 +790,19 @@ func DecodeNumericBinaryFB(dst *Numeric, src []byte, scale int32) error {
 	var bigInt *big.Int
 	switch len(src) {
 	case 4:
-		s := int64(int32(binary.BigEndian.Uint32(src)))
-		bigInt = big.NewInt(s)
+		bits, err := fbio.Uint32BEExact(src)
+		if err != nil {
+			*dst = Numeric{}
+			return fmt.Errorf("numeric: %w", err)
+		}
+		bigInt = big.NewInt(int64(int32(bits)))
 	case 8:
-		s := int64(binary.BigEndian.Uint64(src))
-		bigInt = big.NewInt(s)
+		bits, err := fbio.Uint64BEExact(src)
+		if err != nil {
+			*dst = Numeric{}
+			return fmt.Errorf("numeric: %w", err)
+		}
+		bigInt = big.NewInt(int64(bits))
 	case 16:
 		bigInt = new(big.Int)
 		if err := int128SetFromBinary(bigInt, src); err != nil {

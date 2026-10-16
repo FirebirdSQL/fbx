@@ -2,7 +2,6 @@ package fbtype
 
 import (
 	"database/sql/driver"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -415,11 +414,12 @@ func (scanPlanBinaryInt4ToInt8) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
-	if len(src) != 4 {
-		return fmt.Errorf("invalid length for int4: %v", len(src))
+	bits, err := fbio.Uint32BEExact(src)
+	if err != nil {
+		return fmt.Errorf("int4: %w", err)
 	}
 
-	n := int32(binary.BigEndian.Uint32(src))
+	n := int32(bits)
 	if n < math.MinInt8 {
 		return fmt.Errorf("%d is less than minimum value for int8", n)
 	} else if n > math.MaxInt8 {
@@ -443,11 +443,12 @@ func (scanPlanBinaryInt4ToUint8) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
-	if len(src) != 4 {
-		return fmt.Errorf("invalid length for int4: %v", len(src))
+	bits, err := fbio.Uint32BEExact(src)
+	if err != nil {
+		return fmt.Errorf("int4: %w", err)
 	}
 
-	n := int32(binary.BigEndian.Uint32(src))
+	n := int32(bits)
 	if n < 0 {
 		return fmt.Errorf("%d is less than minimum value for uint8", n)
 	}
@@ -473,11 +474,12 @@ func (scanPlanBinaryInt4ToInt16) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
-	if len(src) != 4 {
-		return fmt.Errorf("invalid length for int4: %v", len(src))
+	bits, err := fbio.Uint32BEExact(src)
+	if err != nil {
+		return fmt.Errorf("int4: %w", err)
 	}
 
-	n := int32(binary.BigEndian.Uint32(src))
+	n := int32(bits)
 	if n < math.MinInt16 {
 		return fmt.Errorf("%d is less than minimum value for int16", n)
 	} else if n > math.MaxInt16 {
@@ -501,11 +503,12 @@ func (scanPlanBinaryInt4ToUint16) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
-	if len(src) != 4 {
-		return fmt.Errorf("invalid length for int4: %v", len(src))
+	bits, err := fbio.Uint32BEExact(src)
+	if err != nil {
+		return fmt.Errorf("int4: %w", err)
 	}
 
-	n := int32(binary.BigEndian.Uint32(src))
+	n := int32(bits)
 	if n < 0 {
 		return fmt.Errorf("%d is less than minimum value for uint16", n)
 	}
@@ -531,11 +534,12 @@ func (scanPlanBinaryInt4ToInt32) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
-	if len(src) != 4 {
-		return fmt.Errorf("invalid length for int4: %v", len(src))
+	bits, err := fbio.Uint32BEExact(src)
+	if err != nil {
+		return fmt.Errorf("int4: %w", err)
 	}
 
-	*p = int32(binary.BigEndian.Uint32(src))
+	*p = int32(bits)
 
 	return nil
 }
@@ -552,11 +556,12 @@ func (scanPlanBinaryInt4ToUint32) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
-	if len(src) != 4 {
-		return fmt.Errorf("invalid length for int4: %v", len(src))
+	bits, err := fbio.Uint32BEExact(src)
+	if err != nil {
+		return fmt.Errorf("int4: %w", err)
 	}
 
-	n := int32(binary.BigEndian.Uint32(src))
+	n := int32(bits)
 	if n < 0 {
 		return fmt.Errorf("%d is less than minimum value for uint32", n)
 	}
@@ -578,11 +583,12 @@ func (scanPlanBinaryInt4ToInt64) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
-	if len(src) != 4 {
-		return fmt.Errorf("invalid length for int4: %v", len(src))
+	bits, err := fbio.Uint32BEExact(src)
+	if err != nil {
+		return fmt.Errorf("int4: %w", err)
 	}
 
-	*p = int64(int32(binary.BigEndian.Uint32(src)))
+	*p = int64(int32(bits))
 
 	return nil
 }
@@ -599,11 +605,12 @@ func (scanPlanBinaryInt4ToUint64) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
-	if len(src) != 4 {
-		return fmt.Errorf("invalid length for int4: %v", len(src))
+	bits, err := fbio.Uint32BEExact(src)
+	if err != nil {
+		return fmt.Errorf("int4: %w", err)
 	}
 
-	n := int32(binary.BigEndian.Uint32(src))
+	n := int32(bits)
 	if n < 0 {
 		return fmt.Errorf("%d is less than minimum value for uint64", n)
 	}
@@ -625,11 +632,12 @@ func (scanPlanBinaryInt4ToInt) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
-	if len(src) != 4 {
-		return fmt.Errorf("invalid length for int4: %v", len(src))
+	bits, err := fbio.Uint32BEExact(src)
+	if err != nil {
+		return fmt.Errorf("int4: %w", err)
 	}
 
-	*p = int(int32(binary.BigEndian.Uint32(src)))
+	*p = int(int32(bits))
 
 	return nil
 }
@@ -646,11 +654,12 @@ func (scanPlanBinaryInt4ToUint) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
-	if len(src) != 4 {
-		return fmt.Errorf("invalid length for int4: %v", len(src))
+	bits, err := fbio.Uint32BEExact(src)
+	if err != nil {
+		return fmt.Errorf("int4: %w", err)
 	}
 
-	n := int64(int32(binary.BigEndian.Uint32(src)))
+	n := int64(int32(bits))
 	if n < 0 {
 		return fmt.Errorf("%d is less than minimum value for uint", n)
 	}
@@ -672,11 +681,12 @@ func (scanPlanBinaryInt4ToInt64Scanner) Scan(src []byte, dst any) error {
 		return s.ScanInt64(Int8{})
 	}
 
-	if len(src) != 4 {
-		return fmt.Errorf("invalid length for int4: %v", len(src))
+	bits, err := fbio.Uint32BEExact(src)
+	if err != nil {
+		return fmt.Errorf("int4: %w", err)
 	}
 
-	n := int64(int32(binary.BigEndian.Uint32(src)))
+	n := int64(int32(bits))
 
 	return s.ScanInt64(Int8{Int64: n, Valid: true})
 }
@@ -693,11 +703,12 @@ func (scanPlanBinaryInt4ToString) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into *string")
 	}
 
-	if len(src) != 4 {
-		return fmt.Errorf("invalid length for int4: %v", len(src))
+	bits, err := fbio.Uint32BEExact(src)
+	if err != nil {
+		return fmt.Errorf("int4: %w", err)
 	}
 
-	n := int32(binary.BigEndian.Uint32(src))
+	n := int32(bits)
 	*target = strconv.FormatInt(int64(n), 10)
 	return nil
 }
@@ -714,11 +725,12 @@ func (scanPlanBinaryInt4ToTextScanner) Scan(src []byte, dst any) error {
 		return s.ScanText(Text{})
 	}
 
-	if len(src) != 4 {
-		return fmt.Errorf("invalid length for int4: %v", len(src))
+	bits, err := fbio.Uint32BEExact(src)
+	if err != nil {
+		return fmt.Errorf("int4: %w", err)
 	}
 
-	n := int64(int32(binary.BigEndian.Uint32(src)))
+	n := int64(int32(bits))
 
 	return s.ScanText(Text{String: strconv.FormatInt(n, 10), Valid: true})
 }
@@ -942,11 +954,12 @@ func (scanPlanBinaryInt8ToInt8) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
-	if len(src) != 8 {
-		return fmt.Errorf("invalid length for int8: %v", len(src))
+	bits, err := fbio.Uint64BEExact(src)
+	if err != nil {
+		return fmt.Errorf("int8: %w", err)
 	}
 
-	n := int64(binary.BigEndian.Uint64(src))
+	n := int64(bits)
 	if n < math.MinInt8 {
 		return fmt.Errorf("%d is less than minimum value for int8", n)
 	} else if n > math.MaxInt8 {
@@ -970,11 +983,12 @@ func (scanPlanBinaryInt8ToUint8) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
-	if len(src) != 8 {
-		return fmt.Errorf("invalid length for int8: %v", len(src))
+	bits, err := fbio.Uint64BEExact(src)
+	if err != nil {
+		return fmt.Errorf("int8: %w", err)
 	}
 
-	n := int64(binary.BigEndian.Uint64(src))
+	n := int64(bits)
 	if n < 0 {
 		return fmt.Errorf("%d is less than minimum value for uint8", n)
 	}
@@ -1000,11 +1014,12 @@ func (scanPlanBinaryInt8ToInt16) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
-	if len(src) != 8 {
-		return fmt.Errorf("invalid length for int8: %v", len(src))
+	bits, err := fbio.Uint64BEExact(src)
+	if err != nil {
+		return fmt.Errorf("int8: %w", err)
 	}
 
-	n := int64(binary.BigEndian.Uint64(src))
+	n := int64(bits)
 	if n < math.MinInt16 {
 		return fmt.Errorf("%d is less than minimum value for int16", n)
 	} else if n > math.MaxInt16 {
@@ -1028,11 +1043,12 @@ func (scanPlanBinaryInt8ToUint16) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
-	if len(src) != 8 {
-		return fmt.Errorf("invalid length for int8: %v", len(src))
+	bits, err := fbio.Uint64BEExact(src)
+	if err != nil {
+		return fmt.Errorf("int8: %w", err)
 	}
 
-	n := int64(binary.BigEndian.Uint64(src))
+	n := int64(bits)
 	if n < 0 {
 		return fmt.Errorf("%d is less than minimum value for uint16", n)
 	}
@@ -1058,11 +1074,12 @@ func (scanPlanBinaryInt8ToInt32) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
-	if len(src) != 8 {
-		return fmt.Errorf("invalid length for int8: %v", len(src))
+	bits, err := fbio.Uint64BEExact(src)
+	if err != nil {
+		return fmt.Errorf("int8: %w", err)
 	}
 
-	n := int64(binary.BigEndian.Uint64(src))
+	n := int64(bits)
 	if n < math.MinInt32 {
 		return fmt.Errorf("%d is less than minimum value for int32", n)
 	} else if n > math.MaxInt32 {
@@ -1086,11 +1103,12 @@ func (scanPlanBinaryInt8ToUint32) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
-	if len(src) != 8 {
-		return fmt.Errorf("invalid length for int8: %v", len(src))
+	bits, err := fbio.Uint64BEExact(src)
+	if err != nil {
+		return fmt.Errorf("int8: %w", err)
 	}
 
-	n := int64(binary.BigEndian.Uint64(src))
+	n := int64(bits)
 	if n < 0 {
 		return fmt.Errorf("%d is less than minimum value for uint32", n)
 	}
@@ -1116,11 +1134,12 @@ func (scanPlanBinaryInt8ToInt64) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
-	if len(src) != 8 {
-		return fmt.Errorf("invalid length for int8: %v", len(src))
+	bits, err := fbio.Uint64BEExact(src)
+	if err != nil {
+		return fmt.Errorf("int8: %w", err)
 	}
 
-	*p = int64(binary.BigEndian.Uint64(src))
+	*p = int64(bits)
 
 	return nil
 }
@@ -1137,11 +1156,12 @@ func (scanPlanBinaryInt8ToUint64) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
-	if len(src) != 8 {
-		return fmt.Errorf("invalid length for int8: %v", len(src))
+	bits, err := fbio.Uint64BEExact(src)
+	if err != nil {
+		return fmt.Errorf("int8: %w", err)
 	}
 
-	n := int64(binary.BigEndian.Uint64(src))
+	n := int64(bits)
 	if n < 0 {
 		return fmt.Errorf("%d is less than minimum value for uint64", n)
 	}
@@ -1163,11 +1183,12 @@ func (scanPlanBinaryInt8ToInt) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
-	if len(src) != 8 {
-		return fmt.Errorf("invalid length for int8: %v", len(src))
+	bits, err := fbio.Uint64BEExact(src)
+	if err != nil {
+		return fmt.Errorf("int8: %w", err)
 	}
 
-	n := int64(binary.BigEndian.Uint64(src))
+	n := int64(bits)
 	if n < math.MinInt {
 		return fmt.Errorf("%d is less than minimum value for int", n)
 	} else if n > math.MaxInt {
@@ -1191,11 +1212,12 @@ func (scanPlanBinaryInt8ToUint) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into %T", dst)
 	}
 
-	if len(src) != 8 {
-		return fmt.Errorf("invalid length for int8: %v", len(src))
+	bits, err := fbio.Uint64BEExact(src)
+	if err != nil {
+		return fmt.Errorf("int8: %w", err)
 	}
 
-	n := int64(binary.BigEndian.Uint64(src))
+	n := int64(bits)
 	if n < 0 {
 		return fmt.Errorf("%d is less than minimum value for uint", n)
 	}
@@ -1221,11 +1243,12 @@ func (scanPlanBinaryInt8ToInt64Scanner) Scan(src []byte, dst any) error {
 		return s.ScanInt64(Int8{})
 	}
 
-	if len(src) != 8 {
-		return fmt.Errorf("invalid length for int8: %v", len(src))
+	bits, err := fbio.Uint64BEExact(src)
+	if err != nil {
+		return fmt.Errorf("int8: %w", err)
 	}
 
-	n := int64(binary.BigEndian.Uint64(src))
+	n := int64(bits)
 
 	return s.ScanInt64(Int8{Int64: n, Valid: true})
 }
@@ -1242,11 +1265,12 @@ func (scanPlanBinaryInt8ToString) Scan(src []byte, dst any) error {
 		return fmt.Errorf("cannot scan NULL into *string")
 	}
 
-	if len(src) != 8 {
-		return fmt.Errorf("invalid length for int8: %v", len(src))
+	bits, err := fbio.Uint64BEExact(src)
+	if err != nil {
+		return fmt.Errorf("int8: %w", err)
 	}
 
-	n := int64(binary.BigEndian.Uint64(src))
+	n := int64(bits)
 	*target = strconv.FormatInt(n, 10)
 	return nil
 }
@@ -1263,11 +1287,12 @@ func (scanPlanBinaryInt8ToTextScanner) Scan(src []byte, dst any) error {
 		return s.ScanText(Text{})
 	}
 
-	if len(src) != 8 {
-		return fmt.Errorf("invalid length for int8: %v", len(src))
+	bits, err := fbio.Uint64BEExact(src)
+	if err != nil {
+		return fmt.Errorf("int8: %w", err)
 	}
 
-	n := int64(binary.BigEndian.Uint64(src))
+	n := int64(bits)
 
 	return s.ScanText(Text{String: strconv.FormatInt(n, 10), Valid: true})
 }
