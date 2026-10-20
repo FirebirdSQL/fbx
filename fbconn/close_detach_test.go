@@ -268,6 +268,55 @@ func TestAsyncCloseAfterReadDisconnectsAndDrains(t *testing.T) {
 	}
 }
 
+func TestAsyncCloseAfterReadTCPDoesNotResetPeer(t *testing.T) {
+	for _, compressed := range []bool{false, true} {
+		t.Run(fmt.Sprintf("compressed=%t", compressed), func(t *testing.T) {
+			listener, err := net.ListenTCP("tcp4", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)})
+			require.NoError(t, err)
+			defer func() { _ = listener.Close() }()
+			require.NoError(t, listener.SetDeadline(time.Now().Add(3*time.Second)))
+
+			clientConn, err := net.DialTimeout("tcp4", listener.Addr().String(), time.Second)
+			require.NoError(t, err)
+			defer func() { _ = clientConn.Close() }()
+			serverConn, err := listener.AcceptTCP()
+			require.NoError(t, err)
+			defer func() { _ = serverConn.Close() }()
+			require.NoError(t, serverConn.SetDeadline(time.Now().Add(3*time.Second)))
+
+			conn := newDetachTestConn(clientConn)
+			peer := fbproto.NewClient(serverConn, serverConn, nil)
+			if compressed {
+				require.NoError(t, conn.client.EnableCompression())
+				require.NoError(t, peer.EnableCompression())
+			}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			conn.contextWatcher.Watch(ctx)
+			defer conn.contextWatcher.Unwatch()
+			cancel()
+			_, readErr := conn.receiveMessage()
+			require.ErrorIs(t, readErr, os.ErrDeadlineExceeded)
+
+			_, err = peer.Write(bytes.Repeat([]byte("remaining response"), 4096))
+			require.NoError(t, err)
+			require.NoError(t, peer.Flush())
+			conn.asyncCloseAfterRead(readErr)
+			require.True(t, conn.IsClosed())
+
+			opcode, err := fbproto.NewXDRReader(peer).ReadInt32()
+			require.NoError(t, err)
+			require.Equal(t, fbproto.Op_disconnect, opcode)
+			require.NoError(t, peer.CloseCompression())
+			require.NoError(t, serverConn.CloseWrite())
+			n, err := serverConn.Read(make([]byte, 1))
+			require.Zero(t, n)
+			require.ErrorIs(t, err, io.EOF)
+			waitCleanupDone(t, conn)
+		})
+	}
+}
+
 func TestAsyncCloseDrainTimeout(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	defer func() { _ = clientConn.Close() }()
