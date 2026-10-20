@@ -137,7 +137,7 @@ func (fbConn *FbConn) openOrCreateBlob(ctx context.Context, tx *FBTransaction, m
 
 	resp, err := fbConn.receiveMessage()
 	if err != nil {
-		fbConn.asyncClose()
+		fbConn.asyncCloseAfterRead(err)
 		return 0, 0, err
 	}
 	switch m := resp.(type) {
@@ -228,6 +228,7 @@ func (b *remoteBlob) GetSegmentInto(ctx context.Context, dst []byte) (int, bool,
 
 	msg, err := b.conn.receiveMessage()
 	if err != nil {
+		b.conn.asyncCloseAfterRead(err)
 		return 0, false, normalizeTimeoutError(ctx, err)
 	}
 	resp, ok := msg.(*fbproto.OpResponse)
@@ -316,7 +317,7 @@ func (b *remoteBlob) consumePutSegmentResponses(ctx context.Context, segments []
 	for _, segment := range segments {
 		resp, err := b.conn.receiveMessage()
 		if err != nil {
-			b.conn.asyncClose()
+			b.conn.asyncCloseAfterRead(err)
 			return written, normalizeTimeoutError(ctx, err)
 		}
 		switch m := resp.(type) {
@@ -371,7 +372,7 @@ func (b *remoteBlob) PutSegment(ctx context.Context, segment []byte) error {
 
 	resp, err := b.conn.receiveMessage()
 	if err != nil {
-		b.conn.asyncClose()
+		b.conn.asyncCloseAfterRead(err)
 		return normalizeTimeoutError(ctx, err)
 	}
 	switch m := resp.(type) {
@@ -428,7 +429,7 @@ func (b *remoteBlob) Seek(ctx context.Context, offset int, seekMode int) (int64,
 
 	resp, err := b.conn.receiveMessage()
 	if err != nil {
-		b.conn.asyncClose()
+		b.conn.asyncCloseAfterRead(err)
 		return 0, normalizeTimeoutError(ctx, err)
 	}
 	switch m := resp.(type) {
@@ -485,7 +486,7 @@ func (b *remoteBlob) release(ctx context.Context, msg fbproto.ClientMessage) err
 
 	resp, err := b.conn.receiveMessage()
 	if err != nil {
-		b.conn.asyncClose()
+		b.conn.asyncCloseAfterRead(err)
 		return normalizeTimeoutError(ctx, err)
 	}
 	switch m := resp.(type) {

@@ -54,7 +54,7 @@ func (tx *FBTransaction) Commit(ctx context.Context) error {
 
 	msg, err := tx.Connection.receiveMessage()
 	if err != nil {
-		tx.Connection.asyncClose()
+		tx.Connection.asyncCloseAfterRead(err)
 		return operationerror.WithRetry(normalizeTimeoutError(ctx, err), false)
 	}
 
@@ -110,7 +110,7 @@ func (tx *FBTransaction) Rollback(ctx context.Context) error {
 
 	msg, err := tx.Connection.receiveMessage()
 	if err != nil {
-		tx.Connection.asyncClose()
+		tx.Connection.asyncCloseAfterRead(err)
 		return operationerror.WithRetry(normalizeTimeoutError(ctx, err), false)
 	}
 	switch m := msg.(type) {

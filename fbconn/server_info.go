@@ -154,7 +154,7 @@ func (fbConn *FbConn) getServerInfo(msgBuilder func() fbproto.ClientMessage, tru
 
 		msg, err := fbConn.receiveMessage()
 		if err != nil {
-			fbConn.asyncClose()
+			fbConn.asyncCloseAfterRead(err)
 			return err
 		}
 		var respData []byte

@@ -61,6 +61,20 @@ func (r *BGReader) Stop() {
 	}
 }
 
+// StopAndWait stops background reading and waits for the in-progress Read to
+// return. The caller must first interrupt a blocked Read (for example, with a
+// read deadline) and prevent concurrent Start calls.
+func (r *BGReader) StopAndWait() {
+	r.cond.L.Lock()
+	defer r.cond.L.Unlock()
+	if r.status == StatusRunning {
+		r.status = StatusStopping
+	}
+	for r.status != StatusStopped {
+		r.cond.Wait()
+	}
+}
+
 // Status returns the current status of the background reader.
 func (r *BGReader) Status() int32 {
 	r.cond.L.Lock()
