@@ -1,0 +1,186 @@
+name: Go
+
+on:
+  push:
+
+env:
+  RDB30_VERSION: 3.0.23
+  RDB51_VERSION: 5.1.6
+  RDB52_VERSION: 5.2.5
+  RDB53_VERSION: 5.3.0
+  RDB60_VERSION: 6.0.0-SNAPSHOT.1623
+  FB30_VERSION: 3.0.14.33856-0
+  FB40_VERSION: 4.0.7.3271-0
+  FB50_VERSION: 5.0.4.1812-0  
+  FBX_TEST_DATABASE: database=employee host=localhost port=3050 user=sysdba password=masterkey
+
+jobs:
+  fmt:
+    runs-on: self-hosted
+    container:
+      image: golang:1.26
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+          
+      - name: Go modules Cache
+        uses: actions/cache@v6
+        id: go-cache
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-golang-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-golang-
+
+      - run: |
+          go fmt $(go list ./... | grep -v /vendor/)
+          go vet $(go list ./... | grep -v /vendor/)
+
+  lint:
+    runs-on: self-hosted
+    container:
+      image: golangci/golangci-lint:v2.12.2
+    steps:
+      - name: Go modules Cache
+        uses: actions/cache@v6
+        id: go-cache
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-golang-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-golang-
+
+      - name: Test
+        run: |
+          golangci-lint run --output.code-climate.path codeclimate-report.json --output.text.path stdout
+
+  test_rdb:
+    runs-on: self-hosted
+    container:
+      image: golang:1.26
+    strategy:    
+      matrix:
+        include:
+          - RDB_VERSION: "${RDB30_VERSION}"
+            RDB_DOWNLOAD_URL: "http://builds.red-soft.biz/release_hub/rdb30/${RDB30_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB30_VERSION}:bin"
+          - RDB_VERSION: "${RDB51_VERSION}"
+            RDB_DOWNLOAD_URL: "http://builds.red-soft.biz/release_hub/rdb50/${RDB51_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB51_VERSION}:bin"
+          - RDB_VERSION: "${RDB52_VERSION}"
+            RDB_DOWNLOAD_URL: "http://builds.red-soft.biz/release_hub/rdb50/${RDB52_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB52_VERSION}:bin"
+          - RDB_VERSION: "${RDB53_VERSION}"
+            RDB_DOWNLOAD_URL: "http://builds.red-soft.biz/release_hub/rdb50/${RDB53_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB53_VERSION}:bin"
+          - RDB_VERSION: "6.0"
+            RDB_DOWNLOAD_URL: "http://builds.red-soft.biz/release_hub/rdb60/${RDB60_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB60_VERSION}:bin"
+    env:
+      REPORT: reddatabase_${RDB_VERSION}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+    
+      - name: Install RDB
+        run: |
+          wget -q ${{matrix.RDB_DOWNLOAD_URL}} -O installer
+          chmod +x ./installer
+          ./installer --mode unattended --sysdba_password masterkey
+      - name: Configure RDB
+        run: |
+          cp ci/firebird.conf ci/fbtrace.conf /opt/RedDatabase
+          g++ -o libfbxci.so -shared -fPIC ci/udrs.cpp -I_tools/msgs/include
+          cp libfbxci.so /opt/RedDatabase/plugins/udr
+      - name: Start RDB
+        run: |
+          if [ -e /etc/init.d/reddatabase ]; then
+            /etc/init.d/reddatabase start
+          else
+            /etc/init.d/firebird start
+          fi
+
+      - name: Go modules Cache
+        uses: actions/cache@v6
+        id: go-cache
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-golang-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-golang-
+
+      - name: Run test
+        run: |
+          COVERDIR=$(pwd)/reports/${REPORT}
+          PACKAGES=$(go list ./... 2> /dev/null | grep -v /vendor/|xargs|tr ' ' ",")
+          mkdir -p ${COVERDIR}
+          go run gotest.tools/gotestsum@latest --format testname -- -p 1 ${GOTEST_EXTRA_ARGS} -cover ./... -coverpkg=${PACKAGES} -test.gocoverdir=${COVERDIR}
+
+  test_fb:
+    runs-on: self-hosted
+    container:
+      image: golang:1.26
+    strategy:    
+      matrix:
+        include:
+          - FB_VERSION: ${FB30_VERSION}
+            FB_DOWNLOAD_URL: http://minio.red-soft.biz/3rdparty/firebird/Firebird-${FB30_VERSION}-linux-x64.tar.gz
+          - FB_VERSION: ${FB40_VERSION}
+            FB_DOWNLOAD_URL: http://minio.red-soft.biz/3rdparty/firebird/Firebird-${FB40_VERSION}-linux-x64.tar.gz
+          - FB_VERSION: ${FB50_VERSION}
+            FB_DOWNLOAD_URL: http://minio.red-soft.biz/3rdparty/firebird/Firebird-${FB50_VERSION}-linux-x64.tar.gz
+    env:
+      REPORT: firebird_${{matrix.FB_VERSION}}
+    steps:
+      - run:
+          echo ${REPORT}
+          echo ${{matrix.FB_VERSION}}
+          echo ${{matrix.FB_DOWNLOAD_URL}}
+
+      - name: Checkout
+        uses: actions/checkout@v7
+    
+      - name: Install dependencies
+        run: |
+          sed -i 's|http://deb.debian.org|https://mirror.yandex.ru|g; s|http://security.debian.org|https://mirror.yandex.ru|g; s|deb.debian.org|mirror.yandex.ru|g; s|security.debian.org|mirror.yandex.ru|g' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
+          apt update && apt install -y libtommath1 libicu76
+          ln -s /usr/lib/x86_64-linux-gnu/libtommath.so.1 /usr/lib/x86_64-linux-gnu/libtommath.so.0
+          ln -s /usr/lib/x86_64-linux-gnu/libncursesw.so.6 /usr/lib/x86_64-linux-gnu/libncurses.so.5
+
+      - name: Install Firebird
+        run: |
+          wget -q ${{matrix.FB_DOWNLOAD_URL}} -O fb.tar.gz
+          tar xf fb.tar.gz
+          cd Firebird-${FB_VERSION}*
+          ./install.sh -silent
+
+      - name: Configure Firebird
+        run: |
+          . /opt/firebird/SYSDBA.password
+          export ISC_PASSWORD
+          echo "alter user sysdba set password 'masterkey';" | /opt/firebird/bin/isql -u sysdba localhost:employee
+          cp ci/firebird.conf /opt/firebird
+          g++ -o /opt/firebird/plugins/udr/libfbxci.so -shared -fPIC ci/udrs.cpp -I_tools/msgs/include
+
+      - name: Start firebird
+        run: |
+          /etc/init.d/firebird restart
+
+      - name: Go modules Cache
+        uses: actions/cache@v6
+        id: go-cache
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-golang-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-golang-
+
+      - name: Run test
+        run: |
+          COVERDIR=$(pwd)/reports/${REPORT}
+          PACKAGES=$(go list ./... 2> /dev/null | grep -v /vendor/|xargs|tr ' ' ",")
+          mkdir -p ${COVERDIR}
+          go run gotest.tools/gotestsum@latest --format testname -- -p 1 ${GOTEST_EXTRA_ARGS} -cover ./... -coverpkg=${PACKAGES} -test.gocoverdir=${COVERDIR}
