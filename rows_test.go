@@ -807,6 +807,60 @@ func TestRowToStructByName(t *testing.T) {
 	})
 }
 
+func TestRowToStructByNameNestedPointers(t *testing.T) {
+	type person struct {
+		First **string
+		Last  ***string
+		Age   int32
+	}
+
+	for _, nulls := range []bool{false, true} {
+		t.Run(fmt.Sprintf("null=%t", nulls), func(t *testing.T) {
+			defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+				columns := "'John' as first, 'Smith' as last"
+				if nulls {
+					columns = "null as first, null as last"
+				}
+				rows, err := conn.Query(ctx, "select "+columns+", n as age from ("+generateSeriesQuery("0", "9", "n")+") order by n")
+				require.NoError(t, err)
+				people, err := fbx.CollectRows(rows, fbx.RowToStructByName[person])
+				require.NoError(t, err)
+				require.Len(t, people, 10)
+				for i, p := range people {
+					assert.EqualValues(t, i, p.Age)
+					if nulls {
+						assert.Nil(t, p.First)
+						assert.Nil(t, p.Last)
+					} else {
+						assert.Equal(t, "John", **p.First)
+						assert.Equal(t, "Smith", ***p.Last)
+					}
+				}
+			})
+		})
+	}
+}
+
+func TestRowsScanNilPointerDestination(t *testing.T) {
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		rows, err := conn.Query(ctx, "select 'hello' as greeting from ("+generateSeriesQuery("1", "2", "n")+")")
+		require.NoError(t, err)
+		defer rows.Close()
+
+		var value *string
+		require.True(t, rows.Next())
+		require.NoError(t, rows.Scan(&value))
+		require.Equal(t, "hello", *value)
+
+		var nilDst **string
+		require.True(t, rows.Next())
+		err = rows.Scan(nilDst)
+		var scanErr fbx.ScanArgError
+		require.ErrorAs(t, err, &scanErr)
+		require.Error(t, rows.Err())
+	})
+}
+
 func TestRowToStructByNameDbTags(t *testing.T) {
 	type person struct {
 		Last             string `db:"LAST_NAME"`

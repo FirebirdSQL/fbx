@@ -158,7 +158,12 @@ type pointerPointerScanPlan struct {
 func (plan *pointerPointerScanPlan) SetNext(next ScanPlan) { plan.next = next }
 
 func (plan *pointerPointerScanPlan) Scan(src []byte, dst any) error {
-	el := reflect.ValueOf(dst).Elem()
+	dstValue := reflect.ValueOf(dst)
+	if dstValue.Kind() != reflect.Pointer || dstValue.IsNil() {
+		return fmt.Errorf("cannot scan into non-pointer or nil destination %T", dst)
+	}
+
+	el := dstValue.Elem()
 	if src == nil {
 		el.Set(reflect.Zero(el.Type()))
 		return nil
@@ -171,11 +176,11 @@ func (plan *pointerPointerScanPlan) Scan(src []byte, dst any) error {
 // TryPointerPointerScanPlan handles a pointer to a pointer by setting the
 // target to nil for SQL NULL and allocating and scanning for non-NULL.
 func TryPointerPointerScanPlan(target any) (plan WrappedScanPlanNextSetter, nextTarget any, ok bool) {
-	if dstValue := reflect.ValueOf(target); dstValue.Kind() == reflect.Pointer {
-		elemValue := dstValue.Elem()
-		if elemValue.Kind() == reflect.Pointer {
+	if dstType := reflect.TypeOf(target); dstType != nil && dstType.Kind() == reflect.Pointer {
+		elemType := dstType.Elem()
+		if elemType.Kind() == reflect.Pointer {
 			plan = &pointerPointerScanPlan{}
-			return plan, reflect.Zero(elemValue.Type()).Interface(), true
+			return plan, reflect.Zero(elemType).Interface(), true
 		}
 	}
 
