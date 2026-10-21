@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"rdb.red-soft.ru/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbproto"
 )
 
 // StatisticsOptions controls database statistics collected by [ServiceConn.Statistics].

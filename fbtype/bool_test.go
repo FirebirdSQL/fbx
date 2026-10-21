@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"rdb.red-soft.ru/fbx/fbtype"
-	"rdb.red-soft.ru/fbx/fbxtest"
+	"github.com/firebirdsql/fbx/fbtype"
+	"github.com/firebirdsql/fbx/fbxtest"
 )
 
 func TestBoolCodec(t *testing.T) {

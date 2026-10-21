@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"rdb.red-soft.ru/fbx/fbconn"
+	"github.com/firebirdsql/fbx/fbconn"
 )
 
 const (

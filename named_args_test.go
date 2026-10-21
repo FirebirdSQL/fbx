@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/firebirdsql/fbx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx"
 )
 
 func TestNamedArgsRewriteQuery(t *testing.T) {

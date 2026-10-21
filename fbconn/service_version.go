@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"rdb.red-soft.ru/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbproto"
 )
 
 // serviceServerVersion queries the service attachment, without attaching to a

@@ -9,7 +9,7 @@ import (
 	"math"
 	"math/big"
 
-	"rdb.red-soft.ru/fbx/internal/fbio"
+	"github.com/firebirdsql/fbx/internal/fbio"
 )
 
 var (

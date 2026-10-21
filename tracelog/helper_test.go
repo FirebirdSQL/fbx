@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/firebirdsql/fbx"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx"
 )
 
 type serverEngineInfo struct {

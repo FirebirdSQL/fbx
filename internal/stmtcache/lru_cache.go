@@ -1,7 +1,7 @@
 package stmtcache
 
 import (
-	"rdb.red-soft.ru/fbx/fbconn"
+	"github.com/firebirdsql/fbx/fbconn"
 )
 
 // lruNode is a typed doubly-linked list node with freelist support.

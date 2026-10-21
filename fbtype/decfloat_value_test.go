@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"rdb.red-soft.ru/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbproto"
 )
 
 func TestDecFloatValueCopiesCoefficient(t *testing.T) {

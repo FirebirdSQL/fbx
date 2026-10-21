@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"rdb.red-soft.ru/fbx/fbconn"
-	"rdb.red-soft.ru/fbx/fbtype"
-	"rdb.red-soft.ru/fbx/internal/operationerror"
+	"github.com/firebirdsql/fbx/fbconn"
+	"github.com/firebirdsql/fbx/fbtype"
+	"github.com/firebirdsql/fbx/internal/operationerror"
 )
 
 // Rows is the result set returned from *Conn.Query. Rows must be closed before

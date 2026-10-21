@@ -8,8 +8,8 @@ import (
 	"io"
 	"reflect"
 
-	"rdb.red-soft.ru/fbx/fbconn"
-	"rdb.red-soft.ru/fbx/fbtype"
+	"github.com/firebirdsql/fbx/fbconn"
+	"github.com/firebirdsql/fbx/fbtype"
 )
 
 // ExtendedQueryBuilder encodes parameters.

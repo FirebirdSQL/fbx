@@ -8,7 +8,7 @@ import (
 	"io"
 	"math"
 
-	"rdb.red-soft.ru/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbproto"
 )
 
 // LimboTransactionAction selects how to finish a prepared transaction.

@@ -5,7 +5,7 @@ import (
 	"io"
 	"sync"
 
-	"rdb.red-soft.ru/fbx/internal/iobufpool"
+	"github.com/firebirdsql/fbx/internal/iobufpool"
 )
 
 const (

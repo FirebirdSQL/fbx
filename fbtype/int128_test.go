@@ -10,12 +10,12 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/firebirdsql/fbx"
+	"github.com/firebirdsql/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbtype"
+	"github.com/firebirdsql/fbx/fbxtest"
+	"github.com/firebirdsql/fbx/internal/fbio"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx"
-	"rdb.red-soft.ru/fbx/fbproto"
-	"rdb.red-soft.ru/fbx/fbtype"
-	"rdb.red-soft.ru/fbx/fbxtest"
-	"rdb.red-soft.ru/fbx/internal/fbio"
 )
 
 func TestInt128BinaryReadRejectsInvalidLength(t *testing.T) {

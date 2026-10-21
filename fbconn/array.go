@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"rdb.red-soft.ru/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbproto"
 )
 
 type dimensionsMapKey struct {

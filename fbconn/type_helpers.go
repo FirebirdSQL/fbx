@@ -1,6 +1,6 @@
 package fbconn
 
-import "rdb.red-soft.ru/fbx/fbproto"
+import "github.com/firebirdsql/fbx/fbproto"
 
 // IsBlobType reports whether the type id represents a blob.
 func IsBlobType(typeId uint32) bool {

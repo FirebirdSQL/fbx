@@ -7,7 +7,7 @@ import (
 	"math"
 	"strconv"
 
-	"rdb.red-soft.ru/fbx/internal/fbio"
+	"github.com/firebirdsql/fbx/internal/fbio"
 )
 
 // Float4 represents the Firebird FLOAT type.

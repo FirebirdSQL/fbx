@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"rdb.red-soft.ru/fbx/fbconn/ctxwatch"
-	"rdb.red-soft.ru/fbx/fbproto"
-	"rdb.red-soft.ru/fbx/fbproto/auth"
+	"github.com/firebirdsql/fbx/fbconn/ctxwatch"
+	"github.com/firebirdsql/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbproto/auth"
 )
 
 type AfterConnectFunc func(ctx context.Context, fbconn *FbConn) error

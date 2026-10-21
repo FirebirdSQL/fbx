@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"rdb.red-soft.ru/fbx/internal/fbio"
+	"github.com/firebirdsql/fbx/internal/fbio"
 )
 
 var firebirdDateEpoch = time.Date(1858, time.November, 17, 0, 0, 0, 0, time.UTC)

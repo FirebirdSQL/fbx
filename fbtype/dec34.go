@@ -9,7 +9,7 @@ import (
 	"math/big"
 	"strconv"
 
-	"rdb.red-soft.ru/fbx/fbtype/decfloat"
+	"github.com/firebirdsql/fbx/fbtype/decfloat"
 )
 
 var decFloat34BinaryCodec = decfloat.NewDecimalCodec(decfloat.Decimal128)

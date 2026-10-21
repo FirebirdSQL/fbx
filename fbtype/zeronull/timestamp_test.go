@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"rdb.red-soft.ru/fbx/fbtype/zeronull"
-	"rdb.red-soft.ru/fbx/fbxtest"
+	"github.com/firebirdsql/fbx/fbtype/zeronull"
+	"github.com/firebirdsql/fbx/fbxtest"
 )
 
 func isExpectedEqTimestamp(a any) func(any) bool {

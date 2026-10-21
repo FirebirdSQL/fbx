@@ -3,7 +3,7 @@ package zeronull
 import (
 	"database/sql/driver"
 
-	"rdb.red-soft.ru/fbx/fbtype"
+	"github.com/firebirdsql/fbx/fbtype"
 )
 
 type Float8 float64

@@ -7,8 +7,8 @@ import (
 	"math"
 	"strconv"
 
-	"rdb.red-soft.ru/fbx/fbproto"
-	"rdb.red-soft.ru/fbx/internal/fbio"
+	"github.com/firebirdsql/fbx/fbproto"
+	"github.com/firebirdsql/fbx/internal/fbio"
 )
 
 // Int64Scanner scans a Firebird integer value represented as [Int8].

@@ -1,15 +1,15 @@
-# fbx - Red Database and Firebird Driver for Go
+# fbx - Firebird Driver for Go
 
-fbx is a pure Go driver for Red Database and Firebird.
+fbx is a pure Go driver for Firebird.
 
 The driver is designed as a richer native Go client than a minimal
 `database/sql` adapter: it exposes a high-level `fbx.Conn` API, connection
 pooling for production workloads, a `database/sql` compatibility layer, typed
-Firebird values, tracing hooks, and modern Red Database / Firebird features.
+Firebird values, tracing hooks, and modern Firebird features.
 
 ## Supported Features
 
-- Pure Go implementation of the Red Database / Firebird wire protocol.
+- Pure Go implementation of the Firebird wire protocol.
 - Native `fbx.Conn` API with `context.Context` support for connect, query, transaction, BLOB, and low-level operations.
 - `database/sql` compatibility layer registered as the `fbx` driver.
 - Concurrency-safe `fbxpool` connection pool for application workloads, with lifecycle hooks, health checks, configurable ping behavior, acquire tracing, release tracing, and pool statistics.
@@ -17,7 +17,7 @@ Firebird values, tracing hooks, and modern Red Database / Firebird features.
 - Database creation and deletion through `CreateDatabase`, `DropDatabase`, and related config helpers.
 - Services manager API for server-side backup, restore, database statistics, gfix maintenance, and trace session management through `fbservice.Manager`, including background streaming with `TraceStartSession` and access to the session ID and completion errors.
 - Firebird `POST_EVENT` subscriptions through `fbevent.Manager`, including one-shot waits, callback listeners, channel subscriptions, and pgx-like notifications.
-- Red Database / Firebird 6 schema-qualified identifiers.
+- Firebird 6 schema-qualified identifiers.
 - Prepared statements, statement cache, configurable statement cache size, and configurable query execution mode.
 - Batch DML operations through object batches and named batches.
 - Positional `?` parameters plus `NamedArgs` query rewriting.
@@ -58,7 +58,7 @@ import (
 	"fmt"
 	"os"
 
-	"rdb.red-soft.ru/fbx"
+	"github.com/firebirdsql/fbx"
 )
 
 func main() {
@@ -83,7 +83,7 @@ func main() {
 }
 ```
 
-See documentation and more usage examples at https://pkg.go.dev/rdb.red-soft.ru/fbx
+See documentation and more usage examples at https://pkg.go.dev/github.com/firebirdsql/fbx
 
 Wire compression is disabled by default. Enable it with `wire_compression=true` in the connection string
 (`wire_compress` and `wireCompression` are accepted aliases) or with `FBWIRECOMPRESSION=true`.

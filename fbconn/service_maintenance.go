@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"rdb.red-soft.ru/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbproto"
 )
 
 // RepairOperation selects a gfix maintenance action. Zero is invalid.

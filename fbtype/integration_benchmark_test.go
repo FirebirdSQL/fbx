@@ -6,8 +6,8 @@ import (
 	"context"
 	"testing"
 
-	"rdb.red-soft.ru/fbx"
-	"rdb.red-soft.ru/fbx/fbtype"
+	"github.com/firebirdsql/fbx"
+	"github.com/firebirdsql/fbx/fbtype"
 )
 
 func BenchmarkQueryTextFormatDecode_FB_int4_to_Go_int16_1_rows_1_columns(b *testing.B) {

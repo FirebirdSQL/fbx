@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/firebirdsql/fbx/fbconn"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx/fbconn"
 )
 
 // subjectAttachmentID returns the subject conn's MON$ATTACHMENT_ID. Call this

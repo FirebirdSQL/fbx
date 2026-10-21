@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/firebirdsql/fbx"
+	"github.com/firebirdsql/fbx/fbxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx"
-	"rdb.red-soft.ru/fbx/fbxpool"
 )
 
 func setupSchemas(ctx context.Context, t testing.TB, schemas ...string) {

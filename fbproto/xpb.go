@@ -1,6 +1,6 @@
 package fbproto
 
-import "rdb.red-soft.ru/fbx/internal/fbio"
+import "github.com/firebirdsql/fbx/internal/fbio"
 
 const xpbPreallocBufSize = 16
 

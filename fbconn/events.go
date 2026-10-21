@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"rdb.red-soft.ru/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbproto"
 )
 
 const eventLockRetryInterval = 5 * time.Millisecond

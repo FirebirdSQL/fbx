@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"math"
 
-	"rdb.red-soft.ru/fbx/fbtype"
+	"github.com/firebirdsql/fbx/fbtype"
 )
 
 type Int2 int16

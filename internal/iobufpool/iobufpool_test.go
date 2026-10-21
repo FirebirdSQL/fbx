@@ -3,7 +3,7 @@ package iobufpool_test
 import (
 	"testing"
 
-	"rdb.red-soft.ru/fbx/internal/iobufpool"
+	"github.com/firebirdsql/fbx/internal/iobufpool"
 
 	"github.com/stretchr/testify/assert"
 )

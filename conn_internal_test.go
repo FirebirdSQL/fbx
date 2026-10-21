@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/firebirdsql/fbx/fbconn"
+	"github.com/firebirdsql/fbx/internal/stmtcache"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx/fbconn"
-	"rdb.red-soft.ru/fbx/internal/stmtcache"
 )
 
 func mustParseConfig(t testing.TB, connString string) *ConnConfig {

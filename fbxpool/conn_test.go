@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/firebirdsql/fbx/fbxpool"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx/fbxpool"
 )
 
 func TestConnExec(t *testing.T) {

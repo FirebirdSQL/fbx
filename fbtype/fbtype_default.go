@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"rdb.red-soft.ru/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbproto"
 )
 
 var (

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"rdb.red-soft.ru/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbproto"
 )
 
 // TextScanner scans a value's text representation as [Text].

@@ -10,10 +10,10 @@ import (
 	"os"
 	"time"
 
-	"rdb.red-soft.ru/fbx"
-	"rdb.red-soft.ru/fbx/fbtype"
-	"rdb.red-soft.ru/fbx/fbxpool"
-	"rdb.red-soft.ru/fbx/stdlib"
+	"github.com/firebirdsql/fbx"
+	"github.com/firebirdsql/fbx/fbtype"
+	"github.com/firebirdsql/fbx/fbxpool"
+	"github.com/firebirdsql/fbx/stdlib"
 )
 
 func closeExample(closer io.Closer) {

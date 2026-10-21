@@ -3,7 +3,7 @@ package fbservice
 import (
 	"context"
 
-	"rdb.red-soft.ru/fbx/fbconn"
+	"github.com/firebirdsql/fbx/fbconn"
 )
 
 // ServiceConnection exposes the connection interface only to external tests.

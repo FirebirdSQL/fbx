@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 
-	"rdb.red-soft.ru/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbproto"
 )
 
 const (

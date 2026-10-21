@@ -7,8 +7,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/firebirdsql/fbx"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx"
 )
 
 var AllQueryExecModes = []fbx.QueryExecMode{

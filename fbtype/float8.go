@@ -7,7 +7,7 @@ import (
 	"math"
 	"strconv"
 
-	"rdb.red-soft.ru/fbx/internal/fbio"
+	"github.com/firebirdsql/fbx/internal/fbio"
 )
 
 // Float64Scanner scans a Firebird floating-point value.

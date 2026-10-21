@@ -5,8 +5,8 @@ import (
 	"io"
 	"testing"
 
+	"github.com/firebirdsql/fbx/fbservice"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx/fbservice"
 )
 
 func TestManagerRepairIgnoreChecksums(t *testing.T) {

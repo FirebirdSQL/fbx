@@ -6,7 +6,7 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"rdb.red-soft.ru/fbx/fbproto/auth"
+	"github.com/firebirdsql/fbx/fbproto/auth"
 )
 
 func defaultSettings() map[string]string {

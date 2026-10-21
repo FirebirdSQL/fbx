@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"sync"
 
-	"rdb.red-soft.ru/fbx/fbproto"
-	"rdb.red-soft.ru/fbx/fbproto/vax"
+	"github.com/firebirdsql/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbproto/vax"
 )
 
 type eventChannel struct {

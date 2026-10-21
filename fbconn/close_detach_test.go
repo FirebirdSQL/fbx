@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/firebirdsql/fbx/fbconn/ctxwatch"
+	"github.com/firebirdsql/fbx/fbconn/internal/bgreader"
+	"github.com/firebirdsql/fbx/fbproto"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx/fbconn/ctxwatch"
-	"rdb.red-soft.ru/fbx/fbconn/internal/bgreader"
-	"rdb.red-soft.ru/fbx/fbproto"
 )
 
 func newDetachTestConn(conn net.Conn) *FbConn {

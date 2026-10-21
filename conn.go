@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"rdb.red-soft.ru/fbx/fbconn"
-	"rdb.red-soft.ru/fbx/fbtype"
-	"rdb.red-soft.ru/fbx/internal/operationerror"
-	"rdb.red-soft.ru/fbx/internal/stmtcache"
+	"github.com/firebirdsql/fbx/fbconn"
+	"github.com/firebirdsql/fbx/fbtype"
+	"github.com/firebirdsql/fbx/internal/operationerror"
+	"github.com/firebirdsql/fbx/internal/stmtcache"
 )
 
 // ConnConfig contains all the options used to establish a connection. It must be created by ParseConfig and

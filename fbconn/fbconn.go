@@ -17,12 +17,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"rdb.red-soft.ru/fbx/fbconn/ctxwatch"
-	"rdb.red-soft.ru/fbx/fbconn/internal/bgreader"
-	"rdb.red-soft.ru/fbx/fbproto"
-	"rdb.red-soft.ru/fbx/fbproto/auth"
-	"rdb.red-soft.ru/fbx/fbproto/wirecrypt"
-	"rdb.red-soft.ru/fbx/internal/operationerror"
+	"github.com/firebirdsql/fbx/fbconn/ctxwatch"
+	"github.com/firebirdsql/fbx/fbconn/internal/bgreader"
+	"github.com/firebirdsql/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbproto/auth"
+	"github.com/firebirdsql/fbx/fbproto/wirecrypt"
+	"github.com/firebirdsql/fbx/internal/operationerror"
 )
 
 const (

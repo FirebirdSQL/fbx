@@ -11,7 +11,7 @@ import (
 	"strings"
 	"syscall"
 
-	"rdb.red-soft.ru/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbproto"
 )
 
 // SafeToRetry reports whether the failed call is guaranteed not to have sent its

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	"rdb.red-soft.ru/fbx/fbconn"
+	"github.com/firebirdsql/fbx/fbconn"
 )
 
 const minRestoreVerboseInterval = 100

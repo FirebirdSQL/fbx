@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"rdb.red-soft.ru/fbx/fbproto"
-	"rdb.red-soft.ru/fbx/internal/operationerror"
+	"github.com/firebirdsql/fbx/fbproto"
+	"github.com/firebirdsql/fbx/internal/operationerror"
 )
 
 type FBTransaction struct {

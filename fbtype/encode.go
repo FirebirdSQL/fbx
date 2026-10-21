@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"time"
 
-	"rdb.red-soft.ru/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbproto"
 )
 
 // PlanEncode returns an EncodePlan for encoding value with the given Firebird

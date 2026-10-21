@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"rdb.red-soft.ru/fbx/fbproto"
-	"rdb.red-soft.ru/fbx/internal/fbio"
+	"github.com/firebirdsql/fbx/fbproto"
+	"github.com/firebirdsql/fbx/internal/fbio"
 )
 
 // TimestamptzScanner scans a Firebird TIMESTAMP WITH TIME ZONE value.

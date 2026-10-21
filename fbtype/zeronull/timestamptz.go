@@ -4,7 +4,7 @@ import (
 	"database/sql/driver"
 	"time"
 
-	"rdb.red-soft.ru/fbx/fbtype"
+	"github.com/firebirdsql/fbx/fbtype"
 )
 
 type Timestamptz time.Time

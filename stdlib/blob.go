@@ -7,9 +7,9 @@ import (
 	"io"
 	"strings"
 
-	"rdb.red-soft.ru/fbx/fbconn"
-	"rdb.red-soft.ru/fbx/fbproto"
-	"rdb.red-soft.ru/fbx/fbtype"
+	"github.com/firebirdsql/fbx/fbconn"
+	"github.com/firebirdsql/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbtype"
 )
 
 // Blob is a BLOB reader returned from database/sql scans when using stdlib.

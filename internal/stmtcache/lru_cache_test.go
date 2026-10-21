@@ -3,7 +3,7 @@ package stmtcache
 import (
 	"testing"
 
-	"rdb.red-soft.ru/fbx/fbconn"
+	"github.com/firebirdsql/fbx/fbconn"
 )
 
 func newTestStatement(sql string) *fbconn.Statement {

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"rdb.red-soft.ru/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbproto"
 )
 
 var errServiceActionActive = errors.New("a service action is already active")

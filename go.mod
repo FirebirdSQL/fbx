@@ -1,4 +1,4 @@
-module rdb.red-soft.ru/fbx
+module github.com/firebirdsql/fbx
 
 go 1.26.2
 

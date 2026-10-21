@@ -3,8 +3,8 @@ package fbx_test
 import (
 	"testing"
 
+	"github.com/firebirdsql/fbx"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx"
 )
 
 type maintenanceIntegrationCapabilities struct {

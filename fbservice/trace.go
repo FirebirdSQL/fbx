@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"rdb.red-soft.ru/fbx/fbconn"
+	"github.com/firebirdsql/fbx/fbconn"
 )
 
 const maxTraceStartSPBLength = 1<<16 - 1

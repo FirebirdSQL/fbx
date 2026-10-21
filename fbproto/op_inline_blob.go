@@ -3,7 +3,7 @@ package fbproto
 import (
 	"fmt"
 
-	"rdb.red-soft.ru/fbx/fbproto/vax"
+	"github.com/firebirdsql/fbx/fbproto/vax"
 )
 
 // https://firebirdsql.org/file/documentation/html/en/firebirddocs/wireprotocol/firebird-wire-protocol.html#wireprotocol-op-inline-blob

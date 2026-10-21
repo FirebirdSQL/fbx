@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"rdb.red-soft.ru/fbx/fbproto"
-	"rdb.red-soft.ru/fbx/internal/fbio"
+	"github.com/firebirdsql/fbx/fbproto"
+	"github.com/firebirdsql/fbx/internal/fbio"
 )
 
 func assertSameTimetzClockAndOffset(t *testing.T, got, want time.Time) {
