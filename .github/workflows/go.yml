@@ -77,7 +77,7 @@ jobs:
           - RDB_VERSION: "6.0"
             RDB_DOWNLOAD_URL: "http://builds.red-soft.biz/release_hub/rdb60/${RDB60_VERSION}/download/red-database:linux-x86_64-enterprise:${RDB60_VERSION}:bin"
     env:
-      REPORT: reddatabase_${RDB_VERSION}
+      REPORT: reddatabase_${{matrix.RDB_VERSION}}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
