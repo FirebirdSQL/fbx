@@ -34,7 +34,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-golang-
 
-      - run: |
+      - name: Run go fmt and go vet
+        run: |
           go fmt $(go list ./... | grep -v /vendor/)
           go vet $(go list ./... | grep -v /vendor/)
 
@@ -54,7 +55,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-golang-
 
-      - name: Test
+      - name: Run golangci-lint
         run: |
           golangci-lint run --output.code-climate.path codeclimate-report.json --output.text.path stdout
 
