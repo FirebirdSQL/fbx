@@ -9,37 +9,37 @@ Firebird values, tracing hooks, and modern Firebird features.
 
 ## Supported Features
 
-- Pure Go implementation of the Firebird wire protocol.
-- Native `fbx.Conn` API with `context.Context` support for connect, query, transaction, BLOB, and low-level operations.
-- `database/sql` compatibility layer registered as the `fbx` driver.
-- Concurrency-safe `fbxpool` connection pool for application workloads, with lifecycle hooks, health checks, configurable ping behavior, acquire tracing, release tracing, and pool statistics.
-- URL and keyword/value connection strings, environment variable support, and multi-host fallback configuration.
-- Database creation and deletion through `CreateDatabase`, `DropDatabase`, and related config helpers.
-- Services manager API for server-side backup, restore, database statistics, gfix maintenance, and trace session management through `fbservice.Manager`, including background streaming with `TraceStartSession` and access to the session ID and completion errors.
-- Firebird `POST_EVENT` subscriptions through `fbevent.Manager`, including one-shot waits, callback listeners, channel subscriptions, and pgx-like notifications.
-- Firebird 6 schema-qualified identifiers.
-- Prepared statements, statement cache, configurable statement cache size, and configurable query execution mode.
-- Batch DML operations through object batches and named batches.
-- Positional `?` parameters plus `NamedArgs` query rewriting.
-- Transactions with Firebird TPB support, isolation/access mode options, lock timeout, raw TPB mode, helper functions, and pseudo-nested transactions via savepoints.
-- Streaming and lazy BLOB support, text and binary BLOB handling, configurable segment buffer size, stream BLOB mode, inline BLOB size, and inline BLOB cache settings.
-- Configurable fetch batch size for result sets.
-- Optional zlib wire compression for protocol 13 and newer, including combined use with wire encryption.
-- Firebird type mapping through `fbtype`, including `DATE`, `TIME`, `TIMESTAMP`, `TIMESTAMP WITH TIME ZONE`, `CHAR`, `VARCHAR`, OCTETS, BOOLEAN, integer types, `INT128`, NUMERIC/DECIMAL, `DECFLOAT(16)`, `DECFLOAT(34)`, arrays, NULL wrappers, and zero-null helpers.
-- Advanced type support in the `database/sql` layer, including BLOBs, arrays, `TIME`, `INT128`, NUMERIC/DECIMAL, DECFLOAT, OCTETS, and timestamp with time zone values.
-- Firebird array support, including reading, writing, and scanning array values through the native API and the `database/sql` compatibility layer.
-- Row collection helpers for scanning rows into values, maps, and structs.
-- Query, prepare, connect, acquire, and release tracing hooks, plus the `tracelog` package.
-- Multifactor authentication using Red Database security policies.
+- Pure Go implementation of the Firebird wire protocol
+- Native `fbx.Conn` API with `context.Context` support for connect, query, transaction, BLOB, and low-level operations
+- `database/sql` compatibility layer registered as the `fbx` driver
+- Concurrency-safe `fbxpool` connection pool for application workloads, with lifecycle hooks, health checks, configurable ping behavior, acquire tracing, release tracing, and pool statistics
+- URL and keyword/value connection strings, environment variable support, and multi-host fallback configuration
+- Database creation and deletion through `CreateDatabase`, `DropDatabase`, and related config helpers
+- Services manager API for server-side backup, restore, database statistics, gfix maintenance, and trace session management through `fbservice.Manager`, including background streaming with `TraceStartSession` and access to the session ID and completion errors
+- Firebird `POST_EVENT` subscriptions through `fbevent.Manager`, including one-shot waits, callback listeners, channel subscriptions, and pgx-like notifications
+- Firebird 6 schema-qualified identifiers
+- Prepared statements, statement cache, configurable statement cache size, and configurable query execution mode
+- Batch DML operations through object batches and named batches
+- Positional `?` parameters plus `NamedArgs` query rewriting
+- Transactions with Firebird TPB support, isolation/access mode options, lock timeout, raw TPB mode, helper functions, and pseudo-nested transactions via savepoints
+- Streaming and lazy BLOB support, text and binary BLOB handling, configurable segment buffer size, stream BLOB mode, inline BLOB size, and inline BLOB cache settings
+- Configurable fetch batch size for result sets
+- Optional _zlib_ wire compression for protocol 13 and newer, including combined use with wire encryption
+- Firebird type mapping through `fbtype`, including `DATE`, `TIME`, `TIMESTAMP`, `TIMESTAMP WITH TIME ZONE`, `CHAR`, `VARCHAR`, `OCTETS`, `BOOLEAN`, integer types, `INT128`, `NUMERIC/DECIMAL`, `DECFLOAT(16)`, `DECFLOAT(34)`, arrays, NULL wrappers, and zero-null helpers
+- Advanced type support in the `database/sql` layer, including BLOBs, arrays, `TIME`, `INT128`, `NUMERIC/DECIMAL`, `DECFLOAT`, `OCTETS`, and timestamp with time zone values
+- Firebird array support, including reading, writing, and scanning array values through the native API and the `database/sql` compatibility layer
+- Row collection helpers for scanning rows into values, maps, and structs
+- Query, prepare, connect, acquire, and release tracing hooks, plus the `tracelog` package
+- Multi-factor authentication using Red Database security policies
 
 ## Planned Features
 
-- Geometric and spatial type support.
-- SQL/JSON value mapping and helper APIs.
-- ROW and structured value support.
-- Services manager API for online validation and user-management workflows.
-- Bidirectional result-set navigation for server-side scrollable cursors.
-- Two-phase commit and distributed transaction support.
+- Geometric and spatial type support
+- SQL/JSON value mapping and helper APIs
+- ROW and structured value support
+- Services manager API for online validation and user-management workflows
+- Bidirectional result-set navigation for server-side scrollable cursors
+- Two-phase commit and distributed transaction support
 
 ## Related projects
 
