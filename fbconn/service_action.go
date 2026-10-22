@@ -54,7 +54,9 @@ func (c *ServiceConn) queryService(
 	return append([]byte(nil), response.Data...), nil
 }
 
-func (c *ServiceConn) requestService(ctx context.Context, request fbproto.ClientMessage) (*fbproto.OpResponse, error) {
+func (c *ServiceConn) requestService(ctx context.Context, request fbproto.ClientMessage) (response *fbproto.OpResponse, err error) {
+	defer func() { err = serviceContextError(ctx, err) }()
+
 	fbConn := c.conn
 	if err := fbConn.lock(); err != nil {
 		return nil, err
@@ -79,13 +81,13 @@ func (c *ServiceConn) requestService(ctx context.Context, request fbproto.Client
 		return fbConn.client.WriteMessage(request)
 	}); err != nil {
 		fbConn.asyncClose()
-		return nil, normalizeTimeoutError(ctx, err)
+		return nil, err
 	}
 
 	message, err := fbConn.receiveMessage()
 	if err != nil {
 		fbConn.asyncClose()
-		return nil, normalizeTimeoutError(ctx, err)
+		return nil, err
 	}
 
 	switch message := message.(type) {

@@ -8,6 +8,7 @@ import (
 	"io"
 
 	"github.com/firebirdsql/fbx/fbproto"
+	"github.com/firebirdsql/fbx/internal/operationerror"
 )
 
 const (
@@ -29,7 +30,11 @@ func (c *ServiceConn) copyServiceOutput(ctx context.Context, output io.Writer) e
 	return c.copyServiceData(ctx, output, fbproto.Isc_info_svc_to_eof)
 }
 
-func (c *ServiceConn) copyServiceData(ctx context.Context, output io.Writer, item byte) error {
+func (c *ServiceConn) copyServiceData(ctx context.Context, output io.Writer, item byte) (err error) {
+	// The server has accepted the action; even a failure before the first
+	// output query cannot guarantee that repeating it is safe.
+	defer func() { err = operationerror.WithRetry(serviceContextError(ctx, err), false) }()
+
 	sendItems := buildServiceOutputSendItems()
 	receiveItems := []byte{item}
 	bufferLength := initialServiceOutputBufferLength
