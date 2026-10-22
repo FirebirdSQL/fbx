@@ -692,7 +692,11 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 	var err error
 
 	newPerDialConnectError := func(msg string, err error) *perDialConnectError {
-		err = normalizeTimeoutError(ctx, err)
+		if target == connectTargetService {
+			err = serviceContextError(ctx, err)
+		} else {
+			err = normalizeTimeoutError(ctx, err)
+		}
 		e := &perDialConnectError{address: connectConfig.address, originalHostname: connectConfig.originalHostname, err: fmt.Errorf("%s: %w", msg, err)}
 		return e
 	}

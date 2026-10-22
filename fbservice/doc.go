@@ -9,6 +9,12 @@ for each service action. Create a manager directly from a connection string:
 		return err
 	}
 
+Errors during cancellation preserve the original failure along with
+context.Canceled or context.DeadlineExceeded for errors.Is. Server errors remain
+available through errors.As. Once the server accepts an action, a subsequent
+failure returns fbconn.SafeToRetry=false. Cancellation does not roll back
+actions already performed by the server.
+
 To customize settings, parse the configuration before creating the manager:
 
 	config, err := fbservice.ParseConfig(os.Getenv("DATABASE_URL"))

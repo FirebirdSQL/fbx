@@ -74,11 +74,6 @@ func (c *ServiceConn) runTraceSessionAction(ctx context.Context, name string, ac
 
 func (c *ServiceConn) runTraceAction(ctx context.Context, name string, actionSPB []byte, options TraceOptions) error {
 	if err := c.runServiceAction(ctx, actionSPB, options.Output); err != nil {
-		// Servers may report canceled services as a connection shutdown rather
-		// than a network timeout. Keep both the context and the server error.
-		if ctxErr := ctx.Err(); ctxErr != nil && !errors.Is(err, ctxErr) {
-			err = errors.Join(err, ctxErr)
-		}
 		return fmt.Errorf("trace %s: %w", name, err)
 	}
 	return nil
