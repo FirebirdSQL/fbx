@@ -927,6 +927,57 @@ func TestMapScanPointerPointerAllocatesAndClears(t *testing.T) {
 	assert.Nil(t, got)
 }
 
+func TestMapScanNestedPointers(t *testing.T) {
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 0, 4, 0)
+	var got struct {
+		ID      **int32
+		Scanner **sql.NullInt64
+	}
+	plan := m.PlanScan(typeMetadata, &got.ID)
+	scannerPlan := m.PlanScan(typeMetadata, &got.Scanner)
+
+	for _, tt := range []struct {
+		src  []byte
+		want int32
+	}{
+		{src: []byte{0, 0, 0, 42}, want: 42},
+		{src: nil},
+		{src: []byte{0, 0, 0, 43}, want: 43},
+	} {
+		require.NoError(t, plan.Scan(tt.src, &got.ID))
+		require.NoError(t, scannerPlan.Scan(tt.src, &got.Scanner))
+		if tt.src == nil {
+			require.Nil(t, got.ID)
+			require.Nil(t, got.Scanner)
+			continue
+		}
+		require.Equal(t, tt.want, **got.ID)
+		require.Equal(t, sql.NullInt64{Int64: int64(tt.want), Valid: true}, **got.Scanner)
+	}
+}
+
+func TestPointerPointerScanNilDestination(t *testing.T) {
+	m := fbtype.NewMap()
+	typeMetadata := fbtype.NewTypeMetadata(fbproto.SQL_TYPE_TEXT, 0, 5, 0)
+	src := []byte("hello")
+	var nilDst **string
+	require.Error(t, m.Scan(typeMetadata, src, nilDst))
+	require.Error(t, m.Scan(typeMetadata, nil, nilDst))
+
+	var value *string
+	plan := m.PlanScan(typeMetadata, &value)
+	require.NoError(t, plan.Scan(src, &value))
+	require.Equal(t, "hello", *value)
+	require.Error(t, plan.Scan(src, nilDst))
+	require.Error(t, plan.Scan(nil, nilDst))
+}
+
+func TestTryPointerPointerScanPlanNil(t *testing.T) {
+	_, _, ok := fbtype.TryPointerPointerScanPlan(nil)
+	require.False(t, ok)
+}
+
 func TestMapScanRenamedStringUsesUnderlyingType(t *testing.T) {
 	m := fbtype.NewMap()
 
