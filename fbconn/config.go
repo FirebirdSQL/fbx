@@ -7,7 +7,6 @@ import (
 	"io"
 	"math"
 	"net"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -88,6 +87,10 @@ type Config struct {
 
 	createdByParseConfig bool // Used to enforce created by ParseConfig rule.
 }
+
+// defaultPort is the port used when neither the connection string nor the environment supplies a port.
+// It is also the per-element fallback for empty entries in a multi-host port list.
+const defaultPort = "3050"
 
 // ParseConfigOptions contains options that control how a config is built.
 type ParseConfigOptions struct {
@@ -275,11 +278,12 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 	envSettings := parseEnvSettings()
 
 	connStringSettings := make(map[string]string)
+	var isEmptyPortList bool
 	if connString != "" {
 		var err error
 		// connString may be a database URL or in keyword/value format
 		if strings.HasPrefix(connString, "firebird://") || strings.HasPrefix(connString, "firebirdsql://") {
-			connStringSettings, err = parseURLSettings(connString)
+			connStringSettings, isEmptyPortList, err = parseURLSettings(connString)
 			if err != nil {
 				return nil, &ParseConfigError{ConnString: connString, msg: "failed to parse as URL", err: err}
 			}
@@ -291,22 +295,25 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		}
 	}
 
+	settings := mergeSettings(defaultSettings, envSettings, connStringSettings)
+	encoding, err := fbproto.NewEncoding(settings["encoding"])
+	if err != nil {
+		return nil, err
+	}
+
 	if options.ConnStringAllowedKeys != nil {
 		allowed := make(map[string]struct{}, len(options.ConnStringAllowedKeys))
 		for _, k := range options.ConnStringAllowedKeys {
 			allowed[canonicalConnStringKey(k)] = struct{}{}
 		}
 		for k := range connStringSettings {
+			if k == "port" && isEmptyPortList {
+				continue
+			}
 			if _, ok := allowed[k]; !ok {
 				return nil, &ParseConfigError{ConnString: connString, msg: fmt.Sprintf("connection string key %q is not in ConnStringAllowedKeys", k)}
 			}
 		}
-	}
-
-	settings := mergeSettings(defaultSettings, envSettings, connStringSettings)
-	encoding, err := fbproto.NewEncoding(settings["encoding"])
-	if err != nil {
-		return nil, err
 	}
 
 	rawPluginList := settings["auth_plugin_list"]
@@ -431,6 +438,10 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 	ports := strings.Split(settings["port"], ",")
 	fallbacks := []*FallbackConfig{}
 
+	if len(ports) > 1 && len(ports) != len(hosts) {
+		return nil, &ParseConfigError{ConnString: connString, msg: fmt.Sprintf("could not match %d port numbers to %d hosts", len(ports), len(hosts))}
+	}
+
 	for i, host := range hosts {
 		var portStr string
 		if i < len(ports) {
@@ -439,9 +450,16 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 			portStr = ports[0]
 		}
 
+		if host == "" {
+			host = defaultHost()
+		}
+		if portStr == "" {
+			portStr = defaultPort
+		}
+
 		port, err := parsePort(portStr)
 		if err != nil {
-			return nil, &ParseConfigError{ConnString: connString, msg: "invalid port", err: err}
+			return nil, &ParseConfigError{ConnString: connString, msg: "invalid port"}
 		}
 
 		fallbacks = append(fallbacks, &FallbackConfig{
@@ -545,72 +563,6 @@ func parseAuthPluginList(raw string) []string {
 		return nil
 	}
 	return result
-}
-
-func parseURLSettings(connString string) (map[string]string, error) {
-	settings := make(map[string]string)
-
-	parsedURL, err := url.Parse(connString)
-	if err != nil {
-		if urlErr := new(url.Error); errors.As(err, &urlErr) {
-			return nil, urlErr.Err
-		}
-		return nil, err
-	}
-
-	if parsedURL.User != nil {
-		settings["user"] = parsedURL.User.Username()
-		if password, present := parsedURL.User.Password(); present {
-			settings["password"] = password
-		}
-	}
-
-	// Handle multiple host:port's in url.Host by splitting them into host,host,host and port,port,port.
-	var hosts []string
-	var ports []string
-	for _, host := range strings.Split(parsedURL.Host, ",") {
-		if host == "" {
-			continue
-		}
-		if isIPOnly(host) {
-			hosts = append(hosts, strings.Trim(host, "[]"))
-			continue
-		}
-		h, p, err := net.SplitHostPort(host)
-		if err != nil {
-			return nil, fmt.Errorf("failed to split host:port in '%s', err: %w", host, err)
-		}
-		if h != "" {
-			hosts = append(hosts, h)
-		}
-		if p != "" {
-			ports = append(ports, p)
-		}
-	}
-	if len(hosts) > 0 {
-		settings["host"] = strings.Join(hosts, ",")
-	}
-	if len(ports) > 0 {
-		settings["port"] = strings.Join(ports, ",")
-	}
-
-	var database string
-	if len(parsedURL.Path) > 0 {
-		database = parsedURL.Path[1:]
-	}
-	if parsedURL.Path != "" {
-		settings["database"] = database
-	}
-
-	for k, v := range parsedURL.Query() {
-		settings[canonicalConnStringKey(k)] = v[0]
-	}
-
-	return settings, nil
-}
-
-func isIPOnly(host string) bool {
-	return net.ParseIP(strings.Trim(host, "[]")) != nil || !strings.Contains(host, ":")
 }
 
 var asciiSpace = [256]uint8{'\t': 1, '\n': 1, '\v': 1, '\f': 1, '\r': 1, ' ': 1}

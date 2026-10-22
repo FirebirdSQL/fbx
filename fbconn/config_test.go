@@ -435,6 +435,58 @@ func TestParseConfig(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:       "database url missing port",
+			connString: "firebird://user:secret@localhost/c:\\db\\mydb.fdb",
+			config: &fbconn.Config{
+				User:          "user",
+				Password:      "secret",
+				Host:          "localhost",
+				Port:          defaultPort,
+				Database:      "c:\\db\\mydb.fdb",
+				RuntimeParams: map[string]string{},
+			},
+		},
+		{
+			name:       "URL multiple hosts with some ports omitted",
+			connString: "firebird://user:secret@foo,bar:3051/c:\\db\\mydb.fdb",
+			config: &fbconn.Config{
+				User:          "user",
+				Password:      "secret",
+				Host:          "foo",
+				Port:          defaultPort,
+				Database:      "c:\\db\\mydb.fdb",
+				RuntimeParams: map[string]string{},
+				Fallbacks: []*fbconn.FallbackConfig{
+					{
+						Host: "bar",
+						Port: 3051,
+					},
+				},
+			},
+		},
+		{
+			name:       "URL multiple hosts with empty middle host",
+			connString: "firebird://user:secret@foo,,baz/c:\\db\\mydb.fdb",
+			config: &fbconn.Config{
+				User:          "user",
+				Password:      "secret",
+				Host:          "foo",
+				Port:          defaultPort,
+				Database:      "c:\\db\\mydb.fdb",
+				RuntimeParams: map[string]string{},
+				Fallbacks: []*fbconn.FallbackConfig{
+					{
+						Host: defaultHost,
+						Port: defaultPort,
+					},
+					{
+						Host: "baz",
+						Port: defaultPort,
+					},
+				},
+			},
+		},
 	}
 
 	for i, tt := range tests {
