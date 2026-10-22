@@ -1,6 +1,7 @@
 package fbx_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -803,6 +804,51 @@ func TestPrepareBadSQLFailure(t *testing.T) {
 	}
 
 	ensureConnValid(t, conn)
+}
+
+func TestPrepareErrorsReleaseStatements(t *testing.T) {
+	for _, explicitTx := range []bool{false, true} {
+		t.Run(fmt.Sprintf("transaction=%t", explicitTx), func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
+			defer closeConn(t, conn)
+
+			prepare := conn.Prepare
+			queryRow := conn.QueryRow
+			if explicitTx {
+				tx, err := conn.Begin(ctx)
+				require.NoError(t, err)
+				defer func() { _ = tx.Rollback(context.Background()) }()
+				prepare = tx.Prepare
+				queryRow = tx.QueryRow
+			}
+
+			var trace bytes.Buffer
+			conn.FbConn().Client().Trace(&trace, fbproto.TracerOptions{SuppressTimestamps: true})
+			defer conn.FbConn().Client().Untrace()
+			const attempts = 3
+			for range attempts {
+				sd, err := prepare(ctx, "badSQL", "select * from FBX_MISSING_PREPARE_TEST")
+				require.Nil(t, sd)
+				var fbErr *fbconn.FbError
+				require.ErrorAs(t, err, &fbErr)
+				require.Equal(t, "42S02", fbErr.SQLState())
+				require.Contains(t, fbErr.Message, "FBX_MISSING_PREPARE_TEST")
+				require.False(t, fbconn.SafeToRetry(err))
+			}
+			require.Equal(t, attempts, strings.Count(trace.String(), "C\tAllocateStatement\n"))
+			require.Equal(t, attempts, strings.Count(trace.String(), "C\tFreeStatement\n"))
+
+			_, err := prepare(ctx, "badSQL", "select cast(42 as integer) from rdb$database")
+			require.NoError(t, err)
+			var value int32
+			require.NoError(t, queryRow(ctx, "badSQL").Scan(&value))
+			require.Equal(t, int32(42), value)
+			require.Equal(t, attempts, strings.Count(trace.String(), "failure=true"))
+			require.False(t, conn.IsClosed())
+		})
+	}
 }
 
 func TestPrepareIdempotency(t *testing.T) {
