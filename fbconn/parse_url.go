@@ -25,20 +25,19 @@ func parseURLSettings(connString string) (settings map[string]string, isEmptyPor
 	if i := strings.IndexAny(p, "@/"); i >= 0 && p[i] == '@' {
 		user, password, hasPassword := strings.Cut(p[:i], ":")
 		p = p[i+1:]
-		if user != "" {
-			val, err := uriDecode(user, "")
-			if err != nil {
-				return nil, isEmptyPortList, err
-			}
-			settings["user"] = val
+		val, err := uriDecode(user, "user")
+		if err != nil {
+			return nil, isEmptyPortList, err
 		}
-		if hasPassword && password != "" {
+		settings["user"] = val
+		if hasPassword {
 			val, err := uriDecode(password, "password")
 			if err != nil {
 				return nil, isEmptyPortList, err
 			}
 			settings["password"] = val
 		}
+
 	}
 
 	var hostBuf, portBuf strings.Builder
@@ -90,7 +89,7 @@ func parseURLSettings(connString string) (settings map[string]string, isEmptyPor
 	// means %2C decodes to a comma that later splits like a real separator --
 	// a host name containing a literal comma is inexpressible.
 	if hostBuf.Len() > 0 {
-		hostList, err := uriDecode(hostBuf.String(), "")
+		hostList, err := uriDecode(hostBuf.String(), "host")
 		if err != nil {
 			return nil, isEmptyPortList, err
 		}
@@ -107,7 +106,7 @@ func parseURLSettings(connString string) (settings map[string]string, isEmptyPor
 	// counts as implied even when it decodes to empty.
 	if portBuf.Len() > 0 {
 		isEmptyPortList = strings.Trim(portBuf.String(), ",") == ""
-		portList, err := uriDecode(portBuf.String(), "")
+		portList, err := uriDecode(portBuf.String(), "port")
 		if err != nil {
 			return nil, isEmptyPortList, err
 		}
@@ -122,15 +121,11 @@ func parseURLSettings(connString string) (settings map[string]string, isEmptyPor
 			p = dbname[i:]
 			dbname = dbname[:i]
 		}
-		// An empty path component leaves dbname unset so the
-		// default stays in effect.
-		if dbname != "" {
-			val, err := uriDecode(dbname, "")
-			if err != nil {
-				return nil, isEmptyPortList, err
-			}
-			settings["database"] = val
+		val, err := uriDecode(dbname, "dbname")
+		if err != nil {
+			return nil, isEmptyPortList, err
 		}
+		settings["database"] = val
 	}
 
 	if peekByte(p) == '?' {
@@ -181,7 +176,7 @@ func parseURLQueryParams(params string, settings map[string]string) error {
 			return fmt.Errorf(`extra key/value separator "=" in URI query parameter: "%s"`, rawKey)
 		}
 
-		key, err := uriDecode(rawKey, "")
+		key, err := uriDecode(rawKey, "parameter_key")
 		if err != nil {
 			return err
 		}

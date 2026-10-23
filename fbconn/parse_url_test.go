@@ -499,6 +499,31 @@ func TestParseConfigURIPasswordDiagnostics(t *testing.T) {
 			tail:    "a@u:uniqueSecret@h/db",
 			secrets: []string{"uniqueSecret"},
 		},
+		{
+			name:    "query password after at sign and invalid port",
+			tail:    "host:bad/db?tag=x@y&password=uriReviewSecret",
+			secrets: []string{"uriReviewSecret"},
+		},
+		{
+			name:    "query password after at sign and malformed percent encoding",
+			tail:    "host:3050/db?tag=x@y&password=uriReviewSecret&bad=%GG",
+			secrets: []string{"uriReviewSecret"},
+		},
+		{
+			name:    "query password after at sign and missing query separator",
+			tail:    "host:3050/db?tag=x@y&password=uriReviewSecret&broken",
+			secrets: []string{"uriReviewSecret"},
+		},
+		{
+			name:    "stranded password in port decoding error",
+			tail:    "a@u:uriReviewSecret%GG@h/db",
+			secrets: []string{"uriReviewSecret", "uriReviewSecret%GG@h"},
+		},
+		{
+			name:    "stranded password without database path",
+			tail:    "a@u:uriReviewSecret@h",
+			secrets: []string{"uriReviewSecret"},
+		},
 	}
 
 	for _, scheme := range []string{"firebird", "firebirdsql"} {
@@ -514,7 +539,7 @@ func TestParseConfigURIPasswordDiagnostics(t *testing.T) {
 				require.Equal(t, connString, parseConfigErr.ConnString)
 				for diagnostic := err; diagnostic != nil; diagnostic = errors.Unwrap(diagnostic) {
 					for _, secret := range tt.secrets {
-						require.NotContains(t, diagnostic.Error(), secret)
+						assert.NotContains(t, diagnostic.Error(), secret, "diagnostic type %T", diagnostic)
 					}
 				}
 			})
@@ -666,7 +691,6 @@ func TestParseConfigErrorURIPasswordRedaction(t *testing.T) {
 }
 
 func TestParseURLSettingsImpliedEmptyPortList(t *testing.T) {
-	t.Parallel()
 
 	tests := []struct {
 		connString  string
@@ -713,7 +737,6 @@ func TestParseURLSettingsImpliedEmptyPortList(t *testing.T) {
 }
 
 func TestURIDecode(t *testing.T) {
-	t.Parallel()
 
 	tests := []struct {
 		raw     string
@@ -980,6 +1003,76 @@ func TestParseConfigURICharacterCompatibility(t *testing.T) {
 					actual = config.RuntimeParams[tt.key]
 				}
 				require.Equal(t, tt.expected, actual)
+			})
+		}
+	}
+}
+
+func TestParseConfigURIEmptyComponentsOverrideEnvironment(t *testing.T) {
+	t.Setenv("FBUSER", "env-user")
+	t.Setenv("FBPASSWORD", "env-password")
+	t.Setenv("FBDATABASE", "env-database")
+
+	tests := []struct {
+		name     string
+		uri      string
+		user     string
+		password string
+		database string
+	}{
+		{
+			name:     "explicitly empty password",
+			uri:      "u:@host/db",
+			user:     "u",
+			password: "",
+			database: "db",
+		},
+		{
+			name:     "omitted password",
+			uri:      "u@host/db",
+			user:     "u",
+			password: "env-password",
+			database: "db",
+		},
+		{
+			name:     "explicitly empty username",
+			uri:      "@host/db",
+			user:     "",
+			password: "env-password",
+			database: "db",
+		},
+		{
+			name:     "omitted username",
+			uri:      "host/db",
+			user:     "env-user",
+			password: "env-password",
+			database: "db",
+		},
+		{
+			name:     "explicitly empty database path",
+			uri:      "host/",
+			user:     "env-user",
+			password: "env-password",
+			database: "",
+		},
+		{
+			name:     "omitted database path",
+			uri:      "host",
+			user:     "env-user",
+			password: "env-password",
+			database: "env-database",
+		},
+	}
+
+	for _, scheme := range []string{"firebird", "firebirdsql"} {
+		for _, tt := range tests {
+			t.Run(scheme+"/"+tt.name, func(t *testing.T) {
+				config, err := ParseConfig(scheme + "://" + tt.uri)
+
+				require.NoError(t, err)
+				assert.Equal(t, tt.user, config.User)
+				assert.Equal(t, tt.password, config.Password)
+				assert.Equal(t, tt.database, config.Database)
 			})
 		}
 	}

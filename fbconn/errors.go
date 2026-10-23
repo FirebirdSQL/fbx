@@ -390,7 +390,8 @@ func redactURLPassword(connString string) string {
 	// masking below, so a password=... query parameter would leak. Valid
 	// URIs must always redact exactly; the heuristic is reserved for
 	// malformed input, where only best effort is possible.
-	if strings.IndexByte(p, '@') >= 0 && !uriStructureUnambiguous(connString) {
+	if strings.IndexByte(p, '@') >= 0 && !uriStructureUnambiguous(connString) &&
+		(strings.LastIndexByte(p, '@') < strings.LastIndexByte(p, '/') || 0 > strings.LastIndexByte(p, '/')) {
 		brokenUserinfo := regexp.MustCompile(`:[^@]+@`)
 		p = brokenUserinfo.ReplaceAllLiteralString(p, ":xxxxx@")
 	}
