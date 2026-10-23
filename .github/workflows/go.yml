@@ -44,6 +44,9 @@ jobs:
     container:
       image: golangci/golangci-lint:v2.12.2
     steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
       - name: Go modules Cache
         uses: actions/cache@v6
         id: go-cache
