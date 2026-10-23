@@ -508,14 +508,12 @@ func (fbConn *FbConn) freeStatementHandleLocked(handle int) error {
 	if fbConn.IsClosed() {
 		return ErrConnClosed
 	}
-	if err := fbConn.client.WriteMessage(&fbproto.OpFreeStatement{
-		StatementHandle: handle,
-		Option:          fbproto.DSQL_drop,
+	if err := fbConn.withWriteLockAndFlush(func() error {
+		return fbConn.client.WriteMessage(&fbproto.OpFreeStatement{
+			StatementHandle: handle,
+			Option:          fbproto.DSQL_drop,
+		})
 	}); err != nil {
-		fbConn.asyncClose()
-		return err
-	}
-	if err := fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
 		fbConn.asyncClose()
 		return err
 	}

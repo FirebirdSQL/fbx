@@ -1734,7 +1734,11 @@ func (fbConn *FbConn) internalPrepareTx(
 	case *fbproto.OpResponse:
 		statementHandle = m.Object
 	case *fbproto.ErrorResponse:
+		fbConn.asyncClose()
 		return nil, ErrorResponseToFbError(m)
+	default:
+		fbConn.asyncClose()
+		return nil, fmt.Errorf("unexpected statement allocation response %T", msg)
 	}
 
 	msg, err = fbConn.receiveMessage()
@@ -1743,8 +1747,19 @@ func (fbConn *FbConn) internalPrepareTx(
 		return nil, normalizeTimeoutError(ctx, err)
 	}
 	switch m := msg.(type) {
+	case *fbproto.OpResponse:
 	case *fbproto.ErrorResponse:
-		return nil, ErrorResponseToFbError(m)
+		err = ErrorResponseToFbError(m)
+		if fbConn.IsClosed() {
+			return nil, err
+		}
+		if cleanupErr := fbConn.freeStatementHandleLocked(statementHandle); cleanupErr != nil {
+			return nil, operationerror.Join(err, fmt.Errorf("free statement after prepare error: %w", cleanupErr))
+		}
+		return nil, err
+	default:
+		fbConn.asyncClose()
+		return nil, fmt.Errorf("unexpected statement prepare response %T", msg)
 	}
 
 	statementInfo := StatementInfo{}
@@ -1754,7 +1769,7 @@ func (fbConn *FbConn) internalPrepareTx(
 			return nil, err
 		}
 		if cleanupErr := fbConn.freeStatementHandleLocked(statementHandle); cleanupErr != nil {
-			return nil, errors.Join(err, cleanupErr)
+			return nil, operationerror.Join(err, fmt.Errorf("free statement after prepare error: %w", cleanupErr))
 		}
 		return nil, err
 	}
@@ -1795,8 +1810,11 @@ func (fbConn *FbConn) internalPrepareTx(
 			arrays, err = getArrayInfo(fbConn, ctx, tx, fields, tables)
 		}
 		if err != nil {
+			if fbConn.IsClosed() {
+				return nil, err
+			}
 			if cleanupErr := fbConn.freeStatementHandleLocked(statementHandle); cleanupErr != nil {
-				return nil, errors.Join(err, cleanupErr)
+				return nil, operationerror.Join(err, fmt.Errorf("free statement after prepare error: %w", cleanupErr))
 			}
 			return nil, err
 		}
@@ -1807,7 +1825,7 @@ func (fbConn *FbConn) internalPrepareTx(
 		}
 		if err != nil {
 			if cleanupErr := fbConn.freeStatementHandleLocked(statementHandle); cleanupErr != nil {
-				return nil, errors.Join(err, cleanupErr)
+				return nil, operationerror.Join(err, fmt.Errorf("free statement after prepare error: %w", cleanupErr))
 			}
 			return nil, err
 		}

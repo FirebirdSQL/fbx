@@ -164,6 +164,7 @@ func (fbConn *FbConn) getServerInfo(msgBuilder func() fbproto.ClientMessage, tru
 		case *fbproto.ErrorResponse:
 			return ErrorResponseToFbError(m)
 		default:
+			fbConn.asyncClose()
 			return fmt.Errorf("received unexpected message: %v", m)
 		}
 
