@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/url"
 	"regexp"
 	"strings"
 	"syscall"
@@ -322,9 +321,7 @@ func newContextAlreadyDoneError(ctx context.Context) (err error) {
 
 func redactPW(connString string) string {
 	if strings.HasPrefix(connString, "firebird://") || strings.HasPrefix(connString, "firebirdsql://") {
-		if u, err := url.Parse(connString); err == nil {
-			return redactURL(u)
-		}
+		return redactURLPassword(connString)
 	}
 	quotedKV := regexp.MustCompile(`password='[^']*'`)
 	connString = quotedKV.ReplaceAllLiteralString(connString, "password=xxxxx")
@@ -335,14 +332,189 @@ func redactPW(connString string) string {
 	return connString
 }
 
-func redactURL(u *url.URL) string {
-	if u == nil {
-		return ""
+// redactURLPassword masks recognizable password values in a connection URI.
+// For a URI that parses cleanly the component boundaries are certain, and
+// every password position -- the userinfo password and password
+// query values -- is reliably masked with the rest of the string left intact.
+// It is also deliberately usable without a successful parse -- the strings
+// that reach ParseConfigError are often exactly the ones that failed to parse
+// -- but malformed syntax can make component boundaries ambiguous, so for
+// such input redaction is best-effort and may over-mask.
+//
+// For URI shapes it recognizes, it mirrors parseURLSettings structurally
+// rather than pattern-matching the raw text: the userinfo password is whatever
+// follows the first ':' before the terminating '@' (found with the parser's
+// lookahead), and a query value is masked when its percent-decoded key
+// canonicalizes to password. This uses the same decoding as the
+// parser, so encoded spellings like pass%77ord are caught and the whole
+// recognized raw value is masked no matter what bytes it contains.
+func redactURLPassword(connString string) string {
+	const mask = "xxxxx"
+	var b strings.Builder
+	b.Grow(len(connString))
+
+	p := connString
+	for _, prefix := range []string{"firebirdsql://", "firebird://"} {
+		if rest, ok := strings.CutPrefix(connString, prefix); ok {
+			b.WriteString(prefix)
+			p = rest
+			break
+		}
 	}
-	if _, pwSet := u.User.Password(); pwSet {
-		u.User = url.UserPassword(u.User.Username(), "xxxxx")
+
+	if i := strings.IndexAny(p, "@/"); i >= 0 && p[i] == '@' {
+		user, _, hasPassword := strings.Cut(p[:i], ":")
+		p = p[i+1:]
+		b.WriteString(user)
+		if hasPassword {
+			b.WriteString(":" + mask)
+		}
+		b.WriteByte('@')
 	}
-	return u.String()
+
+	// Malformed URIs may leave password text outside the parsed userinfo.
+	// Apply the following heuristics only when uriStructureUnambiguous fails.
+	//
+	// If findParametersStart identifies a candidate query suffix, preserve it
+	// for password-key masking below and process only the preceding text.
+	// In that prefix, mask colon-to-'@' spans when an '@' is present;
+	// otherwise, replace colon-to-'/' spans with ":xxxxx@".
+	//
+	// Without a candidate query suffix, mask colon-to-'@' spans only when the
+	// last '@' precedes the last '/', or when no '/' remains. Each span extends
+	// through embedded colons so that colon-containing passwords are masked
+	// together. These rules are best effort: malformed input can have ambiguous
+	// component boundaries, so masking may be incomplete or include other data.
+	if ind := findParametersStart(p); ind != -1 {
+		tmp := p[:ind]
+		if !uriStructureUnambiguous(connString) {
+			if strings.IndexByte(tmp, '@') >= 0 {
+				brokenUserinfo := regexp.MustCompile(`:[^@]+@`)
+				tmp = brokenUserinfo.ReplaceAllLiteralString(tmp, ":xxxxx@")
+			} else {
+				brokenUserinfo := regexp.MustCompile(`:[^/]+/`)
+				tmp = brokenUserinfo.ReplaceAllLiteralString(tmp, ":xxxxx@")
+			}
+		}
+		p = tmp + p[ind:]
+	} else if strings.IndexByte(p, '@') >= 0 && !uriStructureUnambiguous(connString) &&
+		(strings.LastIndexByte(p, '@') < strings.LastIndexByte(p, '/') || 0 > strings.LastIndexByte(p, '/')) {
+		brokenUserinfo := regexp.MustCompile(`:[^@]+@`)
+		p = brokenUserinfo.ReplaceAllLiteralString(p, ":xxxxx@")
+
+	}
+
+	qi := uriQueryStart(p)
+	if qi < 0 {
+		b.WriteString(p)
+		return b.String()
+	}
+	b.WriteString(p[:qi])
+	query := p[qi+1:]
+	b.WriteByte('?')
+
+	for i, pair := range strings.Split(query, "&") {
+		if i > 0 {
+			b.WriteByte('&')
+		}
+		rawKey, _, hasValue := strings.Cut(pair, "=")
+		if !hasValue {
+			b.WriteString(pair)
+			continue
+		}
+		switch canonicalConnStringKey(uriDecodeLenient(rawKey)) {
+		case "password":
+			b.WriteString(rawKey)
+			b.WriteByte('=')
+			b.WriteString(mask)
+		default:
+			b.WriteString(pair)
+		}
+	}
+	return b.String()
+}
+
+func findParametersStart(p string) (ind int) {
+	ind = strings.LastIndex(p, "?")
+	if ind == -1 {
+		return
+	}
+	ind2 := strings.Index(p[ind:], "=")
+	if ind2 == -1 {
+		return -1
+	}
+	ind3 := strings.LastIndex(p[:ind2+ind], "/")
+	if ind3 == -1 {
+		return -1
+	}
+	return
+
+}
+
+// uriStructureUnambiguous reports whether connString parses as a connection
+// URI whose component boundaries are certain, meaning redactURLPassword's
+// structural walk is exact and no password bytes can sit outside the two
+// positions it masks (the userinfo password and password-keyed query values).
+// That requires parseURLSettings to accept the string and every port element
+// to be numeric or empty: the parser accepts arbitrary text in the port slot
+// (firebird://a@u:sec:ret@h parses with port "sec:ret@h"), so a non-numeric
+// port may be a mislaid password and keeps the string in best-effort
+// territory.
+func uriStructureUnambiguous(connString string) bool {
+	settings, _, err := parseURLSettings(connString)
+	if err != nil {
+		return false
+	}
+	for part := range strings.SplitSeq(settings["port"], ",") {
+		for i := 0; i < len(part); i++ {
+			if part[i] < '0' || part[i] > '9' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// uriQueryStart returns the index of the '?' that begins the query component
+// of p (the post-scheme, post-userinfo part of a connection URI), or -1 if
+// there is none. It follows parseURLSettings' structure: '[' at the start of
+// a netloc element opens an IPv6 bracket whose contents -- deliberately
+// unvalidated -- may contain a literal '?' that is host data, not the query
+// delimiter. On an unterminated bracket (the parser errors there) it falls
+// back to the first '?' anywhere. With no valid structure to follow,
+// over-including text gives the best-effort redactor more candidate pairs to
+// inspect.
+func uriQueryStart(p string) int {
+	i := 0
+	for {
+		if i < len(p) && p[i] == '[' {
+			end := strings.IndexByte(p[i:], ']')
+			if end < 0 {
+				return strings.IndexByte(p, '?')
+			}
+			i += end + 1
+		}
+		// Host and port data: everything up to a '/', '?', or ','.
+		for i < len(p) && p[i] != '/' && p[i] != '?' && p[i] != ',' {
+			i++
+		}
+		if i < len(p) && p[i] == ',' {
+			i++
+			continue
+		}
+		break
+	}
+	if i == len(p) {
+		return -1
+	}
+	if p[i] == '?' {
+		return i
+	}
+	// p[i] == '/': a path follows; the first '?' after it starts the query.
+	if j := strings.IndexByte(p[i:], '?'); j >= 0 {
+		return i + j
+	}
+	return -1
 }
 
 type NotPreferredError struct {
