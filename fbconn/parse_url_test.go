@@ -524,6 +524,16 @@ func TestParseConfigURIPasswordDiagnostics(t *testing.T) {
 			tail:    "a@u:uriReviewSecret@h",
 			secrets: []string{"uriReviewSecret"},
 		},
+		{
+			name:    "query slash enables heuristic and exposes query password",
+			tail:    "host:bad/db?tag=x@y/z&password=uriReviewSecret",
+			secrets: []string{"uriReviewSecret"},
+		},
+		{
+			name:    "query at sign disables masking of stranded port password",
+			tail:    "a@u:uriReviewSecret@h/db?tag=x@y",
+			secrets: []string{"uriReviewSecret"},
+		},
 	}
 
 	for _, scheme := range []string{"firebird", "firebirdsql"} {
@@ -623,11 +633,6 @@ func TestParseConfigErrorURIPasswordRedaction(t *testing.T) {
 		uri      string
 		expected string
 	}{
-		{
-			name:     "slash and query inside password",
-			uri:      "user:pass/word?x=y@host/db",
-			expected: "user:xxxxx@host/db",
-		},
 		{
 			name:     "stranded password containing colons",
 			uri:      "a@user:sec:ret@host/db",

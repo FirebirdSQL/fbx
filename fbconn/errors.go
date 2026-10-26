@@ -372,28 +372,36 @@ func redactURLPassword(connString string) string {
 		b.WriteByte('@')
 	}
 
-	// Nothing after the userinfo is a password position, but a password can
-	// land there in malformed URIs: an unencoded '/' or '?' in a userinfo
-	// password turns everything after it into path or query, stranding the
-	// '@' (firebird://user:pass/word?x=y@host). As a best-effort heuristic,
-	// while an '@' remains, mask everything shaped like
-	// ":candidate-credential@" across the whole
-	// remainder -- before the query is split off, or a stranded '@' inside
-	// the query would hide the pattern, and greedily up to each '@', so a
-	// ':' inside the stranded password (user:sec:ret@host) cannot split the
-	// mask and leak the part before it.
+	// Malformed URIs may leave password text outside the parsed userinfo.
+	// Apply the following heuristics only when uriStructureUnambiguous fails.
 	//
-	// The heuristic must not run when the connection string is structurally
-	// unambiguous: then nothing can be stranded, a remaining '@' is ordinary
-	// data (typically in a query value), and the greedy mask would swallow
-	// the '/' and '?' delimiters -- hiding the query from the password-key
-	// masking below, so a password=... query parameter would leak. Valid
-	// URIs must always redact exactly; the heuristic is reserved for
-	// malformed input, where only best effort is possible.
-	if strings.IndexByte(p, '@') >= 0 && !uriStructureUnambiguous(connString) &&
+	// If findParametersStart identifies a candidate query suffix, preserve it
+	// for password-key masking below and process only the preceding text.
+	// In that prefix, mask colon-to-'@' spans when an '@' is present;
+	// otherwise, replace colon-to-'/' spans with ":xxxxx@".
+	//
+	// Without a candidate query suffix, mask colon-to-'@' spans only when the
+	// last '@' precedes the last '/', or when no '/' remains. Each span extends
+	// through embedded colons so that colon-containing passwords are masked
+	// together. These rules are best effort: malformed input can have ambiguous
+	// component boundaries, so masking may be incomplete or include other data.
+	if ind := findParametersStart(p); ind != -1 {
+		tmp := p[:ind]
+		if !uriStructureUnambiguous(connString) {
+			if strings.IndexByte(tmp, '@') >= 0 {
+				brokenUserinfo := regexp.MustCompile(`:[^@]+@`)
+				tmp = brokenUserinfo.ReplaceAllLiteralString(tmp, ":xxxxx@")
+			} else {
+				brokenUserinfo := regexp.MustCompile(`:[^/]+/`)
+				tmp = brokenUserinfo.ReplaceAllLiteralString(tmp, ":xxxxx@")
+			}
+		}
+		p = tmp + p[ind:]
+	} else if strings.IndexByte(p, '@') >= 0 && !uriStructureUnambiguous(connString) &&
 		(strings.LastIndexByte(p, '@') < strings.LastIndexByte(p, '/') || 0 > strings.LastIndexByte(p, '/')) {
 		brokenUserinfo := regexp.MustCompile(`:[^@]+@`)
 		p = brokenUserinfo.ReplaceAllLiteralString(p, ":xxxxx@")
+
 	}
 
 	qi := uriQueryStart(p)
@@ -424,6 +432,23 @@ func redactURLPassword(connString string) string {
 		}
 	}
 	return b.String()
+}
+
+func findParametersStart(p string) (ind int) {
+	ind = strings.LastIndex(p, "?")
+	if ind == -1 {
+		return
+	}
+	ind2 := strings.Index(p[ind:], "=")
+	if ind2 == -1 {
+		return -1
+	}
+	ind3 := strings.LastIndex(p[:ind2+ind], "/")
+	if ind3 == -1 {
+		return -1
+	}
+	return
+
 }
 
 // uriStructureUnambiguous reports whether connString parses as a connection
