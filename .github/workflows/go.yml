@@ -169,7 +169,15 @@ jobs:
 
       - name: Start firebird
         run: |
-          /etc/init.d/firebird restart
+          set -e
+
+          runuser -u firebird -- start-stop-daemon --stop --oknodo \
+            --retry TERM/35/KILL/5 --exec /opt/firebird/bin/fbguard
+
+          runuser -u firebird -- start-stop-daemon --stop --oknodo \
+            --retry TERM/10/KILL/5 --exec /opt/firebird/bin/firebird
+
+          /etc/init.d/firebird start
 
       - name: Go modules Cache
         uses: actions/cache@v6
