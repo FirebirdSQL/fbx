@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/firebirdsql/fbx/fbconn"
+	"github.com/firebirdsql/fbx/internal/operationerror"
 )
 
 const (
@@ -284,7 +285,7 @@ func (b *PreparedBatch) addEncoded(ctx context.Context, args []any, allowAutoFlu
 	b.eqb.reset()
 
 	if allowAutoFlush && b.autoFlushBytes > 0 && b.pendingBytes > 0 && b.pendingBytes+len(row) > b.autoFlushBytes {
-		if err := b.flushWithSource(ctx, "auto"); err != nil {
+		if err := b.Flush(ctx); err != nil {
 			return err
 		}
 	}
@@ -302,10 +303,6 @@ func (b *PreparedBatch) addEncoded(ctx context.Context, args []any, allowAutoFlu
 // [PreparedBatch.Cancel], or [PreparedBatch.Close]. Flush is a no-op when there
 // are no locally queued rows.
 func (b *PreparedBatch) Flush(ctx context.Context) error {
-	return b.flushWithSource(ctx, "manual")
-}
-
-func (b *PreparedBatch) flushWithSource(ctx context.Context, source string) error {
 	if b == nil {
 		return fmt.Errorf("prepared batch is nil")
 	}
@@ -354,7 +351,7 @@ func (b *PreparedBatch) Exec(ctx context.Context) (BatchResult, error) {
 	if b.cleanupPending {
 		return BatchResult{}, fmt.Errorf("prepared batch has pending cleanup after execution; close the batch before reusing it")
 	}
-	if err := b.flushWithSource(ctx, "exec-final"); err != nil {
+	if err := b.Flush(ctx); err != nil {
 		return BatchResult{}, err
 	}
 	if b.lb == nil {
@@ -558,17 +555,17 @@ func batchCompletionError(completion *fbconn.BatchCompletion) error {
 }
 
 func finalizePreparedBatchExec(completion *fbconn.BatchCompletion, execErr, closeErr, releaseErr error) (BatchResult, error) {
-	if execErr != nil {
-		return BatchResult{}, errors.Join(execErr, closeErr, releaseErr)
-	}
-
 	result := BatchResult{}
 	if completion != nil {
+		execErr = operationerror.WithRetry(execErr, false)
 		result.Affected = completion.Affected()
 		if len(completion.UpdateCounts) > 0 {
 			result.UpdateCounts = append(make([]int64, 0, len(completion.UpdateCounts)), completion.UpdateCounts...)
 		}
 	}
 
-	return result, errors.Join(batchCompletionError(completion), closeErr, releaseErr)
+	if batchErr := batchCompletionError(completion); batchErr != nil {
+		execErr = operationerror.Join(batchErr, execErr)
+	}
+	return result, operationerror.Join(execErr, errors.Join(closeErr, releaseErr))
 }

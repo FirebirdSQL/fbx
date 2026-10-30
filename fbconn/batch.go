@@ -127,28 +127,28 @@ func (b *Batch) createOnWire(ctx context.Context, parameterBuffer []byte) error 
 	return b.withConn(ctx, func() error {
 		batchBLR, err := b.st.Description.StatementInfo.GetParametersBlr(nil)
 		if err != nil {
-			b.st.conn.asyncClose()
 			return err
 		}
 
-		if err := b.st.conn.client.WriteMessage(&fbproto.OpBatchCreate{
-			StatementHandle: b.st.Description.StatementHandle,
-			BatchBLR:        batchBLR,
-			MessageLength:   fbproto.CalculateBatchMessageLength(b.st.Description.StatementInfo.ParametersDescriptors),
-			ParameterBuffer: parameterBuffer,
+		if err := b.st.conn.withWriteLockAndFlush(func() error {
+			if err := b.st.conn.client.WriteMessage(&fbproto.OpBatchCreate{
+				StatementHandle: b.st.Description.StatementHandle,
+				BatchBLR:        batchBLR,
+				MessageLength:   fbproto.CalculateBatchMessageLength(b.st.Description.StatementInfo.ParametersDescriptors),
+				ParameterBuffer: parameterBuffer,
+			}); err != nil {
+				return err
+			}
+			return b.st.conn.client.WriteMessage(&fbproto.OpPing{})
 		}); err != nil {
 			b.st.conn.asyncClose()
 			return err
 		}
-		if err := b.st.conn.client.WriteMessage(&fbproto.OpPing{}); err != nil {
-			b.st.conn.asyncClose()
-			return err
+		created, err := b.receiveTwoGenericResponses(ctx)
+		if created {
+			b.state = batchStateCreated
 		}
-		if err := b.st.conn.flushWithPotentialWriteReadDeadlock(); err != nil {
-			b.st.conn.asyncClose()
-			return err
-		}
-		return b.receiveTwoGenericResponses(ctx)
+		return err
 	})
 }
 
@@ -160,12 +160,7 @@ func (b *Batch) Create(ctx context.Context) error {
 		return nil
 	}
 
-	if err := b.createOnWire(ctx, b.cfg.parameterBuffer()); err != nil {
-		return err
-	}
-
-	b.state = batchStateCreated
-	return nil
+	return b.createOnWire(ctx, b.cfg.parameterBuffer())
 }
 
 func (b *Batch) Send(ctx context.Context, rows [][]byte) error {
@@ -177,23 +172,20 @@ func (b *Batch) Send(ctx context.Context, rows [][]byte) error {
 	}
 
 	return b.withConn(ctx, func() error {
-		if err := b.st.conn.client.WriteMessage(&fbproto.OpBatchMsg{
-			StatementHandle: b.st.Description.StatementHandle,
-			Rows:            rows,
+		if err := b.st.conn.withWriteLockAndFlush(func() error {
+			if err := b.st.conn.client.WriteMessage(&fbproto.OpBatchMsg{
+				StatementHandle: b.st.Description.StatementHandle,
+				Rows:            rows,
+			}); err != nil {
+				return err
+			}
+			return b.writeBatchSyncMessage()
 		}); err != nil {
 			b.st.conn.asyncClose()
 			return err
 		}
-		if err := b.writeBatchSyncMessage(); err != nil {
-			b.st.conn.asyncClose()
-			return err
-		}
-
-		if err := b.st.conn.flushWithPotentialWriteReadDeadlock(); err != nil {
-			b.st.conn.asyncClose()
-			return err
-		}
-		return b.receiveTwoGenericResponses(ctx)
+		_, err := b.receiveTwoGenericResponses(ctx)
+		return err
 	})
 }
 
@@ -215,17 +207,13 @@ func (b *Batch) Execute(ctx context.Context, tx *FBTransaction) (*BatchCompletio
 	}
 
 	var completion *BatchCompletion
-	executeAttempted := false
 	err = b.withConn(ctx, func() error {
-		executeAttempted = true
-		if err := b.st.conn.client.WriteMessage(&fbproto.OpBatchExec{
-			StatementHandle:   b.st.Description.StatementHandle,
-			TransactionHandle: execTx.Handle,
+		if err := b.st.conn.withWriteLockAndFlush(func() error {
+			return b.st.conn.client.WriteMessage(&fbproto.OpBatchExec{
+				StatementHandle:   b.st.Description.StatementHandle,
+				TransactionHandle: execTx.Handle,
+			})
 		}); err != nil {
-			b.st.conn.asyncClose()
-			return err
-		}
-		if err := b.st.conn.flushWithPotentialWriteReadDeadlock(); err != nil {
 			b.st.conn.asyncClose()
 			return err
 		}
@@ -233,19 +221,23 @@ func (b *Batch) Execute(ctx context.Context, tx *FBTransaction) (*BatchCompletio
 		completion, err = b.receiveCompletion(ctx)
 		return err
 	})
-	if err != nil {
-		if executeAttempted {
-			return nil, operationerror.WithRetry(err, false)
+	if completion.HasErrors() && ctx.Err() != nil {
+		err = operationerror.Join(errBatchExecutionFailed, normalizeTimeoutError(ctx, ctx.Err()))
+	}
+	if err != nil || completion.HasErrors() {
+		if rbErr := b.st.conn.rollbackOwnedInternalTx(ctx, execTx); rbErr != nil {
+			if err == nil {
+				err = errBatchExecutionFailed
+			}
+			err = operationerror.Join(err, fmt.Errorf("rollback internal tx: %w", rbErr))
 		}
-		return nil, err
+		return completion, err
 	}
 
 	if execTx == b.st.conn.internalTransaction && b.st.conn.config.Autocommit && !b.st.conn.explicitTransaction {
-		if completion.HasErrors() {
-			if err := b.st.conn.rollbackInternalTxIfAutocommitOnError(ctx, execTx, errBatchExecutionFailed); err != nil {
-				return completion, operationerror.Join(errBatchExecutionFailed, fmt.Errorf("rollback internal tx: %w", err))
-			}
-		} else if err := b.st.conn.commitInternalTx(context.Background(), execTx); err != nil {
+		commitCtx, cancel := cleanupContext(ctx)
+		defer cancel()
+		if err := b.st.conn.commitInternalTx(commitCtx, execTx); err != nil {
 			return completion, err
 		}
 	}
@@ -269,8 +261,9 @@ func (b *Batch) Cancel(ctx context.Context) error {
 }
 
 // Close sends [fbproto.Op_batch_rls] to the server, releasing the server-side
-// batch context entirely. The [Batch] must not be used after [Batch.Close]
-// returns.
+// batch context entirely. A confirmed release closes the batch even if the
+// following sync fails. An unconfirmed Close can be retried while the connection
+// remains usable.
 func (b *Batch) Close(ctx context.Context) error {
 	if b == nil || b.state == batchStateClosed {
 		return nil
@@ -289,29 +282,30 @@ func (b *Batch) Close(ctx context.Context) error {
 
 func (b *Batch) sendReleaseOp(ctx context.Context, op int) error {
 	return b.withConn(ctx, func() error {
-		if err := b.st.conn.client.WriteMessage(&fbproto.OpBatchRelease{
-			Kind:            op,
-			StatementHandle: b.st.Description.StatementHandle,
+		if err := b.st.conn.withWriteLockAndFlush(func() error {
+			if err := b.st.conn.client.WriteMessage(&fbproto.OpBatchRelease{
+				Kind:            op,
+				StatementHandle: b.st.Description.StatementHandle,
+			}); err != nil {
+				return err
+			}
+			return b.st.conn.client.WriteMessage(&fbproto.OpPing{})
 		}); err != nil {
 			b.st.conn.asyncClose()
 			return err
 		}
-		if err := b.st.conn.client.WriteMessage(&fbproto.OpPing{}); err != nil {
-			b.st.conn.asyncClose()
-			return err
+		released, err := b.receiveTwoGenericResponses(ctx)
+		if released && op == fbproto.Op_batch_rls {
+			b.markClosed()
 		}
-		if err := b.st.conn.flushWithPotentialWriteReadDeadlock(); err != nil {
-			b.st.conn.asyncClose()
-			return err
-		}
-		return b.receiveTwoGenericResponses(ctx)
+		return err
 	})
 }
 
 func (b *Batch) receiveGenericResponse(ctx context.Context) error {
 	msg, err := b.st.conn.receiveMessage()
 	if err != nil {
-		b.st.conn.asyncClose()
+		b.st.conn.asyncCloseAfterRead(err)
 		return normalizeTimeoutError(ctx, err)
 	}
 	switch m := msg.(type) {
@@ -320,21 +314,35 @@ func (b *Batch) receiveGenericResponse(ctx context.Context) error {
 	case *fbproto.ErrorResponse:
 		return ErrorResponseToFbError(m)
 	default:
+		b.st.conn.asyncClose()
 		return fmt.Errorf("received unexpected batch sync response %T", msg)
 	}
 }
 
-func (b *Batch) receiveTwoGenericResponses(ctx context.Context) error {
+func (b *Batch) receiveTwoGenericResponses(ctx context.Context) (bool, error) {
 	firstErr := b.receiveGenericResponse(ctx)
+
+	if b.st.conn.IsClosed() {
+		return firstErr == nil, firstErr
+	}
 	secondErr := b.receiveGenericResponse(ctx)
-	return errors.Join(firstErr, secondErr)
+	return firstErr == nil, errors.Join(firstErr, secondErr)
 }
 
-func (b *Batch) withConn(ctx context.Context, fn func() error) error {
+func (b *Batch) withConn(ctx context.Context, fn func() error) (err error) {
 	if err := b.st.conn.lock(); err != nil {
 		return err
 	}
 	defer b.st.conn.unlock()
+	defer func() {
+		if err != nil && ctx.Err() != nil && !errors.Is(err, ctx.Err()) {
+			err = operationerror.Join(err, normalizeTimeoutError(ctx, ctx.Err()))
+		}
+	}()
+
+	if err := b.st.conn.beforeRequest(); err != nil {
+		return err
+	}
 
 	if ctx != context.Background() {
 		select {
@@ -346,32 +354,36 @@ func (b *Batch) withConn(ctx context.Context, fn func() error) error {
 		defer b.st.conn.contextWatcher.Unwatch()
 	}
 
-	return fn()
+	return operationerror.WithRetry(normalizeTimeoutError(ctx, fn()), false)
 }
 
 func (b *Batch) receiveCompletion(ctx context.Context) (*BatchCompletion, error) {
-	for {
-		msg, err := b.st.conn.receiveMessage()
-		if err != nil {
-			b.st.conn.asyncClose()
-			return nil, normalizeTimeoutError(ctx, err)
-		}
+	msg, err := b.st.conn.receiveMessage()
+	if err != nil {
+		b.st.conn.asyncCloseAfterRead(err)
+		return nil, normalizeTimeoutError(ctx, err)
+	}
 
-		switch m := msg.(type) {
-		case *fbproto.OpBatchCompletion:
-			return b.convertCompletion(m), nil
-		case *fbproto.OpResponse:
-			continue
-		case *fbproto.ErrorResponse:
-			return nil, ErrorResponseToFbError(m)
-		default:
-			return nil, fmt.Errorf("received unexpected batch response %T", msg)
+	switch m := msg.(type) {
+	case *fbproto.OpBatchCompletion:
+		if m.StatementHandle != b.st.Description.StatementHandle {
+			b.st.conn.asyncClose()
+			return nil, fmt.Errorf("batch response statement handle %d, expected %d", m.StatementHandle, b.st.Description.StatementHandle)
 		}
+		return b.convertCompletion(m), nil
+	case *fbproto.ErrorResponse:
+		return nil, ErrorResponseToFbError(m)
+	default:
+		b.st.conn.asyncClose()
+		return nil, fmt.Errorf("received unexpected batch response %T", msg)
 	}
 }
 
 func (b *Batch) resolveTx(ctx context.Context, tx *FBTransaction) (*FBTransaction, error) {
 	if tx != nil {
+		if tx.Connection != b.st.conn {
+			return nil, fmt.Errorf("batch transaction belongs to another connection")
+		}
 		if tx.Closed {
 			return nil, ErrTransactionClosed
 		}

@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/firebirdsql/fbx/fbconn"
+	"github.com/firebirdsql/fbx/internal/operationerror"
 )
 
 func skipIfBatchUnsupported(ctx context.Context, t testing.TB, conn *Conn) {
@@ -259,7 +260,7 @@ func TestPreparedBatchExecCanceledCleanupCanRetry(t *testing.T) {
 	require.Error(t, err)
 	require.False(t, pb.closed)
 	require.NotNil(t, pb.lb)
-	require.True(t, conn.fbConn.ActiveTx())
+	require.False(t, conn.fbConn.ActiveTx(), "failed execution must release the owned internal transaction")
 
 	require.NoError(t, pb.Close(ctx))
 	require.True(t, pb.closed)
@@ -295,6 +296,7 @@ func TestPreparedBatchExecCanceledCleanupDoesNotReexecute(t *testing.T) {
 	cleanupCanceledCtx := newCancelOnDoneCallContext(3)
 	result, err := pb.Exec(cleanupCanceledCtx)
 	require.ErrorIs(t, err, context.Canceled)
+	require.False(t, fbconn.SafeToRetry(err), "cleanup must not authorize repeating a committed batch")
 	require.EqualValues(t, 1, result.Affected)
 	require.NotNil(t, pb.lb)
 
@@ -565,6 +567,25 @@ func TestPreparedBatchCancelGuards(t *testing.T) {
 }
 
 func TestFinalizePreparedBatchExecJoinsErrors(t *testing.T) {
+	t.Run("completion survives cancellation and retryable cleanup", func(t *testing.T) {
+		rowErr := errors.New("row cancelled")
+		completion := &fbconn.BatchCompletion{
+			UpdateCounts: []int64{1, -1},
+			Errors:       []fbconn.BatchError{{Row: 1, Err: rowErr}},
+		}
+		cleanupErr := operationerror.WithRetry(errors.New("cleanup failed"), true)
+		result, err := finalizePreparedBatchExec(completion, context.DeadlineExceeded, cleanupErr, nil)
+
+		require.EqualValues(t, 1, result.Affected)
+		require.Equal(t, completion.UpdateCounts, result.UpdateCounts)
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		require.ErrorIs(t, err, rowErr)
+		require.ErrorIs(t, err, cleanupErr)
+		require.False(t, fbconn.SafeToRetry(err))
+		var batchErr *BatchExecutionError
+		require.ErrorAs(t, err, &batchErr)
+	})
+
 	t.Run("execute error keeps cleanup errors", func(t *testing.T) {
 		execErr := errors.New("execute failed")
 		closeErr := errors.New("close failed")

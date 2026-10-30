@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/firebirdsql/fbx"
+	"github.com/firebirdsql/fbx/fbconn"
 	"github.com/stretchr/testify/require"
 )
 
@@ -1209,6 +1210,57 @@ func TestPreparedBatchAutocommitRollsBackOnRowError(t *testing.T) {
 
 	require.Empty(t, loadBatchDMLRows(t, ctx, checkConn, table),
 		"valid first row must not be committed when a later row fails")
+}
+
+func TestPreparedBatchCanceledWhileLocked(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	dsn := defaultConnTestRunner.CreateConfig(ctx, t).ConnString()
+	conn := mustConnectString(t, dsn)
+	defer closeConn(t, conn)
+	skipIfBatchUnsupported(ctx, t, conn)
+	locker := mustConnectString(t, dsn)
+	defer closeConn(t, locker)
+	table := batchTestTableName(t, "fbx_pb_cancel")
+	_, err := locker.Exec(ctx, "recreate table "+table+" (id integer primary key, v integer)")
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, conn.Close(ctx))
+		require.NoError(t, locker.DeallocateAll(ctx))
+		_, err := locker.Exec(ctx, "drop table "+table)
+		require.NoError(t, err)
+	}()
+	for _, id := range []int{1, 2} {
+		_, err = locker.Exec(ctx, "insert into "+table+" values (?, 0)", id)
+		require.NoError(t, err)
+	}
+	tx, err := locker.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
+	_, err = tx.Exec(ctx, "update "+table+" set v = 99 where id = 2")
+	require.NoError(t, err)
+	pb, err := conn.PrepareBatch(ctx, "update "+table+" set v = ? where id = ?")
+	require.NoError(t, err)
+	defer func() { require.NoError(t, pb.Close(ctx)) }()
+	require.NoError(t, pb.Add(10, 1))
+	require.NoError(t, pb.Add(20, 2))
+	requestCtx, cancelRequest := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer cancelRequest()
+
+	result, err := pb.Exec(requestCtx)
+
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.False(t, fbconn.SafeToRetry(err))
+	var batchErr *fbx.BatchExecutionError
+	require.ErrorAs(t, err, &batchErr)
+	require.EqualValues(t, 1, result.Affected)
+	require.NoError(t, pb.Close(ctx))
+	require.NoError(t, tx.Rollback(ctx))
+	require.False(t, conn.IsClosed(), "successful server cancellation must preserve the connection")
+	require.False(t, conn.FbConn().ActiveTx())
+	var sum int
+	require.NoError(t, conn.QueryRow(ctx, "select sum(v) from "+table).Scan(&sum))
+	require.Zero(t, sum, "the next query must not commit the first batch row")
 }
 
 func TestNamedBatchAutocommitRollsBackOnRowError(t *testing.T) {
