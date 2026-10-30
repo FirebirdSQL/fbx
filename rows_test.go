@@ -11,6 +11,7 @@ import (
 	"github.com/firebirdsql/fbx"
 	"github.com/firebirdsql/fbx/fbconn"
 	"github.com/firebirdsql/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbtype"
 	"github.com/firebirdsql/fbx/fbxtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1319,4 +1320,28 @@ recreate table products (
 	// Cheeseburger: $10
 	// Fries: $5
 	// Soft Drink: $3
+}
+
+// Rows.TypeMap is available even when Rows.Conn is nil, so a caller can decode raw values itself.
+func TestRowsTypeMapWithoutConn(t *testing.T) {
+	t.Parallel()
+
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		rr := conn.FbConn().Exec(ctx, `select cast('Adam' as varchar(5)) as name from rdb$database`)
+
+		rows := fbx.RowsFromResultReader(conn.TypeMap(), rr)
+		defer func() {
+			rows.Close()
+			require.NoError(t, rows.Err())
+		}()
+		require.Nil(t, rows.Conn(), "this Rows has no Conn, which is what makes TypeMap necessary")
+		require.Same(t, conn.TypeMap(), rows.TypeMap())
+
+		require.True(t, rows.Next())
+		fd := rows.FieldDescriptions()[0]
+		var name string
+		typeMetadata := fbtype.NewTypeMetadata(fd.Type, fd.Subtype, fd.Length, fd.Scale)
+		require.NoError(t, rows.TypeMap().Scan(typeMetadata, rows.RawValues()[0], &name))
+		require.Equal(t, "Adam", name)
+	})
 }
