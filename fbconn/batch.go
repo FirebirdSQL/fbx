@@ -94,6 +94,25 @@ type Batch struct {
 	err   error
 }
 
+// PrepareBatchStatement prepares a connection-scoped statement for batching.
+// In autocommit mode, a transaction started only for this preparation is rolled
+// back before returning. An existing transaction is left to its owner.
+func (fbConn *FbConn) PrepareBatchStatement(ctx context.Context, sql string) (*Statement, error) {
+	startedTx := fbConn.internalTransaction == nil || fbConn.internalTransaction.Closed
+	tx, err := fbConn.ensureInternalTransaction(ctx, nil, false)
+	if err != nil {
+		return nil, err
+	}
+	st, err := fbConn.prepareTx(ctx, tx, sql, statementScopeConnection)
+	if startedTx {
+		err = operationerror.Join(err, fbConn.rollbackOwnedInternalTx(ctx, tx))
+	}
+	if err != nil {
+		return nil, err
+	}
+	return st, nil
+}
+
 func (b *Batch) isClosed() bool {
 	return b == nil || b.state == batchStateClosed
 }

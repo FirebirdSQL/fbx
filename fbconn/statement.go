@@ -93,8 +93,6 @@ func (sd *StatementDescription) EncodeBatchRow(values [][]byte) ([]byte, error) 
 		return nil, err
 	}
 
-	// row := fbproto.AppendRowData(nil, b.sd.StatementInfo.ParametersDescriptors, b.eqb.ParamValues)
-
 	return buf.Bytes(), nil
 }
 
@@ -127,6 +125,9 @@ func (st *Statement) SetInlineBlobSize(size int) {
 	st.conn.inlineBlobSize = size
 }
 
+// NewBatch creates a local batch for st without performing network I/O.
+// [Batch.Create], also called by Send and Execute, creates the server batch.
+// A statement may have only one open batch; initialization errors are reported by Create.
 func (st *Statement) NewBatch(cfg BatchConfig) *Batch {
 	b := &Batch{st: st, cfg: cfg.normalize()}
 	if st.closed {

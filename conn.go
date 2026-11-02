@@ -436,39 +436,44 @@ func (c *Conn) PrepareBatchWithOptions(ctx context.Context, sql string, opts Bat
 }
 
 func (c *Conn) prepareBatchTx(ctx context.Context, tx *dbTx, sql string, opts BatchOptions) (*PreparedBatch, error) {
-	releaseInternalTx := c.shouldReleaseBatchInternalTx(tx)
-	st, err := c.internalPrepare(ctx, tx, "", sql)
-	if err != nil {
-		return nil, errors.Join(err, c.rollbackBatchInternalTx(ctx, releaseInternalTx))
+	st, err := c.prepareBatchStatement(ctx, tx, sql)
+	if err == nil {
+		err = validateBatchStatement(st.Description)
 	}
-	if err := validateBatchStatement(st.Description); err != nil {
-		var joinedErr = err
-		if deallocErr := st.Deallocate(ctx); deallocErr != nil {
-			joinedErr = errors.Join(joinedErr, deallocErr)
+
+	if err != nil && st != nil {
+		cleanupCtx, cancel := cleanupContext(ctx)
+		defer cancel()
+		if deallocErr := st.Deallocate(cleanupCtx); deallocErr != nil {
+			c.die()
+			err = operationerror.Join(err, deallocErr)
 		}
-		joinedErr = errors.Join(joinedErr, c.rollbackBatchInternalTx(ctx, releaseInternalTx))
-		return nil, joinedErr
 	}
-
-	pb := &PreparedBatch{
-		conn:           c,
-		tx:             tx,
-		sql:            sql,
-		sd:             st.Description,
-		autoFlushBytes: defaultPreparedBatchFlushSize,
-		batchCfg:       normalizeBatchOptions(opts),
-	}
-
-	if tx != nil {
-		pb.st = st
-		return pb, nil
-	}
-
-	if err := errors.Join(st.Deallocate(ctx), c.rollbackBatchInternalTx(ctx, releaseInternalTx)); err != nil {
+	if err != nil {
 		return nil, err
 	}
 
-	return pb, nil
+	return &PreparedBatch{
+		conn:           c,
+		tx:             tx,
+		sql:            sql,
+		st:             st,
+		autoFlushBytes: defaultPreparedBatchFlushSize,
+		batchCfg:       normalizeBatchOptions(opts),
+	}, nil
+}
+
+func (c *Conn) prepareBatchStatement(ctx context.Context, tx *dbTx, sql string) (st *fbconn.Statement, err error) {
+	if tx != nil {
+		return c.internalPrepare(ctx, tx, "", sql)
+	}
+	if c.prepareTracer != nil {
+		ctx = c.prepareTracer.TracePrepareStart(ctx, c, TracePrepareStartData{SQL: sql})
+		defer func() {
+			c.prepareTracer.TracePrepareEnd(ctx, c, TracePrepareEndData{Err: err})
+		}()
+	}
+	return c.fbConn.PrepareBatchStatement(ctx, sql)
 }
 
 // Flush sends queued rows for a named batch without executing it.
@@ -517,7 +522,10 @@ func (c *Conn) prepareNamedBatchTx(ctx context.Context, tx *dbTx, name, original
 		if err := c.ensurePreparedBatchOwner(tx, psKey, existing); err != nil {
 			return nil, err
 		}
-		return existing.sd, nil
+		if existing.closed {
+			return nil, fmt.Errorf("prepared batch %q is closed", name)
+		}
+		return existing.st.Description, nil
 	}
 	if _, exists := c.preparedStatements[psKey]; exists {
 		return nil, fmt.Errorf("prepared query '%s' already exists", name)
@@ -529,14 +537,11 @@ func (c *Conn) prepareNamedBatchTx(ctx context.Context, tx *dbTx, name, original
 	}
 	pb.name = psName
 	pb.autoFlushBytes = defaultPreparedBatchFlushSize
-	pb.sd.Name = psName
-	if pb.st != nil {
-		pb.st.Description.Name = psName
-	}
+	pb.st.Description.Name = psName
 	if psKey != "" {
 		c.preparedBatches[psKey] = pb
 	}
-	return pb.sd, nil
+	return pb.st.Description, nil
 }
 
 type statementScope uint8
