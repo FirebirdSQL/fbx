@@ -44,13 +44,27 @@ func TestConnectConfig(t *testing.T) {
 func TestParseConfigExtractsPoolArguments(t *testing.T) {
 	t.Parallel()
 
-	config, err := fbxpool.ParseConfig("pool_max_conns=42 pool_min_conns=1 pool_min_idle_conns=2")
+	config, err := fbxpool.ParseConfig("pool_max_conns=42 pool_min_conns=1 pool_min_idle_conns=2 pool_ping_timeout=250ms")
 	assert.NoError(t, err)
 	assert.EqualValues(t, 42, config.MaxConns)
 	assert.EqualValues(t, 1, config.MinConns)
 	assert.EqualValues(t, 2, config.MinIdleConns)
-	assert.NotContains(t, config.ConnConfig.RuntimeParams, "pool_max_conns")
-	assert.NotContains(t, config.ConnConfig.RuntimeParams, "pool_min_conns")
+	assert.Equal(t, 250*time.Millisecond, config.PingTimeout)
+
+	// Pool parameters must be removed from the connection's RuntimeParams.
+	assert.NotContains(t, config.ConnConfig.Config.RuntimeParams, "pool_max_conns")
+	assert.NotContains(t, config.ConnConfig.Config.RuntimeParams, "pool_min_conns")
+	assert.NotContains(t, config.ConnConfig.Config.RuntimeParams, "pool_min_idle_conns")
+	assert.NotContains(t, config.ConnConfig.Config.RuntimeParams, "pool_ping_timeout")
+
+	config, err = fbxpool.ParseConfig("")
+	assert.NoError(t, err)
+	assert.Zero(t, config.PingTimeout)
+
+	for _, v := range []string{"abc", "250"} {
+		_, err := fbxpool.ParseConfig("pool_ping_timeout=" + v)
+		assert.Errorf(t, err, "pool_ping_timeout=%s should be rejected", v)
+	}
 }
 
 func TestConstructorIgnoresContext(t *testing.T) {
