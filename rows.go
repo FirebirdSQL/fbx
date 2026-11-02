@@ -880,18 +880,50 @@ func lookupNamedStructFields(
 		return cached.(*namedStructFields), nil
 	}
 
-	// We could probably do two-levels of caching, where we compute the key -> fields mapping
-	// for a type only once, cache it by type, then use that to compute the column -> fields
-	// mapping for a given set of columns.
 	fieldStack := make([]int, 0, 1)
-	checkedIndexes := make(map[int]bool)
-	fields, missingField := computeNamedStructFields(
+	l := len(fldDescs)
+	tagToField := mappingTagToField{
+		tableFields:  make(map[string]*int, l),
+		tagsList:     make([]tag, 0, l),
+		fieldsList:   make([]field, 0, l),
+		indexNow:     l - 1,
+		notFoundTags: make(map[string]bool, l),
+	}
+	fields := iterateNamedStructFields(
 		fldDescs,
 		t,
-		make([]structRowField, len(fldDescs)),
+		make([]structRowField, l),
 		&fieldStack,
-		checkedIndexes,
+		&tagToField,
 	)
+	var missingField string
+
+	for _, tag := range tagToField.tagsList {
+		var exist bool
+		for i := len(tagToField.fieldsList) - 1; i >= 0; i-- {
+			value := tagToField.fieldsList[i]
+			if *value.index == -1 {
+				continue
+			}
+			key := value.name
+			if tag.normalize {
+				key = value.normalizedName
+			}
+			if strings.EqualFold(key, tag.name) {
+				fields[*value.index] = structRowField{
+					path: append(make([]int, 0, len(tag.fieldStack)), tag.fieldStack...),
+				}
+				*tagToField.fieldsList[i].index = -1
+				exist = true
+				tagToField.notFoundTags[strings.ToLower(tag.name)] = false
+				break
+			}
+		}
+		if !exist && tagToField.notFoundTags[strings.ToLower(tag.name)] {
+			missingField = tag.name
+		}
+	}
+
 	for i, f := range fields {
 		if f.path == nil {
 			return nil, fmt.Errorf(
@@ -930,17 +962,36 @@ func joinFieldNames(fldDescs []fbconn.FieldDescription) string {
 	return b.String()
 }
 
-func computeNamedStructFields(
+type tag struct {
+	normalize  bool
+	name       string
+	fieldStack []int
+}
+
+type field struct {
+	name           string
+	normalizedName string
+	index          *int
+}
+
+type mappingTagToField struct {
+	tableFields  map[string]*int
+	notFoundTags map[string]bool
+	fieldsList   []field
+	tagsList     []tag
+	indexNow     int
+}
+
+func iterateNamedStructFields(
 	fldDescs []fbconn.FieldDescription,
 	t reflect.Type,
 	fields []structRowField,
 	fieldStack *[]int,
-	checkedIndexes map[int]bool,
-) ([]structRowField, string) {
-	var missingField string
+	tagToField *mappingTagToField,
+) []structRowField {
 	tail := len(*fieldStack)
 	*fieldStack = append(*fieldStack, 0)
-	for i := 0; i < t.NumField(); i++ {
+	for i := t.NumField() - 1; i >= 0; i-- {
 		sf := t.Field(i)
 		(*fieldStack)[tail] = i
 		if sf.PkgPath != "" && !sf.Anonymous {
@@ -949,17 +1000,13 @@ func computeNamedStructFields(
 		}
 		// Handle anonymous struct embedding, but do not try to handle embedded pointers.
 		if sf.Anonymous && sf.Type.Kind() == reflect.Struct {
-			var missingSubField string
-			fields, missingSubField = computeNamedStructFields(
+			fields = iterateNamedStructFields(
 				fldDescs,
 				sf.Type,
 				fields,
 				fieldStack,
-				checkedIndexes,
+				tagToField,
 			)
-			if missingField == "" {
-				missingField = missingSubField
-			}
 		} else {
 			dbTag, dbTagPresent := sf.Tag.Lookup(structTagKey)
 			if dbTagPresent {
@@ -971,56 +1018,57 @@ func computeNamedStructFields(
 			}
 			colName := dbTag
 			if !dbTagPresent {
-				colName = sf.Name
+				colName = strings.ReplaceAll(sf.Name, "_", "")
 			}
-			fpos, exactMatch := fieldPosByName(fldDescs, colName, !dbTagPresent)
-			if fpos == -1 {
-				if missingField == "" {
-					missingField = colName
+			// If the map containing field names already has a value with exactly the same name,
+			// we compare the field name in the structure with the name in the table and remove it from the map.
+			if j, ok := tagToField.tableFields[colName]; ok && dbTagPresent {
+				fields[*j] = structRowField{
+					path: append(make([]int, 0, len(*fieldStack)), *fieldStack...),
 				}
-				continue
-			}
-			if wasExact, ok := checkedIndexes[fpos]; !ok || !wasExact && exactMatch || wasExact == exactMatch {
-				fields[fpos] = structRowField{
-					path: append([]int(nil), *fieldStack...),
+				*tagToField.tableFields[colName] = -1
+				delete(tagToField.tableFields, colName)
+				tagToField.notFoundTags[strings.ToLower(colName)] = false
+			} else {
+				// If we find an exact match between the field name in the structure and the column,
+				// we map them immediately; if not, we set aside the structure field to check for an inexact match.
+				find := false
+				for ; tagToField.indexNow >= 0; tagToField.indexNow-- {
+					fieldName := fldDescs[tagToField.indexNow].Name
+					if dbTagPresent && colName == fieldName {
+						fields[tagToField.indexNow] = structRowField{
+							path: append(make([]int, 0, len(*fieldStack)), *fieldStack...),
+						}
+						find = true
+						tagToField.indexNow--
+						tagToField.notFoundTags[strings.ToLower(colName)] = false
+						break
+					} else {
+						tmp := tagToField.indexNow
+						tagToField.tableFields[fieldName] = &tmp
+						tagToField.fieldsList = append(tagToField.fieldsList, field{fieldName, strings.ReplaceAll(fieldName, "_", ""), &tmp})
+					}
 				}
-				checkedIndexes[fpos] = exactMatch
+				if !find {
+					if _, ok := tagToField.notFoundTags[strings.ToLower(colName)]; !ok {
+						tagToField.notFoundTags[strings.ToLower(colName)] = true
+					}
+					tagToField.tagsList = append(tagToField.tagsList, tag{
+						normalize:  !dbTagPresent,
+						name:       colName,
+						fieldStack: append(make([]int, 0, len(*fieldStack)), *fieldStack...),
+					})
+				}
+
 			}
 		}
 	}
 	*fieldStack = (*fieldStack)[:tail]
 
-	return fields, missingField
+	return fields
 }
 
 const structTagKey = "db"
-
-func fieldPosByName(fldDescs []fbconn.FieldDescription, field string, normalize bool) (i int, exactMatch bool) {
-	i = -1
-
-	if normalize {
-		field = strings.ReplaceAll(field, "_", "")
-	} else {
-		// Explicit db tags can distinguish quoted identifiers that differ only by case.
-		for i, desc := range fldDescs {
-			if desc.Name == field {
-				return i, true
-			}
-		}
-	}
-	for i, desc := range fldDescs {
-		if normalize {
-			if strings.EqualFold(strings.ReplaceAll(desc.Name, "_", ""), field) {
-				return i, false
-			}
-		} else {
-			if strings.EqualFold(desc.Name, field) {
-				return i, false
-			}
-		}
-	}
-	return
-}
 
 // structRowField describes a field of a struct.
 type structRowField struct {
