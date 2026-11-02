@@ -87,11 +87,32 @@ const (
 	batchStateClosed
 )
 
+type batchBufferState int
+
+const (
+	batchBufferEmpty batchBufferState = iota
+	batchBufferPending
+	batchBufferNeedsReset
+)
+
 type Batch struct {
-	st    *Statement
-	state batchState
-	cfg   BatchConfig
-	err   error
+	st          *Statement
+	state       batchState
+	cfg         BatchConfig
+	err         error
+	bufferState batchBufferState // Server queue, independent of the batch's lifetime.
+}
+
+// HasPending reports whether the server queue contains rows or its contents
+// are uncertain after an unsuccessful exchange.
+func (b *Batch) HasPending() bool {
+	return b != nil && b.bufferState != batchBufferEmpty
+}
+
+// NeedsReset reports an attempted send or execution without a confirmed outcome.
+// Call Cancel before sending or executing more rows, or Close to release the batch.
+func (b *Batch) NeedsReset() bool {
+	return b != nil && b.bufferState == batchBufferNeedsReset
 }
 
 // PrepareBatchStatement prepares a connection-scoped statement for batching.
@@ -126,6 +147,9 @@ func (b *Batch) checkCreate() error {
 	}
 	if b.state == batchStateClosed {
 		return fmt.Errorf("batch is closed")
+	}
+	if b.NeedsReset() {
+		return fmt.Errorf("batch requires Cancel after an unsuccessful exchange")
 	}
 	if b.state == batchStateCreated {
 		return nil
@@ -191,6 +215,7 @@ func (b *Batch) Send(ctx context.Context, rows [][]byte) error {
 	}
 
 	return b.withConn(ctx, func() error {
+		b.bufferState = batchBufferNeedsReset
 		if err := b.st.conn.withWriteLockAndFlush(func() error {
 			if err := b.st.conn.client.WriteMessage(&fbproto.OpBatchMsg{
 				StatementHandle: b.st.Description.StatementHandle,
@@ -204,6 +229,9 @@ func (b *Batch) Send(ctx context.Context, rows [][]byte) error {
 			return err
 		}
 		_, err := b.receiveTwoGenericResponses(ctx)
+		if err == nil {
+			b.bufferState = batchBufferPending
+		}
 		return err
 	})
 }
@@ -227,6 +255,7 @@ func (b *Batch) Execute(ctx context.Context, tx *FBTransaction) (*BatchCompletio
 
 	var completion *BatchCompletion
 	err = b.withConn(ctx, func() error {
+		b.bufferState = batchBufferNeedsReset
 		if err := b.st.conn.withWriteLockAndFlush(func() error {
 			return b.st.conn.client.WriteMessage(&fbproto.OpBatchExec{
 				StatementHandle:   b.st.Description.StatementHandle,
@@ -238,6 +267,11 @@ func (b *Batch) Execute(ctx context.Context, tx *FBTransaction) (*BatchCompletio
 		}
 
 		completion, err = b.receiveCompletion(ctx)
+		if completion != nil {
+			// A completion consumes the entire queue, including skipped rows.
+			// A later rollback or commit failure does not restore that queue.
+			b.bufferState = batchBufferEmpty
+		}
 		return err
 	})
 	if completion.HasErrors() && ctx.Err() != nil {
@@ -301,6 +335,9 @@ func (b *Batch) Close(ctx context.Context) error {
 
 func (b *Batch) sendReleaseOp(ctx context.Context, op int) error {
 	return b.withConn(ctx, func() error {
+		if op == fbproto.Op_batch_cancel {
+			b.bufferState = batchBufferNeedsReset
+		}
 		if err := b.st.conn.withWriteLockAndFlush(func() error {
 			if err := b.st.conn.client.WriteMessage(&fbproto.OpBatchRelease{
 				Kind:            op,
@@ -314,8 +351,11 @@ func (b *Batch) sendReleaseOp(ctx context.Context, op int) error {
 			return err
 		}
 		released, err := b.receiveTwoGenericResponses(ctx)
-		if released && op == fbproto.Op_batch_rls {
-			b.markClosed()
+		if released {
+			b.bufferState = batchBufferEmpty
+			if op == fbproto.Op_batch_rls {
+				b.markClosed()
+			}
 		}
 		return err
 	})
@@ -437,6 +477,7 @@ func (b *Batch) convertCompletion(c *fbproto.OpBatchCompletion) *BatchCompletion
 
 func (b *Batch) markClosed() {
 	b.state = batchStateClosed
+	b.bufferState = batchBufferEmpty
 	if b.st != nil && b.st.activeBatch == b {
 		b.st.activeBatch = nil
 	}

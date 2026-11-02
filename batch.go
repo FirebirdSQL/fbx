@@ -145,7 +145,7 @@ func (e *BatchExecutionError) Unwrap() []error {
 // back the user's transaction; call [Tx.Commit] or [Tx.Rollback] yourself after
 // inspecting the result and error.
 //
-// The prepared statement and its parameter metadata are retained until
+// The statement, its metadata, and the server batch are retained until
 // [PreparedBatch.Close], including between executions and after [PreparedBatch.Cancel].
 // Always call [PreparedBatch.Close] when the batch is no longer needed.
 // [PreparedBatch.Cancel] can be used before [PreparedBatch.Exec] to discard both
@@ -167,7 +167,8 @@ type PreparedBatch struct {
 	pendingBytes   int                // Total bytes in encodedRows, excluding rows already sent.
 	autoFlushBytes int                // Local flush threshold for named batches; unused by Add.
 	batchCfg       fbconn.BatchConfig // Options used whenever a server batch is created.
-	cleanupPending bool               // Blocks reuse after Execute until server batch cleanup succeeds.
+	cleanupPending bool               // Blocks use until Cancel confirms that the server queue is empty.
+	closing        bool               // Close has started; only another Close is allowed.
 	closed         bool               // Whether this PreparedBatch has been permanently closed.
 
 	eqb ExtendedQueryBuilder
@@ -249,15 +250,38 @@ func normalizeBatchOptions(opts BatchOptions) fbconn.BatchConfig {
 	return cfg
 }
 
-func (b *PreparedBatch) addEncoded(ctx context.Context, args []any, allowAutoFlush bool) error {
+func (b *PreparedBatch) checkOpen() error {
 	if b == nil {
 		return fmt.Errorf("prepared batch is nil")
 	}
 	if b.closed {
 		return fmt.Errorf("prepared batch is closed")
 	}
+	if b.closing {
+		return fmt.Errorf("prepared batch is closing; retry Close to release resources")
+	}
+	if b.conn != nil && b.conn.IsClosed() {
+		return fmt.Errorf("prepared batch connection is closed")
+	}
+	return nil
+}
+
+func (b *PreparedBatch) checkReady() error {
+	if err := b.checkOpen(); err != nil {
+		return err
+	}
 	if b.cleanupPending {
-		return fmt.Errorf("prepared batch has pending cleanup after execution; close the batch before reusing it")
+		return fmt.Errorf("prepared batch has pending cleanup; retry Cancel or Close")
+	}
+	if b.tx != nil && b.tx.closed {
+		return ErrTxClosed
+	}
+	return nil
+}
+
+func (b *PreparedBatch) addEncoded(ctx context.Context, args []any, allowAutoFlush bool) error {
+	if err := b.checkReady(); err != nil {
+		return err
 	}
 	if b.st == nil || b.st.Description == nil {
 		return fmt.Errorf("prepared batch metadata is not initialized")
@@ -301,23 +325,19 @@ func (b *PreparedBatch) addEncoded(ctx context.Context, args []any, allowAutoFlu
 // Rows sent by Flush stay pending on the server until [PreparedBatch.Exec],
 // [PreparedBatch.Cancel], or [PreparedBatch.Close]. Flush is a no-op when there
 // are no locally queued rows.
+//
+// An error before sending rows preserves the queue. If rows may have been sent,
+// Flush discards the local queue and attempts to cancel all server rows using a
+// separate, bounded context. Re-add the entire set after a successful reset;
+// if reset fails, retry Cancel or Close before further use.
 func (b *PreparedBatch) Flush(ctx context.Context) error {
-	if b == nil {
-		return fmt.Errorf("prepared batch is nil")
-	}
-	if b.closed {
-		return fmt.Errorf("prepared batch is closed")
-	}
-	if b.cleanupPending {
-		return fmt.Errorf("prepared batch has pending cleanup after execution; close the batch before reusing it")
+	if err := b.checkReady(); err != nil {
+		return err
 	}
 	if len(b.encodedRows) == 0 {
 		return nil
 	}
 
-	if b.tx != nil && b.tx.closed {
-		return ErrTxClosed
-	}
 	if b.st == nil {
 		return fmt.Errorf("prepared batch statement is not initialized")
 	}
@@ -326,7 +346,7 @@ func (b *PreparedBatch) Flush(ctx context.Context) error {
 	}
 
 	if err := b.lb.Send(ctx, b.encodedRows); err != nil {
-		return errors.Join(err, b.releaseWireResources(ctx))
+		return b.resetAfterError(ctx, err)
 	}
 	b.ClearPending()
 	return nil
@@ -342,20 +362,17 @@ func (b *PreparedBatch) Flush(ctx context.Context) error {
 // error rolls back the internal transaction and no rows from that execution are
 // committed. In an explicit transaction, Exec leaves commit and rollback
 // decisions to the caller.
+//
+// A completed execution consumes all queued rows, including rows the server
+// skipped after an error. The server batch remains open for the next set.
+// An error before sending the execution command preserves the queue. An
+// execution error without a completion attempts to reset it as described in
+// [PreparedBatch.Flush]; it never repeats the execution automatically.
 func (b *PreparedBatch) Exec(ctx context.Context) (BatchResult, error) {
-	if b == nil {
-		return BatchResult{}, fmt.Errorf("prepared batch is nil")
-	}
-	if b.closed {
-		return BatchResult{}, fmt.Errorf("prepared batch is closed")
-	}
-	if b.cleanupPending {
-		return BatchResult{}, fmt.Errorf("prepared batch has pending cleanup after execution; close the batch before reusing it")
-	}
 	if err := b.Flush(ctx); err != nil {
 		return BatchResult{}, err
 	}
-	if b.lb == nil {
+	if !b.lb.HasPending() {
 		return BatchResult{}, nil
 	}
 
@@ -364,9 +381,24 @@ func (b *PreparedBatch) Exec(ctx context.Context) (BatchResult, error) {
 		fbTx = b.tx.tx
 	}
 	completion, err := b.lb.Execute(ctx, fbTx)
+	if err != nil {
+		err = b.resetAfterError(ctx, err)
+	}
+	return finalizePreparedBatchExec(completion, err)
+}
+
+func (b *PreparedBatch) resetAfterError(ctx context.Context, operationErr error) error {
+	if !b.lb.NeedsReset() {
+		return operationErr
+	}
 	b.cleanupPending = true
-	releaseErr := b.releaseWireResources(ctx)
-	return finalizePreparedBatchExec(completion, err, nil, releaseErr)
+	b.ClearPending()
+	if b.conn.IsClosed() {
+		return operationErr
+	}
+	cleanupCtx, cancel := cleanupContext(ctx)
+	defer cancel()
+	return operationerror.Join(operationErr, b.Cancel(cleanupCtx))
 }
 
 func (b *PreparedBatch) releaseWireResources(ctx context.Context) error {
@@ -411,37 +443,36 @@ func (b *PreparedBatch) ClearPending() {
 	b.pendingBytes = 0
 }
 
-// Cancel drops queued rows and releases the server-side batch context.
-// The prepared statement is retained for reuse. Cancel does not finish any
-// transaction or undo rows already applied by [PreparedBatch.Exec].
+// Cancel drops both local and server rows, retaining the statement and server
+// batch for reuse. Cancel does not finish any transaction or undo rows already
+// applied by [PreparedBatch.Exec].
 //
-// Returns an error if the batch is closed or has pending cleanup from a prior
-// [PreparedBatch.Exec] (call [PreparedBatch.Close] instead). On context
-// cancellation, retry with a fresh context to free server-side resources.
+// If cancellation is not confirmed, Add, Flush, and Exec remain blocked until
+// Cancel succeeds. Retry with a fresh context or call Close to release resources.
 func (b *PreparedBatch) Cancel(ctx context.Context) error {
-	if b == nil {
-		return fmt.Errorf("prepared batch is nil")
-	}
-	if b.closed {
-		return fmt.Errorf("prepared batch is closed")
-	}
-	if b.cleanupPending {
-		return fmt.Errorf("prepared batch has pending cleanup after execution; close the batch before reusing it")
+	if err := b.checkOpen(); err != nil {
+		return err
 	}
 	b.ClearPending()
-	return b.releaseWireResources(ctx)
+	b.cleanupPending = true
+	if err := b.lb.Cancel(ctx); err != nil {
+		return err
+	}
+	b.cleanupPending = false
+	return nil
 }
 
 // Close releases every resource owned by the batch and marks it unusable.
 // Idempotent. Must be called even after [PreparedBatch.Exec] returns an error,
 // otherwise the prepared statement stays allocated. Close does not commit or
 // roll back a user-managed transaction.
-// On context cancellation, retry with a fresh context to free server-side
-// resources.
+// Once Close starts, the batch cannot be reused. On context cancellation, retry
+// Close with a fresh context to free the remaining server-side resources.
 func (b *PreparedBatch) Close(ctx context.Context) error {
 	if b == nil || b.closed {
 		return nil
 	}
+	b.closing = true
 	b.ClearPending()
 
 	err := b.releaseWireResources(ctx)
@@ -478,7 +509,7 @@ func batchCompletionError(completion *fbconn.BatchCompletion) error {
 	return batchErr
 }
 
-func finalizePreparedBatchExec(completion *fbconn.BatchCompletion, execErr, closeErr, releaseErr error) (BatchResult, error) {
+func finalizePreparedBatchExec(completion *fbconn.BatchCompletion, execErr error) (BatchResult, error) {
 	result := BatchResult{}
 	if completion != nil {
 		execErr = operationerror.WithRetry(execErr, false)
@@ -491,5 +522,5 @@ func finalizePreparedBatchExec(completion *fbconn.BatchCompletion, execErr, clos
 	if batchErr := batchCompletionError(completion); batchErr != nil {
 		execErr = operationerror.Join(batchErr, execErr)
 	}
-	return result, operationerror.Join(execErr, errors.Join(closeErr, releaseErr))
+	return result, execErr
 }

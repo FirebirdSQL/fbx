@@ -91,17 +91,24 @@ func newBatchProtocolTest(t *testing.T, input io.Reader) (*Batch, *prepareCleanu
 }
 
 func TestBatchSyncResponses(t *testing.T) {
-	for _, broken := range []bool{false, true} {
-		t.Run(fmt.Sprintf("broken=%t", broken), func(t *testing.T) {
+	for _, mode := range []string{"server error", "sync error", "broken response"} {
+		t.Run(mode, func(t *testing.T) {
 			var input bytes.Buffer
 			w := fbproto.NewXDRWriter(&input)
+			broken := mode == "broken response"
 			if broken {
 				require.NoError(t, w.WriteInt32(fbproto.Op_sql_response))
 				require.NoError(t, w.WriteInt32(0))
-			} else {
+			} else if mode == "server error" {
 				require.NoError(t, retryTestResponse(w, fbproto.Isc_deadlock))
+			} else {
+				require.NoError(t, writeProbeResponse(w, 0))
 			}
-			require.NoError(t, writeProbeResponse(w, 0))
+			if mode == "sync error" {
+				require.NoError(t, retryTestResponse(w, fbproto.Isc_deadlock))
+			} else {
+				require.NoError(t, writeProbeResponse(w, 0))
+			}
 			require.NoError(t, writeProbeResponse(w, 77))
 			b, _ := newBatchProtocolTest(t, &input)
 			conn := b.st.conn
@@ -115,6 +122,8 @@ func TestBatchSyncResponses(t *testing.T) {
 
 			err := b.Send(context.Background(), [][]byte{{0, 0, 0, 1}})
 			require.Error(t, err)
+			require.True(t, b.NeedsReset())
+			require.True(t, b.HasPending())
 			require.False(t, SafeToRetry(err))
 			require.Equal(t, []int{fbproto.Fb_cancel_disable, fbproto.Fb_cancel_enable}, resets)
 			require.Equal(t, broken, conn.IsClosed())
@@ -128,6 +137,18 @@ func TestBatchSyncResponses(t *testing.T) {
 			msg, err := conn.receiveMessage()
 			require.NoError(t, err)
 			require.Equal(t, 77, msg.(*fbproto.OpResponse).Object, "the sync response must be consumed")
+
+			require.NoError(t, retryTestResponse(w, fbproto.Isc_cancelled))
+			require.NoError(t, writeProbeResponse(w, 0))
+			require.Error(t, b.Cancel(context.Background()))
+			require.True(t, b.NeedsReset())
+			require.Same(t, b, b.st.activeBatch, "failed cleanup must retain the handle")
+			require.NoError(t, writeProbeResponse(w, 0))
+			require.NoError(t, writeProbeResponse(w, 0))
+			require.NoError(t, b.Cancel(context.Background()))
+			require.False(t, b.HasPending())
+			require.False(t, b.NeedsReset())
+			require.False(t, b.isClosed())
 		})
 	}
 }
@@ -201,6 +222,10 @@ func TestBatchExecuteCancellation(t *testing.T) {
 				if !explicit {
 					require.NoError(t, writeProbeResponse(w, 0))
 				}
+				if !rowError {
+					require.NoError(t, writeProbeResponse(w, 0))
+					require.NoError(t, writeProbeResponse(w, 0))
+				}
 				ctx, cancel := context.WithCancel(context.Background())
 				defer cancel()
 				b, transport := newBatchProtocolTest(t, &batchCancelReader{Reader: &input, cancel: cancel})
@@ -217,6 +242,8 @@ func TestBatchExecuteCancellation(t *testing.T) {
 				require.False(t, SafeToRetry(err))
 				require.False(t, conn.IsClosed())
 				require.Equal(t, explicit, conn.ActiveTx())
+				require.Equal(t, !rowError, b.NeedsReset(), "only a completion confirms that execution consumed the queue")
+				require.Equal(t, !rowError, b.HasPending())
 				if rowError {
 					require.NotNil(t, completion)
 					require.Equal(t, []int64{1, -1}, completion.UpdateCounts)
@@ -233,9 +260,47 @@ func TestBatchExecuteCancellation(t *testing.T) {
 					require.Equal(t, 20, transport.written.Len())
 					require.EqualValues(t, fbproto.Op_rollback, binary.BigEndian.Uint32(transport.written.Bytes()[12:]))
 				}
+				if !rowError {
+					written := transport.written.Len()
+					require.ErrorContains(t, b.Send(context.Background(), [][]byte{{0, 0, 0, 1}}), "requires Cancel")
+					require.Equal(t, written, transport.written.Len(), "do not append to an uncertain server queue")
+					require.NoError(t, b.Cancel(context.Background()))
+					require.False(t, b.NeedsReset())
+					require.False(t, b.HasPending())
+					require.False(t, b.isClosed())
+				}
 				require.Zero(t, input.Len())
 			})
 		}
+	}
+}
+
+func TestBatchPendingSurvivesCanceledOperation(t *testing.T) {
+	for _, execute := range []bool{false, true} {
+		t.Run(fmt.Sprintf("execute=%t", execute), func(t *testing.T) {
+			var input bytes.Buffer
+			w := fbproto.NewXDRWriter(&input)
+			require.NoError(t, writeProbeResponse(w, 0))
+			require.NoError(t, writeProbeResponse(w, 0))
+			b, transport := newBatchProtocolTest(t, &input)
+			rows := [][]byte{{0, 0, 0, 1}}
+			require.NoError(t, b.Send(context.Background(), rows))
+			written := transport.written.Len()
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+
+			var err error
+			if execute {
+				_, err = b.Execute(ctx, &FBTransaction{Connection: b.st.conn, Handle: 42})
+			} else {
+				err = b.Send(ctx, rows)
+			}
+			require.ErrorIs(t, err, context.Canceled)
+			require.True(t, SafeToRetry(err))
+			require.True(t, b.HasPending())
+			require.False(t, b.NeedsReset())
+			require.Equal(t, written, transport.written.Len())
+		})
 	}
 }
 

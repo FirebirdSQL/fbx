@@ -380,7 +380,14 @@ func TestPrepareBatchWithOptionsBufferBytesOverflow(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	conn := mustConnectString(t, defaultConnTestRunner.CreateConfig(ctx, t).ConnString())
+	requestCtx, cancelRequest := context.WithCancel(ctx)
+	defer cancelRequest()
+	config := defaultConnTestRunner.CreateConfig(ctx, t)
+	config.OnFbError = func(_ *fbconn.FbConn, _ *fbconn.FbError) bool {
+		cancelRequest()
+		return true
+	}
+	conn := mustConnect(t, config)
 	defer closeConn(t, conn)
 	skipIfBatchUnsupported(ctx, t, conn)
 
@@ -389,7 +396,7 @@ func TestPrepareBatchWithOptionsBufferBytesOverflow(t *testing.T) {
 
 	table := batchTestTableName(t, "fbx_pb_opts_overflow")
 
-	_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(4096))")
+	_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(512))")
 	require.NoError(t, err)
 
 	pb, err := conn.PrepareBatchWithOptions(ctx, "insert into "+table+" (id, note) values (?, ?)", fbx.BatchOptions{
@@ -400,16 +407,29 @@ func TestPrepareBatchWithOptionsBufferBytesOverflow(t *testing.T) {
 		require.NoError(t, pb.Close(ctx))
 	}()
 
-	require.NoError(t, pb.Add(1, strings.Repeat("a", 2048)))
-	require.NoError(t, pb.Add(2, strings.Repeat("b", 2048)))
-	require.NoError(t, pb.Add(3, strings.Repeat("c", 2048)))
+	require.NoError(t, pb.Add(0, "already flushed"))
+	require.NoError(t, pb.Flush(ctx))
+	for id := 1; id <= 32; id++ {
+		require.NoError(t, pb.Add(id, strings.Repeat("a", 256)))
+	}
 	require.Greater(t, pb.PendingBytes(), 0)
 
-	result, err := pb.Exec(ctx)
+	result, err := pb.Exec(requestCtx)
 	require.Error(t, err)
+	require.ErrorIs(t, err, context.Canceled)
+	require.False(t, fbconn.SafeToRetry(err))
 	require.EqualValues(t, 0, result.Affected)
 	require.ErrorContains(t, err, "Internal buffer overflow")
+	require.Zero(t, pb.PendingBytes())
 	require.Empty(t, loadBatchDMLRows(t, ctx, inspect, table))
+	result, err = pb.Exec(ctx)
+	require.NoError(t, err)
+	require.Zero(t, result.Affected, "reset must also discard rows from earlier Flush calls")
+	require.NoError(t, pb.Add(10, "after reset"))
+	result, err = pb.Exec(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, result.Affected)
+	require.Equal(t, []batchDMLRow{{ID: 10, Note: "after reset"}}, loadBatchDMLRows(t, ctx, inspect, table))
 }
 
 func TestTxPrepareBatchWithOptionsBufferBytesCommit(t *testing.T) {
@@ -1006,6 +1026,13 @@ func TestPreparedBatchCancelDiscardsFlushedRowsAndAllowsReuse(t *testing.T) {
 	require.NoError(t, pb.Add(2, "second"))
 	require.NoError(t, pb.Flush(ctx))
 
+	canceledCtx, cancelRequest := context.WithCancel(ctx)
+	cancelRequest()
+	require.ErrorIs(t, pb.Cancel(canceledCtx), context.Canceled)
+	require.ErrorContains(t, pb.Add(3, "blocked"), "pending cleanup")
+	require.ErrorContains(t, pb.Flush(ctx), "pending cleanup")
+	_, err = pb.Exec(ctx)
+	require.ErrorContains(t, err, "pending cleanup")
 	require.NoError(t, pb.Cancel(ctx))
 
 	// Exec after Cancel sees no queued rows and is a no-op.
@@ -1202,6 +1229,7 @@ func TestPreparedBatchAutocommitRollsBackOnRowError(t *testing.T) {
 
 	require.NoError(t, pb.Add(1, "one"))
 	require.NoError(t, pb.Add(2, nil))
+	require.NoError(t, pb.Add(3, "skipped after error"))
 
 	_, err = pb.Exec(ctx)
 
@@ -1210,6 +1238,14 @@ func TestPreparedBatchAutocommitRollsBackOnRowError(t *testing.T) {
 
 	require.Empty(t, loadBatchDMLRows(t, ctx, checkConn, table),
 		"valid first row must not be committed when a later row fails")
+	result, err := pb.Exec(ctx)
+	require.NoError(t, err)
+	require.Zero(t, result.Affected, "a completion must consume skipped rows too")
+	require.NoError(t, pb.Add(4, "after error"))
+	result, err = pb.Exec(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, result.Affected)
+	require.Equal(t, []batchDMLRow{{ID: 4, Note: "after error"}}, loadBatchDMLRows(t, ctx, checkConn, table))
 }
 
 func TestPreparedBatchCanceledWhileLocked(t *testing.T) {
@@ -1254,13 +1290,16 @@ func TestPreparedBatchCanceledWhileLocked(t *testing.T) {
 	var batchErr *fbx.BatchExecutionError
 	require.ErrorAs(t, err, &batchErr)
 	require.EqualValues(t, 1, result.Affected)
-	require.NoError(t, pb.Close(ctx))
 	require.NoError(t, tx.Rollback(ctx))
 	require.False(t, conn.IsClosed(), "successful server cancellation must preserve the connection")
 	require.False(t, conn.FbConn().ActiveTx())
 	var sum int
 	require.NoError(t, conn.QueryRow(ctx, "select sum(v) from "+table).Scan(&sum))
 	require.Zero(t, sum, "the next query must not commit the first batch row")
+	require.NoError(t, pb.Add(30, 1))
+	result, err = pb.Exec(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, result.Affected, "batch remains usable after confirmed server cancellation")
 }
 
 func TestNamedBatchAutocommitRollsBackOnRowError(t *testing.T) {

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"reflect"
-	"sync/atomic"
 	"testing"
 	"unsafe"
 
@@ -31,38 +30,6 @@ func forceStatementActiveBatch(t testing.TB, st *fbconn.Statement) {
 	require.True(t, field.IsValid())
 
 	reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Set(reflect.ValueOf(&fbconn.Batch{}))
-}
-
-type cancelOnDoneCallContext struct {
-	context.Context
-
-	cancelOnCall int32
-	doneCalls    atomic.Int32
-	closed       chan struct{}
-}
-
-func newCancelOnDoneCallContext(cancelOnCall int32) *cancelOnDoneCallContext {
-	closed := make(chan struct{})
-	close(closed)
-	return &cancelOnDoneCallContext{
-		Context:      context.Background(),
-		cancelOnCall: cancelOnCall,
-		closed:       closed,
-	}
-}
-
-func (ctx *cancelOnDoneCallContext) Done() <-chan struct{} {
-	if ctx.doneCalls.Add(1) >= ctx.cancelOnCall {
-		return ctx.closed
-	}
-	return nil
-}
-
-func (ctx *cancelOnDoneCallContext) Err() error {
-	if ctx.doneCalls.Load() >= ctx.cancelOnCall {
-		return context.Canceled
-	}
-	return nil
 }
 
 type cancelAfterBatchPrepare struct {
@@ -170,14 +137,21 @@ func TestPrepareBatchConnectionScopeClosesMetadataTransaction(t *testing.T) {
 
 	st := pb.st
 	require.NotNil(t, st)
+	var serverBatch *fbconn.Batch
 	for _, id := range []int{1, 2} {
 		require.NoError(t, pb.Add(id, "saved"))
 		require.NoError(t, pb.Flush(ctx))
+		if serverBatch == nil {
+			serverBatch = pb.lb
+		}
+		require.True(t, pb.lb.HasPending())
 		require.False(t, conn.fbConn.ActiveTx(), "Flush must not open a transaction")
 		result, err := pb.Exec(ctx)
 		require.NoError(t, err)
 		require.EqualValues(t, 1, result.Affected)
 		require.Same(t, st, pb.st, "Exec must retain the original statement")
+		require.Same(t, serverBatch, pb.lb, "Exec must retain the server batch")
+		require.False(t, pb.lb.HasPending())
 		require.False(t, conn.fbConn.ActiveTx())
 	}
 
@@ -185,6 +159,8 @@ func TestPrepareBatchConnectionScopeClosesMetadataTransaction(t *testing.T) {
 	require.NoError(t, pb.Flush(ctx))
 	require.NoError(t, pb.Cancel(ctx))
 	require.Same(t, st, pb.st, "Cancel must retain the original statement")
+	require.Same(t, serverBatch, pb.lb, "Cancel must retain the server batch")
+	require.False(t, pb.lb.HasPending())
 
 	require.NoError(t, pb.Close(ctx))
 	require.Nil(t, pb.st)
@@ -329,6 +305,11 @@ func TestPreparedBatchCloseCanceledContextCanRetry(t *testing.T) {
 	require.False(t, pb.closed)
 	require.NotNil(t, pb.lb)
 	require.False(t, conn.fbConn.ActiveTx())
+	require.ErrorContains(t, pb.Add(2, "blocked"), "closing")
+	require.ErrorContains(t, pb.Flush(ctx), "closing")
+	_, err = pb.Exec(ctx)
+	require.ErrorContains(t, err, "closing")
+	require.ErrorContains(t, pb.Cancel(ctx), "closing")
 
 	require.NoError(t, pb.Close(ctx))
 	require.True(t, pb.closed)
@@ -336,7 +317,7 @@ func TestPreparedBatchCloseCanceledContextCanRetry(t *testing.T) {
 	require.False(t, conn.fbConn.ActiveTx())
 }
 
-func TestPreparedBatchExecCanceledCleanupCanRetry(t *testing.T) {
+func TestPreparedBatchExecCanceledBeforeSendingCanRetry(t *testing.T) {
 	ctx := context.Background()
 
 	conn := mustConnect(t, mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE")))
@@ -364,6 +345,11 @@ func TestPreparedBatchExecCanceledCleanupCanRetry(t *testing.T) {
 	require.False(t, pb.closed)
 	require.NotNil(t, pb.lb)
 	require.False(t, conn.fbConn.ActiveTx(), "failed execution must release the owned internal transaction")
+	require.True(t, pb.lb.HasPending())
+	require.False(t, pb.lb.NeedsReset())
+	result, err := pb.Exec(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, result.Affected)
 
 	require.NoError(t, pb.Close(ctx))
 	require.True(t, pb.closed)
@@ -371,7 +357,7 @@ func TestPreparedBatchExecCanceledCleanupCanRetry(t *testing.T) {
 	require.False(t, conn.fbConn.ActiveTx())
 }
 
-func TestPreparedBatchExecCanceledCleanupDoesNotReexecute(t *testing.T) {
+func TestPreparedBatchEmptyExecDoesNotReexecute(t *testing.T) {
 	ctx := context.Background()
 
 	conn := mustConnect(t, mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE")))
@@ -396,16 +382,17 @@ func TestPreparedBatchExecCanceledCleanupDoesNotReexecute(t *testing.T) {
 	require.NoError(t, pb.Add(1))
 	require.NoError(t, pb.Flush(ctx))
 
-	cleanupCanceledCtx := newCancelOnDoneCallContext(5)
-	result, err := pb.Exec(cleanupCanceledCtx)
-	require.ErrorIs(t, err, context.Canceled)
-	require.False(t, fbconn.SafeToRetry(err), "cleanup must not authorize repeating a committed batch")
+	result, err := pb.Exec(ctx)
+	require.NoError(t, err)
 	require.EqualValues(t, 1, result.Affected)
 	require.NotNil(t, pb.lb)
 
-	result, err = pb.Exec(ctx)
-	require.Error(t, err, "Exec after a successful execute with pending cleanup must not reexecute the previous batch")
+	canceledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	result, err = pb.Exec(canceledCtx)
+	require.NoError(t, err, "empty Exec must not start a transaction or send a command")
 	require.Zero(t, result.Affected)
+	require.False(t, conn.fbConn.ActiveTx())
 
 	require.NoError(t, pb.Close(ctx))
 
@@ -648,10 +635,15 @@ func TestPreparedBatchCancelGuards(t *testing.T) {
 		require.EqualError(t, pb.Cancel(ctx), "prepared batch is closed")
 	})
 
-	t.Run("cleanup pending refuses cancel", func(t *testing.T) {
+	t.Run("closing batch refuses cancel", func(t *testing.T) {
+		pb := &PreparedBatch{closing: true}
+		require.ErrorContains(t, pb.Cancel(ctx), "prepared batch is closing")
+	})
+
+	t.Run("cancel completes pending cleanup", func(t *testing.T) {
 		pb := &PreparedBatch{cleanupPending: true}
-		require.ErrorContains(t, pb.Cancel(ctx),
-			"prepared batch has pending cleanup after execution")
+		require.NoError(t, pb.Cancel(ctx))
+		require.False(t, pb.cleanupPending)
 	})
 
 	t.Run("no wire state — Cancel clears local buffer and returns nil", func(t *testing.T) {
@@ -677,7 +669,7 @@ func TestFinalizePreparedBatchExecJoinsErrors(t *testing.T) {
 			Errors:       []fbconn.BatchError{{Row: 1, Err: rowErr}},
 		}
 		cleanupErr := operationerror.WithRetry(errors.New("cleanup failed"), true)
-		result, err := finalizePreparedBatchExec(completion, context.DeadlineExceeded, cleanupErr, nil)
+		result, err := finalizePreparedBatchExec(completion, operationerror.Join(context.DeadlineExceeded, cleanupErr))
 
 		require.EqualValues(t, 1, result.Affected)
 		require.Equal(t, completion.UpdateCounts, result.UpdateCounts)
@@ -691,20 +683,17 @@ func TestFinalizePreparedBatchExecJoinsErrors(t *testing.T) {
 
 	t.Run("execute error keeps cleanup errors", func(t *testing.T) {
 		execErr := errors.New("execute failed")
-		closeErr := errors.New("close failed")
-		releaseErr := errors.New("release failed")
+		cleanupErr := errors.New("cancel failed")
 
-		result, err := finalizePreparedBatchExec(nil, execErr, closeErr, releaseErr)
+		result, err := finalizePreparedBatchExec(nil, operationerror.Join(execErr, cleanupErr))
 
 		require.Zero(t, result.Affected)
 		require.ErrorContains(t, err, "execute failed")
-		require.ErrorContains(t, err, "close failed")
-		require.ErrorContains(t, err, "release failed")
+		require.ErrorIs(t, err, cleanupErr)
 	})
 
 	t.Run("batch row error keeps affected and cleanup errors", func(t *testing.T) {
-		closeErr := errors.New("close failed")
-		releaseErr := errors.New("release failed")
+		rollbackErr := errors.New("rollback failed")
 
 		completion := &fbconn.BatchCompletion{
 			UpdateCounts: []int64{1},
@@ -713,14 +702,13 @@ func TestFinalizePreparedBatchExecJoinsErrors(t *testing.T) {
 			},
 		}
 
-		result, err := finalizePreparedBatchExec(completion, nil, closeErr, releaseErr)
+		result, err := finalizePreparedBatchExec(completion, rollbackErr)
 
 		require.EqualValues(t, 1, result.Affected)
 		require.Equal(t, []int64{1}, result.UpdateCounts)
 		require.ErrorContains(t, err, "batch failed at row 2")
 		require.ErrorContains(t, err, "duplicate key")
-		require.ErrorContains(t, err, "close failed")
-		require.ErrorContains(t, err, "release failed")
+		require.ErrorIs(t, err, rollbackErr)
 
 		var batchErr *BatchExecutionError
 		require.ErrorAs(t, err, &batchErr)
@@ -737,7 +725,7 @@ func TestFinalizePreparedBatchExecJoinsErrors(t *testing.T) {
 			},
 		}
 
-		result, err := finalizePreparedBatchExec(completion, nil, nil, nil)
+		result, err := finalizePreparedBatchExec(completion, nil)
 
 		require.EqualValues(t, 2, result.Affected)
 		require.Equal(t, []int64{1, -1, 1, -1}, result.UpdateCounts)
