@@ -7,6 +7,8 @@ import (
 	"fmt"
 )
 
+const defaultBatchInsertPendingSize = 128 * 1024
+
 // BatchInsertRows adapts rows to the [BatchInsertRowsSource] interface used by
 // [Conn.BatchInsert].
 func BatchInsertRows(rows [][]any) BatchInsertRowsSource {

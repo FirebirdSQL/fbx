@@ -204,10 +204,7 @@ func TestTxBatchMethodsReturnErrTxClosed(t *testing.T) {
 	_, err = tx.PrepareBatch(ctx, "insert into rdb$database(dummy) values (?)")
 	require.ErrorIs(t, err, fbx.ErrTxClosed)
 
-	err = tx.Flush(ctx, "missing")
-	require.ErrorIs(t, err, fbx.ErrTxClosed)
-
-	_, err = tx.ExecBatch(ctx, "missing")
+	_, err = tx.PrepareBatchWithOptions(ctx, "insert into rdb$database(dummy) values (?)", fbx.BatchOptions{})
 	require.ErrorIs(t, err, fbx.ErrTxClosed)
 }
 
@@ -490,67 +487,6 @@ func TestTxPrepareBatchClosedTxErrorType(t *testing.T) {
 	require.ErrorIs(t, err, fbx.ErrTxClosed)
 }
 
-func TestTxPrepareNamedBatchUpdateDeleteCommit(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	conn := mustConnectString(t, defaultConnTestRunner.CreateConfig(ctx, t).ConnString())
-	defer closeConn(t, conn)
-	skipIfBatchUnsupported(ctx, t, conn)
-
-	checkConn := mustConnectString(t, defaultConnTestRunner.CreateConfig(ctx, t).ConnString())
-	defer closeConn(t, checkConn)
-
-	table := batchTestTableName(t, "fbx_txnb_commit")
-	updateName := batchTestTableName(t, "upd_batch")
-	deleteName := batchTestTableName(t, "del_batch")
-
-	_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(50))")
-	require.NoError(t, err)
-	seedBatchDMLRows(t, ctx, conn, table)
-
-	tx, err := conn.Begin(ctx)
-	require.NoError(t, err)
-
-	_, err = tx.Prepare(ctx, updateName, "batch update "+table+" set note = ? where id = ?")
-	require.NoError(t, err)
-
-	_, err = tx.Exec(ctx, updateName, "one-tx-named", 1)
-	require.NoError(t, err)
-	_, err = tx.Exec(ctx, updateName, "two-tx-named", 2)
-	require.NoError(t, err)
-
-	updateResult, err := tx.ExecBatch(ctx, updateName)
-	require.NoError(t, err)
-	require.EqualValues(t, 2, updateResult.Affected)
-
-	_, err = tx.Prepare(ctx, deleteName, "batch delete from "+table+" where id = ?")
-	require.NoError(t, err)
-
-	_, err = tx.Exec(ctx, deleteName, 3)
-	require.NoError(t, err)
-	_, err = tx.Exec(ctx, deleteName, 4)
-	require.NoError(t, err)
-
-	deleteResult, err := tx.ExecBatch(ctx, deleteName)
-	require.NoError(t, err)
-	require.EqualValues(t, 2, deleteResult.Affected)
-
-	require.Equal(t, []batchDMLRow{
-		{ID: 1, Note: "one"},
-		{ID: 2, Note: "two"},
-		{ID: 3, Note: "three"},
-		{ID: 4, Note: "four"},
-	}, loadBatchDMLRows(t, ctx, checkConn, table))
-
-	require.NoError(t, tx.Commit(ctx))
-
-	require.Equal(t, []batchDMLRow{
-		{ID: 1, Note: "one-tx-named"},
-		{ID: 2, Note: "two-tx-named"},
-	}, loadBatchDMLRows(t, ctx, checkConn, table))
-}
-
 func TestPreparedBatchReuseUpdateDelete(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
@@ -600,98 +536,6 @@ func TestPreparedBatchReuseUpdateDelete(t *testing.T) {
 	require.Equal(t, []batchDMLRow{
 		{ID: 1, Note: "one-reuse"},
 		{ID: 2, Note: "two-reuse"},
-	}, loadBatchDMLRows(t, ctx, conn, table))
-}
-
-func TestNamedBatchReuseUpdateDelete(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	conn := mustConnectString(t, defaultConnTestRunner.CreateConfig(ctx, t).ConnString())
-	defer closeConn(t, conn)
-	skipIfBatchUnsupported(ctx, t, conn)
-
-	table := batchTestTableName(t, "fbx_nb_reuse_ud")
-	updateName := batchTestTableName(t, "upd_batch")
-	deleteName := batchTestTableName(t, "del_batch")
-
-	_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(50))")
-	require.NoError(t, err)
-	seedBatchDMLRows(t, ctx, conn, table)
-
-	_, err = conn.Prepare(ctx, updateName, "batch update "+table+" set note = ? where id = ?")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, conn.Deallocate(ctx, updateName)) }()
-
-	_, err = conn.Exec(ctx, updateName, "one-named-reuse", 1)
-	require.NoError(t, err)
-	updateResult, err := conn.ExecBatch(ctx, updateName)
-	require.NoError(t, err)
-	require.EqualValues(t, 1, updateResult.Affected)
-
-	_, err = conn.Exec(ctx, updateName, "two-named-reuse", 2)
-	require.NoError(t, err)
-	updateResult, err = conn.ExecBatch(ctx, updateName)
-	require.NoError(t, err)
-	require.EqualValues(t, 1, updateResult.Affected)
-
-	_, err = conn.Prepare(ctx, deleteName, "batch delete from "+table+" where id = ?")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, conn.Deallocate(ctx, deleteName)) }()
-
-	_, err = conn.Exec(ctx, deleteName, 3)
-	require.NoError(t, err)
-	deleteResult, err := conn.ExecBatch(ctx, deleteName)
-	require.NoError(t, err)
-	require.EqualValues(t, 1, deleteResult.Affected)
-
-	_, err = conn.Exec(ctx, deleteName, 4)
-	require.NoError(t, err)
-	deleteResult, err = conn.ExecBatch(ctx, deleteName)
-	require.NoError(t, err)
-	require.EqualValues(t, 1, deleteResult.Affected)
-
-	require.Equal(t, []batchDMLRow{
-		{ID: 1, Note: "one-named-reuse"},
-		{ID: 2, Note: "two-named-reuse"},
-	}, loadBatchDMLRows(t, ctx, conn, table))
-}
-
-func TestNamedBatchExecConsumesOptionsAndQueryRewriter(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	conn := mustConnectString(t, defaultConnTestRunner.CreateConfig(ctx, t).ConnString())
-	defer closeConn(t, conn)
-	skipIfBatchUnsupported(ctx, t, conn)
-
-	table := batchTestTableName(t, "fbx_nb_options")
-	name := batchTestTableName(t, "batch_options")
-
-	_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(50))")
-	require.NoError(t, err)
-
-	_, err = conn.Prepare(ctx, name, "batch insert into "+table+" (id, note) values (?, ?)")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, conn.Deallocate(ctx, name)) }()
-
-	_, err = conn.Exec(ctx, name, fbx.QueryExecModeExec, 1, "one")
-	require.NoError(t, err)
-
-	qr := testQueryRewriter{
-		sql:  name,
-		args: []any{2, "two"},
-	}
-	_, err = conn.Exec(ctx, "rewritten_batch_name", &qr)
-	require.NoError(t, err)
-
-	result, err := conn.ExecBatch(ctx, name)
-	require.NoError(t, err)
-	require.EqualValues(t, 2, result.Affected)
-
-	require.Equal(t, []batchDMLRow{
-		{ID: 1, Note: "one"},
-		{ID: 2, Note: "two"},
 	}, loadBatchDMLRows(t, ctx, conn, table))
 }
 
@@ -1082,7 +926,7 @@ func TestPreparedBatchCancelWithoutFlushOnlyClearsLocalQueue(t *testing.T) {
 	require.Empty(t, loadBatchDMLRows(t, ctx, conn, table))
 }
 
-func TestConnCancelBatchDiscardsFlushedNamedRowsAndAllowsReuse(t *testing.T) {
+func TestTxPreparedBatchCancelDiscardsFlushedRows(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
@@ -1090,83 +934,28 @@ func TestConnCancelBatchDiscardsFlushedNamedRowsAndAllowsReuse(t *testing.T) {
 	defer closeConn(t, conn)
 	skipIfBatchUnsupported(ctx, t, conn)
 
-	table := batchTestTableName(t, "fbx_nb_cancel")
-	batchName := batchTestTableName(t, "ins_batch")
-
-	_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(50))")
-	require.NoError(t, err)
-
-	_, err = conn.Prepare(ctx, batchName, "batch insert into "+table+" (id, note) values (?, ?)")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, conn.Deallocate(ctx, batchName)) }()
-
-	_, err = conn.Exec(ctx, batchName, 1, "first")
-	require.NoError(t, err)
-	_, err = conn.Exec(ctx, batchName, 2, "second")
-	require.NoError(t, err)
-	require.NoError(t, conn.Flush(ctx, batchName))
-
-	require.NoError(t, conn.CancelBatch(ctx, batchName))
-
-	result, err := conn.ExecBatch(ctx, batchName)
-	require.NoError(t, err)
-	require.EqualValues(t, 0, result.Affected)
-	require.Empty(t, loadBatchDMLRows(t, ctx, conn, table))
-
-	_, err = conn.Exec(ctx, batchName, 10, "post-cancel")
-	require.NoError(t, err)
-	result, err = conn.ExecBatch(ctx, batchName)
-	require.NoError(t, err)
-	require.EqualValues(t, 1, result.Affected)
-	require.Equal(t, []batchDMLRow{
-		{ID: 10, Note: "post-cancel"},
-	}, loadBatchDMLRows(t, ctx, conn, table))
-}
-
-func TestConnCancelBatchUnknownNameReturnsError(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	conn := mustConnectString(t, defaultConnTestRunner.CreateConfig(ctx, t).ConnString())
-	defer closeConn(t, conn)
-	skipIfBatchUnsupported(ctx, t, conn)
-
-	err := conn.CancelBatch(ctx, "does-not-exist")
-	require.ErrorContains(t, err, `prepared batch "does-not-exist" not found`)
-}
-
-func TestTxCancelBatchDiscardsFlushedRows(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	conn := mustConnectString(t, defaultConnTestRunner.CreateConfig(ctx, t).ConnString())
-	defer closeConn(t, conn)
-	skipIfBatchUnsupported(ctx, t, conn)
-
-	table := batchTestTableName(t, "fbx_txnb_cancel")
-	batchName := batchTestTableName(t, "ins_batch")
+	table := batchTestTableName(t, "fbx_txpb_cancel")
 
 	_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(50))")
 	require.NoError(t, err)
 
 	tx, err := conn.Begin(ctx)
 	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
 
-	_, err = tx.Prepare(ctx, batchName, "batch insert into "+table+" (id, note) values (?, ?)")
+	pb, err := tx.PrepareBatch(ctx, "insert into "+table+" (id, note) values (?, ?)")
 	require.NoError(t, err)
+	defer func() { require.NoError(t, pb.Close(ctx)) }()
 
-	_, err = tx.Exec(ctx, batchName, 1, "first")
-	require.NoError(t, err)
-	_, err = tx.Exec(ctx, batchName, 2, "second")
-	require.NoError(t, err)
-	require.NoError(t, tx.Flush(ctx, batchName))
+	require.NoError(t, pb.Add(1, "first"))
+	require.NoError(t, pb.Add(2, "second"))
+	require.NoError(t, pb.Flush(ctx))
 
-	require.NoError(t, tx.CancelBatch(ctx, batchName))
+	require.NoError(t, pb.Cancel(ctx))
 
 	// After cancel within tx, a new row can be added and executed.
-	_, err = tx.Exec(ctx, batchName, 10, "post-cancel")
-	require.NoError(t, err)
-	result, err := tx.ExecBatch(ctx, batchName)
+	require.NoError(t, pb.Add(10, "post-cancel"))
+	result, err := pb.Exec(ctx)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, result.Affected)
 
@@ -1300,39 +1089,4 @@ func TestPreparedBatchCanceledWhileLocked(t *testing.T) {
 	result, err = pb.Exec(ctx)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, result.Affected, "batch remains usable after confirmed server cancellation")
-}
-
-func TestNamedBatchAutocommitRollsBackOnRowError(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	conn := mustConnectString(t, defaultConnTestRunner.CreateConfig(ctx, t).ConnString())
-	defer closeConn(t, conn)
-	skipIfBatchUnsupported(ctx, t, conn)
-
-	checkConn := mustConnectString(t, defaultConnTestRunner.CreateConfig(ctx, t).ConnString())
-	defer closeConn(t, checkConn)
-
-	table := batchTestTableName(t, "fbx_nb_partial")
-	batchName := batchTestTableName(t, "ins_batch")
-
-	_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(50) not null)")
-	require.NoError(t, err)
-
-	_, err = conn.Prepare(ctx, batchName, "batch insert into "+table+" (id, note) values (?, ?)")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, conn.Deallocate(ctx, batchName)) }()
-
-	_, err = conn.Exec(ctx, batchName, 1, "one")
-	require.NoError(t, err)
-	_, err = conn.Exec(ctx, batchName, 2, nil)
-	require.NoError(t, err)
-
-	_, err = conn.ExecBatch(ctx, batchName)
-
-	var batchErr *fbx.BatchExecutionError
-	require.ErrorAs(t, err, &batchErr)
-
-	require.Empty(t, loadBatchDMLRows(t, ctx, checkConn, table),
-		"valid first row must not be committed when a later row fails")
 }

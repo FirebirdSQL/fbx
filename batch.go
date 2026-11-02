@@ -4,15 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/firebirdsql/fbx/fbconn"
 	"github.com/firebirdsql/fbx/internal/operationerror"
-)
-
-const (
-	batchPreparePrefix            = "batch "
-	defaultPreparedBatchFlushSize = 128 * 1024
 )
 
 // BatchOptions configures batches created with [Conn.PrepareBatchWithOptions]
@@ -43,8 +37,7 @@ type BatchOptions struct {
 	DetailedErrors int
 }
 
-// BatchResult describes the server completion data returned by
-// [PreparedBatch.Exec] and [Conn.ExecBatch].
+// BatchResult describes the server completion data returned by [PreparedBatch.Exec].
 //
 // When execution returns a [BatchExecutionError], BatchResult still describes
 // what the server processed before the error response. In autocommit mode those
@@ -156,16 +149,12 @@ type PreparedBatch struct {
 	conn *Conn
 	tx   *dbTx
 
-	name string
-	sql  string
-
 	st *fbconn.Statement
 
 	lb *fbconn.Batch
 
 	encodedRows    [][]byte           // Encoded rows waiting to be sent to the server.
 	pendingBytes   int                // Total bytes in encodedRows, excluding rows already sent.
-	autoFlushBytes int                // Local flush threshold for named batches; unused by Add.
 	batchCfg       fbconn.BatchConfig // Options used whenever a server batch is created.
 	cleanupPending bool               // Blocks use until Cancel confirms that the server queue is empty.
 	closing        bool               // Close has started; only another Close is allowed.
@@ -177,10 +166,40 @@ type PreparedBatch struct {
 // Add appends one encoded row to the local batch buffer.
 //
 // Add does not send batch data to the server and does not execute the batch.
-// Object-style batches do not auto-flush; call [PreparedBatch.Flush] yourself
-// when [PreparedBatch.PendingBytes] reaches a useful threshold.
+// Call [PreparedBatch.Flush] when [PreparedBatch.PendingBytes] reaches a useful
+// threshold, or [PreparedBatch.Exec] to send and execute all queued rows.
 func (b *PreparedBatch) Add(args ...any) error {
-	return b.addEncoded(context.Background(), args, false)
+	if err := b.checkReady(); err != nil {
+		return err
+	}
+	if b.st == nil || b.st.Description == nil {
+		return fmt.Errorf("prepared batch metadata is not initialized")
+	}
+	sd := b.st.Description
+	if len(args) != len(sd.Parameters) {
+		return fmt.Errorf("expected %d arguments, got %d", len(sd.Parameters), len(args))
+	}
+	for i, param := range sd.Parameters {
+		if param.IsBlob() || isBlobArgument(args[i]) {
+			return fmt.Errorf("batch does not support blob parameters (arg %d)", i)
+		}
+	}
+
+	if err := b.eqb.Build(context.Background(), b.conn, b.tx, b.conn.typeMap, sd, args); err != nil {
+		return err
+	}
+
+	row, err := sd.EncodeBatchRow(b.eqb.ParamValues)
+	if err != nil {
+		return err
+	}
+
+	b.eqb.reset()
+
+	b.encodedRows = append(b.encodedRows, row)
+	b.pendingBytes += len(row)
+
+	return nil
 }
 
 // PendingBytes returns the size of locally queued encoded rows that have not
@@ -190,14 +209,6 @@ func (b *PreparedBatch) PendingBytes() int {
 		return 0
 	}
 	return b.pendingBytes
-}
-
-func isBatchPrepareSQL(sql string) (normalized string, ok bool) {
-	trimmed := strings.TrimSpace(sql)
-	if len(trimmed) < len(batchPreparePrefix) || !strings.EqualFold(trimmed[:len(batchPreparePrefix)], batchPreparePrefix) {
-		return "", false
-	}
-	return strings.TrimSpace(trimmed[len(batchPreparePrefix):]), true
 }
 
 func validateBatchStatement(sd *fbconn.StatementDescription) error {
@@ -276,46 +287,6 @@ func (b *PreparedBatch) checkReady() error {
 	if b.tx != nil && b.tx.closed {
 		return ErrTxClosed
 	}
-	return nil
-}
-
-func (b *PreparedBatch) addEncoded(ctx context.Context, args []any, allowAutoFlush bool) error {
-	if err := b.checkReady(); err != nil {
-		return err
-	}
-	if b.st == nil || b.st.Description == nil {
-		return fmt.Errorf("prepared batch metadata is not initialized")
-	}
-	sd := b.st.Description
-	if len(args) != len(sd.Parameters) {
-		return fmt.Errorf("expected %d arguments, got %d", len(sd.Parameters), len(args))
-	}
-	for i, param := range sd.Parameters {
-		if param.IsBlob() || isBlobArgument(args[i]) {
-			return fmt.Errorf("batch does not support blob parameters (arg %d)", i)
-		}
-	}
-
-	if err := b.eqb.Build(ctx, b.conn, b.tx, b.conn.typeMap, sd, args); err != nil {
-		return err
-	}
-
-	row, err := sd.EncodeBatchRow(b.eqb.ParamValues)
-	if err != nil {
-		return err
-	}
-
-	b.eqb.reset()
-
-	if allowAutoFlush && b.autoFlushBytes > 0 && b.pendingBytes > 0 && b.pendingBytes+len(row) > b.autoFlushBytes {
-		if err := b.Flush(ctx); err != nil {
-			return err
-		}
-	}
-
-	b.encodedRows = append(b.encodedRows, row)
-	b.pendingBytes += len(row)
-
 	return nil
 }
 

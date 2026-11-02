@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
-	"reflect"
 	"testing"
-	"unsafe"
 
 	"github.com/stretchr/testify/require"
 
@@ -20,16 +18,6 @@ func skipIfBatchUnsupported(ctx context.Context, t testing.TB, conn *Conn) {
 	if !version.AtLeast(4, 0, 0) {
 		t.Skipf("batch is not supported by server engine version %q", version)
 	}
-}
-
-func forceStatementActiveBatch(t testing.TB, st *fbconn.Statement) {
-	t.Helper()
-	require.NotNil(t, st)
-
-	field := reflect.ValueOf(st).Elem().FieldByName("activeBatch")
-	require.True(t, field.IsValid())
-
-	reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Set(reflect.ValueOf(&fbconn.Batch{}))
 }
 
 type cancelAfterBatchPrepare struct {
@@ -487,7 +475,7 @@ func TestTxPreparedBatchCloseCanceledStatementCanRetry(t *testing.T) {
 	require.Nil(t, pb.st)
 }
 
-func TestTxCommitCanceledKeepsNamedBatchForRetry(t *testing.T) {
+func TestTxCommitCanceledPreservesPreparedBatch(t *testing.T) {
 	ctx := context.Background()
 
 	conn := mustConnect(t, mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE")))
@@ -498,7 +486,6 @@ func TestTxCommitCanceledKeepsNamedBatchForRetry(t *testing.T) {
 	skipIfBatchUnsupported(ctx, t, conn)
 
 	table := "batch_tx_commit_retry"
-	name := "batch_tx_commit_retry_named"
 	_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(50))")
 	require.NoError(t, err)
 
@@ -513,12 +500,11 @@ func TestTxCommitCanceledKeepsNamedBatchForRetry(t *testing.T) {
 		}
 	}()
 
-	_, err = tx.Prepare(ctx, name, "batch insert into "+table+" (id, note) values (?, ?)")
+	pb, err := tx.PrepareBatch(ctx, "insert into "+table+" (id, note) values (?, ?)")
 	require.NoError(t, err)
-	_, err = tx.Exec(ctx, name, 1, "pending")
-	require.NoError(t, err)
-	require.NoError(t, tx.Flush(ctx, name))
-	require.Contains(t, conn.preparedBatches, name)
+	defer func() { require.NoError(t, pb.Close(ctx)) }()
+	require.NoError(t, pb.Add(1, "pending"))
+	require.NoError(t, pb.Flush(ctx))
 	require.True(t, conn.fbConn.ActiveTx())
 
 	canceledCtx, cancel := context.WithCancel(ctx)
@@ -527,40 +513,24 @@ func TestTxCommitCanceledKeepsNamedBatchForRetry(t *testing.T) {
 	err = tx.Commit(canceledCtx)
 	require.ErrorIs(t, err, context.Canceled)
 	require.False(t, tx.closed)
-	require.Contains(t, conn.preparedBatches, name)
+	require.False(t, pb.closing)
+	require.True(t, pb.lb.HasPending())
 	require.True(t, conn.fbConn.ActiveTx())
 
+	result, err := pb.Exec(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, result.Affected)
 	require.NoError(t, tx.Commit(ctx))
 	require.True(t, tx.closed)
-	require.NotContains(t, conn.preparedBatches, name)
 	require.False(t, conn.fbConn.ActiveTx())
-}
-
-func TestNamedBatchFlushDoesNotStartTransaction(t *testing.T) {
-	ctx := context.Background()
-
-	conn := mustConnect(t, mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE")))
-	defer func() {
-		err := conn.Close(ctx)
-		require.NoError(t, err)
-	}()
-	skipIfBatchUnsupported(ctx, t, conn)
-
-	table := "batch_internal_tx_flush_named"
-	name := "batch_internal_tx_named"
-	_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(50))")
-	require.NoError(t, err)
-	require.False(t, conn.fbConn.ActiveTx())
-
-	_, err = conn.Prepare(ctx, name, "batch insert into "+table+" (id, note) values (?, ?)")
-	require.NoError(t, err)
-	_, err = conn.Exec(ctx, name, 1, "pending")
-	require.NoError(t, err)
-	require.NoError(t, conn.Flush(ctx, name))
-	require.False(t, conn.fbConn.ActiveTx())
-
-	require.NoError(t, conn.Deallocate(ctx, name))
-	require.False(t, conn.fbConn.ActiveTx())
+	require.ErrorIs(t, pb.Add(2, "after commit"), ErrTxClosed)
+	require.ErrorIs(t, pb.Flush(ctx), ErrTxClosed)
+	_, err = pb.Exec(ctx)
+	require.ErrorIs(t, err, ErrTxClosed)
+	require.NoError(t, pb.Close(ctx))
+	var count int
+	require.NoError(t, conn.QueryRow(ctx, "select count(*) from "+table).Scan(&count))
+	require.Equal(t, 1, count)
 }
 
 func TestPreparedBatchClearPendingClearsBufferedRows(t *testing.T) {
@@ -743,104 +713,4 @@ func TestFinalizePreparedBatchExecJoinsErrors(t *testing.T) {
 		require.ErrorIs(t, batchErr.Errors[2].Err, ErrBatchRowFailed,
 			"simplified errors must wrap ErrBatchRowFailed so errors.Is can see them")
 	})
-}
-
-func TestTxCommitDoesNotStopOnNamedBatchCloseError(t *testing.T) {
-	ctx := context.Background()
-
-	conn := mustConnect(t, mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE")))
-	defer func() {
-		err := conn.Close(ctx)
-		require.NoError(t, err)
-	}()
-	skipIfBatchUnsupported(ctx, t, conn)
-
-	checkConn := mustConnect(t, mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE")))
-	defer func() {
-		err := checkConn.Close(ctx)
-		require.NoError(t, err)
-	}()
-
-	table := "tx_commit_named_batch_close_err_test"
-
-	_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(50))")
-	require.NoError(t, err)
-
-	txi, err := conn.Begin(ctx)
-	require.NoError(t, err)
-	tx, ok := txi.(*dbTx)
-	require.True(t, ok)
-
-	_, err = tx.Exec(ctx, "insert into "+table+"(id, note) values (?, ?)", 1, "committed")
-	require.NoError(t, err)
-
-	_, err = tx.Prepare(ctx, "commit_close_err_batch", "batch update "+table+" set note = ? where id = ?")
-	require.NoError(t, err)
-
-	pb := conn.preparedBatches["commit_close_err_batch"]
-	require.NotNil(t, pb)
-	require.NotNil(t, pb.st)
-
-	forceStatementActiveBatch(t, pb.st)
-
-	err = tx.Commit(ctx)
-	require.Error(t, err)
-	require.ErrorContains(t, err, "statement has active batch")
-	require.True(t, tx.closed)
-	require.NotContains(t, conn.preparedBatches, "commit_close_err_batch")
-
-	var note string
-	err = checkConn.QueryRow(ctx, "select note from "+table+" where id = ?", 1).Scan(&note)
-	require.NoError(t, err)
-	require.Equal(t, "committed", note)
-}
-
-func TestTxRollbackDoesNotStopOnNamedBatchCloseError(t *testing.T) {
-	ctx := context.Background()
-
-	conn := mustConnect(t, mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE")))
-	defer func() {
-		err := conn.Close(ctx)
-		require.NoError(t, err)
-	}()
-	skipIfBatchUnsupported(ctx, t, conn)
-
-	checkConn := mustConnect(t, mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE")))
-	defer func() {
-		err := checkConn.Close(ctx)
-		require.NoError(t, err)
-	}()
-
-	table := "tx_rollback_named_batch_close_err_test"
-
-	_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(50))")
-	require.NoError(t, err)
-
-	txi, err := conn.Begin(ctx)
-	require.NoError(t, err)
-	tx, ok := txi.(*dbTx)
-	require.True(t, ok)
-
-	_, err = tx.Exec(ctx, "insert into "+table+"(id, note) values (?, ?)", 1, "rolled back")
-	require.NoError(t, err)
-
-	_, err = tx.Prepare(ctx, "rollback_close_err_batch", "batch update "+table+" set note = ? where id = ?")
-	require.NoError(t, err)
-
-	pb := conn.preparedBatches["rollback_close_err_batch"]
-	require.NotNil(t, pb)
-	require.NotNil(t, pb.st)
-
-	forceStatementActiveBatch(t, pb.st)
-
-	err = tx.Rollback(ctx)
-	require.Error(t, err)
-	require.ErrorContains(t, err, "statement has active batch")
-	require.True(t, tx.closed)
-	require.NotContains(t, conn.preparedBatches, "rollback_close_err_batch")
-
-	var count int
-	err = checkConn.QueryRow(ctx, "select count(*) from "+table).Scan(&count)
-	require.NoError(t, err)
-	require.Zero(t, count)
 }

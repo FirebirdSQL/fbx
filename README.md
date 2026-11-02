@@ -19,7 +19,7 @@ Firebird values, tracing hooks, and modern Firebird features.
 - Firebird `POST_EVENT` subscriptions through `fbevent.Manager`, including one-shot waits, callback listeners, channel subscriptions, and pgx-like notifications
 - Firebird 6 schema-qualified identifiers
 - Prepared statements, statement cache, configurable statement cache size, and configurable query execution mode
-- Batch DML operations through object batches and named batches
+- Batch DML operations through PreparedBatch
 - Positional `?` parameters plus `NamedArgs` query rewriting
 - Transactions with Firebird TPB support, isolation/access mode options, lock timeout, raw TPB mode, helper functions, and pseudo-nested transactions via savepoints
 - Streaming and lazy BLOB support, text and binary BLOB handling, configurable segment buffer size, stream BLOB mode, inline BLOB size, and inline BLOB cache settings

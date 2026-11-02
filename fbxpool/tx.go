@@ -64,22 +64,6 @@ func (tx *Tx) PrepareBatchWithOptions(ctx context.Context, sql string, opts fbx.
 	return tx.t.PrepareBatchWithOptions(ctx, sql, opts)
 }
 
-// Flush sends queued rows for a named batch without executing it.
-func (tx *Tx) Flush(ctx context.Context, name string) error {
-	return tx.t.Flush(ctx, name)
-}
-
-// ExecBatch flushes queued rows for a named batch, executes it, and returns the result.
-func (tx *Tx) ExecBatch(ctx context.Context, name string) (fbx.BatchResult, error) {
-	return tx.t.ExecBatch(ctx, name)
-}
-
-// CancelBatch discards every row queued for a named batch — both the local
-// buffer and any rows already flushed to the server.
-func (tx *Tx) CancelBatch(ctx context.Context, name string) error {
-	return tx.t.CancelBatch(ctx, name)
-}
-
 func (tx *Tx) Exec(ctx context.Context, sql string, arguments ...any) (fbconn.QueryStatus, error) {
 	return tx.t.Exec(ctx, sql, arguments...)
 }
