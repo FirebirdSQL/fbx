@@ -42,6 +42,28 @@ func TestCommandTag(t *testing.T) {
 	}
 }
 
+func TestBatchCompletionAffected(t *testing.T) {
+	tests := []struct {
+		name       string
+		completion *BatchCompletion
+		want       int64
+	}{
+		{"nil completion", nil, 0},
+		{"empty batch", &BatchCompletion{}, 0},
+		{"multiple affected rows per message", &BatchCompletion{TotalRecords: 2, UpdateCounts: []int64{0, 7}}, 7},
+		{"no affected rows", &BatchCompletion{TotalRecords: 2, UpdateCounts: []int64{0, 0}}, 0},
+		{"counts disabled", &BatchCompletion{TotalRecords: 2}, -1},
+		{"incomplete counts", &BatchCompletion{TotalRecords: 2, UpdateCounts: []int64{7}}, -1},
+		{"failed message", &BatchCompletion{TotalRecords: 3, UpdateCounts: []int64{1, fbproto.BatchExecuteFailed, 2}}, 3},
+		{"success without count", &BatchCompletion{TotalRecords: 2, UpdateCounts: []int64{7, fbproto.BatchSuccessNoInfo}}, -1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, tt.completion.Affected())
+		})
+	}
+}
+
 func TestBatchCloseCanceledContextKeepsBatchOpen(t *testing.T) {
 	for _, deadline := range []bool{false, true} {
 		t.Run(fmt.Sprintf("deadline=%t", deadline), func(t *testing.T) {

@@ -54,6 +54,7 @@ type BatchError struct {
 var errBatchExecutionFailed = errors.New("batch execution failed")
 
 type BatchCompletion struct {
+	// TotalRecords is the number of processed batch messages, not affected table rows.
 	TotalRecords uint32
 	UpdateCounts []int64
 	Errors       []BatchError
@@ -63,17 +64,22 @@ func (c *BatchCompletion) HasErrors() bool {
 	return c != nil && len(c.Errors) > 0
 }
 
+// Affected returns the sum of known update counts, excluding failed messages.
+// It returns -1 if counts are missing or unknown, and 0 for an empty or nil completion.
+// The result describes this execution, regardless of a later commit or rollback.
 func (c *BatchCompletion) Affected() int64 {
 	if c == nil {
 		return 0
 	}
-	if len(c.UpdateCounts) == 0 {
-		return int64(c.TotalRecords)
+	if uint64(len(c.UpdateCounts)) != uint64(c.TotalRecords) {
+		return -1
 	}
 	var affected int64
 	for _, n := range c.UpdateCounts {
-		if n > 0 {
+		if n >= 0 {
 			affected += n
+		} else if n != fbproto.BatchExecuteFailed {
+			return -1
 		}
 	}
 	return affected

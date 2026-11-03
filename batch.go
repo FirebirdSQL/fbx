@@ -43,16 +43,17 @@ type BatchOptions struct {
 // what the server processed before the error response. In autocommit mode those
 // successful rows are rolled back by the driver when any per-row error is
 // reported.
+// If execution fails without server completion data, the result is the zero value.
 type BatchResult struct {
-	// Affected is the sum of positive per-row update counts. If the server
-	// returned no per-row counts (RecordCounts disabled), Affected falls back
-	// to the server-reported total record count.
+	// Affected is the number of table rows affected by this execution, excluding
+	// failed batch elements. It is -1 when completion data does not provide all
+	// update counts, and 0 for an empty batch or when no rows were affected.
 	Affected int64
 
 	// UpdateCounts holds per-row update counts in submission order, when
-	// RecordCounts is enabled (the default). Negative values are Firebird
-	// sentinels for failed/skipped rows; use BatchExecutionError.Errors for
-	// the cause.
+	// RecordCounts is enabled (the default). A value of -1 indicates a failed
+	// element (see BatchExecutionError.Errors); -2 indicates success without
+	// a known update count.
 	//
 	// Length: with BatchOptions.ContinueOnError there is one entry per
 	// submitted row; in the default stop-on-first-error mode the slice may

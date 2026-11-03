@@ -632,9 +632,20 @@ func TestPreparedBatchCancelGuards(t *testing.T) {
 }
 
 func TestFinalizePreparedBatchExecJoinsErrors(t *testing.T) {
+	t.Run("unknown affected count is not an execution error", func(t *testing.T) {
+		completion := &fbconn.BatchCompletion{TotalRecords: 2}
+
+		result, err := finalizePreparedBatchExec(completion, nil)
+
+		require.NoError(t, err)
+		require.EqualValues(t, -1, result.Affected)
+		require.Nil(t, result.UpdateCounts)
+	})
+
 	t.Run("completion survives cancellation and retryable cleanup", func(t *testing.T) {
 		rowErr := errors.New("row cancelled")
 		completion := &fbconn.BatchCompletion{
+			TotalRecords: 2,
 			UpdateCounts: []int64{1, -1},
 			Errors:       []fbconn.BatchError{{Row: 1, Err: rowErr}},
 		}
@@ -666,7 +677,8 @@ func TestFinalizePreparedBatchExecJoinsErrors(t *testing.T) {
 		rollbackErr := errors.New("rollback failed")
 
 		completion := &fbconn.BatchCompletion{
-			UpdateCounts: []int64{1},
+			TotalRecords: 3,
+			UpdateCounts: []int64{1, 0, -1},
 			Errors: []fbconn.BatchError{
 				{Row: 2, Err: errors.New("duplicate key")},
 			},
@@ -675,7 +687,7 @@ func TestFinalizePreparedBatchExecJoinsErrors(t *testing.T) {
 		result, err := finalizePreparedBatchExec(completion, rollbackErr)
 
 		require.EqualValues(t, 1, result.Affected)
-		require.Equal(t, []int64{1}, result.UpdateCounts)
+		require.Equal(t, completion.UpdateCounts, result.UpdateCounts)
 		require.ErrorContains(t, err, "batch failed at row 2")
 		require.ErrorContains(t, err, "duplicate key")
 		require.ErrorIs(t, err, rollbackErr)
@@ -687,7 +699,8 @@ func TestFinalizePreparedBatchExecJoinsErrors(t *testing.T) {
 
 	t.Run("multiple batch row errors are exposed", func(t *testing.T) {
 		completion := &fbconn.BatchCompletion{
-			UpdateCounts: []int64{1, -1, 1, -1},
+			TotalRecords: 6,
+			UpdateCounts: []int64{1, -1, 1, -1, 0, -1},
 			Errors: []fbconn.BatchError{
 				{Row: 1, Err: errors.New("first duplicate")},
 				{Row: 3, Err: errors.New("second duplicate")},
@@ -698,7 +711,7 @@ func TestFinalizePreparedBatchExecJoinsErrors(t *testing.T) {
 		result, err := finalizePreparedBatchExec(completion, nil)
 
 		require.EqualValues(t, 2, result.Affected)
-		require.Equal(t, []int64{1, -1, 1, -1}, result.UpdateCounts)
+		require.Equal(t, completion.UpdateCounts, result.UpdateCounts)
 		require.ErrorContains(t, err, "batch failed at row 1")
 		require.ErrorContains(t, err, "2 more batch errors")
 
