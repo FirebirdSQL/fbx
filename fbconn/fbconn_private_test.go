@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"net"
 	"testing"
 	"time"
 
@@ -154,18 +155,98 @@ func TestBatchSyncResponses(t *testing.T) {
 }
 
 func TestBatchWriteFailureDisallowsRetry(t *testing.T) {
-	b, transport := newBatchProtocolTest(t, bytes.NewReader(nil))
-	transport.writeErr = &fbconnError{msg: "write failed", safeToRetry: true}
+	t.Run("write error", func(t *testing.T) {
+		b, transport := newBatchProtocolTest(t, bytes.NewReader(nil))
+		transport.writeErr = &fbconnError{msg: "write failed", safeToRetry: true}
 
-	err := b.Send(context.Background(), [][]byte{{0, 0, 0, 1}})
+		err := b.Send(context.Background(), [][]byte{{0, 0, 0, 1}})
 
-	require.ErrorIs(t, err, transport.writeErr)
+		require.ErrorIs(t, err, transport.writeErr)
+		require.False(t, SafeToRetry(err))
+		require.True(t, b.st.conn.IsClosed())
+		b.st.conn.writeMu.Lock()
+		failed := b.st.conn.writeFailed
+		b.st.conn.writeMu.Unlock()
+		require.True(t, failed)
+	})
+
+	t.Run("canceled during write", func(t *testing.T) {
+		client, server := net.Pipe()
+		defer func() { _ = server.Close() }()
+		conn := newDetachTestConn(client)
+		conn.protocolVersion = fbproto.PROTOCOL_VERSION17
+		t.Cleanup(func() {
+			conn.asyncClose()
+			waitCleanupDone(t, conn)
+		})
+		st := &Statement{conn: conn, Description: &StatementDescription{StatementHandle: 42}}
+		b := st.NewBatch(BatchConfig{})
+		b.state = batchStateCreated
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		done := make(chan error, 1)
+		go func() { done <- b.Send(ctx, [][]byte{{0, 0, 0, 1}, {0, 0, 0, 2}}) }()
+
+		// Read the header and first row, leaving the second row's write blocked.
+		require.NoError(t, server.SetReadDeadline(time.Now().Add(3*time.Second)))
+		r := fbproto.NewXDRReader(server)
+		for _, want := range []int{fbproto.Op_batch_msg, 42, 2, 1} {
+			got, err := r.ReadInt32()
+			require.NoError(t, err)
+			require.Equal(t, want, got)
+		}
+		cancel()
+
+		select {
+		case err := <-done:
+			require.ErrorIs(t, err, context.Canceled)
+			require.False(t, SafeToRetry(err))
+		case <-time.After(3 * time.Second):
+			t.Fatal("batch write did not stop after cancellation")
+		}
+		require.True(t, conn.IsClosed())
+		conn.writeMu.Lock()
+		failed := conn.writeFailed
+		conn.writeMu.Unlock()
+		require.True(t, failed)
+	})
+}
+
+func TestBatchExecuteLostCommitReplyPreservesCompletion(t *testing.T) {
+	var input bytes.Buffer
+	w := fbproto.NewXDRWriter(&input)
+	// Execution succeeded for both rows, but there is no reply to the following commit.
+	for _, n := range []int{fbproto.Op_batch_cs, 42, 2, 2, 0, 0, 1, 1} {
+		require.NoError(t, w.WriteInt32(n))
+	}
+	b, transport := newBatchProtocolTest(t, &input)
+	b.bufferState = batchBufferPending
+	conn := b.st.conn
+	conn.config.Autocommit = true
+	tx := &FBTransaction{Connection: conn, Handle: 42}
+	conn.internalTransaction = tx
+	conn.activeTransactions = map[*FBTransaction]struct{}{tx: {}}
+
+	completion, err := b.Execute(context.Background(), nil)
+
+	var fbErr *FbError
+	require.ErrorAs(t, err, &fbErr)
+	require.Equal(t, "08006", fbErr.Code)
 	require.False(t, SafeToRetry(err))
-	require.True(t, b.st.conn.IsClosed())
-	b.st.conn.writeMu.Lock()
-	failed := b.st.conn.writeFailed
-	b.st.conn.writeMu.Unlock()
-	require.True(t, failed)
+	require.True(t, conn.IsClosed())
+	require.NotNil(t, completion)
+	require.EqualValues(t, 2, completion.TotalRecords)
+	require.Equal(t, []int64{1, 1}, completion.UpdateCounts)
+	require.Empty(t, completion.Errors)
+	require.False(t, b.HasPending(), "the completion confirms that the server consumed the queue")
+
+	r := fbproto.NewXDRReader(&transport.written)
+	for _, want := range []int{fbproto.Op_batch_exec, 42, 42, fbproto.Op_commit, 42} {
+		got, err := r.ReadInt32()
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+	}
+	require.Zero(t, transport.written.Len(), "do not send rollback after losing the connection")
 }
 
 func TestBatchAcknowledgementSurvivesSyncError(t *testing.T) {
