@@ -426,6 +426,10 @@ func (c *Conn) PrepareBatchWithOptions(ctx context.Context, sql string, opts Bat
 }
 
 func (c *Conn) prepareBatchTx(ctx context.Context, tx *dbTx, sql string, opts BatchOptions) (*PreparedBatch, error) {
+	cfg, err := normalizeBatchOptions(opts)
+	if err != nil {
+		return nil, err
+	}
 	st, err := c.prepareBatchStatement(ctx, tx, sql)
 	if err == nil {
 		err = validateBatchStatement(st.Description)
@@ -447,7 +451,7 @@ func (c *Conn) prepareBatchTx(ctx context.Context, tx *dbTx, sql string, opts Ba
 		conn:     c,
 		tx:       tx,
 		st:       st,
-		batchCfg: normalizeBatchOptions(opts),
+		batchCfg: cfg,
 	}, nil
 }
 

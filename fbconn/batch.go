@@ -4,24 +4,40 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/firebirdsql/fbx/fbproto"
 	"github.com/firebirdsql/fbx/internal/operationerror"
 )
 
+// BatchConfig configures a server batch created by [Statement.NewBatch].
 type BatchConfig struct {
-	MultiError   bool
+	// MultiError continues execution after per-message errors.
+	MultiError bool
+	// RecordCounts requests affected row counts for each message.
 	RecordCounts bool
+	// DetailedErrs requests a detailed error limit: -1 uses the server default,
+	// 0 disables details. Values up to math.MaxInt32 are accepted; the server may cap them.
 	DetailedErrs int
-	BufferBytes  int
-	BlobPolicy   byte
+	// BufferBytes requests a server buffer size: -1 uses the server default,
+	// 0 requests the server maximum. Positive values up to math.MaxInt32 may be capped by the server.
+	BufferBytes int
+	// BlobPolicy is one of fbproto.BatchBlobNone, BatchBlobIDEngine,
+	// BatchBlobIDUser, or BatchBlobStream. Zero preserves BatchBlobNone.
+	BlobPolicy byte
 }
 
-func (cfg BatchConfig) normalize() BatchConfig {
-	if cfg.BlobPolicy == 0 {
-		cfg.BlobPolicy = fbproto.BatchBlobIDUser
+func (cfg BatchConfig) validate() error {
+	if cfg.BufferBytes < -1 || cfg.BufferBytes > math.MaxInt32 {
+		return fmt.Errorf("batch buffer size must be between -1 and %d (got %d)", math.MaxInt32, cfg.BufferBytes)
 	}
-	return cfg
+	if cfg.DetailedErrs < -1 || cfg.DetailedErrs > math.MaxInt32 {
+		return fmt.Errorf("batch detailed error limit must be between -1 and %d (got %d)", math.MaxInt32, cfg.DetailedErrs)
+	}
+	if cfg.BlobPolicy > fbproto.BatchBlobStream {
+		return fmt.Errorf("invalid batch blob policy %d", cfg.BlobPolicy)
+	}
+	return nil
 }
 
 func (cfg BatchConfig) writeParameterBuffer(pb *fbproto.BatchPBWriter) {

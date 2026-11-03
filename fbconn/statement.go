@@ -127,15 +127,20 @@ func (st *Statement) SetInlineBlobSize(size int) {
 
 // NewBatch creates a local batch for st without performing network I/O.
 // [Batch.Create], also called by Send and Execute, creates the server batch.
-// A statement may have only one open batch; initialization errors are reported by Create.
+// A statement may have only one open batch; configuration and initialization
+// errors are reported by Create without sending a request.
 func (st *Statement) NewBatch(cfg BatchConfig) *Batch {
-	b := &Batch{st: st, cfg: cfg.normalize()}
+	b := &Batch{st: st, cfg: cfg}
 	if st.closed {
 		b.err = fmt.Errorf("statement is closed")
 		return b
 	}
 	if st.activeBatch != nil && !st.activeBatch.isClosed() {
 		b.err = fmt.Errorf("batch is already opened for this statement")
+		return b
+	}
+	if err := cfg.validate(); err != nil {
+		b.err = err
 		return b
 	}
 	st.activeBatch = b

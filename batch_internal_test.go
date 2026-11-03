@@ -3,7 +3,9 @@ package fbx
 import (
 	"context"
 	"errors"
+	"math"
 	"os"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -30,6 +32,57 @@ func (tracer cancelAfterBatchPrepare) TracePrepareStart(ctx context.Context, _ *
 
 func (tracer cancelAfterBatchPrepare) TracePrepareEnd(context.Context, *Conn, TracePrepareEndData) {
 	tracer.cancel()
+}
+
+func TestPrepareBatchRejectsInvalidOptionsBeforePrepare(t *testing.T) {
+	type testCase struct {
+		name string
+		opts BatchOptions
+		err  string
+	}
+	tests := []testCase{
+		{"negative buffer", BatchOptions{BufferBytes: -1}, "batch buffer size"},
+		{"negative details", BatchOptions{DetailedErrors: -1}, "batch detailed error limit"},
+	}
+	if strconv.IntSize == 64 {
+		overflow := int64(math.MaxInt32) + 1
+		tests = append(tests,
+			testCase{"buffer overflow", BatchOptions{BufferBytes: int(overflow)}, "batch buffer size"},
+			testCase{"details overflow", BatchOptions{DetailedErrors: int(overflow)}, "batch detailed error limit"},
+		)
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			conn := &Conn{}
+			tx := &dbTx{conn: conn}
+			for _, prepare := range []func(context.Context, string, BatchOptions) (*PreparedBatch, error){
+				conn.PrepareBatchWithOptions, tx.PrepareBatchWithOptions,
+			} {
+				batch, err := prepare(context.Background(), "insert into t values (?)", tt.opts)
+				require.ErrorContains(t, err, tt.err)
+				require.Nil(t, batch)
+			}
+		})
+	}
+}
+
+func TestNormalizeBatchOptions(t *testing.T) {
+	tests := []struct {
+		name string
+		opts BatchOptions
+		want fbconn.BatchConfig
+	}{
+		{"defaults", BatchOptions{}, fbconn.BatchConfig{RecordCounts: true, BufferBytes: -1, DetailedErrs: 1}},
+		{"multi-error defaults", BatchOptions{ContinueOnError: true}, fbconn.BatchConfig{MultiError: true, RecordCounts: true, BufferBytes: -1, DetailedErrs: -1}},
+		{"maximum wire values", BatchOptions{BufferBytes: math.MaxInt32, DetailedErrors: math.MaxInt32, ContinueOnError: true}, fbconn.BatchConfig{MultiError: true, RecordCounts: true, BufferBytes: math.MaxInt32, DetailedErrs: math.MaxInt32}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := normalizeBatchOptions(tt.opts)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, cfg)
+		})
+	}
 }
 
 func TestPrepareBatchWithOptionsPropagatesConfig(t *testing.T) {

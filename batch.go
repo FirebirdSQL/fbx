@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/firebirdsql/fbx/fbconn"
 	"github.com/firebirdsql/fbx/internal/operationerror"
@@ -15,7 +16,8 @@ import (
 // Zero values keep the driver defaults.
 type BatchOptions struct {
 	// BufferBytes requests the server-side batch buffer size in bytes.
-	// Zero uses the server default.
+	// Zero uses the server default. Positive values up to math.MaxInt32 are
+	// accepted, but the server may cap the requested size. Negative values are invalid.
 	BufferBytes int
 
 	// ContinueOnError requests Firebird multi-error mode. When enabled, the
@@ -34,6 +36,8 @@ type BatchOptions struct {
 	//
 	// Zero keeps the driver default: one detailed error in stop-on-first-error
 	// mode, or the server default when ContinueOnError is enabled.
+	// Positive values up to math.MaxInt32 are accepted, but the server may cap
+	// the requested limit. Negative values are invalid.
 	DetailedErrors int
 }
 
@@ -247,7 +251,13 @@ func defaultPreparedBatchConfig() fbconn.BatchConfig {
 	}
 }
 
-func normalizeBatchOptions(opts BatchOptions) fbconn.BatchConfig {
+func normalizeBatchOptions(opts BatchOptions) (fbconn.BatchConfig, error) {
+	if opts.BufferBytes < 0 || opts.BufferBytes > math.MaxInt32 {
+		return fbconn.BatchConfig{}, fmt.Errorf("batch buffer size must be between 0 and %d (got %d)", math.MaxInt32, opts.BufferBytes)
+	}
+	if opts.DetailedErrors < 0 || opts.DetailedErrors > math.MaxInt32 {
+		return fbconn.BatchConfig{}, fmt.Errorf("batch detailed error limit must be between 0 and %d (got %d)", math.MaxInt32, opts.DetailedErrors)
+	}
 	cfg := defaultPreparedBatchConfig()
 	if opts.BufferBytes > 0 {
 		cfg.BufferBytes = opts.BufferBytes
@@ -259,7 +269,7 @@ func normalizeBatchOptions(opts BatchOptions) fbconn.BatchConfig {
 	if opts.DetailedErrors > 0 {
 		cfg.DetailedErrs = opts.DetailedErrors
 	}
-	return cfg
+	return cfg, nil
 }
 
 func (b *PreparedBatch) checkOpen() error {

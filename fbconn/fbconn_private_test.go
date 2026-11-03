@@ -6,7 +6,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 	"net"
+	"strconv"
 	"testing"
 	"time"
 
@@ -39,6 +41,85 @@ func TestCommandTag(t *testing.T) {
 		assert.Equalf(t, tt.isUpdate, ct.Update(), "%d. %v", i, tt.queryStatus)
 		assert.Equalf(t, tt.isDelete, ct.Delete(), "%d. %v", i, tt.queryStatus)
 		assert.Equalf(t, tt.isSelect, ct.Select(), "%d. %v", i, tt.queryStatus)
+	}
+}
+
+func TestBatchInvalidConfigDoesNotClaimStatement(t *testing.T) {
+	type testCase struct {
+		name string
+		cfg  BatchConfig
+		err  string
+	}
+	tests := []testCase{
+		{"negative buffer", BatchConfig{BufferBytes: -2}, "batch buffer size"},
+		{"negative details", BatchConfig{DetailedErrs: -2}, "batch detailed error limit"},
+		{"invalid blob policy", BatchConfig{BlobPolicy: 4}, "batch blob policy"},
+	}
+	if strconv.IntSize == 64 {
+		overflow := int64(math.MaxInt32) + 1
+		tests = append(tests,
+			testCase{"buffer overflow", BatchConfig{BufferBytes: int(overflow)}, "batch buffer size"},
+			testCase{"details overflow", BatchConfig{DetailedErrs: int(overflow)}, "batch detailed error limit"},
+		)
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := &Statement{}
+			b := st.NewBatch(tt.cfg)
+			ctx := context.Background()
+			require.ErrorContains(t, b.Create(ctx), tt.err)
+			require.ErrorContains(t, b.Send(ctx, [][]byte{{0, 0, 0, 1}}), tt.err)
+			completion, err := b.Execute(ctx, nil)
+			require.ErrorContains(t, err, tt.err)
+			require.Nil(t, completion)
+			require.Nil(t, st.activeBatch)
+
+			valid := st.NewBatch(BatchConfig{})
+			require.NoError(t, valid.err)
+			require.NoError(t, b.Close(ctx))
+			require.Same(t, valid, st.activeBatch)
+		})
+	}
+}
+
+func TestBatchConfigParameterBuffer(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  BatchConfig
+		want map[byte][]byte
+	}{
+		{"server defaults", BatchConfig{BufferBytes: -1, DetailedErrs: -1}, map[byte][]byte{
+			fbproto.BatchTagBlobPolicy: {0},
+		}},
+		{"explicit zeros", BatchConfig{}, map[byte][]byte{
+			fbproto.BatchTagBufferBytes:    {0, 0, 0, 0},
+			fbproto.BatchTagDetailedErrors: {0, 0, 0, 0},
+			fbproto.BatchTagBlobPolicy:     {0},
+		}},
+		{"maximum wire values", BatchConfig{MultiError: true, RecordCounts: true, BufferBytes: math.MaxInt32, DetailedErrs: math.MaxInt32, BlobPolicy: fbproto.BatchBlobStream}, map[byte][]byte{
+			fbproto.BatchTagMultiError:     {1, 0, 0, 0},
+			fbproto.BatchTagRecordCounts:   {1, 0, 0, 0},
+			fbproto.BatchTagBufferBytes:    {0xff, 0xff, 0xff, 0x7f},
+			fbproto.BatchTagDetailedErrors: {0xff, 0xff, 0xff, 0x7f},
+			fbproto.BatchTagBlobPolicy:     {fbproto.BatchBlobStream},
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b := (&Statement{}).NewBatch(tt.cfg)
+			require.NoError(t, b.err)
+			r := fbproto.NewXPBReader(b.cfg.parameterBuffer())
+			ok, version := r.Next()
+			require.True(t, ok)
+			require.EqualValues(t, fbproto.BatchVersion1, version)
+			got := make(map[byte][]byte)
+			for ok, tag := r.Next(); ok; ok, tag = r.Next() {
+				value, ok := r.GetBytes(int(r.GetInt32()))
+				require.True(t, ok)
+				got[tag] = value
+			}
+			require.Equal(t, tt.want, got)
+		})
 	}
 }
 
