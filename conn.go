@@ -687,6 +687,9 @@ func (c *Conn) Config() *ConnConfig {
 
 // Exec executes sql inside internal transaction. sql can be either a prepared statement name or an SQL string. arguments should be referenced
 // positionally from the sql string as ?.
+// Pass one [BatchRows] argument to execute a complete batch with default options.
+// No rows remain queued after Exec returns. In autocommit mode, per-row errors
+// roll back the batch; an explicit transaction remains under caller control.
 func (c *Conn) Exec(ctx context.Context, sql string, arguments ...any) (fbconn.QueryStatus, error) {
 	return c.execTx(ctx, nil, sql, arguments...)
 }
@@ -739,6 +742,12 @@ optionLoop:
 			return fbconn.QueryStatus{}, fmt.Errorf("rewrite query failed: %w", err)
 		}
 		invalidateSQL = sql
+	}
+
+	if len(arguments) == 1 {
+		if rows, ok := arguments[0].(BatchRows); ok {
+			return c.execBatchRows(ctx, tx, sql, mode, rows)
+		}
 	}
 
 	defer func() {
@@ -970,6 +979,13 @@ optionLoop:
 
 	c.eqb.reset()
 	rows := c.getRows(ctx, sql, args)
+
+	if len(args) == 1 {
+		if _, ok := args[0].(BatchRows); ok {
+			rows.fatal(fmt.Errorf("BatchRows must be executed with Exec"))
+			return rows, rows.Err()
+		}
+	}
 
 	st, temporary, err := c.resolveStatement(ctx, tx, sql, mode)
 	if err != nil {

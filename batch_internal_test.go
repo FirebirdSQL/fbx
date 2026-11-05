@@ -34,6 +34,29 @@ func (tracer cancelAfterBatchPrepare) TracePrepareEnd(context.Context, *Conn, Tr
 	tracer.cancel()
 }
 
+func TestExecBatchRowsCanceledAfterPrepare(t *testing.T) {
+	for _, mode := range []QueryExecMode{QueryExecModeCacheStatement, QueryExecModeExec} {
+		t.Run(mode.String(), func(t *testing.T) {
+			ctx := context.Background()
+			config := mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE"))
+			config.DefaultQueryExecMode = mode
+			conn := mustConnect(t, config)
+			defer func() { require.NoError(t, conn.Close(ctx)) }()
+			skipIfBatchUnsupported(ctx, t, conn)
+			_, err := conn.Exec(ctx, "recreate table exec_batch_cancel_test (id integer)")
+			require.NoError(t, err)
+
+			canceledCtx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			conn.prepareTracer = cancelAfterBatchPrepare{cancel: cancel}
+			_, err = conn.Exec(canceledCtx, "insert into exec_batch_cancel_test values (?)", BatchRows{{1}})
+			require.ErrorIs(t, err, context.Canceled)
+			require.False(t, conn.IsClosed())
+			require.False(t, conn.fbConn.ActiveTx())
+		})
+	}
+}
+
 func TestPrepareBatchRejectsInvalidOptionsBeforePrepare(t *testing.T) {
 	type testCase struct {
 		name string
@@ -309,9 +332,12 @@ func TestPreparedBatchPreservesImplicitTransaction(t *testing.T) {
 	require.EqualValues(t, 1, result.Affected)
 	require.NoError(t, pb.Close(ctx))
 	require.True(t, conn.fbConn.ActiveTx())
+	_, err = conn.Exec(ctx, "insert into "+table+" values (?)", BatchRows{{3}})
+	require.NoError(t, err)
+	require.True(t, conn.fbConn.ActiveTx(), "BatchRows must preserve the manually managed transaction")
 	var count int
 	require.NoError(t, conn.QueryRow(ctx, "select count(*) from "+table).Scan(&count))
-	require.Equal(t, 2, count, "PrepareBatch and Close must preserve earlier uncommitted work")
+	require.Equal(t, 3, count, "both batch APIs must preserve earlier uncommitted work")
 	require.NoError(t, conn.Rollback(ctx))
 	require.False(t, conn.fbConn.ActiveTx())
 	require.NoError(t, conn.QueryRow(ctx, "select count(*) from "+table).Scan(&count))

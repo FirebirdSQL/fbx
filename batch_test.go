@@ -8,8 +8,72 @@ import (
 
 	"github.com/firebirdsql/fbx"
 	"github.com/firebirdsql/fbx/fbconn"
+	"github.com/firebirdsql/fbx/fbxtest"
 	"github.com/stretchr/testify/require"
 )
+
+func TestExecBatchRows(t *testing.T) {
+	ctx := context.Background()
+	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+		skipIfBatchUnsupported(ctx, t, conn)
+		table := batchTestTableName(t, "fbx_exec_rows")
+		_, err := conn.Exec(ctx, "recreate table "+table+" (id integer primary key, note varchar(30))")
+		require.NoError(t, err)
+		query := "insert into " + table + " (id, note) values (?, ?)"
+
+		status, err := conn.Exec(ctx, query, fbx.BatchRows{{1, "one"}, {2, "two"}})
+		require.NoError(t, err)
+		require.True(t, status.Insert())
+		require.EqualValues(t, 2, status.RowsAffected())
+		require.False(t, conn.FbConn().ActiveTx())
+
+		_, err = conn.Exec(ctx, query, 3, "ordinary")
+		require.NoError(t, err)
+		_, err = conn.Prepare(ctx, "exec_rows", query)
+		require.NoError(t, err)
+		status, err = conn.Exec(ctx, "exec_rows", fbx.BatchRows{{4, "named"}})
+		require.NoError(t, err)
+		require.EqualValues(t, 1, status.RowsAffected())
+		require.NoError(t, conn.Deallocate(ctx, "exec_rows"))
+
+		status, err = conn.Exec(ctx, query, fbx.BatchRows(nil))
+		require.NoError(t, err)
+		require.Zero(t, status.RowsAffected())
+		require.False(t, conn.FbConn().ActiveTx())
+		_, err = conn.Exec(ctx, query, fbx.BatchRows{{5, "valid"}, {6}})
+		require.ErrorContains(t, err, "batch row 1")
+		require.False(t, conn.FbConn().ActiveTx())
+
+		_, err = conn.Exec(ctx, query, fbx.BatchRows{{5, "rolled back"}, {1, "duplicate"}})
+		var batchErr *fbx.BatchExecutionError
+		require.ErrorAs(t, err, &batchErr)
+		require.Equal(t, 1, batchErr.Errors[0].Row)
+		require.False(t, fbconn.SafeToRetry(err))
+		require.False(t, conn.FbConn().ActiveTx())
+		var count int
+		require.NoError(t, conn.QueryRow(ctx, "select count(*) from "+table).Scan(&count))
+		require.Equal(t, 4, count)
+
+		_, err = conn.Query(ctx, query, fbx.BatchRows{{5, "invalid API"}})
+		require.ErrorContains(t, err, "BatchRows must be executed with Exec")
+		require.False(t, conn.FbConn().ActiveTx())
+
+		tx, err := conn.Begin(ctx)
+		require.NoError(t, err)
+		defer func() { _ = tx.Rollback(ctx) }()
+		_, err = tx.Exec(ctx, query, fbx.BatchRows{{5, "first"}})
+		require.NoError(t, err)
+		_, err = tx.Exec(ctx, query, fbx.BatchRows{{6, "second"}})
+		require.NoError(t, err)
+		_, err = tx.Exec(ctx, query, fbx.BatchRows{{1, "duplicate"}})
+		require.ErrorAs(t, err, &batchErr)
+		require.NoError(t, tx.QueryRow(ctx, "select count(*) from "+table).Scan(&count))
+		require.Equal(t, 6, count)
+		require.NoError(t, tx.Rollback(ctx))
+		require.NoError(t, conn.QueryRow(ctx, "select count(*) from "+table).Scan(&count))
+		require.Equal(t, 4, count)
+	})
+}
 
 func TestTxPrepareBatchUpdateDeleteCommit(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)

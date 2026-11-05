@@ -10,6 +10,69 @@ import (
 	"github.com/firebirdsql/fbx/internal/operationerror"
 )
 
+// BatchRows contains parameter sets for one batch execution through [Conn.Exec]
+// or [Tx.Exec]. Pass it as a single argument, without expanding it. Each row
+// must contain one value per SQL parameter. An empty batch affects no rows.
+//
+// Exec uses the default [BatchOptions]. All encoded rows must fit in the server
+// batch buffer; executions are not split into chunks. BLOB and ARRAY parameters
+// are not supported. Use [PreparedBatch] for configurable, reusable batches.
+type BatchRows [][]any
+
+func (c *Conn) execBatchRows(ctx context.Context, tx *dbTx, sql string, mode QueryExecMode, rows BatchRows) (status fbconn.QueryStatus, err error) {
+	if err := ctx.Err(); err != nil {
+		return status, err
+	}
+	b := PreparedBatch{conn: c, tx: tx, batchCfg: defaultPreparedBatchConfig()}
+	var temporary bool
+	// database/sql calls Conn.Exec even inside sql.Tx. Never finish that
+	// transaction, or an implicit transaction managed with Autocommit disabled.
+	releaseInternalTx := tx == nil && c.config.Autocommit && !c.fbConn.ActiveExplicitTx()
+	defer func() {
+		cleanupCtx, cancel := cleanupContext(ctx)
+		defer cancel()
+		cleanupErr := b.releaseWireResources(cleanupCtx)
+		if cleanupErr == nil && temporary {
+			cleanupErr = b.releaseStoredStatement(cleanupCtx)
+		}
+		// Prepare may have started a transaction even if encoding failed or
+		// the batch was empty. Execute already finishes it on its normal path.
+		if releaseInternalTx && !c.IsClosed() {
+			rbErr := c.Rollback(cleanupCtx)
+			if rbErr != nil && !errors.Is(rbErr, fbconn.ErrTransactionClosed) {
+				cleanupErr = errors.Join(cleanupErr, fmt.Errorf("rollback internal tx: %w", rbErr))
+			}
+		}
+		if cleanupErr != nil && !c.IsClosed() {
+			c.die()
+		}
+		err = operationerror.Join(err, cleanupErr)
+		if err != nil && b.st != nil && c.statementCache != nil {
+			c.statementCache.Invalidate(b.st.Description.SQL)
+		}
+	}()
+
+	b.st, temporary, err = c.resolveStatement(ctx, tx, sql, mode)
+	if err != nil {
+		return status, err
+	}
+	if err := validateBatchStatement(b.st.Description); err != nil {
+		return status, err
+	}
+	statementType := b.st.Description.GetQueryType()
+	status = fbconn.NewQueryStatus(statementType, 0)
+	for i, row := range rows {
+		if err := ctx.Err(); err != nil {
+			return status, err
+		}
+		if err := b.Add(row...); err != nil {
+			return status, fmt.Errorf("batch row %d: %w", i, err)
+		}
+	}
+	result, err := b.Exec(ctx)
+	return fbconn.NewQueryStatus(statementType, result.Affected), err
+}
+
 // BatchOptions configures batches created with [Conn.PrepareBatchWithOptions]
 // or [Tx.PrepareBatchWithOptions].
 //

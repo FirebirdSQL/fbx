@@ -18,6 +18,19 @@ fbx exposes Firebird native batch DML for INSERT, UPDATE, and DELETE statements
 with parameters and without result sets. Blob and array parameters are rejected
 by the batch API.
 
+Pass one [BatchRows] argument to [Conn.Exec] or [Tx.Exec] to execute a complete
+batch with default options. This also works through database/sql ExecContext,
+including prepared statements.
+
+	_, err := conn.Exec(ctx, "insert into t(id, note) values (?, ?)",
+		BatchRows{{1, "one"}, {2, "two"}})
+
+Each call sends and executes the whole set, then releases its server batch.
+No rows remain queued for another call. Encoded rows must fit in the server
+batch buffer; the driver does not split executions into chunks. For larger
+loads, submit portions in an explicit transaction and commit or roll back
+the transaction yourself. Batches use the same transaction rules described below.
+
 Use [Conn.PrepareBatch] or [Tx.PrepareBatch] to create a batch object, or their
 PrepareBatchWithOptions variants to configure it. Rows are added with
 [PreparedBatch.Add]. [PreparedBatch.Flush] sends rows to the server-side batch
