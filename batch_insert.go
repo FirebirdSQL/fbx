@@ -3,8 +3,9 @@ package fbx
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
+
+	"github.com/firebirdsql/fbx/internal/operationerror"
 )
 
 const defaultBatchInsertPendingSize = 128 * 1024
@@ -118,6 +119,13 @@ type batchInsert struct {
 }
 
 func (b *batchInsert) run(ctx context.Context) (affected int64, err error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	if b.conn.config.BatchInsertPendingSize < 0 {
+		return 0, fmt.Errorf("batch insert pending size must not be negative")
+	}
+
 	quotedTableName := b.tableName.Sanitize()
 	cbuf := &bytes.Buffer{}
 	pbuf := &bytes.Buffer{}
@@ -132,19 +140,39 @@ func (b *batchInsert) run(ctx context.Context) (affected int64, err error) {
 	quotedColumnNames := cbuf.String()
 	placeholders := pbuf.String()
 
-	batch, err := b.conn.PrepareBatchWithOptions(ctx, fmt.Sprintf("insert into %s (%s) values (%s)", quotedTableName, quotedColumnNames, placeholders), BatchOptions{ContinueOnError: false})
+	batch, err := b.conn.PrepareBatch(ctx, fmt.Sprintf("insert into %s (%s) values (%s)", quotedTableName, quotedColumnNames, placeholders))
 	if err != nil {
 		return 0, err
 	}
+	sourceRead := false
 	defer func() {
-		if closeErr := batch.Close(ctx); closeErr != nil {
-			err = errors.Join(err, closeErr)
+		cleanupCtx, cancel := cleanupContext(ctx)
+		defer cancel()
+		cleanupErr := batch.Close(cleanupCtx)
+		if cleanupErr != nil && !b.conn.IsClosed() {
+			b.conn.die()
+		}
+		err = operationerror.Join(err, cleanupErr)
+		if sourceRead {
+			// Even a failed Next may advance the source. Repeating the call
+			// with the same source cannot replay the original rows reliably.
+			err = operationerror.WithRetry(err, false)
 		}
 	}()
 
-	for b.rowSrc.Next() {
+	for {
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
+		sourceRead = true
+		if !b.rowSrc.Next() {
+			break
+		}
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
 		values, err := b.rowSrc.Values()
-		if err != nil {
+		if err := operationerror.Join(err, ctx.Err()); err != nil {
 			return 0, err
 		}
 		err = batch.Add(values...)
@@ -159,22 +187,30 @@ func (b *batchInsert) run(ctx context.Context) (affected int64, err error) {
 		}
 	}
 
-	if b.rowSrc.Err() != nil {
-		return 0, b.rowSrc.Err()
-	}
-
-	br, err := batch.Exec(ctx)
-	if err != nil {
+	if err := operationerror.Join(b.rowSrc.Err(), ctx.Err()); err != nil {
 		return 0, err
 	}
 
-	return br.Affected, nil
+	br, err := batch.Exec(ctx)
+	return br.Affected, err
 }
 
 // BatchInsert uses Firebird native batch operations to perform bulk insertion.
 //
-// BatchInsert returns the number of inserted rows. It uses quoted table and
-// column identifiers, so identifiers are case-sensitive. Use upper-case
+// BatchInsert sends rows as the source is read and executes them once, after
+// the source is exhausted. All encoded rows must fit in the server batch buffer;
+// flushing only limits client-side buffering and does not execute rows.
+//
+// The returned count comes from the server completion, or is zero if no
+// completion was received. A count of -1 means the count is unknown. On error,
+// even a positive count does not mean the rows were committed: in autocommit
+// mode, a row error rolls back the entire execution.
+//
+// Errors after reading starts are not safe to retry with the same source.
+// Context cancellation is checked between source calls; blocking source methods
+// must handle context cancellation themselves.
+//
+// Table and column identifiers are quoted and case-sensitive. Use upper-case
 // identifiers for objects created with regular, unquoted SQL identifiers.
 //
 // See [BatchInsertRows], [BatchInsertFunc], and [BatchInsertSlice].

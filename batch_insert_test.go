@@ -2,10 +2,8 @@ package fbx_test
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
-	"math/rand"
 	"os"
 	"reflect"
 	"testing"
@@ -274,198 +272,32 @@ func (cfs *clientFailSource) Err() error {
 }
 
 func TestConnBatchInsertFailServerSideMidway(t *testing.T) {
-	t.Skip("need way to abort during execution")
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
 	config := mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE"))
-	config.BatchInsertPendingSize = 17
+	config.BatchInsertPendingSize = 0 // Flush each row, execute only at the end.
 	conn := mustConnect(t, config)
 	defer closeConn(t, conn)
 	skipIfBatchUnsupported(ctx, t, conn)
 
-	mustExec(t, conn, `recreate table foo(
-		a int,
-		b varchar(10) not null
-	)`)
+	mustExec(t, conn, "recreate table batch_insert_failure (id integer not null)")
+	inputRows := [][]any{{int32(1)}, {nil}, {int32(3)}}
+	read := 0
+	source := fbx.BatchInsertSlice(len(inputRows), func(i int) ([]any, error) {
+		read++
+		return inputRows[i], nil
+	})
+	count, err := conn.BatchInsert(ctx, fbx.Identifier{"BATCH_INSERT_FAILURE"}, []string{"ID"}, source)
+	var batchErr *fbx.BatchExecutionError
+	require.ErrorAs(t, err, &batchErr)
+	require.False(t, fbconn.SafeToRetry(err))
+	require.Equal(t, len(inputRows), read)
+	require.EqualValues(t, 1, count) // Completed before the error, then rolled back.
 
-	inputRows := [][]any{
-		{int32(1), "abc"},
-		{int32(2), nil},
-		{int32(3), "def"},
-	}
-	count, err := conn.BatchInsert(ctx, fbx.Identifier{"FOO"}, []string{"A", "B"}, fbx.BatchInsertRows(inputRows))
-	if err == nil {
-		t.Errorf("Expected BatchInsert return error, but it did not")
-	}
-	var batchExecutionError *fbconn.FbError
-	if !errors.As(err, &batchExecutionError) {
-		t.Errorf("Expected BatchInsert return fbconn.FbError, but instead it returned: %v", err)
-	}
-	if count != 0 {
-		t.Errorf("Expected BatchInsert to return 0 inserted rows, but got %d", count)
-	}
-
-	rows, err := conn.Query(ctx, "select * from foo")
-	if err != nil {
-		t.Errorf("Unexpected error for Query: %v", err)
-	}
-
-	var outputRows [][]any
-	for rows.Next() {
-		row, err := rows.Values()
-		if err != nil {
-			t.Errorf("Unexpected error for rows.Values(): %v", err)
-		}
-		outputRows = append(outputRows, row)
-	}
-
-	if rows.Err() != nil {
-		t.Errorf("Unexpected error for rows.Err(): %v", rows.Err())
-	}
-
-	if len(outputRows) != 0 {
-		t.Errorf("Expected 0 rows, but got %v", outputRows)
-	}
-
-	ensureConnValid(t, conn)
-}
-
-type failSource struct {
-	count int
-}
-
-func (fs *failSource) Next() bool {
-	time.Sleep(time.Millisecond * 100)
-	fs.count++
-	return fs.count < 100
-}
-
-const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-
-func randomString(n int) string {
-	b := make([]byte, n)
-	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
-	}
-	return string(b)
-}
-
-func (fs *failSource) Values() ([]any, error) {
-	if fs.count == 1280 {
-		return []any{nil}, nil
-	}
-	return []any{randomString(1024)}, nil
-}
-
-func (fs *failSource) Err() error {
-	return nil
-}
-
-func TestConnBatchInsertFailServerSideMidwayAbortsWithoutWaiting(t *testing.T) {
-	t.Skip("need way to abort during execution")
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
-	defer closeConn(t, conn)
-	skipIfBatchUnsupported(ctx, t, conn)
-
-	mustExec(t, conn, `recreate table foo(
-		a varchar(1024) not null
-	)`)
-
-	startTime := time.Now()
-
-	count, err := conn.BatchInsert(ctx, fbx.Identifier{"FOO"}, []string{"A"}, &failSource{})
-	if err == nil {
-		t.Errorf("Expected BatchInsert return error, but it did not")
-	}
-	var fbError *fbconn.FbError
-	if !errors.As(err, &fbError) {
-		t.Errorf("Expected BatchInsert return fbconn.FbError, but instead it returned: %v", err)
-	}
-	if count != 0 {
-		t.Errorf("Expected BatchInsert to return 0 inserted rows, but got %d", count)
-	}
-
-	endTime := time.Now()
-	batchTime := endTime.Sub(startTime)
-	if batchTime > time.Second {
-		t.Errorf("Failing BatchInsert shouldn't have taken so long: %v", batchTime)
-	}
-
-	rows, err := conn.Query(ctx, "select * from foo")
-	if err != nil {
-		t.Errorf("Unexpected error for Query: %v", err)
-	}
-
-	var outputRows [][]any
-	for rows.Next() {
-		row, err := rows.Values()
-		if err != nil {
-			t.Errorf("Unexpected error for rows.Values(): %v", err)
-		}
-		outputRows = append(outputRows, row)
-	}
-
-	if rows.Err() != nil {
-		t.Errorf("Unexpected error for rows.Err(): %v", rows.Err())
-	}
-
-	if len(outputRows) != 0 {
-		t.Errorf("Expected 0 rows, but got %v", outputRows)
-	}
-
-	ensureConnValid(t, conn)
-}
-
-type slowFailRaceSource struct {
-	count int
-}
-
-func (fs *slowFailRaceSource) Next() bool {
-	time.Sleep(time.Millisecond)
-	fs.count++
-	return fs.count < 1000
-}
-
-func (fs *slowFailRaceSource) Values() ([]any, error) {
-	if fs.count == 500 {
-		return []any{nil, nil}, nil
-	}
-	return []any{1, "1234567890"}, nil
-}
-
-func (fs *slowFailRaceSource) Err() error {
-	return nil
-}
-
-func TestConnBatchInsertSlowFailRace(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
-	defer closeConn(t, conn)
-	skipIfBatchUnsupported(ctx, t, conn)
-
-	mustExec(t, conn, `recreate table foo(
-		a int not null,
-		b varchar(10) not null
-	)`)
-
-	count, err := conn.BatchInsert(ctx, fbx.Identifier{"FOO"}, []string{"A", "B"}, &slowFailRaceSource{})
-	if err == nil {
-		t.Errorf("Expected BatchInsert return error, but it did not")
-	}
-	var fbError *fbconn.FbError
-	if !errors.As(err, &fbError) {
-		t.Errorf("Expected BatchInsert return fbconn.FbError, but instead it returned: %v", err)
-	}
-	if count != 0 {
-		t.Errorf("Expected BatchInsert to return 0 inserted rows, but got %d", count)
-	}
-
+	var stored int
+	require.NoError(t, conn.QueryRow(ctx, "select count(*) from batch_insert_failure").Scan(&stored))
+	require.Zero(t, stored)
 	ensureConnValid(t, conn)
 }
 
@@ -852,24 +684,10 @@ func ExampleBatchInsertSlice() {
 		return
 	}
 
-	dataCh := make(chan []any, 3)
-
-	const channelItems = 3
-	go func() {
-		for i := range channelItems {
+	count, err := conn.BatchInsert(ctx, fbx.Identifier{"FOO"}, []string{"A", "B", "C"},
+		fbx.BatchInsertSlice(3, func(i int) ([]any, error) {
 			n := i + 1
-			dataCh <- []any{n, n + 1, n + 2}
-		}
-		close(dataCh)
-	}()
-
-	count, err := conn.BatchInsert(context.Background(), fbx.Identifier{"FOO"}, []string{"A", "B", "C"},
-		fbx.BatchInsertFunc(func() ([]any, error) {
-			v, ok := <-dataCh
-			if !ok {
-				return nil, nil
-			}
-			return v, nil
+			return []any{n, n + 1, n + 2}, nil
 		}))
 	if err != nil {
 		fmt.Println(err)

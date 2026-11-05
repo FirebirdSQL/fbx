@@ -35,8 +35,9 @@ type ConnConfig struct {
 	// may cache statement/description metadata to reduce round trips and parsing overhead.
 	DefaultQueryExecMode QueryExecMode
 
-	// BatchInsertPendingSize is maximum size of pending data in batch before
-	// [Conn.BatchInsert] will flush it to server.
+	// BatchInsertPendingSize is the client buffer threshold in bytes for
+	// [Conn.BatchInsert]. A row may exceed it. Zero flushes every row; negative
+	// values are invalid. Flushing does not execute or empty the server batch.
 	BatchInsertPendingSize int
 
 	createdByParseConfig bool // Used to enforce created by ParseConfig rule.
@@ -286,6 +287,9 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		if err != nil {
 			return nil, fbconn.NewParseConfigError(connString, "cannot parse batch_insert_pending_size", err)
 		}
+		if n < 0 {
+			return nil, fbconn.NewParseConfigError(connString, "invalid batch_insert_pending_size", fmt.Errorf("must not be negative"))
+		}
 		batchInsertPendingSize = int(n)
 	}
 
@@ -313,7 +317,8 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 //     Default: 512.
 //
 //   - batch_insert_pending_size
-//     The maximum size of pending data in batch before [Conn.BatchInsert] will flush it to server.
+//     The client buffer threshold in bytes before [Conn.BatchInsert] flushes to the server.
+//     Zero flushes every row; negative values are invalid. This does not limit the server buffer.
 //     Default: 128*1024.
 func ParseConfig(connString string) (*ConnConfig, error) {
 	return ParseConfigWithOptions(connString, ParseConfigOptions{})

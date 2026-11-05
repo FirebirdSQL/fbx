@@ -310,6 +310,23 @@ func TestParseConfigExtractsDefaultQueryExecMode(t *testing.T) {
 	}
 }
 
+func TestParseConfigBatchInsertPendingSize(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		connString string
+		want       int
+	}{
+		{"", 128 * 1024},
+		{"batch_insert_pending_size=0", 0},
+		{"batch_insert_pending_size=42", 42},
+	} {
+		config, err := fbx.ParseConfig(tt.connString)
+		require.NoError(t, err)
+		require.Equal(t, tt.want, config.BatchInsertPendingSize)
+		require.NotContains(t, config.RuntimeParams, "batch_insert_pending_size")
+	}
+}
+
 func TestParseConfigErrors(t *testing.T) {
 	t.Parallel()
 
@@ -318,6 +335,8 @@ func TestParseConfigErrors(t *testing.T) {
 		expectedErrSubstring string
 	}{
 		{"default_query_exec_mode=does_not_exist", "does_not_exist"},
+		{"batch_insert_pending_size=-1", "must not be negative"},
+		{"batch_insert_pending_size=2147483648", "cannot parse batch_insert_pending_size"},
 	} {
 		config, err := fbx.ParseConfig(tt.connString)
 		require.Nil(t, config)

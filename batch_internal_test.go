@@ -57,6 +57,119 @@ func TestExecBatchRowsCanceledAfterPrepare(t *testing.T) {
 	}
 }
 
+func TestBatchInsertRejectsBeforePrepare(t *testing.T) {
+	conn := &Conn{config: &ConnConfig{BatchInsertPendingSize: -1}}
+	source := BatchInsertFunc(func() ([]any, error) {
+		t.Fatal("source must not be read")
+		return nil, nil
+	})
+	_, err := conn.BatchInsert(context.Background(), Identifier{"T"}, []string{"ID"}, source)
+	require.ErrorContains(t, err, "pending size must not be negative")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = conn.BatchInsert(ctx, Identifier{"T"}, []string{"ID"}, source)
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestBatchInsertSourceErrors(t *testing.T) {
+	for _, stage := range []string{"before Next", "Next", "Values", "end of source", "first Next error"} {
+		t.Run(stage, func(t *testing.T) {
+			config := mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE"))
+			config.BatchInsertPendingSize = 0
+			conn := mustConnect(t, config)
+			defer func() { require.NoError(t, conn.Close(context.Background())) }()
+			skipIfBatchUnsupported(context.Background(), t, conn)
+			_, err := conn.Exec(context.Background(), "recreate table batch_insert_source (id integer)")
+			require.NoError(t, err)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			sourceErr := operationerror.WithRetry(errors.New("source failed"), true)
+			calls := 0
+			next := func() ([]any, error) {
+				calls++
+				if stage == "first Next error" {
+					return nil, sourceErr
+				}
+				if calls == 1 {
+					return []any{1}, nil
+				}
+				cancel()
+				if stage == "end of source" {
+					return nil, sourceErr
+				}
+				return []any{2}, nil
+			}
+			source := BatchInsertFunc(next)
+			if stage == "Values" {
+				source = BatchInsertSlice(3, func(int) ([]any, error) { return next() })
+			}
+			if stage == "before Next" {
+				conn.prepareTracer = cancelAfterBatchPrepare{cancel: cancel}
+			}
+			count, err := conn.BatchInsert(ctx, Identifier{"BATCH_INSERT_SOURCE"}, []string{"ID"}, source)
+			if stage == "first Next error" {
+				require.ErrorIs(t, err, sourceErr)
+				require.Equal(t, 1, calls)
+			} else {
+				require.ErrorIs(t, err, context.Canceled)
+				if stage == "before Next" {
+					require.Zero(t, calls)
+				} else {
+					require.Equal(t, 2, calls)
+				}
+			}
+			if stage == "end of source" {
+				require.ErrorIs(t, err, sourceErr)
+			}
+			require.Zero(t, count)
+			require.False(t, fbconn.SafeToRetry(err))
+			require.False(t, conn.IsClosed())
+			require.False(t, conn.fbConn.ActiveTx())
+			conn.prepareTracer = nil
+			require.Zero(t, countStatementHandlesForSQL(t, conn, `insert into "BATCH_INSERT_SOURCE" ("ID") values (?)`))
+			var stored int
+			require.NoError(t, conn.QueryRow(context.Background(), "select count(*) from batch_insert_source").Scan(&stored))
+			require.Zero(t, stored)
+		})
+	}
+}
+
+func TestBatchInsertCleanupFailureClosesConnection(t *testing.T) {
+	ctx := context.Background()
+	config := mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE"))
+	config.BatchInsertPendingSize = 0
+	conn := mustConnect(t, config)
+	defer func() { require.NoError(t, conn.Close(ctx)) }()
+	skipIfBatchUnsupported(ctx, t, conn)
+	_, err := conn.Exec(ctx, "recreate table batch_insert_cleanup (id integer)")
+	require.NoError(t, err)
+
+	sourceErr := operationerror.WithRetry(errors.New("source failed"), true)
+	var rows Rows
+	defer func() {
+		if rows != nil {
+			rows.Close()
+		}
+	}()
+	source := BatchInsertSlice(2, func(i int) ([]any, error) {
+		if i == 0 {
+			return []any{1}, nil
+		}
+		// Leave a result open so cleanup cannot acquire the connection.
+		rows, err = conn.Query(ctx, "select 1 from rdb$database")
+		require.NoError(t, err)
+		return nil, sourceErr
+	})
+	count, err := conn.BatchInsert(ctx, Identifier{"BATCH_INSERT_CLEANUP"}, []string{"ID"}, source)
+	require.Zero(t, count)
+	require.ErrorIs(t, err, sourceErr)
+	require.ErrorContains(t, err, "conn busy")
+	require.False(t, fbconn.SafeToRetry(err))
+	require.True(t, conn.IsClosed())
+}
+
 func TestPrepareBatchRejectsInvalidOptionsBeforePrepare(t *testing.T) {
 	type testCase struct {
 		name string
