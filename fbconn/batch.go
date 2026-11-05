@@ -67,6 +67,16 @@ type BatchError struct {
 	Err error
 }
 
+// BatchInfo describes the current server buffers and BLOB format of a batch.
+// Byte counts describe server storage, not the encoded wire data or client memory.
+type BatchInfo struct {
+	BufferBytes     int // Actual capacity of each server buffer (parameter data and BLOB data).
+	DataBytes       int // Parameter data currently buffered on the server, including alignment.
+	BlobBytes       int // BLOB data currently buffered on the server.
+	BlobAlignment   int // Required alignment of BLOB entries in a batch stream, in bytes.
+	BlobHeaderBytes int // Size of a BLOB entry header in a batch stream, in bytes.
+}
+
 var errBatchExecutionFailed = errors.New("batch execution failed")
 
 type BatchCompletion struct {
@@ -226,6 +236,87 @@ func (b *Batch) Create(ctx context.Context) error {
 	}
 
 	return b.createOnWire(ctx, b.cfg.parameterBuffer())
+}
+
+// Info reads server batch information, creating the batch if necessary.
+// It requires protocol version 17 or later and does not send or execute rows.
+func (b *Batch) Info(ctx context.Context) (BatchInfo, error) {
+	if err := b.checkCreate(); err != nil {
+		return BatchInfo{}, err
+	}
+	if b.st.conn.protocolVersion < fbproto.PROTOCOL_VERSION17 {
+		return BatchInfo{}, fmt.Errorf("batch info is not supported by protocol version %d", b.st.conn.protocolVersion)
+	}
+	if err := b.Create(ctx); err != nil {
+		return BatchInfo{}, err
+	}
+	var info BatchInfo
+	err := b.withConn(ctx, func() error {
+		msgBuilder := func() fbproto.ClientMessage {
+			return &fbproto.OpInfoBatch{
+				StatementHandle: b.st.Description.StatementHandle,
+				Items: []byte{fbproto.BatchInfoBufferBytes, fbproto.BatchInfoDataBytes,
+					fbproto.BatchInfoBlobsBytes, fbproto.BatchInfoBlobAlign, fbproto.BatchInfoBlobHeader},
+				BufferLength: 64, // Five integer items and the end marker fit without continuation.
+			}
+		}
+		var data []byte
+		// Capture the complete response before parsing; a truncated payload is an error,
+		// not a reason to retry this fixed-size information request.
+		if err := b.st.conn.getServerInfo(msgBuilder, nil, func(buf []byte) error {
+			data = buf
+			return nil
+		}); err != nil {
+			return err
+		}
+		var err error
+		info, err = parseBatchInfo(data)
+		return err
+	})
+	if err != nil {
+		return BatchInfo{}, err
+	}
+	return info, nil
+}
+
+func parseBatchInfo(data []byte) (BatchInfo, error) {
+	var info BatchInfo
+	fields := [...]*int{&info.BufferBytes, &info.DataBytes, &info.BlobBytes, &info.BlobAlignment, &info.BlobHeaderBytes}
+	var seen [len(fields)]bool
+	r := NewServerInfoBufferReader(data)
+	for {
+		item, err := r.ReadByte()
+		if err != nil {
+			return BatchInfo{}, fmt.Errorf("incomplete batch info: %w", err)
+		}
+		switch item {
+		case fbproto.Isc_info_end:
+			for i, present := range seen {
+				// Firebird omits the BLOB byte count when the BLOB buffer is empty.
+				if !present && i != fbproto.BatchInfoBlobsBytes-fbproto.BatchInfoBufferBytes {
+					return BatchInfo{}, fmt.Errorf("missing batch info item %d", i+fbproto.BatchInfoBufferBytes)
+				}
+			}
+			return info, nil
+		case fbproto.Isc_info_truncated:
+			return BatchInfo{}, fmt.Errorf("batch info is truncated")
+		case fbproto.Isc_info_error:
+			return BatchInfo{}, fmt.Errorf("server could not provide batch info")
+		}
+		if item < fbproto.BatchInfoBufferBytes || item > fbproto.BatchInfoBlobHeader {
+			return BatchInfo{}, fmt.Errorf("unexpected batch info item %d", item)
+		}
+		value, err := r.ReadInt64Value()
+		if err != nil {
+			return BatchInfo{}, fmt.Errorf("batch info item %d: %w", item, err)
+		}
+		if value < 0 || value > math.MaxInt32 {
+			return BatchInfo{}, fmt.Errorf("invalid batch info value %d for item %d", value, item)
+		}
+		index := item - fbproto.BatchInfoBufferBytes
+		*fields[index] = int(value)
+		seen[index] = true
+	}
 }
 
 func (b *Batch) Send(ctx context.Context, rows [][]byte) error {

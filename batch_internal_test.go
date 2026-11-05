@@ -22,6 +22,85 @@ func skipIfBatchUnsupported(ctx context.Context, t testing.TB, conn *Conn) {
 	}
 }
 
+func TestPreparedBatchInfo(t *testing.T) {
+	for _, scope := range []string{"connection", "transaction"} {
+		t.Run(scope, func(t *testing.T) {
+			ctx := context.Background()
+			conn := mustConnect(t, mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE")))
+			defer func() { require.NoError(t, conn.Close(ctx)) }()
+			if !conn.ServerVersion().AtLeast(4, 0, 1) {
+				t.Skip("batch info requires Firebird 4.0.1 or later")
+			}
+			_, err := conn.Exec(ctx, "recreate table batch_info_test (id integer)")
+			require.NoError(t, err)
+			prepare := conn.PrepareBatchWithOptions
+			var tx Tx
+			if scope == "transaction" {
+				tx, err = conn.Begin(ctx)
+				require.NoError(t, err)
+				prepare = tx.PrepareBatchWithOptions
+			}
+			b, err := prepare(ctx, "insert into batch_info_test values (?)", BatchOptions{BufferBytes: 65536})
+			require.NoError(t, err)
+			defer func() { require.NoError(t, b.Close(ctx)) }()
+			require.NoError(t, b.Add(1))
+			pending := b.PendingBytes()
+			info, err := b.Info(ctx)
+			require.NoError(t, err)
+			require.Equal(t, 65536, info.BufferBytes)
+			require.Zero(t, info.DataBytes)
+			require.Zero(t, info.BlobBytes)
+			require.Positive(t, info.BlobAlignment)
+			require.Positive(t, info.BlobHeaderBytes)
+			require.Equal(t, pending, b.PendingBytes(), "Info must not flush local rows")
+			require.Equal(t, tx != nil, conn.fbConn.ActiveTx())
+
+			require.NoError(t, b.Flush(ctx))
+			info, err = b.Info(ctx)
+			require.NoError(t, err)
+			require.Positive(t, info.DataBytes)
+			require.Zero(t, b.PendingBytes())
+			require.Equal(t, tx != nil, conn.fbConn.ActiveTx())
+			require.NoError(t, b.Add(2))
+			before, err := b.Info(ctx)
+			require.NoError(t, err)
+			require.Equal(t, info, before)
+			require.Equal(t, pending, b.PendingBytes())
+			canceledCtx, cancel := context.WithCancel(ctx)
+			cancel()
+			_, err = b.Info(canceledCtx)
+			require.ErrorIs(t, err, context.Canceled)
+			require.Equal(t, pending, b.PendingBytes())
+
+			result, err := b.Exec(ctx)
+			require.NoError(t, err)
+			require.EqualValues(t, 2, result.Affected)
+			info, err = b.Info(ctx)
+			require.NoError(t, err)
+			require.Zero(t, info.DataBytes)
+			require.Equal(t, tx != nil, conn.fbConn.ActiveTx(), "Info must not finish a transaction")
+			require.NoError(t, b.Add(3))
+			require.NoError(t, b.Flush(ctx))
+			require.NoError(t, b.Cancel(ctx))
+			info, err = b.Info(ctx)
+			require.NoError(t, err)
+			require.Zero(t, info.DataBytes)
+			require.NoError(t, b.Close(ctx))
+			_, err = b.Info(ctx)
+			require.Error(t, err)
+
+			want := 2
+			if tx != nil {
+				require.NoError(t, tx.Rollback(ctx))
+				want = 0
+			}
+			var count int
+			require.NoError(t, conn.QueryRow(ctx, "select count(*) from batch_info_test").Scan(&count))
+			require.Equal(t, want, count)
+		})
+	}
+}
+
 type cancelAfterBatchPrepare struct {
 	cancel context.CancelFunc
 }

@@ -38,6 +38,10 @@ buffer without executing them, and [PreparedBatch.Exec] flushes any remaining
 rows and executes the batch. [PreparedBatch.PendingBytes] can be used to decide
 when to flush queued rows.
 
+[PreparedBatch.Info] queries the server's buffer capacity and current data sizes
+(protocol 17 or later). It does not flush or execute rows. These sizes describe
+server storage and can differ from the local encoded size in PendingBytes.
+
 	pb, err := conn.PrepareBatch(context.Background(), "insert into t(id, note) values (?, ?)")
 	if err != nil {
 		return err

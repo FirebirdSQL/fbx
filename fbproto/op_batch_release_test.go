@@ -46,6 +46,23 @@ func TestOpBatchSyncWrite(t *testing.T) {
 	}, buf.Bytes())
 }
 
+func TestOpInfoBatchWrite(t *testing.T) {
+	var buf bytes.Buffer
+	err := (&OpInfoBatch{
+		StatementHandle: 42,
+		Items:           []byte{BatchInfoBufferBytes, BatchInfoDataBytes, BatchInfoBlobsBytes, BatchInfoBlobAlign, BatchInfoBlobHeader},
+		BufferLength:    64,
+	}).Write(NewXDRWriter(&buf))
+	require.NoError(t, err)
+	require.Equal(t, []byte{
+		0, 0, 0, byte(Op_info_batch),
+		0, 0, 0, 42,
+		0, 0, 0, 0,
+		0, 0, 0, 5, 10, 11, 12, 13, 14, 0, 0, 0, // items and XDR padding
+		0, 0, 0, 64,
+	}, buf.Bytes())
+}
+
 func TestOpBatchCompletionRead(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

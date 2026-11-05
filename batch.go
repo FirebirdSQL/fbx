@@ -188,6 +188,9 @@ func (e *BatchExecutionError) Unwrap() []error {
 	return errs
 }
 
+// BatchInfo describes server batch buffers and the BLOB stream format.
+type BatchInfo = fbconn.BatchInfo
+
 // PreparedBatch stores encoded rows for one Firebird batch DML statement.
 //
 // Create a connection-scoped batch with [Conn.PrepareBatch] or
@@ -277,6 +280,24 @@ func (b *PreparedBatch) PendingBytes() int {
 		return 0
 	}
 	return b.pendingBytes
+}
+
+// Info returns the current server buffer sizes and BLOB format parameters.
+// It requires protocol version 17 or later (Firebird 4.0.1+).
+// Info creates the server batch if necessary, but does not flush local rows,
+// execute the batch, or finish a transaction. Local rows are counted separately
+// by PendingBytes; their encoded size can differ from their server storage size.
+func (b *PreparedBatch) Info(ctx context.Context) (BatchInfo, error) {
+	if err := b.checkReady(); err != nil {
+		return BatchInfo{}, err
+	}
+	if b.st == nil {
+		return BatchInfo{}, fmt.Errorf("prepared batch statement is not initialized")
+	}
+	if b.lb == nil {
+		b.lb = b.st.NewBatch(b.batchCfg)
+	}
+	return b.lb.Info(ctx)
 }
 
 func validateBatchStatement(sd *fbconn.StatementDescription) error {
@@ -492,7 +513,7 @@ func (b *PreparedBatch) ClearPending() {
 // batch for reuse. Cancel does not finish any transaction or undo rows already
 // applied by [PreparedBatch.Exec].
 //
-// If cancellation is not confirmed, Add, Flush, and Exec remain blocked until
+// If cancellation is not confirmed, Add, Flush, Exec, and Info remain blocked until
 // Cancel succeeds. Retry with a fresh context or call Close to release resources.
 func (b *PreparedBatch) Cancel(ctx context.Context) error {
 	if err := b.checkOpen(); err != nil {

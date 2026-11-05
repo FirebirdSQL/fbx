@@ -145,6 +145,91 @@ func TestBatchCompletionAffected(t *testing.T) {
 	}
 }
 
+func TestBatchInfoParsing(t *testing.T) {
+	var data []byte
+	for i, value := range []uint32{65536, 24, 64, 4, 16} {
+		data = append(data, byte(fbproto.BatchInfoBufferBytes+i), 4, 0)
+		data = binary.LittleEndian.AppendUint32(data, value)
+	}
+	data = append(data, fbproto.Isc_info_end)
+	want := BatchInfo{BufferBytes: 65536, DataBytes: 24, BlobBytes: 64, BlobAlignment: 4, BlobHeaderBytes: 16}
+	info, err := parseBatchInfo(data)
+	require.NoError(t, err)
+	require.Equal(t, want, info)
+
+	withoutBlobs := append(append([]byte(nil), data[:14]...), data[21:]...)
+	info, err = parseBatchInfo(withoutBlobs)
+	require.NoError(t, err)
+	want.BlobBytes = 0
+	require.Equal(t, want, info)
+
+	for n := 0; n < len(data); n++ {
+		info, err = parseBatchInfo(data[:n])
+		require.Error(t, err, "prefix of %d bytes", n)
+		require.Zero(t, info)
+	}
+	for _, malformed := range [][]byte{
+		{fbproto.Isc_info_truncated}, {fbproto.Isc_info_error}, {99},
+		data[7:],                             // missing buffer capacity
+		{fbproto.BatchInfoBufferBytes, 9, 0}, // invalid integer length
+		{fbproto.BatchInfoBufferBytes, 4, 0, 0xff, 0xff, 0xff, 0xff},
+	} {
+		info, err = parseBatchInfo(malformed)
+		require.Error(t, err)
+		require.Zero(t, info)
+	}
+}
+
+func TestBatchInfoErrorsPreserveQueue(t *testing.T) {
+	for _, mode := range []string{"server error", "malformed info", "lost response", "unexpected response", "write failure", "canceled", "unsupported protocol"} {
+		t.Run(mode, func(t *testing.T) {
+			var input bytes.Buffer
+			w := fbproto.NewXDRWriter(&input)
+			switch mode {
+			case "server error":
+				require.NoError(t, retryTestResponse(w, fbproto.Isc_deadlock))
+			case "malformed info":
+				require.NoError(t, writeProbeResponseData(w, 0, []byte{fbproto.Isc_info_truncated}))
+			case "unexpected response":
+				require.NoError(t, w.WriteInt32(fbproto.Op_sql_response))
+				require.NoError(t, w.WriteInt32(0))
+			}
+			b, transport := newBatchProtocolTest(t, &input)
+			b.bufferState = batchBufferPending
+			ctx := context.Background()
+			if mode == "canceled" {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+			}
+			if mode == "unsupported protocol" {
+				b.st.conn.protocolVersion = fbproto.PROTOCOL_VERSION16
+				b.state = batchStateInit
+			}
+			if mode == "write failure" {
+				transport.writeErr = io.ErrClosedPipe
+			}
+			info, err := b.Info(ctx)
+			require.Error(t, err)
+			require.Zero(t, info)
+			require.Equal(t, batchBufferPending, b.bufferState)
+			require.Equal(t, mode == "lost response" || mode == "unexpected response" || mode == "write failure", b.st.conn.IsClosed())
+			require.Equal(t, mode == "canceled", SafeToRetry(err))
+			if mode == "canceled" {
+				require.ErrorIs(t, err, context.Canceled)
+			}
+			if mode == "unsupported protocol" || mode == "canceled" {
+				require.Zero(t, transport.written.Len(), "must not create or query a batch")
+			} else if !b.st.conn.IsClosed() {
+				require.NoError(t, writeProbeResponse(w, 0))
+				require.NoError(t, writeProbeResponse(w, 0))
+				require.NoError(t, b.Cancel(context.Background()))
+				require.False(t, b.HasPending())
+			}
+		})
+	}
+}
+
 func TestBatchCloseCanceledContextKeepsBatchOpen(t *testing.T) {
 	for _, deadline := range []bool{false, true} {
 		t.Run(fmt.Sprintf("deadline=%t", deadline), func(t *testing.T) {
