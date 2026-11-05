@@ -75,7 +75,17 @@
 //
 // # Firebird-specific data types
 //
-// The [fbtype] package provides Firebird-specific types and codecs.
+// As of Go 1.27, [database/sql] allows drivers to implement their own scanning logic by implementing the
+// driver.RowsColumnScanner interface. This allows Firebird types such as arrays to be scanned directly into Go
+// values such as slices.
+//
+//	input := []int64{1, 2, 3}
+//	_, err := db.Exec("insert into array_example(bigint_array) values(?)", input)
+//
+//	var output []int64
+//	err = db.QueryRow("select bigint_array from array_example").Scan(&output)
+//
+// In older versions of Go, the [fbtype] package provides Firebird-specific types and codecs.
 // [fbtype.Map.SQLScanner] is primarily used to scan Firebird arrays through
 // [database/sql]:
 //
@@ -787,6 +797,7 @@ type Rows struct {
 	skipNextMore bool
 
 	columnNames []string
+	blobValues  [][]byte
 }
 
 // Columns implements [driver.Rows].
@@ -970,8 +981,9 @@ func scanBlobValues(rows fbx.Rows, blobColumns []bool) ([][]byte, error) {
 	return values, nil
 }
 
-// Next implements [driver.Rows].
-func (r *Rows) Next(dest []driver.Value) (err error) {
+// initValueFuncs prepares the [database/sql] representation of each column. Both
+// [Next] and [ScanColumn] use these conversions so their [driver.Values] agree.
+func (r *Rows) initValueFuncs() {
 	m := r.conn.conn.TypeMap()
 	fieldDescriptions := r.rows.FieldDescriptions()
 
@@ -1131,8 +1143,14 @@ func (r *Rows) Next(dest []driver.Value) (err error) {
 			}
 		}
 	}
+}
+
+// Next implements [driver.Rows].
+func (r *Rows) Next(dest []driver.Value) (err error) {
+	r.initValueFuncs()
 
 	var more bool
+	fieldDescriptions := r.rows.FieldDescriptions()
 	if r.skipNext {
 		more = r.skipNextMore
 		r.skipNext = false

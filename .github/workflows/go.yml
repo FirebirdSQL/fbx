@@ -42,7 +42,7 @@ jobs:
   lint:
     runs-on: self-hosted
     container:
-      image: golangci/golangci-lint:v2.12.2
+      image: golangci/golangci-lint:v2.15.0
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -124,7 +124,7 @@ jobs:
   test_fb:
     runs-on: self-hosted
     container:
-      image: golang:1.26
+      image: golang:${{ matrix.GO_VERSION || '1.26' }}
     strategy:    
       matrix:
         include:
@@ -134,8 +134,12 @@ jobs:
             FB_DOWNLOAD_URL: http://minio.red-soft.biz/3rdparty/firebird/Firebird-${FB40_VERSION}-linux-x64.tar.gz
           - FB_VERSION: ${FB50_VERSION}
             FB_DOWNLOAD_URL: http://minio.red-soft.biz/3rdparty/firebird/Firebird-${FB50_VERSION}-linux-x64.tar.gz
+          - FB_VERSION: ${FB50_VERSION}
+            FB_DOWNLOAD_URL: http://minio.red-soft.biz/3rdparty/firebird/Firebird-${FB50_VERSION}-linux-x64.tar.gz
+            GO_VERSION: "1.27"
+            REPORT_SUFFIX: _go1.27
     env:
-      REPORT: firebird_${{matrix.FB_VERSION}}
+      REPORT: firebird_${{matrix.FB_VERSION}}${{matrix.REPORT_SUFFIX}}
     steps:
       - run:
           echo ${REPORT}
