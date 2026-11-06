@@ -2,6 +2,7 @@ name: Go
 
 on:
   push:
+  pull_request:
 
 env:
   RDB30_VERSION: 3.0.23
