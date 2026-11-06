@@ -1,3 +1,4 @@
+test
 # fbx - Firebird Driver for Go
 
 fbx is a pure Go driver for Firebird.
