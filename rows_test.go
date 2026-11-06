@@ -931,7 +931,26 @@ func TestRowToStructByNameDbTagsPreferExactMatch(t *testing.T) {
 	})
 }
 
-func TestRowToStructByNameDbTagsPreferExact(t *testing.T) {
+func TestRowToStructByNameDbTagsPreferExactMatchLast(t *testing.T) {
+	type record struct {
+		Upper int32 `db:"Foo"`
+		Lower int32 `db:"foo"`
+	}
+
+	sql := `select cast(1 as int) as "foo", cast(2 as int) as "FOO" from rdb$database`
+
+	defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+
+		rows, err := conn.Query(ctx, sql)
+		require.NoError(t, err)
+		got, err := fbx.CollectOneRow(rows, fbx.RowToStructByName[record])
+		require.NoError(t, err)
+		require.Equal(t, record{Lower: 1, Upper: 2}, got)
+
+	})
+}
+
+func TestRowToStructByNameDbTagsPreferLast(t *testing.T) {
 	type Inner struct{ Name string }
 	type record struct {
 		Inner
@@ -1062,6 +1081,66 @@ func TestRowToStructByNameEmbeddedDbTagKeepsExactMatch(t *testing.T) {
 			require.Equal(t, record{Region: "east"}, got)
 		})
 	})
+}
+
+func TestRowToStructByNameDuplicateColumnNames(t *testing.T) {
+	type record struct {
+		First  int32 `db:"foo"`
+		Second int32 `db:"foo"`
+		Third  int32 `db:"foo"`
+		Fourth int32 `db:"foo"`
+	}
+
+	for _, tt := range []struct {
+		name  string
+		query string
+	}{
+		{"exact", `select cast(1 as int) as "foo", cast(2 as int) as "foo", cast(3 as int) as "foo", cast(4 as int) as "foo" from rdb$database`},
+		{"case insensitive", `select cast(1 as int) as "FOO", cast(2 as int) as "FOO", cast(3 as int) as "FOO", cast(4 as int) as "FOO" from rdb$database`},
+		{"mixed case", `select cast(1 as int) as "foo", cast(2 as int) as "FOO", cast(3 as int) as "Foo", cast(4 as int) as "fOo" from rdb$database`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+				rows, err := conn.Query(ctx, tt.query)
+				require.NoError(t, err)
+				got, err := fbx.CollectOneRow(rows, fbx.RowToStructByName[record])
+				require.NoError(t, err)
+
+				// Every column must have its own destination; ambiguous aliases do not
+				// impose an order on the four otherwise equivalent fields.
+				require.ElementsMatch(t, []int32{1, 2, 3, 4}, []int32{got.First, got.Second, got.Third, got.Fourth})
+			})
+		})
+	}
+}
+
+func TestRowToAddrOfStructByNameExactAndFoldedAliases(t *testing.T) {
+	type record struct {
+		Lower  int32 `db:"foo"`
+		Title  int32 `db:"Foo"`
+		Upper  int32 `db:"FOO"`
+		Folded int32 `db:"fOo"`
+	}
+
+	for _, tt := range []struct {
+		name  string
+		query string
+	}{
+		{"forward", `select cast(1 as int) as "foo", cast(2 as int) as "Foo", cast(3 as int) as "FOO", cast(4 as int) as "fOO" from rdb$database`},
+		{"reverse", `select cast(4 as int) as "fOO", cast(3 as int) as "FOO", cast(2 as int) as "Foo", cast(1 as int) as "foo" from rdb$database`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			defaultConnTestRunner.RunTest(context.Background(), t, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {
+				rows, err := conn.Query(ctx, tt.query)
+				require.NoError(t, err)
+				got, err := fbx.CollectOneRow(rows, fbx.RowToAddrOfStructByName[record])
+				require.NoError(t, err)
+
+				// Exact tags reserve their columns before the remaining folded tag.
+				require.Equal(t, &record{Lower: 1, Title: 2, Upper: 3, Folded: 4}, got)
+			})
+		})
+	}
 }
 
 func TestRowToStructByNameEmbeddedStruct(t *testing.T) {
