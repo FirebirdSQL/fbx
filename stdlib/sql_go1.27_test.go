@@ -5,41 +5,14 @@ package stdlib_test
 import (
 	"database/sql"
 	"errors"
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	fbx "github.com/firebirdsql/fbx"
 	"github.com/firebirdsql/fbx/fbtype"
 	"github.com/firebirdsql/fbx/stdlib"
 )
-
-func testWithKnownTypeQueryExecModes(t *testing.T, f func(t *testing.T, db *sql.DB)) {
-	for _, mode := range []fbx.QueryExecMode{
-		fbx.QueryExecModeCacheStatement,
-		fbx.QueryExecModeExec,
-	} {
-		t.Run(mode.String(),
-			func(t *testing.T) {
-				config, err := fbx.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
-				require.NoError(t, err)
-
-				config.DefaultQueryExecMode = mode
-				db := stdlib.OpenDB(*config)
-				defer func() {
-					err := db.Close()
-					require.NoError(t, err)
-				}()
-
-				f(t, db)
-
-				ensureDBValid(t, db)
-			},
-		)
-	}
-}
 
 func TestScanNonEmptyBlob(t *testing.T) {
 	db := openDB(t)

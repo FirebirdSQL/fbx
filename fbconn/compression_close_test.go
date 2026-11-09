@@ -134,7 +134,8 @@ func TestAsyncCloseWaitsForCompressionRead(t *testing.T) {
 
 	transport.releaseRead()
 	select {
-	case <-readDone:
+	case err := <-readDone:
+		require.ErrorIs(t, err, net.ErrClosed)
 	case <-time.After(time.Second):
 		t.Fatal("compressed read did not finish after the transport was released")
 	}
@@ -204,7 +205,8 @@ func testSynchronousCloseUnblocksCompressedReadBeforeCleanup(
 
 	transport.releaseRead()
 	select {
-	case <-readDone:
+	case err := <-readDone:
+		require.ErrorIs(t, err, net.ErrClosed)
 	case <-time.After(time.Second):
 		t.Fatal("compressed read did not finish after the transport was released")
 	}

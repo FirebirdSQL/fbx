@@ -412,7 +412,7 @@ func TestAddEventListenerSerializesConcurrentFirstRegistration(t *testing.T) {
 	}()
 
 	select {
-	case <-errSecondCh:
+	case _ = <-errSecondCh:
 		t.Fatal("second AddEventListener returned before first registration finished")
 	case <-time.After(150 * time.Millisecond):
 	}
