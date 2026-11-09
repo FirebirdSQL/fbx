@@ -3,6 +3,7 @@ package fbevent
 import (
 	"context"
 	"errors"
+	"net"
 	"sync"
 	"testing"
 	"time"
@@ -412,7 +413,8 @@ func TestAddEventListenerSerializesConcurrentFirstRegistration(t *testing.T) {
 	}()
 
 	select {
-	case _ = <-errSecondCh:
+	case err := <-errSecondCh:
+		require.ErrorIs(t, err, net.ErrClosed)
 		t.Fatal("second AddEventListener returned before first registration finished")
 	case <-time.After(150 * time.Millisecond):
 	}
