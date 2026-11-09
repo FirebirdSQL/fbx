@@ -52,10 +52,10 @@ func TestParseConfigExtractsPoolArguments(t *testing.T) {
 	assert.Equal(t, 250*time.Millisecond, config.PingTimeout)
 
 	// Pool parameters must be removed from the connection's RuntimeParams.
-	assert.NotContains(t, config.ConnConfig.Config.RuntimeParams, "pool_max_conns")
-	assert.NotContains(t, config.ConnConfig.Config.RuntimeParams, "pool_min_conns")
-	assert.NotContains(t, config.ConnConfig.Config.RuntimeParams, "pool_min_idle_conns")
-	assert.NotContains(t, config.ConnConfig.Config.RuntimeParams, "pool_ping_timeout")
+	assert.NotContains(t, config.ConnConfig.RuntimeParams, "pool_max_conns")
+	assert.NotContains(t, config.ConnConfig.RuntimeParams, "pool_min_conns")
+	assert.NotContains(t, config.ConnConfig.RuntimeParams, "pool_min_idle_conns")
+	assert.NotContains(t, config.ConnConfig.RuntimeParams, "pool_ping_timeout")
 
 	config, err = fbxpool.ParseConfig("")
 	assert.NoError(t, err)

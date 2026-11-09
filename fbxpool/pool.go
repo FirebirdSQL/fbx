@@ -455,8 +455,8 @@ func ParseConfig(connString string) (*Config, error) {
 		config.MaxConnLifetimeJitter = d
 	}
 
-	if s, ok := config.ConnConfig.Config.RuntimeParams["pool_ping_timeout"]; ok {
-		delete(connConfig.Config.RuntimeParams, "pool_ping_timeout")
+	if s, ok := config.ConnConfig.RuntimeParams["pool_ping_timeout"]; ok {
+		delete(connConfig.RuntimeParams, "pool_ping_timeout")
 		d, err := time.ParseDuration(s)
 		if err != nil {
 			return nil, fbconn.NewParseConfigError(connString, "cannot parse pool_ping_timeout", err)
