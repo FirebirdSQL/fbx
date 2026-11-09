@@ -3,7 +3,6 @@ package fbconn
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"testing"
 
 	"github.com/firebirdsql/fbx/fbproto/auth"
@@ -86,27 +85,33 @@ func TestConfigCopyConstructorOptionsMapNotLinked(t *testing.T) {
 func TestConfigSetOptionsSlicesNotLinked(t *testing.T) {
 	registerPlugin()
 
-	conf, _ := ParseConfig("")
+	conf, err := ParseConfig("")
+	require.NoError(t, err)
 
 	wantData1 := []byte{1, 2, 3}
 	wantData2 := []byte{1, 2}
 
 	optionsSlice := []auth.ConstructorOption{withData(wantData1)}
 
-	err := conf.SetPluginConstructorOptions(constructorTestPluginName, optionsSlice...)
+	err = conf.SetPluginConstructorOptions(constructorTestPluginName, optionsSlice...)
 	require.NoError(t, err)
 
 	innerSlice := conf.ConstructorOptions[constructorTestPluginName]
 
 	require.Len(t, innerSlice, 1)
 	require.Len(t, optionsSlice, 1)
-	require.Equal(t, reflect.ValueOf(optionsSlice[0]).Pointer(), reflect.ValueOf(innerSlice[0]).Pointer())
+	plugin := &testPlugin{}
+	require.NoError(t, innerSlice[0](plugin))
+	require.Equal(t, wantData1, plugin.data)
 
 	optionsSlice[0] = withData(wantData2)
 
 	require.Len(t, innerSlice, 1)
 	require.Len(t, optionsSlice, 1)
-	require.NotEqual(t, reflect.ValueOf(optionsSlice[0]).Pointer(), reflect.ValueOf(innerSlice[0]).Pointer())
+	require.NoError(t, innerSlice[0](plugin))
+	require.Equal(t, wantData1, plugin.data)
+	require.NoError(t, optionsSlice[0](plugin))
+	require.Equal(t, wantData2, plugin.data)
 }
 
 func TestConnectConfigPassesConstructorOptionsToPlugin(t *testing.T) {
