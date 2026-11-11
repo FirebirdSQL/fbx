@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/firebirdsql/fbx/fbconn"
+	"github.com/firebirdsql/fbx/fbproto"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx/fbconn"
-	"rdb.red-soft.ru/fbx/fbproto"
 )
 
 func TestBlobExplicitTxTextLengthAndEncoding(t *testing.T) {

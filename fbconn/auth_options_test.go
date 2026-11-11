@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/firebirdsql/fbx/fbproto/auth"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx/fbproto/auth"
 )
 
 const constructorTestPluginName = "test"

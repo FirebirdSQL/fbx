@@ -11,9 +11,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/firebirdsql/fbx"
+	"github.com/firebirdsql/fbx/fbconn"
 	"github.com/jackc/puddle/v2"
-	"rdb.red-soft.ru/fbx"
-	"rdb.red-soft.ru/fbx/fbconn"
 )
 
 var defaultMaxConns = int32(4)
@@ -157,6 +157,7 @@ type Config struct {
 	ShouldPing func(context.Context, ShouldPingParams) bool
 
 	// MaxConnLifetime is the duration since creation after which a connection will be automatically closed.
+	// If zero or negative, a connection will never be closed because of its age.
 	MaxConnLifetime time.Duration
 
 	// MaxConnLifetimeJitter is the duration after MaxConnLifetime to randomly decide to close a connection.
@@ -465,6 +466,9 @@ func (p *Pool) Close() {
 }
 
 func (p *Pool) isExpired(res *puddle.Resource[*connResource]) bool {
+	if p.maxConnLifetime <= 0 {
+		return false
+	}
 	return time.Now().After(res.Value().maxAgeTime)
 }
 

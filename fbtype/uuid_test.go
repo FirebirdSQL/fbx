@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/firebirdsql/fbx"
+	"github.com/firebirdsql/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx"
-	"rdb.red-soft.ru/fbx/fbproto"
-	"rdb.red-soft.ru/fbx/fbtype"
 )
 
 type testUUIDValuer struct {

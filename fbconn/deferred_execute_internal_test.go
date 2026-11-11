@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/firebirdsql/fbx/fbconn/ctxwatch"
+	"github.com/firebirdsql/fbx/fbproto"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx/fbconn/ctxwatch"
-	"rdb.red-soft.ru/fbx/fbproto"
 )
 
 type deferredExecuteScriptConn struct {
@@ -225,6 +225,30 @@ func TestDeferredExecuteCanceledFetchRollsBack(t *testing.T) {
 	}
 }
 
+func TestDeferredExecuteCallerErrorDisallowsRetry(t *testing.T) {
+	conn, st, server, _, _ := newDeferredExecutePipe(t)
+	rr := st.Exec(context.Background(), nil)
+	callerErr := &fbconnError{msg: "caller error", safeToRetry: true}
+	rr.SetCallerErr(callerErr)
+
+	serverDone := make(chan error, 1)
+	go func() {
+		serverDone <- respondToDeferredExecuteAndRollback(server)
+	}()
+	_, err := rr.Close()
+	require.ErrorIs(t, err, callerErr)
+	require.False(t, SafeToRetry(err), "a buffered Execute may already have reached the server")
+	require.False(t, conn.ActiveTx(), "Close must roll back the implicit transaction")
+	require.False(t, conn.IsClosed())
+	require.False(t, conn.IsBusy())
+	select {
+	case err := <-serverDone:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("server did not receive the rollback")
+	}
+}
+
 func respondToDeferredExecuteAndRollback(server net.Conn) error {
 	response := make([]byte, 24)
 	binary.BigEndian.PutUint32(response, fbproto.Op_response)
@@ -277,6 +301,7 @@ func TestDeferredExecuteInternalReadCleanupTimeout(t *testing.T) {
 				require.GreaterOrEqual(t, time.Since(start), cleanupGracePeriod,
 					"cleanup must replace the original short cancellation deadline")
 				require.True(t, conn.IsClosed(), "a missing Execute response prevents reuse")
+				require.NoError(t, server.Close())
 				waitCleanupDone(t, conn)
 			case <-time.After(cleanupGracePeriod + 2*time.Second):
 				t.Fatal("internal read cleanup exceeded its timeout")

@@ -4,15 +4,16 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"math"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/firebirdsql/fbx/fbconn"
+	"github.com/firebirdsql/fbx/fbservice"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx/fbconn"
-	"rdb.red-soft.ru/fbx/fbservice"
 )
 
 func TestManagerBackupWithoutOptions(t *testing.T) {
@@ -305,6 +306,14 @@ func newTestManager(t *testing.T) (*fbservice.Manager, *fakeServiceConnection) {
 }
 
 type fakeServiceConnection struct {
+	fakeTraceConnection
+	repairOptions     fbconn.RepairOptions
+	properties        fbconn.DatabaseProperties
+	maintenanceErr    error
+	transactionID     int64
+	limboAction       fbconn.LimboTransactionAction
+	limboOutput       io.Writer
+	limboDetails      []fbconn.LimboTransaction
 	opened            bool
 	closed            bool
 	expectedDatabase  string

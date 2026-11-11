@@ -3,9 +3,9 @@ package fbconn
 import (
 	"testing"
 
+	"github.com/firebirdsql/fbx/fbproto"
+	"github.com/firebirdsql/fbx/internal/fbio"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx/fbproto"
-	"rdb.red-soft.ru/fbx/internal/fbio"
 )
 
 func tagLengthValue(tag byte, value int) []byte {

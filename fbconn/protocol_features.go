@@ -1,6 +1,6 @@
 package fbconn
 
-import "rdb.red-soft.ru/fbx/fbproto"
+import "github.com/firebirdsql/fbx/fbproto"
 
 // ProtocolFeatures aliases fbproto.ProtocolFeatures for use in fbconn.
 type ProtocolFeatures = fbproto.ProtocolFeatures

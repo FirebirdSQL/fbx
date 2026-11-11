@@ -2,25 +2,33 @@ package fbx
 
 import (
 	"context"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"io"
 	"reflect"
 
-	"rdb.red-soft.ru/fbx/fbconn"
-	"rdb.red-soft.ru/fbx/fbtype"
+	"github.com/firebirdsql/fbx/fbconn"
+	"github.com/firebirdsql/fbx/fbtype"
 )
 
 // ExtendedQueryBuilder encodes parameters.
 type ExtendedQueryBuilder struct {
 	ParamValues     [][]byte
 	paramValueBytes []byte
+	arrayParameters []*fbconn.Array
 }
 
 // Build sets ParamValues for use with *FbConn.ExecParams or *FbConn.ExecPrepared. If
 // sd is nil then QueryExecModeExec behavior will be used.
 func (pb *ExtendedQueryBuilder) Build(ctx context.Context, conn *Conn, tx *dbTx, m *fbtype.Map, sd *fbconn.StatementDescription, args []any) error {
 	pb.reset()
+	buildSucceeded := false
+	defer func() {
+		if !buildSucceeded {
+			pb.reset()
+		}
+	}()
 
 	if sd == nil {
 		for i := range args {
@@ -31,6 +39,7 @@ func (pb *ExtendedQueryBuilder) Build(ctx context.Context, conn *Conn, tx *dbTx,
 				return err
 			}
 		}
+		buildSucceeded = true
 		return nil
 	}
 
@@ -47,6 +56,9 @@ func (pb *ExtendedQueryBuilder) Build(ctx context.Context, conn *Conn, tx *dbTx,
 			sd.Parameters[i].Scale,
 		)
 		if arr != nil {
+			arr.CurrentDimensions = arr.Dimensions
+			pb.arrayParameters = append(pb.arrayParameters, arr)
+
 			arrayData, err := fbtype.NewArrayData(arr.TypeId, arr.SubType, arr.Length, arr.Scale, arr.Dimensions)
 			if err != nil {
 				return err
@@ -71,6 +83,7 @@ func (pb *ExtendedQueryBuilder) Build(ctx context.Context, conn *Conn, tx *dbTx,
 		}
 	}
 
+	buildSucceeded = true
 	return nil
 }
 
@@ -87,6 +100,16 @@ func (pb *ExtendedQueryBuilder) appendParam(ctx context.Context, conn *Conn, tx 
 
 // reset readies pb to build another query.
 func (pb *ExtendedQueryBuilder) reset() {
+	for _, array := range pb.arrayParameters {
+		array.CurrentDimensions = array.Dimensions
+	}
+	clear(pb.arrayParameters)
+	if cap(pb.arrayParameters) > 64 {
+		pb.arrayParameters = make([]*fbconn.Array, 0, 64)
+	} else {
+		pb.arrayParameters = pb.arrayParameters[:0]
+	}
+
 	pb.ParamValues = pb.ParamValues[0:0]
 	pb.paramValueBytes = pb.paramValueBytes[0:0]
 
@@ -136,6 +159,17 @@ func (pb *ExtendedQueryBuilder) encodeBlobParam(ctx context.Context, conn *Conn,
 	}
 	if typeMetadata.TypeID != 0 && !fbconn.IsBlobType(typeMetadata.TypeID) {
 		return nil, fmt.Errorf("blob argument is not compatible with typeid %d", typeMetadata.TypeID)
+	}
+	_, isIoReader := arg.(io.Reader)
+	if valuer, ok := arg.(driver.Valuer); ok && !isIoReader {
+		var err error
+		arg, err = valuer.Value()
+		if err != nil {
+			return nil, fmt.Errorf("error reading driver.Valuer value: %w", err)
+		}
+		if isNilArg(arg) {
+			return nil, nil
+		}
 	}
 	switch v := arg.(type) {
 	case []byte:
@@ -259,8 +293,24 @@ func isNilArg(arg any) bool {
 		return true
 	}
 	v := reflect.ValueOf(arg)
+	_, isIoReader := arg.(io.Reader)
 	switch v.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Map, reflect.Pointer, reflect.Interface, reflect.Slice:
+	case reflect.Pointer:
+		iface := reflect.TypeOf((*driver.Valuer)(nil)).Elem()
+		t := reflect.TypeOf(arg)
+		if t.Implements(iface) && !isIoReader {
+			if t.Elem().Implements(iface) {
+				return v.IsNil()
+			}
+			return false
+		}
+		return v.IsNil()
+	case reflect.Slice, reflect.Map, reflect.Chan, reflect.Func:
+		if _, ok := arg.(driver.Valuer); ok && !isIoReader {
+			return false
+		}
+		return v.IsNil()
+	case reflect.Interface:
 		return v.IsNil()
 	default:
 		return false

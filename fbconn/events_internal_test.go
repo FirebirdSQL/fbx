@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/firebirdsql/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbproto/vax"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx/fbproto"
-	"rdb.red-soft.ru/fbx/fbproto/vax"
 )
 
 type testEventHandler struct {

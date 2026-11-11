@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/firebirdsql/fbx/fbconn/ctxwatch"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx/fbconn/ctxwatch"
 )
 
 type testHandler struct {

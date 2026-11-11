@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"io"
 
-	"rdb.red-soft.ru/fbx/fbproto"
-	"rdb.red-soft.ru/fbx/fbproto/vax"
-	"rdb.red-soft.ru/fbx/internal/fbio"
+	"github.com/firebirdsql/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbproto/vax"
+	"github.com/firebirdsql/fbx/internal/fbio"
 )
 
 type ServerInfoBufferReader struct {
@@ -154,7 +154,7 @@ func (fbConn *FbConn) getServerInfo(msgBuilder func() fbproto.ClientMessage, tru
 
 		msg, err := fbConn.receiveMessage()
 		if err != nil {
-			fbConn.asyncClose()
+			fbConn.asyncCloseAfterRead(err)
 			return err
 		}
 		var respData []byte
@@ -164,6 +164,7 @@ func (fbConn *FbConn) getServerInfo(msgBuilder func() fbproto.ClientMessage, tru
 		case *fbproto.ErrorResponse:
 			return ErrorResponseToFbError(m)
 		default:
+			fbConn.asyncClose()
 			return fmt.Errorf("received unexpected message: %v", m)
 		}
 

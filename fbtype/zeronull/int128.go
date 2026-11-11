@@ -4,7 +4,7 @@ import (
 	"database/sql/driver"
 	"math/big"
 
-	"rdb.red-soft.ru/fbx/fbtype"
+	"github.com/firebirdsql/fbx/fbtype"
 )
 
 type Int128 struct {

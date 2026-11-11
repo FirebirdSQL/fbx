@@ -1081,12 +1081,15 @@ const (
 	Isc_get_user_policy_error                                     = 335546381
 	Isc_gfix_db_name                                              = 335740929
 	Isc_gfix_invalid_sw                                           = 335740930
+	Isc_gfix_version                                              = 335740931
 	Isc_gfix_incmp_sw                                             = 335740932
 	Isc_gfix_replay_req                                           = 335740933
 	Isc_gfix_pgbuf_req                                            = 335740934
 	Isc_gfix_val_req                                              = 335740935
 	Isc_gfix_pval_req                                             = 335740936
 	Isc_gfix_trn_req                                              = 335740937
+	Isc_gfix_trn_all_req                                          = 335740938
+	Isc_gfix_sync_req                                             = 335740939
 	Isc_gfix_full_req                                             = 335740940
 	Isc_gfix_usrname_req                                          = 335740941
 	Isc_gfix_pass_req                                             = 335740942
@@ -1096,18 +1099,122 @@ const (
 	Isc_gfix_nval_req                                             = 335740946
 	Isc_gfix_type_shut                                            = 335740947
 	Isc_gfix_retry                                                = 335740948
+	Isc_gfix_opt                                                  = 335740949
+	Isc_gfix_qualifiers                                           = 335740950
 	Isc_gfix_retry_db                                             = 335740951
+	Isc_gfix_summary                                              = 335740952
+	Isc_gfix_opt_active                                           = 335740953
+	Isc_gfix_opt_attach                                           = 335740954
+	Isc_gfix_opt_begin_log                                        = 335740955
+	Isc_gfix_opt_buffers                                          = 335740956
+	Isc_gfix_opt_commit                                           = 335740957
+	Isc_gfix_opt_cache                                            = 335740958
+	Isc_gfix_opt_disable                                          = 335740959
+	Isc_gfix_opt_full                                             = 335740960
+	Isc_gfix_opt_force                                            = 335740961
+	Isc_gfix_opt_housekeep                                        = 335740962
+	Isc_gfix_opt_ignore                                           = 335740963
+	Isc_gfix_opt_kill                                             = 335740964
+	Isc_gfix_opt_list                                             = 335740965
+	Isc_gfix_opt_mend                                             = 335740966
+	Isc_gfix_opt_no_update                                        = 335740967
+	Isc_gfix_opt_online                                           = 335740968
+	Isc_gfix_opt_prompt                                           = 335740969
+	Isc_gfix_opt_password                                         = 335740970
+	Isc_gfix_opt_quit_log                                         = 335740971
+	Isc_gfix_opt_rollback                                         = 335740972
+	Isc_gfix_opt_sweep                                            = 335740973
+	Isc_gfix_opt_shut                                             = 335740974
+	Isc_gfix_opt_two_phase                                        = 335740975
+	Isc_gfix_opt_tran                                             = 335740976
+	Isc_gfix_opt_use                                              = 335740977
+	Isc_gfix_opt_user                                             = 335740978
+	Isc_gfix_opt_validate                                         = 335740979
+	Isc_gfix_opt_write                                            = 335740980
+	Isc_gfix_opt_x                                                = 335740981
+	Isc_gfix_opt_z                                                = 335740982
+	Isc_gfix_rec_err                                              = 335740983
+	Isc_gfix_blob_err                                             = 335740984
+	Isc_gfix_data_err                                             = 335740985
+	Isc_gfix_index_err                                            = 335740986
+	Isc_gfix_pointer_err                                          = 335740987
+	Isc_gfix_trn_err                                              = 335740988
+	Isc_gfix_db_err                                               = 335740989
+	Isc_gfix_bad_block                                            = 335740990
 	Isc_gfix_exceed_max                                           = 335740991
 	Isc_gfix_corrupt_pool                                         = 335740992
 	Isc_gfix_mem_exhausted                                        = 335740993
 	Isc_gfix_bad_pool                                             = 335740994
 	Isc_gfix_trn_not_valid                                        = 335740995
+	Isc_gfix_dbg_attach                                           = 335740996
+	Isc_gfix_dbg_failed                                           = 335740997
+	Isc_gfix_dbg_success                                          = 335740998
+	Isc_gfix_trn_limbo                                            = 335740999
+	Isc_gfix_try_again                                            = 335741000
+	Isc_gfix_unrec_item                                           = 335741001
+	Isc_gfix_commit_violate                                       = 335741002
+	Isc_gfix_preserve                                             = 335741003
+	Isc_gfix_part_commit                                          = 335741004
+	Isc_gfix_rback_violate                                        = 335741005
+	Isc_gfix_part_commit2                                         = 335741006
+	Isc_gfix_commit_pres                                          = 335741007
+	Isc_gfix_insuff_info                                          = 335741008
+	Isc_gfix_action                                               = 335741009
+	Isc_gfix_all_prep                                             = 335741010
+	Isc_gfix_comm_rback                                           = 335741011
 	Isc_gfix_unexp_eoi                                            = 335741012
+	Isc_gfix_ask                                                  = 335741013
+	Isc_gfix_reattach_failed                                      = 335741014
+	Isc_gfix_org_path                                             = 335741015
+	Isc_gfix_enter_path                                           = 335741016
+	Isc_gfix_att_unsucc                                           = 335741017
 	Isc_gfix_recon_fail                                           = 335741018
+	Isc_gfix_trn2                                                 = 335741019
+	Isc_gfix_mdb_trn                                              = 335741020
+	Isc_gfix_host_site                                            = 335741021
+	Isc_gfix_trn                                                  = 335741022
+	Isc_gfix_prepared                                             = 335741023
+	Isc_gfix_committed                                            = 335741024
+	Isc_gfix_rolled_back                                          = 335741025
+	Isc_gfix_not_available                                        = 335741026
+	Isc_gfix_not_prepared                                         = 335741027
+	Isc_gfix_be_committed                                         = 335741028
+	Isc_gfix_rmt_site                                             = 335741029
+	Isc_gfix_db_path                                              = 335741030
+	Isc_gfix_auto_comm                                            = 335741031
+	Isc_gfix_auto_rback                                           = 335741032
+	Isc_gfix_warning                                              = 335741033
+	Isc_gfix_trn_was_comm                                         = 335741034
+	Isc_gfix_trn_was_rback                                        = 335741035
 	Isc_gfix_trn_unknown                                          = 335741036
+	Isc_gfix_opt_mode                                             = 335741037
 	Isc_gfix_mode_req                                             = 335741038
+	Isc_gfix_opt_SQL_dialect                                      = 335741039
+	Isc_gfix_SQL_dialect                                          = 335741040
+	Isc_gfix_dialect_req                                          = 335741041
 	Isc_gfix_pzval_req                                            = 335741042
+	Isc_gfix_opt_trusted                                          = 335741043
+	Isc_gfix_opt_nolinger                                         = 335741049
+	Isc_gfix_pip_err                                              = 335741050
+	Isc_gfix_rec_warn                                             = 335741051
+	Isc_gfix_blob_warn                                            = 335741052
+	Isc_gfix_data_warn                                            = 335741053
+	Isc_gfix_index_warn                                           = 335741054
+	Isc_gfix_pointer_warn                                         = 335741055
+	Isc_gfix_trn_warn                                             = 335741056
+	Isc_gfix_db_warn                                              = 335741057
+	Isc_gfix_pip_warn                                             = 335741058
+	Isc_gfix_opt_icu                                              = 335741059
+	Isc_gfix_opt_role                                             = 335741060
+	Isc_gfix_role_req                                             = 335741061
+	Isc_gfix_opt_repl                                             = 335741062
+	Isc_gfix_repl_mode_req                                        = 335741063
+	Isc_gfix_opt_parallel                                         = 335741064
+	Isc_gfix_opt_upgrade                                          = 335741065
 	Isc_gfix_overval_req                                          = 335741066
+	Isc_gfix_opt_sweep_timeout                                    = 335741067
+	Isc_gfix_opt_guid                                             = 335741928
+	Isc_gfix_opt_config_val                                       = 335741931
 	Isc_dsql_dbkey_from_non_table                                 = 336003074
 	Isc_dsql_transitional_numeric                                 = 336003075
 	Isc_dsql_dialect_warning_expr                                 = 336003076
@@ -1156,6 +1263,7 @@ const (
 	Isc_dyn_domain_not_found                                      = 336068697
 	Isc_dyn_cant_modify_auto_trig                                 = 336068717
 	Isc_dyn_dup_table                                             = 336068740
+	Isc_dyn_dup_procedure                                         = 336068743
 	Isc_dyn_proc_not_found                                        = 336068748
 	Isc_dyn_exception_not_found                                   = 336068752
 	Isc_dyn_proc_param_not_found                                  = 336068754
@@ -1181,11 +1289,14 @@ const (
 	Isc_dyn_char_fld_too_small                                    = 336068816
 	Isc_dyn_invalid_dtype_conversion                              = 336068817
 	Isc_dyn_dtype_conv_invalid                                    = 336068818
+	Isc_dyn_virmemexh                                             = 336068819
 	Isc_dyn_zero_len_id                                           = 336068820
+	Isc_del_gen_fail                                              = 336068821
 	Isc_dyn_gen_not_found                                         = 336068822
 	Isc_max_coll_per_charset                                      = 336068829
 	Isc_invalid_coll_attr                                         = 336068830
 	Isc_dyn_wrong_gtt_scope                                       = 336068840
+	Isc_del_coll_fail                                             = 336068842
 	Isc_dyn_coll_used_table                                       = 336068843
 	Isc_dyn_coll_used_domain                                      = 336068844
 	Isc_dyn_cannot_del_syscoll                                    = 336068845
@@ -1199,6 +1310,9 @@ const (
 	Isc_dyn_cannot_addrem_computed                                = 336068857
 	Isc_dyn_no_empty_pw                                           = 336068858
 	Isc_dyn_dup_index                                             = 336068859
+	Isc_dyn_locksmith_use_granted                                 = 336068860
+	Isc_dyn_dup_exception                                         = 336068861
+	Isc_dyn_dup_generator                                         = 336068862
 	Isc_dyn_package_not_found                                     = 336068864
 	Isc_dyn_schema_not_found                                      = 336068865
 	Isc_dyn_cannot_mod_sysproc                                    = 336068866
@@ -1211,6 +1325,7 @@ const (
 	Isc_dyn_funcsignat_package                                    = 336068873
 	Isc_dyn_procsignat_package                                    = 336068874
 	Isc_dyn_defvaldecl_package_proc                               = 336068875
+	Isc_dyn_dup_function                                          = 336068876
 	Isc_dyn_package_body_exists                                   = 336068877
 	Isc_dyn_invalid_ddl_func                                      = 336068878
 	Isc_dyn_newfc_oldsyntax                                       = 336068879
@@ -1225,8 +1340,11 @@ const (
 	Isc_dyn_cant_use_zero_increment                               = 336068896
 	Isc_dyn_cant_use_in_foreignkey                                = 336068897
 	Isc_dyn_defvaldecl_package_func                               = 336068898
+	Isc_dyn_create_user_no_password                               = 336068899
 	Isc_dyn_cyclic_role                                           = 336068900
 	Isc_dyn_cant_use_zero_inc_ident                               = 336068904
+	Isc_dyn_concur_alter_database                                 = 336068905
+	Isc_dyn_incompat_alter_database                               = 336068906
 	Isc_dyn_no_ddl_grant_opt_priv                                 = 336068907
 	Isc_dyn_no_grant_opt_priv                                     = 336068908
 	Isc_dyn_func_not_exist                                        = 336068909
@@ -1238,14 +1356,23 @@ const (
 	Isc_dyn_exc_not_exist                                         = 336068915
 	Isc_dyn_gen_not_exist                                         = 336068916
 	Isc_dyn_fld_not_exist                                         = 336068917
+	Isc_dyn_dup_trigger                                           = 336068918
+	Isc_dyn_dup_domain                                            = 336068919
+	Isc_dyn_dup_collation                                         = 336068920
+	Isc_dyn_dup_package                                           = 336068921
 	Isc_dyn_index_schema_must_match_table                         = 336068922
 	Isc_dyn_trig_schema_must_match_table                          = 336068923
+	Isc_dyn_dup_schema                                            = 336068924
 	Isc_dyn_cannot_mod_system_schema                              = 336068925
 	Isc_dyn_cannot_drop_non_emptyschema                           = 336068926
 	Isc_dyn_cannot_mod_obj_sys_schema                             = 336068927
 	Isc_dyn_cannot_create_reserved_schema                         = 336068928
 	Isc_dyn_cannot_infer_schema                                   = 336068929
+	Isc_dyn_dup_blob_filter                                       = 336068930
 	Isc_dyn_column_name_exists                                    = 336068931
+	Isc_dyn_constant_not_found                                    = 336068932
+	Isc_dyn_dup_const                                             = 336068933
+	Isc_dyn_non_constant_constant                                 = 336068934
 	Isc_dyn_function_mismatch                                     = 336068935
 	Isc_dyn_dup_domain_rdb                                        = 336069609
 	Isc_dyn_dup_trigger_rdb                                       = 336069610
@@ -1317,14 +1444,26 @@ const (
 	Isc_gbak_missing_password                                     = 336330941
 	Isc_gbak_missing_skipped_bytes                                = 336330952
 	Isc_gbak_inv_skipped_bytes                                    = 336330953
+	Isc_msgVerbose_write_charsets                                 = 336330963
+	Isc_msgVerbose_write_collations                               = 336330964
 	Isc_gbak_err_restore_charset                                  = 336330965
+	Isc_msgVerbose_restore_charset                                = 336330966
 	Isc_gbak_err_restore_collation                                = 336330967
+	Isc_msgVerbose_restore_collation                              = 336330968
 	Isc_gbak_read_error                                           = 336330972
 	Isc_gbak_write_error                                          = 336330973
 	Isc_gbak_db_in_use                                            = 336330985
 	Isc_gbak_sysmemex                                             = 336330990
+	Isc_write_role_1                                              = 336331000
+	Isc_write_role_2                                              = 336331001
 	Isc_gbak_restore_role_failed                                  = 336331002
+	Isc_restore_role                                              = 336331003
+	Isc_gbak_role_op                                              = 336331004
 	Isc_gbak_role_op_missing                                      = 336331005
+	Isc_gbak_convert_ext_tables                                   = 336331006
+	Isc_gbak_warning                                              = 336331007
+	Isc_gbak_error                                                = 336331008
+	Isc_gbak_page_buffers                                         = 336331009
 	Isc_gbak_page_buffers_missing                                 = 336331010
 	Isc_gbak_page_buffers_wrong_param                             = 336331011
 	Isc_gbak_page_buffers_restore                                 = 336331012
@@ -1340,9 +1479,17 @@ const (
 	Isc_gbak_size_lt_min                                          = 336331023
 	Isc_gbak_svc_name_missing                                     = 336331025
 	Isc_gbak_not_ownr                                             = 336331026
+	Isc_gbak_opt_mode                                             = 336331030
 	Isc_gbak_mode_req                                             = 336331031
 	Isc_gbak_just_data                                            = 336331033
 	Isc_gbak_data_only                                            = 336331034
+	Isc_gbak_activating_idx                                       = 336331037
+	Isc_write_map_1                                               = 336331048
+	Isc_write_map_2                                               = 336331049
+	Isc_get_map_1                                                 = 336331050
+	Isc_get_map_2                                                 = 336331051
+	Isc_get_map_3                                                 = 336331052
+	Isc_get_map_4                                                 = 336331053
 	Isc_gbak_missing_interval                                     = 336331078
 	Isc_gbak_wrong_interval                                       = 336331079
 	Isc_gbak_verify_verbint                                       = 336331081
@@ -1357,6 +1504,15 @@ const (
 	Isc_gbak_invalid_data                                         = 336331094
 	Isc_gbak_inv_bkup_ver2                                        = 336331096
 	Isc_gbak_db_format_too_old2                                   = 336331100
+	Isc_gbak_missing_perf                                         = 336331118
+	Isc_gbak_wrong_perf                                           = 336331119
+	Isc_gbak_too_long_perf                                        = 336331120
+	Isc_gbak_opt_replica                                          = 336331155
+	Isc_gbak_replica_req                                          = 336331156
+	Isc_gbak_missing_prl_wrks                                     = 336331159
+	Isc_gbak_inv_prl_wrks                                         = 336331160
+	Isc_gbak_plugin_schema_migration                              = 336331173
+	Isc_gbak_plugin_schema_migration_err                          = 336331174
 	Isc_gbak_writing_constants                                    = 336331175
 	Isc_gbak_writing_constant                                     = 336331176
 	Isc_gbak_constant                                             = 336331177
@@ -1528,6 +1684,291 @@ const (
 	Isc_dsql_alter_foreign_table_failed                           = 336398315
 	Isc_dsql_drop_foreign_table_failed                            = 336398316
 	Isc_dsql_recreate_foreign_table_failed                        = 336398317
+	Isc_savepoint_error                                           = 336527650
+	Isc_cache_non_zero_use_count                                  = 336527661
+	Isc_unexpected_page_change                                    = 336527662
+	Isc_rdb_triggers_rdb_flags_corrupt                            = 336527664
+	Isc_GEN_ERR                                                   = 336658432
+	Isc_USAGE                                                     = 336658433
+	Isc_SWITCH                                                    = 336658434
+	Isc_NO_DB                                                     = 336658435
+	Isc_FILE_OPEN_ERR                                             = 336658436
+	Isc_COMMIT_PROMPT                                             = 336658437
+	Isc_COMMIT_MSG                                                = 336658438
+	Isc_ROLLBACK_MSG                                              = 336658439
+	Isc_CMD_ERR                                                   = 336658440
+	Isc_ADD_PROMPT                                                = 336658441
+	Isc_VERSION                                                   = 336658442
+	Isc_USAGE_ALL                                                 = 336658443
+	Isc_NUMBER_PAGES                                              = 336658444
+	Isc_SWEEP_INTERV                                              = 336658445
+	Isc_NUM_WAL_BUFF                                              = 336658446
+	Isc_WAL_BUFF_SIZE                                             = 336658447
+	Isc_CKPT_LENGTH                                               = 336658448
+	Isc_CKPT_INTERV                                               = 336658449
+	Isc_WAL_GRPC_WAIT                                             = 336658450
+	Isc_BASE_LEVEL                                                = 336658451
+	Isc_LIMBO                                                     = 336658452
+	Isc_HLP_FRONTEND                                              = 336658453
+	Isc_HLP_BLOBED                                                = 336658454
+	Isc_HLP_BLOBDMP                                               = 336658455
+	Isc_HLP_EDIT                                                  = 336658456
+	Isc_HLP_INPUT                                                 = 336658457
+	Isc_HLP_OUTPUT                                                = 336658458
+	Isc_HLP_SHELL                                                 = 336658459
+	Isc_HLP_HELP                                                  = 336658460
+	Isc_HLP_SETCOM                                                = 336658461
+	Isc_HLP_SET                                                   = 336658462
+	Isc_HLP_SETAUTO                                               = 336658463
+	Isc_HLP_SETBLOB                                               = 336658464
+	Isc_HLP_SETCOUNT                                              = 336658465
+	Isc_HLP_SETECHO                                               = 336658466
+	Isc_HLP_SETSTAT                                               = 336658467
+	Isc_HLP_SETTERM                                               = 336658468
+	Isc_HLP_SHOW                                                  = 336658469
+	Isc_HLP_OBJTYPE                                               = 336658470
+	Isc_HLP_EXIT                                                  = 336658471
+	Isc_HLP_QUIT                                                  = 336658472
+	Isc_HLP_ALL                                                   = 336658473
+	Isc_HLP_SETSCHEMA                                             = 336658474
+	Isc_YES_ANS                                                   = 336658475
+	Isc_REPORT1                                                   = 336658476
+	Isc_REPORT2                                                   = 336658477
+	Isc_BLOB_SUBTYPE                                              = 336658478
+	Isc_BLOB_PROMPT                                               = 336658479
+	Isc_DATE_PROMPT                                               = 336658480
+	Isc_NAME_PROMPT                                               = 336658481
+	Isc_DATE_ERR                                                  = 336658482
+	Isc_CON_PROMPT                                                = 336658483
+	Isc_HLP_SETLIST                                               = 336658484
+	Isc_NOT_FOUND                                                 = 336658485
+	Isc_COPY_ERR                                                  = 336658486
+	Isc_SERVER_TOO_OLD                                            = 336658487
+	Isc_REC_COUNT                                                 = 336658488
+	Isc_UNLICENSED                                                = 336658489
+	Isc_HLP_SETWIDTH                                              = 336658490
+	Isc_HLP_SETPLAN                                               = 336658491
+	Isc_HLP_SETTIME                                               = 336658492
+	Isc_HLP_EDIT2                                                 = 336658493
+	Isc_HLP_OUTPUT2                                               = 336658494
+	Isc_HLP_SETNAMES                                              = 336658495
+	Isc_HLP_OBJTYPE2                                              = 336658496
+	Isc_HLP_SETBLOB2                                              = 336658497
+	Isc_HLP_SET_ROOT                                              = 336658498
+	Isc_NO_TABLES                                                 = 336658499
+	Isc_NO_TABLE                                                  = 336658500
+	Isc_NO_VIEWS                                                  = 336658501
+	Isc_NO_VIEW                                                   = 336658502
+	Isc_NO_INDICES_ON_REL                                         = 336658503
+	Isc_NO_REL_OR_INDEX                                           = 336658504
+	Isc_NO_INDICES                                                = 336658505
+	Isc_NO_DOMAIN                                                 = 336658506
+	Isc_NO_DOMAINS                                                = 336658507
+	Isc_NO_EXCEPTION                                              = 336658508
+	Isc_NO_EXCEPTIONS                                             = 336658509
+	Isc_NO_FILTER                                                 = 336658510
+	Isc_NO_FILTERS                                                = 336658511
+	Isc_NO_FUNCTION                                               = 336658512
+	Isc_NO_FUNCTIONS                                              = 336658513
+	Isc_NO_GEN                                                    = 336658514
+	Isc_NO_GENS                                                   = 336658515
+	Isc_NO_GRANT_ON_REL                                           = 336658516
+	Isc_NO_GRANT_ON_PROC                                          = 336658517
+	Isc_NO_REL_OR_PROC                                            = 336658518
+	Isc_NO_PROC                                                   = 336658519
+	Isc_NO_PROCS                                                  = 336658520
+	Isc_NO_TRIGGERS_ON_REL                                        = 336658521
+	Isc_NO_REL_OR_TRIGGER                                         = 336658522
+	Isc_NO_TRIGGERS                                               = 336658523
+	Isc_NO_CHECKS_ON_REL                                          = 336658524
+	Isc_REPORT2_WINDOWS_ONLY                                      = 336658525
+	Isc_BUFFER_OVERFLOW                                           = 336658526
+	Isc_NO_ROLES                                                  = 336658527
+	Isc_NO_OBJECT                                                 = 336658528
+	Isc_NO_GRANT_ON_ROL                                           = 336658529
+	Isc_UNEXPECTED_EOF                                            = 336658530
+	Isc_TIME_ERR                                                  = 336658533
+	Isc_HLP_OBJTYPE3                                              = 336658534
+	Isc_NO_ROLE                                                   = 336658535
+	Isc_USAGE_BAIL                                                = 336658536
+	Isc_HLP_SETSQLDIALECT                                         = 336658538
+	Isc_NO_GRANT_ON_ANY                                           = 336658539
+	Isc_HLP_SETPLANONLY                                           = 336658540
+	Isc_HLP_SETHEADING                                            = 336658541
+	Isc_HLP_SETBAIL                                               = 336658542
+	Isc_USAGE_CACHE                                               = 336658543
+	Isc_TIME_PROMPT                                               = 336658544
+	Isc_TIMESTAMP_PROMPT                                          = 336658545
+	Isc_TIMESTAMP_ERR                                             = 336658546
+	Isc_NO_COMMENTS                                               = 336658547
+	Isc_ONLY_FIRST_BLOBS                                          = 336658548
+	Isc_MSG_TABLES                                                = 336658549
+	Isc_MSG_FUNCTIONS                                             = 336658550
+	Isc_EXACTLINE                                                 = 336658551
+	Isc_AFTERLINE                                                 = 336658552
+	Isc_NO_TRIGGER                                                = 336658553
+	Isc_USAGE_CHARSET                                             = 336658554
+	Isc_USAGE_DATABASE                                            = 336658555
+	Isc_USAGE_ECHO                                                = 336658556
+	Isc_USAGE_EXTRACT                                             = 336658557
+	Isc_USAGE_INPUT                                               = 336658558
+	Isc_USAGE_MERGE                                               = 336658559
+	Isc_USAGE_MERGE2                                              = 336658560
+	Isc_USAGE_NOAUTOCOMMIT                                        = 336658561
+	Isc_USAGE_NOWARN                                              = 336658562
+	Isc_USAGE_OUTPUT                                              = 336658563
+	Isc_USAGE_PAGE                                                = 336658564
+	Isc_USAGE_PASSWORD                                            = 336658565
+	Isc_USAGE_QUIET                                               = 336658566
+	Isc_USAGE_ROLE                                                = 336658567
+	Isc_USAGE_ROLE2                                               = 336658568
+	Isc_USAGE_SQLDIALECT                                          = 336658569
+	Isc_USAGE_TERM                                                = 336658570
+	Isc_USAGE_USER                                                = 336658571
+	Isc_USAGE_XTRACT                                              = 336658572
+	Isc_USAGE_VERSION                                             = 336658573
+	Isc_USAGE_NOARG                                               = 336658574
+	Isc_USAGE_NOTINT                                              = 336658575
+	Isc_USAGE_RANGE                                               = 336658576
+	Isc_USAGE_DUPSW                                               = 336658577
+	Isc_USAGE_DUPDB                                               = 336658578
+	Isc_NO_DEPENDENCIES                                           = 336658579
+	Isc_NO_COLLATION                                              = 336658580
+	Isc_NO_COLLATIONS                                             = 336658581
+	Isc_MSG_COLLATIONS                                            = 336658582
+	Isc_NO_SECCLASS                                               = 336658583
+	Isc_NO_DB_WIDE_SECCLASS                                       = 336658584
+	Isc_CANNOT_GET_SRV_VER                                        = 336658585
+	Isc_USAGE_NODBTRIGGERS                                        = 336658586
+	Isc_USAGE_TRUSTED                                             = 336658587
+	Isc_BULK_PROMPT                                               = 336658588
+	Isc_NO_CONNECTED_USERS                                        = 336658589
+	Isc_USERS_IN_DB                                               = 336658590
+	Isc_OUTPUT_TRUNCATED                                          = 336658591
+	Isc_VALID_OPTIONS                                             = 336658592
+	Isc_USAGE_FETCH                                               = 336658593
+	Isc_PASS_FILE_OPEN                                            = 336658594
+	Isc_PASS_FILE_READ                                            = 336658595
+	Isc_EMPTY_PASS                                                = 336658596
+	Isc_HLP_SETMAXROWS                                            = 336658597
+	Isc_NO_PACKAGE                                                = 336658598
+	Isc_NO_PACKAGES                                               = 336658599
+	Isc_NO_SCHEMA                                                 = 336658600
+	Isc_NO_SCHEMAS                                                = 336658601
+	Isc_MAXROWS_INVALID                                           = 336658602
+	Isc_MAXROWS_OUTOF_RANGE                                       = 336658603
+	Isc_MAXROWS_NEGATIVE                                          = 336658604
+	Isc_HLP_SETEXPLAIN                                            = 336658605
+	Isc_NO_GRANT_ON_GEN                                           = 336658606
+	Isc_NO_GRANT_ON_XCP                                           = 336658607
+	Isc_NO_GRANT_ON_FLD                                           = 336658608
+	Isc_NO_GRANT_ON_CS                                            = 336658609
+	Isc_NO_GRANT_ON_COLL                                          = 336658610
+	Isc_NO_GRANT_ON_PKG                                           = 336658611
+	Isc_NO_GRANT_ON_FUN                                           = 336658612
+	Isc_REPORT_NEW1                                               = 336658613
+	Isc_REPORT_NEW2                                               = 336658614
+	Isc_REPORT_NEW3                                               = 336658615
+	Isc_NO_MAP                                                    = 336658616
+	Isc_NO_MAPS                                                   = 336658617
+	Isc_INVALID_TERM_CHARS                                        = 336658618
+	Isc_REC_DISPLAYCOUNT                                          = 336658619
+	Isc_COLUMNS_HIDDEN                                            = 336658620
+	Isc_HLP_SETRECORDBUF                                          = 336658621
+	Isc_NUMBER_USED_PAGES                                         = 336658622
+	Isc_NUMBER_FREE_PAGES                                         = 336658623
+	Isc_DATABASE_CRYPTED                                          = 336658624
+	Isc_DATABASE_NOT_CRYPTED                                      = 336658625
+	Isc_DATABASE_CRYPT_PROCESS                                    = 336658626
+	Isc_MSG_ROLES                                                 = 336658627
+	Isc_NO_TIMEOUTS                                               = 336658628
+	Isc_HLP_SETKEEPTRAN                                           = 336658629
+	Isc_HLP_SETPERTAB                                             = 336658630
+	Isc_BAD_STMT_TYPE                                             = 336658631
+	Isc_MSG_PACKAGES                                              = 336658632
+	Isc_NO_PUBLICATION                                            = 336658633
+	Isc_NO_PUBLICATIONS                                           = 336658634
+	Isc_MSG_PUBLICATIONS                                          = 336658635
+	Isc_MSG_PROCEDURES                                            = 336658636
+	Isc_HLP_EXPLAIN                                               = 336658637
+	Isc_USAGE_AUTOTERM                                            = 336658638
+	Isc_AUTOTERM_NOT_SUPPORTED                                    = 336658639
+	Isc_HLP_SETAUTOTERM                                           = 336658640
+	Isc_HLP_SETWIRESTATS                                          = 336658641
+	Isc_USAGE_SEARCH_PATH                                         = 336658642
+	Isc_MSG_SCHEMAS                                               = 336658643
+	Isc_NO_CONSTANTS                                              = 336658644
+	Isc_NO_CONSTANT                                               = 336658645
+	Isc_NO_OBJECT_BY_PATTERN                                      = 336659432
+	Isc_MSG_GENERATORS                                            = 336659433
+	Isc_MSG_VIEWS                                                 = 336659434
+	Isc_MSG_INDICIES                                              = 336659435
+	Isc_MSG_CONSTRAINS                                            = 336659436
+	Isc_MSG_DOMAINS                                               = 336659437
+	Isc_MSG_TRIGGERS                                              = 336659438
+	Isc_MSG_EXCEPTIONS                                            = 336659441
+	Isc_MSG_GRANTS                                                = 336659442
+	Isc_MSG_COMMENTS                                              = 336659443
+	Isc_MSG_FILTERS                                               = 336659444
+	Isc_MSG_DEPENDENCIES                                          = 336659445
+	Isc_MSG_SECCLASSES                                            = 336659446
+	Isc_MSG_SYSTEM                                                = 336659447
+	Isc_MSG_MAP                                                   = 336659449
+	Isc_USAGE_CERTIFICATE                                         = 336659450
+	Isc_USAGE_PIN                                                 = 336659451
+	Isc_USAGE_VERIFY                                              = 336659452
+	Isc_USAGE_LOGIN                                               = 336659453
+	Isc_CLEAR_HISTORY                                             = 336659454
+	Isc_MSG_SYS_FUNCTIONS                                         = 336659459
+	Isc_MSG_SYS_PROCEDURES                                        = 336659460
+	Isc_MSG_SYS_GENERATORS                                        = 336659461
+	Isc_MSG_SYS_COLLATIONS                                        = 336659462
+	Isc_MSG_SYS_PACKAGES                                          = 336659463
+	Isc_MSG_SYS_PUBLICATIONS                                      = 336659464
+	Isc_MSG_SYS_TABLES                                            = 336659465
+	Isc_MSG_JOBS                                                  = 336659466
+	Isc_NO_JOB                                                    = 336659467
+	Isc_NO_JOBS                                                   = 336659468
+	Isc_NO_SYSTEM_COLLATIONS                                      = 336659469
+	Isc_NO_SYSTEM_FUNCTIONS                                       = 336659470
+	Isc_NO_SYSTEM_TABLES                                          = 336659471
+	Isc_NO_SYSTEM_GENS                                            = 336659472
+	Isc_NO_SYSTEM_PROCS                                           = 336659473
+	Isc_NO_SYSTEM_PACKAGES                                        = 336659474
+	Isc_NO_SYSTEM_PUBLICATIONS                                    = 336659475
+	Isc_NO_SYSTEM_COLLATION                                       = 336659476
+	Isc_NO_SYSTEM_FUNCTION                                        = 336659477
+	Isc_NO_SYSTEM_TABLE                                           = 336659478
+	Isc_NO_SYSTEM_GEN                                             = 336659479
+	Isc_NO_SYSTEM_PROC                                            = 336659480
+	Isc_NO_SYSTEM_PACKAGE                                         = 336659481
+	Isc_NO_SYSTEM_PUBLICATION                                     = 336659482
+	Isc_NO_ANY_DEPENDENCIES                                       = 336659483
+	Isc_MSG_SYS_ROLES                                             = 336659484
+	Isc_NO_SYSTEM_ROLE                                            = 336659485
+	Isc_USAGE_EXTRACT_NO_TERM                                     = 336659486
+	Isc_USAGE_TOKEN                                               = 336659487
+	Isc_MSG_FOREIGN_SERVERS                                       = 336659488
+	Isc_MSG_FOREIGN_USER_MAPPINGS                                 = 336659489
+	Isc_NO_FOREIGN_SERVER                                         = 336659490
+	Isc_NO_FOREIGN_SERVERS                                        = 336659491
+	Isc_NO_FOREIGN_USER_MAPPING                                   = 336659492
+	Isc_NO_FOREIGN_USER_MAPPINGS                                  = 336659493
+	Isc_USAGE_READ                                                = 336659494
+	Isc_GsecMsg1                                                  = 336723969
+	Isc_GsecMsg2                                                  = 336723970
+	Isc_GsecMsg3                                                  = 336723971
+	Isc_GsecMsg4                                                  = 336723972
+	Isc_GsecMsg5                                                  = 336723973
+	Isc_GsecMsg6                                                  = 336723974
+	Isc_GsecMsg7                                                  = 336723975
+	Isc_GsecMsg8                                                  = 336723976
+	Isc_GsecMsg9                                                  = 336723977
+	Isc_GsecMsg10                                                 = 336723978
+	Isc_GsecMsg11                                                 = 336723979
+	Isc_GsecMsg12                                                 = 336723980
+	Isc_GsecMsg13                                                 = 336723981
+	Isc_GsecMsg14                                                 = 336723982
 	Isc_gsec_cant_open_db                                         = 336723983
 	Isc_gsec_switches_error                                       = 336723984
 	Isc_gsec_no_op_spec                                           = 336723985
@@ -1538,6 +1979,9 @@ const (
 	Isc_gsec_err_rec_not_found                                    = 336723990
 	Isc_gsec_err_delete                                           = 336723991
 	Isc_gsec_err_find_del                                         = 336723992
+	Isc_GsecMsg25                                                 = 336723993
+	Isc_GsecMsg26                                                 = 336723994
+	Isc_GsecMsg27                                                 = 336723995
 	Isc_gsec_err_find_disp                                        = 336723996
 	Isc_gsec_inv_param                                            = 336723997
 	Isc_gsec_op_specified                                         = 336723998
@@ -1549,17 +1993,73 @@ const (
 	Isc_gsec_fname_specified                                      = 336724004
 	Isc_gsec_mname_specified                                      = 336724005
 	Isc_gsec_lname_specified                                      = 336724006
+	Isc_GsecMsg39                                                 = 336724007
 	Isc_gsec_inv_switch                                           = 336724008
 	Isc_gsec_amb_switch                                           = 336724009
 	Isc_gsec_no_op_specified                                      = 336724010
 	Isc_gsec_params_not_allowed                                   = 336724011
 	Isc_gsec_incompat_switch                                      = 336724012
+	Isc_GsecMsg45                                                 = 336724013
+	Isc_GsecMsg46                                                 = 336724014
+	Isc_GsecMsg47                                                 = 336724015
+	Isc_GsecMsg48                                                 = 336724016
+	Isc_GsecMsg49                                                 = 336724017
+	Isc_GsecMsgs50                                                = 336724018
+	Isc_GsecMsg51                                                 = 336724019
+	Isc_GsecMsg52                                                 = 336724020
+	Isc_GsecMsg53                                                 = 336724021
+	Isc_GsecMsg54                                                 = 336724022
+	Isc_GsecMsg55                                                 = 336724023
+	Isc_GsecMsg56                                                 = 336724024
+	Isc_GsecMsg57                                                 = 336724025
+	Isc_GsecMsg58                                                 = 336724026
+	Isc_GsecMsg59                                                 = 336724027
+	Isc_GsecMsg60                                                 = 336724028
+	Isc_GsecMsg61                                                 = 336724029
+	Isc_GsecMsg62                                                 = 336724030
+	Isc_GsecMsg63                                                 = 336724031
+	Isc_GsecMsg64                                                 = 336724032
+	Isc_GsecMsg65                                                 = 336724033
+	Isc_GsecMsg66                                                 = 336724034
+	Isc_GsecMsg67                                                 = 336724035
+	Isc_GsecMsg68                                                 = 336724036
+	Isc_GsecMsg69                                                 = 336724037
+	Isc_GsecMsg70                                                 = 336724038
+	Isc_GsecMsg71                                                 = 336724039
+	Isc_GsecMsg72                                                 = 336724040
+	Isc_GsecMsg73                                                 = 336724041
 	Isc_gsec_inv_username                                         = 336724044
 	Isc_gsec_inv_pw_length                                        = 336724045
 	Isc_gsec_db_specified                                         = 336724046
 	Isc_gsec_db_admin_specified                                   = 336724047
 	Isc_gsec_db_admin_pw_specified                                = 336724048
 	Isc_gsec_sql_role_specified                                   = 336724049
+	Isc_GsecMsg82                                                 = 336724050
+	Isc_GsecMsg83                                                 = 336724051
+	Isc_GsecMsg84                                                 = 336724052
+	Isc_GsecMsg85                                                 = 336724053
+	Isc_GsecMsg86                                                 = 336724054
+	Isc_GsecMsg87                                                 = 336724055
+	Isc_GsecMsg88                                                 = 336724056
+	Isc_GsecMsg89                                                 = 336724057
+	Isc_GsecMsg90                                                 = 336724058
+	Isc_GsecMsg91                                                 = 336724059
+	Isc_GsecMsg92                                                 = 336724060
+	Isc_GsecMsg93                                                 = 336724061
+	Isc_GsecMsg94                                                 = 336724062
+	Isc_GsecMsg95                                                 = 336724063
+	Isc_GsecMsg96                                                 = 336724064
+	Isc_GsecMsg97                                                 = 336724065
+	Isc_GsecMsg98                                                 = 336724066
+	Isc_GsecMsg99                                                 = 336724067
+	Isc_GsecMsg100                                                = 336724068
+	Isc_GsecMsg101                                                = 336724069
+	Isc_GsecMsg102                                                = 336724070
+	Isc_GsecMsg103                                                = 336724071
+	Isc_GsecMsg104                                                = 336724072
+	Isc_GsecMsg200                                                = 336724168
+	Isc_GsecMsg201                                                = 336724169
+	Isc_GsecMsg202                                                = 336724170
 	Isc_gstat_unknown_switch                                      = 336920577
 	Isc_gstat_retry                                               = 336920578
 	Isc_gstat_wrong_ods                                           = 336920579
@@ -1567,6 +2067,8 @@ const (
 	Isc_gstat_open_err                                            = 336920605
 	Isc_gstat_read_err                                            = 336920606
 	Isc_gstat_sysmemex                                            = 336920607
+	Isc_gstat_username                                            = 336920608
+	Isc_gstat_password                                            = 336920609
 	Isc_fbsvcmgr_bad_am                                           = 336986113
 	Isc_fbsvcmgr_bad_wm                                           = 336986114
 	Isc_fbsvcmgr_bad_rs                                           = 336986115
@@ -1644,10 +2146,45 @@ const (
 	Isc_diff_incmp_sw                                             = 337510415
 	Isc_diff_unicode_init_error                                   = 337510416
 	Isc_diff_replconf_section_not_found                           = 337510417
+	Isc_DiffErr_slave_name                                        = 337510418
+	Isc_DiffErr_records_number                                    = 337510419
+	Isc_DiffErr_records                                           = 337510420
+	Isc_DiffErr_tables_number                                     = 337510421
+	Isc_DiffErr_tables_list                                       = 337510422
+	Isc_DiffErr_primary_keys                                      = 337510423
+	Isc_DiffErr_blobs                                             = 337510424
+	Isc_DiffErr_remote_master                                     = 337510425
+	Isc_DiffErr_sync_timeout                                      = 337510426
+	Isc_DiffMgs_waiting                                           = 337510427
+	Isc_DiffMgs_checking                                          = 337510428
+	Isc_DiffMgs_failed                                            = 337510429
+	Isc_DiffMgs_ok_empty                                          = 337510430
+	Isc_DiffMgs_on_compared                                       = 337510431
+	Isc_DiffMgs_summary_no_diff                                   = 337510432
+	Isc_DiffMgs_summary_diff                                      = 337510433
+	Isc_DiffMgs_summary_error                                     = 337510434
+	Isc_DiffMgs_succeeded                                         = 337510435
+	Isc_DiffMsg_version                                           = 337510436
 	Isc_diff_param_val_miss                                       = 337510437
+	Isc_DiffMsg_table_name                                        = 337510439
+	Isc_DiffErr_index_name                                        = 337510440
+	Isc_DiffErr_attributes                                        = 337510441
+	Isc_DiffErr_field_count                                       = 337510442
+	Isc_DiffErr_field_names                                       = 337510443
+	Isc_DiffErrFull_not_found                                     = 337510444
+	Isc_DiffErrFull_attributes                                    = 337510445
+	Isc_DiffErrFull_blobs                                         = 337510446
+	Isc_DiffErrFull_records                                       = 337510447
+	Isc_DiffErrFull_master_has_more_records                       = 337510448
+	Isc_DiffErrFull_slave_has_more_records                        = 337510449
+	Isc_DiffErrFull_table_not_found                               = 337510450
+	Isc_DiffErrFull_master_has_more_tables                        = 337510451
+	Isc_DiffErrFull_slave_has_more_tables                         = 337510452
+	Isc_DiffErrFull_records_value                                 = 337510453
 )
 
 var errmsgs = map[int]fberror{
+	335544320:                             {"", 0, "00000"},
 	Isc_arith_except:                      {"arithmetic exception, numeric overflow, or string truncation", 0, "22000"},
 	Isc_bad_dbkey:                         {"invalid database key", 0, "HY000"},
 	Isc_bad_db_format:                     {"file @1 is not a valid database", 1, "HY000"},
@@ -2692,6 +3229,7 @@ var errmsgs = map[int]fberror{
 	Isc_policy_is_granted:                                         {"Policy @1 is granted to a user", 1, "23000"},
 	Isc_bad_trig_BLR:                                              {"Error while parsing trigger @1's BLR", 1, "2F000"},
 	Isc_not_rdb:                                                   {"Unable to open database @1, is not Red Database", 1, "HY000"},
+	335546344:                                                     {"Effective user is @1", 1, "00000"},
 	Isc_trace_write_error:                                         {"Error when trying to write to the trace file", 0, "22000"},
 	Isc_no_granted_policy:                                         {"User @1 does not have granted policy", 1, "02000"},
 	Isc_regexp_substr_error:                                       {"Error calculating substring using regular expression: @2", 1, "42000"},
@@ -2721,12 +3259,15 @@ var errmsgs = map[int]fberror{
 	Isc_get_user_policy_error:                                     {"@1 failed during selecting from SEC$USER_POLICY", 1, "22000"},
 	Isc_gfix_db_name:                                              {"data base file name (@1) already given", 1, "00000"},
 	Isc_gfix_invalid_sw:                                           {"invalid switch @1", 1, "00000"},
+	Isc_gfix_version:                                              {"gfix version @1", 1, "00000"},
 	Isc_gfix_incmp_sw:                                             {"incompatible switch combination", 0, "00000"},
 	Isc_gfix_replay_req:                                           {"replay log pathname required", 0, "00000"},
 	Isc_gfix_pgbuf_req:                                            {"number of page buffers for cache required", 0, "00000"},
 	Isc_gfix_val_req:                                              {"numeric value required", 0, "00000"},
 	Isc_gfix_pval_req:                                             {"positive numeric value required", 0, "00000"},
 	Isc_gfix_trn_req:                                              {"number of transactions per sweep required", 0, "00000"},
+	Isc_gfix_trn_all_req:                                          {"transaction number or \"all\" required", 0, "00000"},
+	Isc_gfix_sync_req:                                             {"\"sync\" or \"async\" required", 0, "00000"},
 	Isc_gfix_full_req:                                             {"\"full\" or \"reserve\" required", 0, "00000"},
 	Isc_gfix_usrname_req:                                          {"user name required", 0, "00000"},
 	Isc_gfix_pass_req:                                             {"password required", 0, "00000"},
@@ -2736,22 +3277,134 @@ var errmsgs = map[int]fberror{
 	Isc_gfix_nval_req:                                             {"numeric value between 0 and 32767 inclusive required", 0, "00000"},
 	Isc_gfix_type_shut:                                            {"must specify type of shutdown", 0, "00000"},
 	Isc_gfix_retry:                                                {"please retry, specifying an option", 0, "00000"},
+	Isc_gfix_opt:                                                  {"plausible options are:", 0, "00000"},
+	Isc_gfix_qualifiers:                                           {"\\n    Options can be abbreviated to the unparenthesized characters", 0, "00000"},
 	Isc_gfix_retry_db:                                             {"please retry, giving a database name", 0, "00000"},
+	Isc_gfix_summary:                                              {"Summary of validation errors", 0, "00000"},
+	Isc_gfix_opt_active:                                           {"   -ac(tivate_shadow)   activate shadow file for database usage", 0, "00000"},
+	Isc_gfix_opt_attach:                                           {"   -at(tach)            shutdown new database attachments", 0, "00000"},
+	Isc_gfix_opt_begin_log:                                        {"\t-begin_log\tbegin logging for replay utility", 0, "00000"},
+	Isc_gfix_opt_buffers:                                          {"   -b(uffers)           set page buffers <n>", 0, "00000"},
+	Isc_gfix_opt_commit:                                           {"   -co(mmit)            commit transaction <tr / all>", 0, "00000"},
+	Isc_gfix_opt_cache:                                            {"   -ca(che)             shutdown cache manager", 0, "00000"},
+	Isc_gfix_opt_disable:                                          {"\t-disable\tdisable WAL", 0, "00000"},
+	Isc_gfix_opt_full:                                             {"   -fu(ll)              validate record fragments (-v)", 0, "00000"},
+	Isc_gfix_opt_force:                                            {"   -fo(rce_shutdown)    force database shutdown", 0, "00000"},
+	Isc_gfix_opt_housekeep:                                        {"   -h(ousekeeping)      set sweep interval <n>", 0, "00000"},
+	Isc_gfix_opt_ignore:                                           {"   -i(gnore)            ignore checksum errors", 0, "00000"},
+	Isc_gfix_opt_kill:                                             {"   -k(ill_shadow)       kill all unavailable shadow files", 0, "00000"},
+	Isc_gfix_opt_list:                                             {"   -l(ist)              show limbo transactions", 0, "00000"},
+	Isc_gfix_opt_mend:                                             {"   -me(nd)              prepare corrupt database for backup", 0, "00000"},
+	Isc_gfix_opt_no_update:                                        {"   -n(o_update)         read-only validation (-v)", 0, "00000"},
+	Isc_gfix_opt_online:                                           {"   -o(nline)            database online <single / multi / normal>", 0, "00000"},
+	Isc_gfix_opt_prompt:                                           {"   -pr(ompt)            prompt for commit/rollback (-l)", 0, "00000"},
+	Isc_gfix_opt_password:                                         {"   -pa(ssword)          default password", 0, "00000"},
+	Isc_gfix_opt_quit_log:                                         {"\t-quit_log\tquit logging for replay utility", 0, "00000"},
+	Isc_gfix_opt_rollback:                                         {"   -r(ollback)          rollback transaction <tr / all>", 0, "00000"},
+	Isc_gfix_opt_sweep:                                            {"   -sw(eep)             force garbage collection", 0, "00000"},
+	Isc_gfix_opt_shut:                                             {"   -sh(utdown)          shutdown <full / single / multi>", 0, "00000"},
+	Isc_gfix_opt_two_phase:                                        {"   -tw(o_phase)         perform automated two-phase recovery", 0, "00000"},
+	Isc_gfix_opt_tran:                                             {"   -tra(nsaction)       shutdown transaction startup", 0, "00000"},
+	Isc_gfix_opt_use:                                              {"   -u(se)               use full or reserve space for versions", 0, "00000"},
+	Isc_gfix_opt_user:                                             {"   -user                default user name", 0, "00000"},
+	Isc_gfix_opt_validate:                                         {"   -v(alidate)          validate database structure", 0, "00000"},
+	Isc_gfix_opt_write:                                            {"   -w(rite)             write synchronously or asynchronously", 0, "00000"},
+	Isc_gfix_opt_x:                                                {"   -x                   set debug on", 0, "00000"},
+	Isc_gfix_opt_z:                                                {"   -z                   print software version number", 0, "00000"},
+	Isc_gfix_rec_err:                                              {"\\n\tNumber of record level errors\t: @1", 1, "00000"},
+	Isc_gfix_blob_err:                                             {"\tNumber of Blob page errors\t: @1", 1, "00000"},
+	Isc_gfix_data_err:                                             {"\tNumber of data page errors\t: @1", 1, "00000"},
+	Isc_gfix_index_err:                                            {"\tNumber of index page errors\t: @1", 1, "00000"},
+	Isc_gfix_pointer_err:                                          {"\tNumber of pointer page errors\t: @1", 1, "00000"},
+	Isc_gfix_trn_err:                                              {"\tNumber of transaction page errors\t: @1", 1, "00000"},
+	Isc_gfix_db_err:                                               {"\tNumber of database page errors\t: @1", 1, "00000"},
+	Isc_gfix_bad_block:                                            {"bad block type", 0, "00000"},
 	Isc_gfix_exceed_max:                                           {"internal block exceeds maximum size", 0, "00000"},
 	Isc_gfix_corrupt_pool:                                         {"corrupt pool", 0, "00000"},
 	Isc_gfix_mem_exhausted:                                        {"virtual memory exhausted", 0, "00000"},
 	Isc_gfix_bad_pool:                                             {"bad pool id", 0, "00000"},
 	Isc_gfix_trn_not_valid:                                        {"Transaction state @1 not in valid range.", 1, "00000"},
+	Isc_gfix_dbg_attach:                                           {"ATTACH_DATABASE: attempted attach of @1,", 1, "00000"},
+	Isc_gfix_dbg_failed:                                           {" failed", 0, "00000"},
+	Isc_gfix_dbg_success:                                          {" succeeded", 0, "00000"},
+	Isc_gfix_trn_limbo:                                            {"Transaction @1 is in limbo.", 1, "00000"},
+	Isc_gfix_try_again:                                            {"More limbo transactions than fit.  Try again", 0, "00000"},
+	Isc_gfix_unrec_item:                                           {"Unrecognized info item @1", 1, "00000"},
+	Isc_gfix_commit_violate:                                       {"A commit of transaction @1 will violate two-phase commit.", 1, "00000"},
+	Isc_gfix_preserve:                                             {"A rollback of transaction @1 is needed to preserve two-phase commit.", 1, "00000"},
+	Isc_gfix_part_commit:                                          {"Transaction @1 has already been partially committed.", 1, "00000"},
+	Isc_gfix_rback_violate:                                        {"A rollback of this transaction will violate two-phase commit.", 0, "00000"},
+	Isc_gfix_part_commit2:                                         {"Transaction @1 has been partially committed.", 1, "00000"},
+	Isc_gfix_commit_pres:                                          {"A commit is necessary to preserve the two-phase commit.", 0, "00000"},
+	Isc_gfix_insuff_info:                                          {"Insufficient information is available to determine", 0, "00000"},
+	Isc_gfix_action:                                               {"a proper action for transaction @1.", 1, "00000"},
+	Isc_gfix_all_prep:                                             {"Transaction @1: All subtransactions have been prepared.", 1, "00000"},
+	Isc_gfix_comm_rback:                                           {"Either commit or rollback is possible.", 0, "00000"},
 	Isc_gfix_unexp_eoi:                                            {"unexpected end of input", 0, "00000"},
+	Isc_gfix_ask:                                                  {"Commit, rollback, or neither (c, r, or n)?", 0, "00000"},
+	Isc_gfix_reattach_failed:                                      {"Could not reattach to database for transaction @1.", 1, "00000"},
+	Isc_gfix_org_path:                                             {"Original path: @1", 1, "00000"},
+	Isc_gfix_enter_path:                                           {"Enter a valid path:", 0, "00000"},
+	Isc_gfix_att_unsucc:                                           {"Attach unsuccessful.", 0, "00000"},
 	Isc_gfix_recon_fail:                                           {"failed to reconnect to a transaction in database @1", 1, "00000"},
+	Isc_gfix_trn2:                                                 {"Transaction @1:", 1, "00000"},
+	Isc_gfix_mdb_trn:                                              {"  Multidatabase transaction:", 0, "00000"},
+	Isc_gfix_host_site:                                            {"    Host Site: @1", 1, "00000"},
+	Isc_gfix_trn:                                                  {"    Transaction @1", 1, "00000"},
+	Isc_gfix_prepared:                                             {"has been prepared.", 0, "00000"},
+	Isc_gfix_committed:                                            {"has been committed.", 0, "00000"},
+	Isc_gfix_rolled_back:                                          {"has been rolled back.", 0, "00000"},
+	Isc_gfix_not_available:                                        {"is not available.", 0, "00000"},
+	Isc_gfix_not_prepared:                                         {"is not found, assumed not prepared.", 0, "00000"},
+	Isc_gfix_be_committed:                                         {"is not found, assumed to be committed.", 0, "00000"},
+	Isc_gfix_rmt_site:                                             {"        Remote Site: @1", 1, "00000"},
+	Isc_gfix_db_path:                                              {"        Database Path: @1", 1, "00000"},
+	Isc_gfix_auto_comm:                                            {"  Automated recovery would commit this transaction.", 0, "00000"},
+	Isc_gfix_auto_rback:                                           {"  Automated recovery would rollback this transaction.", 0, "00000"},
+	Isc_gfix_warning:                                              {"Warning: Multidatabase transaction is in inconsistent state for recovery.", 0, "00000"},
+	Isc_gfix_trn_was_comm:                                         {"Transaction @1 was committed, but prior ones were rolled back.", 1, "00000"},
+	Isc_gfix_trn_was_rback:                                        {"Transaction @1 was rolled back, but prior ones were committed.", 1, "00000"},
 	Isc_gfix_trn_unknown:                                          {"Transaction description item unknown", 0, "00000"},
+	Isc_gfix_opt_mode:                                             {"   -mo(de)              read_only or read_write database", 0, "00000"},
 	Isc_gfix_mode_req:                                             {"\"read_only\" or \"read_write\" required", 0, "00000"},
+	Isc_gfix_opt_SQL_dialect:                                      {"   -sq(l_dialect)       set database dialect n", 0, "00000"},
+	Isc_gfix_SQL_dialect:                                          {"database SQL dialect must be one of '@1'", 1, "00000"},
+	Isc_gfix_dialect_req:                                          {"dialect number required", 0, "00000"},
 	Isc_gfix_pzval_req:                                            {"positive or zero numeric value required", 0, "00000"},
+	Isc_gfix_opt_trusted:                                          {"   -tru(sted)           use trusted authentication", 0, "00000"},
+	335741044:                                                     {"could not open password file @1, errno @2", 2, "00000"},
+	335741045:                                                     {"could not read password file @1, errno @2", 2, "00000"},
+	335741046:                                                     {"empty password file @1", 1, "00000"},
+	335741047:                                                     {"   -fe(tch_password)    fetch password from file", 0, "00000"},
+	335741048:                                                     {"usage: gfix [options] <database>", 0, "00000"},
+	Isc_gfix_opt_nolinger:                                         {"   -nol(inger)          close database ignoring linger setting for it", 0, "00000"},
+	Isc_gfix_pip_err:                                              {"\tNumber of inventory page errors\t: @1", 1, "00000"},
+	Isc_gfix_rec_warn:                                             {"\tNumber of record level warnings\t: @1", 1, "00000"},
+	Isc_gfix_blob_warn:                                            {"\tNumber of blob page warnings\t: @1", 1, "00000"},
+	Isc_gfix_data_warn:                                            {"\tNumber of data page warnings\t: @1", 1, "00000"},
+	Isc_gfix_index_warn:                                           {"\tNumber of index page warnings\t: @1", 1, "00000"},
+	Isc_gfix_pointer_warn:                                         {"\tNumber of pointer page warnings\t: @1", 1, "00000"},
+	Isc_gfix_trn_warn:                                             {"\tNumber of transaction page warnings\t: @1", 1, "00000"},
+	Isc_gfix_db_warn:                                              {"\tNumber of database page warnings\t: @1", 1, "00000"},
+	Isc_gfix_pip_warn:                                             {"\tNumber of inventory page warnings\t: @1", 1, "00000"},
+	Isc_gfix_opt_icu:                                              {"   -icu                 fix database to be usable with present ICU version", 0, "00000"},
+	Isc_gfix_opt_role:                                             {"   -role                set SQL role name", 0, "00000"},
+	Isc_gfix_role_req:                                             {"SQL role name required", 0, "00000"},
+	Isc_gfix_opt_repl:                                             {"   -repl(ica)           replica mode <none / read_only / read_write>", 0, "00000"},
+	Isc_gfix_repl_mode_req:                                        {"replica mode (none / read_only / read_write) required", 0, "00000"},
+	Isc_gfix_opt_parallel:                                         {"   -par(allel)          parallel workers <n> (-sweep, -icu)", 0, "00000"},
+	Isc_gfix_opt_upgrade:                                          {"   -up(grade)           upgrade database ODS", 0, "00000"},
 	Isc_gfix_overval_req:                                          {"too big numeric value", 0, "00000"},
+	Isc_gfix_opt_sweep_timeout:                                    {"   -tim(eout)           set sweep interrupt timeout in seconds", 0, "00000"},
+	Isc_gfix_opt_guid:                                             {"   -g(uid)              change a guid to the new one", 0, "00000"},
+	335741930:                                                     {"number of threads required", 0, "00000"},
+	Isc_gfix_opt_config_val:                                       {"   -conf(ig_validate)   validate configuration file <file_name>", 0, "00000"},
+	335741932:                                                     {"Configuration file name required.", 0, "00000"},
 	Isc_dsql_dbkey_from_non_table:                                 {"Cannot SELECT RDB$DB_KEY from a stored procedure.", 0, "HY000"},
 	Isc_dsql_transitional_numeric:                                 {"Precision 10 to 18 changed from DOUBLE PRECISION in SQL dialect 1 to 64-bit scaled integer in SQL dialect 3", 0, "HY000"},
 	Isc_dsql_dialect_warning_expr:                                 {"Use of @1 expression that returns different results in dialect 1 and dialect 3", 1, "01000"},
 	Isc_sql_db_dialect_dtype_unsupport:                            {"Database SQL dialect @1 does not support reference to @2 datatype", 2, "HY000"},
+	336003078:                                                     {"", 0, "00000"},
 	Isc_sql_dialect_conflict_num:                                  {"DB dialect @1 and client dialect @2 conflict with respect to numeric precision @3.", 3, "HY000"},
 	Isc_dsql_warning_number_ambiguous:                             {"WARNING: Numeric literal @1 is interpreted as a floating-point", 1, "HY104"},
 	Isc_dsql_warning_number_ambiguous1:                            {"value in SQL dialect 1, but as an exact numeric value in SQL dialect 3.", 0, "HY104"},
@@ -2789,22 +3442,193 @@ var errmsgs = map[int]fberror{
 	Isc_upd_ins_cannot_default:                                    {"UPDATE OR INSERT value for field @1, part of the implicit or explicit MATCHING clause, cannot be DEFAULT", 1, "42000"},
 	Isc_dsql_ltt_invalid_reference:                                {"LOCAL TEMPORARY TABLE @1 cannot be referenced in @2", 2, "42000"},
 	Isc_dsql_using_statement_must_contain_clause:                  {"USING statement must contain at least one clause", 0, "42000"},
+	336004072:                                                     {"Invalid DROP SQL SECURITY clause", 0, "00000"},
+	336068609:                                                     {"ODS version not supported by DYN", 0, "00000"},
+	336068610:                                                     {"unsupported DYN verb", 0, "00000"},
+	336068611:                                                     {"STORE RDB$FIELD_DIMENSIONS failed", 0, "00000"},
+	336068612:                                                     {"unsupported DYN verb", 0, "00000"},
+	336068613:                                                     {"@1", 1, "00000"},
+	336068614:                                                     {"unsupported DYN verb", 0, "00000"},
+	336068615:                                                     {"DEFINE BLOB FILTER failed", 0, "00000"},
+	336068616:                                                     {"DEFINE GENERATOR failed", 0, "00000"},
+	336068617:                                                     {"DEFINE GENERATOR unexpected DYN verb", 0, "00000"},
+	336068618:                                                     {"DEFINE FUNCTION failed", 0, "00000"},
+	336068619:                                                     {"unsupported DYN verb", 0, "00000"},
+	336068620:                                                     {"DEFINE FUNCTION ARGUMENT failed", 0, "00000"},
+	336068621:                                                     {"STORE RDB$FIELDS failed", 0, "00000"},
+	336068622:                                                     {"No table specified for index", 0, "00000"},
+	336068623:                                                     {"STORE RDB$INDEX_SEGMENTS failed", 0, "00000"},
+	336068624:                                                     {"unsupported DYN verb", 0, "00000"},
+	336068625:                                                     {"PRIMARY KEY column lookup failed", 0, "00000"},
+	336068626:                                                     {"could not find UNIQUE or PRIMARY KEY constraint in table @1 with specified columns", 1, "00000"},
+	336068627:                                                     {"PRIMARY KEY lookup failed", 0, "00000"},
+	336068628:                                                     {"could not find PRIMARY KEY index in specified table @1", 1, "00000"},
+	336068629:                                                     {"STORE RDB$INDICES failed", 0, "00000"},
+	336068630:                                                     {"STORE RDB$FIELDS failed", 0, "00000"},
+	336068631:                                                     {"STORE RDB$RELATION_FIELDS failed", 0, "00000"},
+	336068632:                                                     {"STORE RDB$RELATIONS failed", 0, "00000"},
+	336068633:                                                     {"STORE RDB$USER_PRIVILEGES failed defining a table", 0, "00000"},
+	336068634:                                                     {"unsupported DYN verb", 0, "00000"},
+	336068635:                                                     {"STORE RDB$RELATIONS failed", 0, "00000"},
+	336068636:                                                     {"STORE RDB$FIELDS failed", 0, "00000"},
+	336068637:                                                     {"STORE RDB$RELATION_FIELDS failed", 0, "00000"},
+	336068638:                                                     {"unsupported DYN verb", 0, "00000"},
+	336068639:                                                     {"DEFINE TRIGGER failed", 0, "00000"},
+	336068640:                                                     {"unsupported DYN verb", 0, "00000"},
+	336068641:                                                     {"DEFINE TRIGGER MESSAGE failed", 0, "00000"},
+	336068642:                                                     {"STORE RDB$VIEW_RELATIONS failed", 0, "00000"},
+	336068643:                                                     {"ERASE RDB$FIELDS failed", 0, "00000"},
+	336068644:                                                     {"ERASE BLOB FILTER failed", 0, "00000"},
 	Isc_dyn_filter_not_found:                                      {"BLOB Filter @1 not found", 1, "42000"},
+	336068646:                                                     {"unsupported DYN verb", 0, "00000"},
+	336068647:                                                     {"ERASE RDB$FUNCTION_ARGUMENTS failed", 0, "00000"},
+	336068648:                                                     {"ERASE RDB$FUNCTIONS failed", 0, "00000"},
 	Isc_dyn_func_not_found:                                        {"Function @1 not found", 1, "42000"},
+	336068650:                                                     {"unsupported DYN verb", 0, "00000"},
+	336068651:                                                     {"Domain @1 is used in table @2 (local name @3) and cannot be dropped", 3, "00000"},
+	336068652:                                                     {"ERASE RDB$FIELDS failed", 0, "00000"},
+	336068653:                                                     {"ERASE RDB$FIELDS failed", 0, "00000"},
+	336068654:                                                     {"Column not found", 0, "00000"},
+	336068655:                                                     {"ERASE RDB$INDICES failed", 0, "00000"},
 	Isc_dyn_index_not_found:                                       {"Index not found", 0, "42000"},
+	336068657:                                                     {"ERASE RDB$INDEX_SEGMENTS failed", 0, "00000"},
+	336068658:                                                     {"No segments found for index", 0, "00000"},
+	336068659:                                                     {"No table specified in ERASE RFR", 0, "00000"},
+	336068660:                                                     {"Column @1 from table @2 is referenced in view @3", 3, "00000"},
+	336068661:                                                     {"ERASE RDB$RELATION_FIELDS failed", 0, "00000"},
 	Isc_dyn_view_not_found:                                        {"View @1 not found", 1, "42000"},
+	336068663:                                                     {"Column not found for table", 0, "00000"},
+	336068664:                                                     {"ERASE RDB$INDEX_SEGMENTS failed", 0, "00000"},
+	336068665:                                                     {"ERASE RDB$INDICES failed", 0, "00000"},
+	336068666:                                                     {"ERASE RDB$RELATION_FIELDS failed", 0, "00000"},
+	336068667:                                                     {"ERASE RDB$VIEW_RELATIONS failed", 0, "00000"},
+	336068668:                                                     {"ERASE RDB$RELATIONS failed", 0, "00000"},
+	336068669:                                                     {"Table not found", 0, "00000"},
+	336068670:                                                     {"ERASE RDB$USER_PRIVILEGES failed", 0, "00000"},
+	336068671:                                                     {"ERASE RDB$FILES failed", 0, "00000"},
+	336068672:                                                     {"unsupported DYN verb", 0, "00000"},
+	336068673:                                                     {"ERASE RDB$TRIGGER_MESSAGES failed", 0, "00000"},
+	336068674:                                                     {"ERASE RDB$TRIGGERS failed", 0, "00000"},
+	336068675:                                                     {"Trigger not found", 0, "00000"},
+	336068676:                                                     {"MODIFY RDB$VIEW_RELATIONS failed", 0, "00000"},
+	336068677:                                                     {"unsupported DYN verb", 0, "00000"},
+	336068678:                                                     {"TRIGGER NAME expected", 0, "00000"},
+	336068679:                                                     {"ERASE TRIGGER MESSAGE failed", 0, "00000"},
+	336068680:                                                     {"Trigger Message not found", 0, "00000"},
+	336068681:                                                     {"unsupported DYN verb", 0, "00000"},
+	336068682:                                                     {"ERASE RDB$SECURITY_CLASSES failed", 0, "00000"},
+	336068683:                                                     {"Security class not found", 0, "00000"},
+	336068684:                                                     {"unsupported DYN verb", 0, "00000"},
+	336068685:                                                     {"SELECT RDB$USER_PRIVILEGES failed in grant", 0, "00000"},
+	336068686:                                                     {"SELECT RDB$USER_PRIVILEGES failed in grant", 0, "00000"},
+	336068687:                                                     {"STORE RDB$USER_PRIVILEGES failed in grant", 0, "00000"},
+	336068688:                                                     {"Specified domain or source column does not exist", 0, "00000"},
+	336068689:                                                     {"Generation of column name failed", 0, "00000"},
+	336068690:                                                     {"Generation of index name failed", 0, "00000"},
+	336068691:                                                     {"Generation of trigger name failed", 0, "00000"},
+	336068692:                                                     {"MODIFY DATABASE failed", 0, "00000"},
+	336068693:                                                     {"MODIFY RDB$CHARACTER_SETS failed", 0, "00000"},
+	336068694:                                                     {"MODIFY RDB$COLLATIONS failed", 0, "00000"},
+	336068695:                                                     {"MODIFY RDB$FIELDS failed", 0, "00000"},
+	336068696:                                                     {"MODIFY RDB$BLOB_FILTERS failed", 0, "00000"},
 	Isc_dyn_domain_not_found:                                      {"Domain not found", 0, "42000"},
+	336068698:                                                     {"unsupported DYN verb", 0, "00000"},
+	336068699:                                                     {"MODIFY RDB$INDICES failed", 0, "00000"},
+	336068700:                                                     {"MODIFY RDB$FUNCTIONS failed", 0, "00000"},
+	336068701:                                                     {"Index column not found", 0, "00000"},
+	336068702:                                                     {"MODIFY RDB$GENERATORS failed", 0, "00000"},
+	336068703:                                                     {"MODIFY RDB$RELATION_FIELDS failed", 0, "00000"},
+	336068704:                                                     {"Local column @1 not found", 1, "00000"},
+	336068705:                                                     {"add EXTERNAL FILE not allowed", 0, "00000"},
+	336068706:                                                     {"drop EXTERNAL FILE not allowed", 0, "00000"},
+	336068707:                                                     {"MODIFY RDB$RELATIONS failed", 0, "00000"},
+	336068708:                                                     {"MODIFY RDB$PROCEDURE_PARAMETERS failed", 0, "00000"},
+	336068709:                                                     {"Table column not found", 0, "00000"},
+	336068710:                                                     {"MODIFY TRIGGER failed", 0, "00000"},
+	336068711:                                                     {"TRIGGER NAME expected", 0, "00000"},
+	336068712:                                                     {"unsupported DYN verb", 0, "00000"},
+	336068713:                                                     {"MODIFY TRIGGER MESSAGE failed", 0, "00000"},
+	336068714:                                                     {"Create metadata BLOB failed", 0, "00000"},
+	336068715:                                                     {"Write metadata BLOB failed", 0, "00000"},
+	336068716:                                                     {"Close metadata BLOB failed", 0, "00000"},
 	Isc_dyn_cant_modify_auto_trig:                                 {"Triggers created automatically cannot be modified", 0, "42000"},
+	336068718:                                                     {"unsupported DYN verb", 0, "00000"},
+	336068719:                                                     {"ERASE RDB$USER_PRIVILEGES failed in revoke(1)", 0, "00000"},
+	336068720:                                                     {"Access to RDB$USER_PRIVILEGES failed in revoke(2)", 0, "00000"},
+	336068721:                                                     {"ERASE RDB$USER_PRIVILEGES failed in revoke (3)", 0, "00000"},
+	336068722:                                                     {"Access to RDB$USER_PRIVILEGES failed in revoke (4)", 0, "00000"},
+	336068723:                                                     {"CREATE VIEW failed", 0, "00000"},
+	336068724:                                                     {" attempt to index BLOB column in INDEX @1", 1, "00000"},
+	336068725:                                                     {" attempt to index array column in index @1", 1, "00000"},
+	336068726:                                                     {"key size too big for index @1", 1, "00000"},
+	336068727:                                                     {"no keys for index @1", 1, "00000"},
+	336068728:                                                     {"Unknown columns in index @1", 1, "00000"},
+	336068729:                                                     {"STORE RDB$RELATION_CONSTRAINTS failed", 0, "00000"},
+	336068730:                                                     {"STORE RDB$CHECK_CONSTRAINTS failed", 0, "00000"},
+	336068731:                                                     {"Column: @1 not defined as NOT NULL - cannot be used in PRIMARY KEY constraint definition", 1, "00000"},
+	336068732:                                                     {"A column name is repeated in the definition of constraint: @1", 1, "00000"},
+	336068733:                                                     {"Integrity Constraint lookup failed", 0, "00000"},
+	336068734:                                                     {"Same set of columns cannot be used in more than one PRIMARY KEY and/or UNIQUE constraint definition", 0, "00000"},
+	336068735:                                                     {"STORE RDB$REF_CONSTRAINTS failed", 0, "00000"},
+	336068736:                                                     {"No table specified in delete_constraint", 0, "00000"},
+	336068737:                                                     {"ERASE RDB$RELATION_CONSTRAINTS failed", 0, "00000"},
+	336068738:                                                     {"CONSTRAINT @1 does not exist.", 1, "00000"},
+	336068739:                                                     {"Generation of constraint name failed", 0, "00000"},
 	Isc_dyn_dup_table:                                             {"Table @1 already exists", 1, "42S01"},
+	336068741:                                                     {"Number of referencing columns do not equal number of referenced columns", 0, "00000"},
+	336068742:                                                     {"STORE RDB$PROCEDURES failed", 0, "00000"},
+	Isc_dyn_dup_procedure:                                         {"Procedure @1 already exists", 1, "00000"},
+	336068744:                                                     {"STORE RDB$PROCEDURE_PARAMETERS failed", 0, "00000"},
+	336068745:                                                     {"Store into system table @1 failed", 1, "00000"},
+	336068746:                                                     {"ERASE RDB$PROCEDURE_PARAMETERS failed", 0, "00000"},
+	336068747:                                                     {"ERASE RDB$PROCEDURES failed", 0, "00000"},
 	Isc_dyn_proc_not_found:                                        {"Procedure @1 not found", 1, "42000"},
+	336068749:                                                     {"MODIFY RDB$PROCEDURES failed", 0, "00000"},
+	336068750:                                                     {"DEFINE EXCEPTION failed", 0, "00000"},
+	336068751:                                                     {"ERASE EXCEPTION failed", 0, "00000"},
 	Isc_dyn_exception_not_found:                                   {"Exception not found", 0, "42000"},
+	336068753:                                                     {"MODIFY EXCEPTION failed", 0, "00000"},
 	Isc_dyn_proc_param_not_found:                                  {"Parameter @1 in procedure @2 not found", 2, "42000"},
 	Isc_dyn_trig_not_found:                                        {"Trigger @1 not found", 1, "42000"},
+	336068756:                                                     {"Only one data type change to the domain @1 allowed at a time", 1, "00000"},
+	336068757:                                                     {"Only one data type change to the field @1 allowed at a time", 1, "00000"},
+	336068758:                                                     {"STORE RDB$FILES failed", 0, "00000"},
 	Isc_dyn_charset_not_found:                                     {"Character set @1 not found", 1, "42000"},
 	Isc_dyn_collation_not_found:                                   {"Collation @1 not found", 1, "42000"},
+	336068761:                                                     {"ERASE RDB$LOG_FILES failed", 0, "00000"},
+	336068762:                                                     {"STORE RDB$LOG_FILES failed", 0, "00000"},
 	Isc_dyn_role_not_found:                                        {"Role @1 not found", 1, "42000"},
+	336068764:                                                     {"Difference file lookup failed", 0, "00000"},
+	336068765:                                                     {"DEFINE SHADOW failed", 0, "00000"},
+	336068766:                                                     {"MODIFY RDB$ROLES failed", 0, "00000"},
 	Isc_dyn_name_longer:                                           {"Name longer than database column size", 0, "42000"},
+	336068768:                                                     {"\"Only one constraint allowed for a domain\"", 0, "00000"},
+	336068770:                                                     {"Looking up column position failed", 0, "00000"},
+	336068771:                                                     {"A node name is not permitted in a table with external file definition", 0, "00000"},
+	336068772:                                                     {"Shadow lookup failed", 0, "00000"},
+	336068773:                                                     {"Shadow @1 already exists", 1, "00000"},
+	336068774:                                                     {"Cannot add file with the same name as the database or added files", 0, "00000"},
+	336068775:                                                     {"no grant option for privilege @1 on column @2 of table/view @3", 3, "00000"},
+	336068776:                                                     {"no grant option for privilege @1 on column @2 of base table/view @3", 3, "00000"},
+	336068777:                                                     {"no grant option for privilege @1 on table/view @2 (for column @3)", 3, "00000"},
+	336068778:                                                     {"no grant option for privilege @1 on base table/view @2 (for column @3)", 3, "00000"},
+	336068779:                                                     {"no @1 privilege with grant option on table/view @2 (for column @3)", 3, "00000"},
+	336068780:                                                     {"no @1 privilege with grant option on base table/view @2 (for column @3)", 3, "00000"},
+	336068781:                                                     {"no grant option for privilege @1 on table/view @2", 2, "00000"},
+	336068782:                                                     {"no @1 privilege with grant option on table/view @2", 2, "00000"},
+	336068783:                                                     {"table/view @1 does not exist", 1, "00000"},
 	Isc_dyn_column_does_not_exist:                                 {"column @1 does not exist in table/view @2", 2, "42S22"},
+	336068785:                                                     {"Can not alter a view", 0, "00000"},
+	336068786:                                                     {"EXTERNAL FILE table not supported in this context", 0, "00000"},
+	336068787:                                                     {"attempt to index COMPUTED BY column in INDEX @1", 1, "00000"},
+	336068788:                                                     {"Table Name lookup failed", 0, "00000"},
+	336068789:                                                     {"attempt to index a view", 0, "00000"},
+	336068790:                                                     {"SELECT RDB$RELATIONS failed in grant", 0, "00000"},
+	336068791:                                                     {"SELECT RDB$RELATION_FIELDS failed in grant", 0, "00000"},
+	336068792:                                                     {"SELECT RDB$RELATIONS/RDB$OWNER_NAME failed in grant", 0, "00000"},
+	336068793:                                                     {"SELECT RDB$USER_PRIVILEGES failed in grant", 0, "00000"},
+	336068794:                                                     {"SELECT RDB$VIEW_RELATIONS/RDB$RELATION_FIELDS/... failed in grant", 0, "00000"},
+	336068795:                                                     {"column @1 from table @2 is referenced in index @3", 3, "00000"},
 	Isc_dyn_role_does_not_exist:                                   {"SQL role @1 does not exist", 1, "28000"},
 	Isc_dyn_no_grant_admin_opt:                                    {"user @1 has no grant admin option on SQL role @2", 2, "28000"},
 	Isc_dyn_user_not_role_member:                                  {"user @1 is not a member of SQL role @2", 2, "28000"},
@@ -2821,24 +3645,51 @@ var errmsgs = map[int]fberror{
 	Isc_dyn_char_fld_too_small:                                    {"New size specified for column @1 must be at least @2 characters.", 2, "42000"},
 	Isc_dyn_invalid_dtype_conversion:                              {"Cannot change datatype for @1.  Conversion from base type @2 to @3 is not supported.", 3, "42000"},
 	Isc_dyn_dtype_conv_invalid:                                    {"Cannot change datatype for column @1 from a character type to a non-character type.", 1, "42000"},
+	Isc_dyn_virmemexh:                                             {"unable to allocate memory from the operating system", 0, "00000"},
 	Isc_dyn_zero_len_id:                                           {"Zero length identifiers are not allowed", 0, "42000"},
+	Isc_del_gen_fail:                                              {"ERASE RDB$GENERATORS failed", 0, "00000"},
 	Isc_dyn_gen_not_found:                                         {"Sequence @1 not found", 1, "42000"},
+	336068823:                                                     {"Difference file is not defined", 0, "00000"},
+	336068824:                                                     {"Difference file is already defined", 0, "00000"},
+	336068825:                                                     {"Database is already in the physical backup mode", 0, "00000"},
+	336068826:                                                     {"Database is not in the physical backup mode", 0, "00000"},
+	336068827:                                                     {"DEFINE COLLATION failed", 0, "00000"},
+	336068828:                                                     {"CREATE COLLATION statement is not supported in older versions of the database.  A backup and restore is required.", 0, "00000"},
 	Isc_max_coll_per_charset:                                      {"Maximum number of collations per character set exceeded", 0, "2C000"},
 	Isc_invalid_coll_attr:                                         {"Invalid collation attributes", 0, "HY000"},
+	336068831:                                                     {"Collation @1 not installed for character set @2", 2, "00000"},
+	336068832:                                                     {"Cannot use the internal domain @1 as new type for field @2", 2, "00000"},
+	336068833:                                                     {"Default value is not allowed for array type in field @1", 1, "00000"},
+	336068834:                                                     {"Default value is not allowed for array type in domain @1", 1, "00000"},
+	336068835:                                                     {"DYN_UTIL_is_array failed for domain @1", 1, "00000"},
+	336068836:                                                     {"DYN_UTIL_copy_domain failed for domain @1", 1, "00000"},
+	336068837:                                                     {"Local column @1 doesn't have a default", 1, "00000"},
+	336068838:                                                     {"Local column @1 default belongs to domain @2", 2, "00000"},
+	336068839:                                                     {"File name is invalid", 0, "00000"},
 	Isc_dyn_wrong_gtt_scope:                                       {"@1 cannot reference @2", 2, "HY000"},
+	336068841:                                                     {"Local column @1 is computed, cannot set a default value", 1, "00000"},
+	Isc_del_coll_fail:                                             {"ERASE RDB$COLLATIONS failed", 0, "00000"},
 	Isc_dyn_coll_used_table:                                       {"Collation @1 is used in table @2 (field name @3) and cannot be dropped", 3, "HY000"},
 	Isc_dyn_coll_used_domain:                                      {"Collation @1 is used in domain @2 and cannot be dropped", 2, "HY000"},
 	Isc_dyn_cannot_del_syscoll:                                    {"Cannot delete system collation", 0, "HY000"},
 	Isc_dyn_cannot_del_def_coll:                                   {"Cannot delete default collation of CHARACTER SET @1", 1, "HY000"},
+	336068847:                                                     {"Domain @1 is used in procedure @2 (parameter name @3) and cannot be dropped", 3, "00000"},
+	336068848:                                                     {"Field @1 cannot be used twice in index @2", 2, "00000"},
 	Isc_dyn_table_not_found:                                       {"Table @1 not found", 1, "42000"},
+	336068850:                                                     {"attempt to reference a view (@1) in a foreign key", 1, "00000"},
 	Isc_dyn_coll_used_procedure:                                   {"Collation @1 is used in procedure @2 (parameter name @3) and cannot be dropped", 3, "HY000"},
 	Isc_dyn_scale_too_big:                                         {"New scale specified for column @1 must be at most @2.", 2, "42000"},
 	Isc_dyn_precision_too_small:                                   {"New precision specified for column @1 must be at least @2.", 2, "42000"},
+	336068854:                                                     {"@1 is not grantor of @2 on @3 to @4.", 4, "00000"},
 	Isc_dyn_miss_priv_warning:                                     {"Warning: @1 on @2 is not granted to @3.", 3, "42000"},
 	Isc_dyn_ods_not_supp_feature:                                  {"Feature '@1' is not supported in ODS @2.@3", 3, "0A000"},
 	Isc_dyn_cannot_addrem_computed:                                {"Cannot add or remove COMPUTED from column @1", 1, "42000"},
 	Isc_dyn_no_empty_pw:                                           {"Password should not be empty string", 0, "42000"},
 	Isc_dyn_dup_index:                                             {"Index @1 already exists", 1, "42S11"},
+	Isc_dyn_locksmith_use_granted:                                 {"Only @1 or user with privilege USE_GRANTED_BY_CLAUSE can use GRANTED BY clause", 1, "00000"},
+	Isc_dyn_dup_exception:                                         {"Exception @1 already exists", 1, "00000"},
+	Isc_dyn_dup_generator:                                         {"Sequence @1 already exists", 1, "00000"},
+	336068863:                                                     {"ERASE RDB$USER_PRIVILEGES failed in REVOKE ALL ON ALL", 0, "00000"},
 	Isc_dyn_package_not_found:                                     {"Package @1 not found", 1, "42000"},
 	Isc_dyn_schema_not_found:                                      {"Schema @1 not found", 1, "42000"},
 	Isc_dyn_cannot_mod_sysproc:                                    {"Cannot ALTER or DROP system procedure @1", 1, "HY000"},
@@ -2851,22 +3702,37 @@ var errmsgs = map[int]fberror{
 	Isc_dyn_funcsignat_package:                                    {"Function @1 has a signature mismatch on package body @2", 2, "42000"},
 	Isc_dyn_procsignat_package:                                    {"Procedure @1 has a signature mismatch on package body @2", 2, "42000"},
 	Isc_dyn_defvaldecl_package_proc:                               {"Default values for parameters are not allowed in the definition of a previously declared packaged procedure @1.@2", 2, "42000"},
+	Isc_dyn_dup_function:                                          {"Function @1 already exists", 1, "00000"},
 	Isc_dyn_package_body_exists:                                   {"Package body @1 already exists", 1, "42000"},
 	Isc_dyn_invalid_ddl_func:                                      {"Invalid DDL statement for function @1", 1, "HY000"},
 	Isc_dyn_newfc_oldsyntax:                                       {"Cannot alter new style function @1 with ALTER EXTERNAL FUNCTION. Use ALTER FUNCTION instead.", 1, "42000"},
+	336068880:                                                     {"Cannot delete system generator @1", 1, "00000"},
+	336068881:                                                     {"Identity column @1 of table @2 must be of exact number type with zero scale", 2, "00000"},
+	336068882:                                                     {"Identity column @1 of table @2 cannot be changed to NULLable", 2, "00000"},
+	336068883:                                                     {"Identity column @1 of table @2 cannot have default value", 2, "00000"},
+	336068884:                                                     {"Domain @1 must be of exact number type with zero scale because it's used in an identity column", 1, "00000"},
+	336068885:                                                     {"Generation of generator name failed", 0, "00000"},
 	Isc_dyn_func_param_not_found:                                  {"Parameter @1 in function @2 not found", 2, "42000"},
 	Isc_dyn_routine_param_not_found:                               {"Parameter @1 of routine @2 not found", 2, "42000"},
 	Isc_dyn_routine_param_ambiguous:                               {"Parameter @1 of routine @2 is ambiguous (found in both procedures and functions). Use a specifier keyword.", 2, "42000"},
 	Isc_dyn_coll_used_function:                                    {"Collation @1 is used in function @2 (parameter name @3) and cannot be dropped", 3, "HY000"},
 	Isc_dyn_domain_used_function:                                  {"Domain @1 is used in function @2 (parameter name @3) and cannot be dropped", 3, "HY000"},
 	Isc_dyn_alter_user_no_clause:                                  {"ALTER USER requires at least one clause to be specified", 0, "42000"},
+	336068892:                                                     {"Cannot delete system SQL role @1", 1, "00000"},
+	336068893:                                                     {"Column @1 is not an identity column", 1, "00000"},
 	Isc_dyn_duplicate_package_item:                                {"Duplicate @1 @2", 2, "42000"},
 	Isc_dyn_cant_modify_sysobj:                                    {"System @1 @2 cannot be modified", 2, "42000"},
 	Isc_dyn_cant_use_zero_increment:                               {"INCREMENT BY 0 is an illegal option for sequence @1", 1, "42000"},
 	Isc_dyn_cant_use_in_foreignkey:                                {"Can't use @1 in FOREIGN KEY constraint", 1, "42000"},
 	Isc_dyn_defvaldecl_package_func:                               {"Default values for parameters are not allowed in the definition of a previously declared packaged function @1.@2", 2, "42000"},
+	Isc_dyn_create_user_no_password:                               {"Password must be specified when creating user", 0, "00000"},
 	Isc_dyn_cyclic_role:                                           {"role @1 can not be granted to role @2", 2, "42000"},
+	336068901:                                                     {"DROP SYSTEM PRIVILEGES should not be used in CREATE ROLE operator", 0, "00000"},
+	336068902:                                                     {"Access to SYSTEM PRIVILEGES in ROLES denied to @1", 1, "00000"},
+	336068903:                                                     {"Only @1, DB owner @2 or user with privilege USE_GRANTED_BY_CLAUSE can use GRANTED BY clause", 2, "00000"},
 	Isc_dyn_cant_use_zero_inc_ident:                               {"INCREMENT BY 0 is an illegal option for identity column @1 of table @2", 2, "42000"},
+	Isc_dyn_concur_alter_database:                                 {"Concurrent ALTER DATABASE is not supported", 0, "00000"},
+	Isc_dyn_incompat_alter_database:                               {"Incompatible ALTER DATABASE clauses: '@1' and '@2'", 2, "00000"},
 	Isc_dyn_no_ddl_grant_opt_priv:                                 {"no @1 privilege with grant option on DDL @2", 2, "42000"},
 	Isc_dyn_no_grant_opt_priv:                                     {"no @1 privilege with grant option on object @2", 2, "42000"},
 	Isc_dyn_func_not_exist:                                        {"Function @1 does not exist", 1, "42000"},
@@ -2878,15 +3744,25 @@ var errmsgs = map[int]fberror{
 	Isc_dyn_exc_not_exist:                                         {"Exception @1 does not exist", 1, "42000"},
 	Isc_dyn_gen_not_exist:                                         {"Generator/Sequence @1 does not exist", 1, "42000"},
 	Isc_dyn_fld_not_exist:                                         {"Field @1 of table @2 does not exist", 2, "42000"},
+	Isc_dyn_dup_trigger:                                           {"Trigger @1 already exists", 1, "00000"},
+	Isc_dyn_dup_domain:                                            {"Domain @1 already exists", 1, "00000"},
+	Isc_dyn_dup_collation:                                         {"Collation @1 already exists", 1, "00000"},
+	Isc_dyn_dup_package:                                           {"Package @1 already exists", 1, "00000"},
 	Isc_dyn_index_schema_must_match_table:                         {"Index schema (@1) must match table schema (@2)", 2, "42000"},
 	Isc_dyn_trig_schema_must_match_table:                          {"Trigger schema (@1) must match table schema (@2)", 2, "42000"},
+	Isc_dyn_dup_schema:                                            {"Schema @1 already exists", 1, "00000"},
 	Isc_dyn_cannot_mod_system_schema:                              {"Cannot ALTER or DROP SYSTEM schema", 0, "28000"},
 	Isc_dyn_cannot_drop_non_emptyschema:                           {"Cannot DROP schema @1 because it has objects", 1, "HY000"},
 	Isc_dyn_cannot_mod_obj_sys_schema:                             {"Cannot CREATE/ALTER/DROP @1 in SYSTEM schema", 1, "28000"},
 	Isc_dyn_cannot_create_reserved_schema:                         {"Schema name @1 is reserved and cannot be created", 1, "HY000"},
 	Isc_dyn_cannot_infer_schema:                                   {"Cannot infer schema name as there is no valid schema in the search path", 0, "42000"},
+	Isc_dyn_dup_blob_filter:                                       {"Blob filter @1 already exists", 1, "00000"},
 	Isc_dyn_column_name_exists:                                    {"Column @1 already exists in table @2", 2, "42000"},
+	Isc_dyn_constant_not_found:                                    {"Constant @1 not found", 1, "00000"},
+	Isc_dyn_dup_const:                                             {"Constant @1 already exists", 1, "00000"},
+	Isc_dyn_non_constant_constant:                                 {"The constant @1 must be initialized by a constant expression", 1, "00000"},
 	Isc_dyn_function_mismatch:                                     {"Function @1 cannot change between aggregate and non-aggregate", 1, "42000"},
+	336069608:                                                     {"role @1 can not be granted to role @2", 2, "00000"},
 	Isc_dyn_dup_domain_rdb:                                        {"Domain @1 already exists", 1, "42000"},
 	Isc_dyn_dup_trigger_rdb:                                       {"Trigger @1 already exists", 1, "42000"},
 	Isc_dyn_dup_package_rdb:                                       {"Package @1 already exists", 1, "42000"},
@@ -2899,6 +3775,8 @@ var errmsgs = map[int]fberror{
 	Isc_dyn_user_mapping_not_found:                                {"User mapping for user @1 and server @2 not found", 2, "42000"},
 	Isc_dyn_job_already_exists:                                    {"Job @1 already exists", 1, "42000"},
 	Isc_dyn_foreign_server_already_exists:                         {"Foreign server @1 already exists", 1, "42000"},
+	336069626:                                                     {"attempt to index a foreign table", 0, "00000"},
+	336330752:                                                     {"could not locate appropriate error message", 0, "00000"},
 	Isc_gbak_unknown_switch:                                       {"found unknown switch", 0, "00000"},
 	Isc_gbak_page_size_missing:                                    {"page size parameter missing", 0, "00000"},
 	Isc_gbak_page_size_toobig:                                     {"Page size specified (@1) greater than limit (32768 bytes)", 1, "00000"},
@@ -2914,6 +3792,10 @@ var errmsgs = map[int]fberror{
 	Isc_gbak_db_specified:                                         {"REPLACE specified, but the first file @1 is a database", 1, "00000"},
 	Isc_gbak_db_exists:                                            {"database @1 already exists.  To replace it, use the -REP switch", 1, "00000"},
 	Isc_gbak_unk_device:                                           {"device type not specified", 0, "00000"},
+	336330768:                                                     {"cannot create APOLLO tape descriptor file @1", 1, "00000"},
+	336330769:                                                     {"cannot set APOLLO tape descriptor attribute for @1", 1, "00000"},
+	336330770:                                                     {"cannot create APOLLO cartridge descriptor file @1", 1, "00000"},
+	336330771:                                                     {"cannot close APOLLO tape descriptor file @1", 1, "00000"},
 	Isc_gbak_blob_info_failed:                                     {"gds_$blob_info failed", 0, "00000"},
 	Isc_gbak_unk_blob_item:                                        {"do not understand BLOB INFO item @1", 1, "00000"},
 	Isc_gbak_get_seg_failed:                                       {"gds_$get_segment failed", 0, "00000"},
@@ -2947,27 +3829,212 @@ var errmsgs = map[int]fberror{
 	Isc_gbak_unexp_eof:                                            {"unexpected end of file on backup file", 0, "00000"},
 	Isc_gbak_db_format_too_old:                                    {"database format @1 is too old to restore to", 1, "00000"},
 	Isc_gbak_inv_array_dim:                                        {"array dimension for column @1 is invalid", 1, "00000"},
+	336330805:                                                     {"expected array version number @1 but instead found @2", 2, "00000"},
+	336330806:                                                     {"expected array dimension @1 but instead found @2", 2, "00000"},
 	Isc_gbak_xdr_len_expected:                                     {"Expected XDR record length", 0, "00000"},
+	336330808:                                                     {"Unexpected I/O error while @1 backup file", 1, "00000"},
+	336330809:                                                     {"adding file @1, starting at page @2", 2, "00000"},
+	336330810:                                                     {"array", 0, "00000"},
+	336330811:                                                     {"backup", 0, "00000"},
+	336330812:                                                     {"    @1B(ACKUP_DATABASE) [O(VERWRITE)] backup database to file (replace existing\n\t\t\t\tfile if OVERWRITE used)", 1, "00000"},
+	336330813:                                                     {"\t\tbackup file is compressed", 0, "00000"},
+	336330814:                                                     {"    @1D(EVICE)             backup file device type on APOLLO (CT or MT)", 1, "00000"},
+	336330815:                                                     {"    @1M(ETA_DATA)          backup or restore metadata only", 1, "00000"},
+	336330816:                                                     {"blob", 0, "00000"},
 	Isc_gbak_open_bkup_error:                                      {"cannot open backup file @1", 1, "00000"},
 	Isc_gbak_open_error:                                           {"cannot open status and error output file @1", 1, "00000"},
+	336330819:                                                     {"closing file, committing, and finishing", 0, "00000"},
+	336330820:                                                     {"committing metadata", 0, "00000"},
+	336330821:                                                     {"commit failed on table @1", 1, "00000"},
+	336330822:                                                     {"committing secondary files", 0, "00000"},
+	336330823:                                                     {"creating index @1", 1, "00000"},
+	336330824:                                                     {"committing data for table @1", 1, "00000"},
+	336330825:                                                     {"    @1C(REATE_DATABASE)    create database from backup file (restore)", 1, "00000"},
+	336330826:                                                     {"created database @1, page_size @2 bytes", 2, "00000"},
+	336330827:                                                     {"creating file @1", 1, "00000"},
+	336330828:                                                     {"creating indexes", 0, "00000"},
+	336330829:                                                     {"database @1 has a page size of @2 bytes.", 2, "00000"},
+	336330830:                                                     {"    @1I(NACTIVE)           deactivate indexes during restore", 1, "00000"},
+	336330831:                                                     {"do not understand BLOB INFO item @1", 1, "00000"},
+	336330832:                                                     {"do not recognize @1 attribute @2 -- continuing", 2, "00000"},
+	336330833:                                                     {"error accessing BLOB column @1 -- continuing", 1, "00000"},
+	336330834:                                                     {"Exiting before completion due to errors", 0, "00000"},
+	336330835:                                                     {"Exiting before completion due to errors", 0, "00000"},
+	336330836:                                                     {"column", 0, "00000"},
+	336330837:                                                     {"file", 0, "00000"},
+	336330838:                                                     {"file length", 0, "00000"},
+	336330839:                                                     {"filter", 0, "00000"},
+	336330840:                                                     {"finishing, closing, and going home", 0, "00000"},
+	336330841:                                                     {"function", 0, "00000"},
+	336330842:                                                     {"function argument", 0, "00000"},
+	336330843:                                                     {"gbak version @1", 1, "00000"},
+	336330844:                                                     {"domain", 0, "00000"},
+	336330845:                                                     {"index", 0, "00000"},
+	336330846:                                                     {"trigger @1 is invalid", 1, "00000"},
+	336330847:                                                     {"legal switches are:", 0, "00000"},
+	336330848:                                                     {"length given for initial file (@1) is less than minimum (@2)", 2, "00000"},
+	336330849:                                                     {"    @1E(XPAND)             no data compression", 1, "00000"},
+	336330850:                                                     {"    @1L(IMBO)              ignore transactions in limbo", 1, "00000"},
+	336330851:                                                     {"    @1O(NE_AT_A_TIME)      restore one table at a time", 1, "00000"},
+	336330852:                                                     {"opened file @1", 1, "00000"},
+	336330853:                                                     {"    @1P(AGE_SIZE)          override default page size", 1, "00000"},
+	336330854:                                                     {"page size", 0, "00000"},
+	336330855:                                                     {"page size specified (@1 bytes) rounded up to @2 bytes", 2, "00000"},
+	336330856:                                                     {"    @1Z                    print version number", 1, "00000"},
+	336330857:                                                     {"privilege", 0, "00000"},
+	336330858:                                                     {"     @1 records ignored", 1, "00000"},
+	336330859:                                                     {"   @1 records restored", 1, "00000"},
+	336330860:                                                     {"@1 records written", 1, "00000"},
+	336330861:                                                     {"    @1Y  <path>            redirect/suppress status message output", 1, "00000"},
+	336330862:                                                     {"Reducing the database page size from @1 bytes to @2 bytes", 2, "00000"},
+	336330863:                                                     {"table", 0, "00000"},
+	336330864:                                                     {"    @1REP(LACE_DATABASE)   replace database from backup file (restore)", 1, "00000"},
+	336330865:                                                     {"    @1V(ERIFY)             report each action taken", 1, "00000"},
+	336330866:                                                     {"restore failed for record in table @1", 1, "00000"},
+	336330867:                                                     {"    restoring column @1", 1, "00000"},
+	336330868:                                                     {"    restoring file @1", 1, "00000"},
+	336330869:                                                     {"    restoring filter @1", 1, "00000"},
+	336330870:                                                     {"restoring function @1", 1, "00000"},
+	336330871:                                                     {"    restoring argument for function @1", 1, "00000"},
+	336330872:                                                     {"     restoring gen id value of: @1", 1, "00000"},
+	336330873:                                                     {"restoring domain @1", 1, "00000"},
+	336330874:                                                     {"    restoring index @1 for table @2", 2, "00000"},
+	336330875:                                                     {"restoring @1 privilege(s) for user @2", 2, "00000"},
+	336330876:                                                     {"restoring data for table @1", 1, "00000"},
+	336330877:                                                     {"restoring security class @1", 1, "00000"},
+	336330878:                                                     {"    restoring trigger @1", 1, "00000"},
+	336330879:                                                     {"    restoring trigger message for @1", 1, "00000"},
+	336330880:                                                     {"    restoring type @1 for column @2", 2, "00000"},
+	336330881:                                                     {"started transaction", 0, "00000"},
+	336330882:                                                     {"starting transaction", 0, "00000"},
+	336330883:                                                     {"security class", 0, "00000"},
+	336330884:                                                     {"switches can be abbreviated to the unparenthesized characters", 0, "00000"},
+	336330885:                                                     {"transportable backup -- data in XDR format", 0, "00000"},
+	336330886:                                                     {"trigger", 0, "00000"},
+	336330887:                                                     {"trigger message", 0, "00000"},
+	336330888:                                                     {"trigger type", 0, "00000"},
+	336330889:                                                     {"unknown switch \"@1\"", 1, "00000"},
+	336330890:                                                     {"validation error on column in table @1", 1, "00000"},
+	336330891:                                                     {"    Version(s) for database \"@1\"", 1, "00000"},
+	336330892:                                                     {"view", 0, "00000"},
+	336330893:                                                     {"    writing argument for function @1", 1, "00000"},
+	336330894:                                                     {"    writing data for table @1", 1, "00000"},
+	336330895:                                                     {"     writing gen id of: @1", 1, "00000"},
+	336330896:                                                     {"         writing column @1", 1, "00000"},
+	336330897:                                                     {"    writing filter @1", 1, "00000"},
+	336330898:                                                     {"writing filters", 0, "00000"},
+	336330899:                                                     {"    writing function @1", 1, "00000"},
+	336330900:                                                     {"writing functions", 0, "00000"},
+	336330901:                                                     {"    writing domain @1", 1, "00000"},
+	336330902:                                                     {"writing domains", 0, "00000"},
+	336330903:                                                     {"    writing index @1", 1, "00000"},
+	336330904:                                                     {"writing @1 privilege(s) for user @2", 2, "00000"},
+	336330905:                                                     {"    writing table @1", 1, "00000"},
+	336330906:                                                     {"writing tables", 0, "00000"},
+	336330907:                                                     {"    writing security class @1", 1, "00000"},
+	336330908:                                                     {"    writing trigger @1", 1, "00000"},
+	336330909:                                                     {"    writing trigger message for @1", 1, "00000"},
+	336330910:                                                     {"writing trigger messages", 0, "00000"},
+	336330911:                                                     {"writing triggers", 0, "00000"},
+	336330912:                                                     {"    writing type @1 for column @2", 2, "00000"},
+	336330913:                                                     {"writing types", 0, "00000"},
+	336330914:                                                     {"writing shadow files", 0, "00000"},
+	336330915:                                                     {"    writing shadow file @1", 1, "00000"},
+	336330916:                                                     {"writing id generators", 0, "00000"},
+	336330917:                                                     {"    writing generator @1 value @2", 2, "00000"},
+	336330918:                                                     {"readied database @1 for backup", 1, "00000"},
+	336330919:                                                     {"restoring table @1", 1, "00000"},
+	336330920:                                                     {"type", 0, "00000"},
+	336330921:                                                     {"gbak:", 0, "00000"},
+	336330922:                                                     {"committing metadata for table @1", 1, "00000"},
+	336330923:                                                     {"error committing metadata for table @1", 1, "00000"},
+	336330924:                                                     {"    @1K(ILL)               restore without creating shadows", 1, "00000"},
+	336330925:                                                     {"cannot commit index @1", 1, "00000"},
+	336330926:                                                     {"cannot commit files", 0, "00000"},
+	336330927:                                                     {"    @1T(RANSPORTABLE)      transportable backup -- data in XDR format", 1, "00000"},
+	336330928:                                                     {"closing file, committing, and finishing. @1 bytes written", 1, "00000"},
+	336330929:                                                     {"    @1G(ARBAGE_COLLECT)    inhibit garbage collection", 1, "00000"},
+	336330930:                                                     {"    @1IG(NORE)             ignore bad checksums", 1, "00000"},
+	336330931:                                                     {"\tcolumn @1 used in index @2 seems to have vanished", 2, "00000"},
+	336330932:                                                     {"index @1 omitted because @2 of the expected @3 keys were found", 3, "00000"},
+	336330933:                                                     {"    @1FA(CTOR)             blocking factor", 1, "00000"},
 	Isc_gbak_missing_block_fac:                                    {"blocking factor parameter missing", 0, "00000"},
 	Isc_gbak_inv_block_fac:                                        {"expected blocking factor, encountered \"@1\"", 1, "00000"},
 	Isc_gbak_block_fac_specified:                                  {"a blocking factor may not be used in conjunction with device CT", 0, "00000"},
+	336330937:                                                     {"restoring generator @1 value: @2", 2, "00000"},
+	336330938:                                                     {"    @1OL(D_DESCRIPTIONS)   save old style metadata descriptions", 1, "00000"},
+	336330939:                                                     {"    @1N(O_VALIDITY)        do not restore database validity conditions", 1, "00000"},
 	Isc_gbak_missing_username:                                     {"user name parameter missing", 0, "00000"},
 	Isc_gbak_missing_password:                                     {"password parameter missing", 0, "00000"},
+	336330942:                                                     {"    @1PAS(SWORD)           Red Database password", 1, "00000"},
+	336330943:                                                     {"    @1USER                 Red Database user name", 1, "00000"},
+	336330944:                                                     {"writing stored procedures", 0, "00000"},
+	336330945:                                                     {"writing stored procedure @1", 1, "00000"},
+	336330946:                                                     {"writing parameter @1 for stored procedure", 1, "00000"},
+	336330947:                                                     {"restoring stored procedure @1", 1, "00000"},
+	336330948:                                                     {"    restoring parameter @1 for stored procedure", 1, "00000"},
+	336330949:                                                     {"writing exceptions", 0, "00000"},
+	336330950:                                                     {"writing exception @1", 1, "00000"},
+	336330951:                                                     {"restoring exception @1", 1, "00000"},
 	Isc_gbak_missing_skipped_bytes:                                {" missing parameter for the number of bytes to be skipped", 0, "00000"},
 	Isc_gbak_inv_skipped_bytes:                                    {"expected number of bytes to be skipped, encountered \"@1\"", 1, "00000"},
+	336330954:                                                     {"adjusting an invalid decompression length from @1 to @2", 2, "00000"},
+	336330955:                                                     {"skipped @1 bytes after reading a bad attribute @2", 2, "00000"},
+	336330956:                                                     {"    @1S(KIP_BAD_DATA)      skip number of bytes after reading bad data", 1, "00000"},
+	336330957:                                                     {"skipped @1 bytes looking for next valid attribute, encountered attribute @2", 2, "00000"},
+	336330958:                                                     {"writing table constraints", 0, "00000"},
+	336330959:                                                     {"writing constraint @1", 1, "00000"},
+	336330960:                                                     {"table constraint", 0, "00000"},
+	336330961:                                                     {"writing referential constraints", 0, "00000"},
+	336330962:                                                     {"writing check constraints", 0, "00000"},
+	Isc_msgVerbose_write_charsets:                                 {"writing character sets", 0, "00000"},
+	Isc_msgVerbose_write_collations:                               {"writing collations", 0, "00000"},
 	Isc_gbak_err_restore_charset:                                  {"character set", 0, "00000"},
+	Isc_msgVerbose_restore_charset:                                {"writing character set @1", 1, "00000"},
 	Isc_gbak_err_restore_collation:                                {"collation", 0, "00000"},
+	Isc_msgVerbose_restore_collation:                              {"writing collation @1", 1, "00000"},
 	Isc_gbak_read_error:                                           {"Unexpected I/O error while reading from backup file", 0, "00000"},
 	Isc_gbak_write_error:                                          {"Unexpected I/O error while writing to backup file", 0, "00000"},
+	336330974:                                                     {"\n\nCould not open file name \"@1\"", 1, "00000"},
+	336330975:                                                     {"\n\nCould not write to file \"@1\"", 1, "00000"},
+	336330976:                                                     {"\n\nCould not read from file \"@1\"", 1, "00000"},
+	336330977:                                                     {"Done with volume #@1, \"@2\"", 2, "00000"},
+	336330978:                                                     {"\tPress return to reopen that file, or type a new\n\tname followed by return to open a different file.", 0, "00000"},
+	336330979:                                                     {"Type a file name to open and hit return", 0, "00000"},
+	336330980:                                                     {"  Name: ", 0, "00000"},
+	336330981:                                                     {"\n\nERROR: Backup incomplete", 0, "00000"},
+	336330982:                                                     {"Expected backup start time @1, found @2", 2, "00000"},
+	336330983:                                                     {"Expected backup database @1, found @2", 2, "00000"},
+	336330984:                                                     {"Expected volume number @1, found volume @2", 2, "00000"},
 	Isc_gbak_db_in_use:                                            {"could not drop database @1 (no privilege or database might be in use)", 1, "00000"},
+	336330986:                                                     {"Skipped bad security class entry: @1", 1, "00000"},
+	336330987:                                                     {"Unknown V3 SUB_TYPE: @1 in FIELD: @2.", 2, "00000"},
+	336330988:                                                     {"Converted V3 sub_type: @1 to character_set_id: @2 and collate_id: @3.", 3, "00000"},
+	336330989:                                                     {"Converted V3 scale: @1 to character_set_id: @2 and callate_id: @3.", 3, "00000"},
 	Isc_gbak_sysmemex:                                             {"System memory exhausted", 0, "00000"},
+	336330991:                                                     {"    @1NT                   Non-Transportable backup file format", 1, "00000"},
+	336330992:                                                     {"Index \"@1\" failed to activate because:", 1, "00000"},
+	336330993:                                                     {"  The unique index has duplicate values or NULLs.", 0, "00000"},
+	336330994:                                                     {"  Delete or Update duplicate values or NULLs, and activate index with", 0, "00000"},
+	336330995:                                                     {"  ALTER INDEX \"@1\" ACTIVE;", 1, "00000"},
+	336330996:                                                     {"  Not enough disk space to create the sort file for an index.", 0, "00000"},
+	336330997:                                                     {"  Set the TMP environment variable to a directory on a filesystem that does have enough space, and activate index with", 0, "00000"},
+	336330998:                                                     {"Database is not online due to failure to activate one or more indices.", 0, "00000"},
+	336330999:                                                     {"Run gfix -online to bring database online without active indices.", 0, "00000"},
+	Isc_write_role_1:                                              {"writing SQL roles", 0, "00000"},
+	Isc_write_role_2:                                              {"    writing SQL role: @1", 1, "00000"},
 	Isc_gbak_restore_role_failed:                                  {"SQL role", 0, "00000"},
+	Isc_restore_role:                                              {"    restoring SQL role: @1", 1, "00000"},
+	Isc_gbak_role_op:                                              {"    @1RO(LE)               Red Database SQL role", 1, "00000"},
 	Isc_gbak_role_op_missing:                                      {"SQL role parameter missing", 0, "00000"},
+	Isc_gbak_convert_ext_tables:                                   {"    @1CO(NVERT)            backup external files as tables", 1, "00000"},
+	Isc_gbak_warning:                                              {"gbak: WARNING:", 0, "00000"},
+	Isc_gbak_error:                                                {"gbak: ERROR:", 0, "00000"},
+	Isc_gbak_page_buffers:                                         {"    @1BU(FFERS)            override page buffers default", 1, "00000"},
 	Isc_gbak_page_buffers_missing:                                 {"page buffers parameter missing", 0, "00000"},
 	Isc_gbak_page_buffers_wrong_param:                             {"expected page buffers, encountered \"@1\"", 1, "00000"},
 	Isc_gbak_page_buffers_restore:                                 {"page buffers is allowed only on restore or create", 0, "00000"},
+	336331013:                                                     {"Starting with volume #@1, \"@2\"", 2, "00000"},
 	Isc_gbak_inv_size:                                             {"size specification either missing or incorrect for file @1", 1, "00000"},
 	Isc_gbak_file_outof_sequence:                                  {"file @1 out of sequence", 1, "00000"},
 	Isc_gbak_join_file_missing:                                    {"can't join -- one of the files missing", 0, "00000"},
@@ -2978,32 +4045,361 @@ var errmsgs = map[int]fberror{
 	Isc_gbak_hdr_write_failed:                                     {"can't write a header record to file @1", 1, "00000"},
 	Isc_gbak_disk_space_ex:                                        {"free disk space exhausted", 0, "00000"},
 	Isc_gbak_size_lt_min:                                          {"file size given (@1) is less than minimum allowed (@2)", 2, "00000"},
+	336331024:                                                     {"Warning -- free disk space exhausted for file @1, the rest of the bytes (@2) will be written to file @3", 3, "00000"},
 	Isc_gbak_svc_name_missing:                                     {"service name parameter missing", 0, "00000"},
 	Isc_gbak_not_ownr:                                             {"Cannot restore over current database, must be SYSDBA or owner of the existing database.", 0, "00000"},
+	336331027:                                                     {"", 0, "00000"},
+	336331028:                                                     {"    @1USE_(ALL_SPACE)      do not reserve space for record versions", 1, "00000"},
+	336331029:                                                     {"    @1SE(RVICE)            use services manager", 1, "00000"},
+	Isc_gbak_opt_mode:                                             {"    @1MO(DE) <access>      \"read_only\" or \"read_write\" access", 1, "00000"},
 	Isc_gbak_mode_req:                                             {"\"read_only\" or \"read_write\" required", 0, "00000"},
+	336331032:                                                     {"setting database to read-only access", 0, "00000"},
 	Isc_gbak_just_data:                                            {"just data ignore all constraints etc.", 0, "00000"},
 	Isc_gbak_data_only:                                            {"restoring data only ignoring foreign key, unique, not null & other constraints", 0, "00000"},
+	336331035:                                                     {"closing file, committing, and finishing. @1 bytes written", 1, "00000"},
+	336331036:                                                     {"    @1R(ECREATE_DATABASE) [O(VERWRITE)] create (or replace if OVERWRITE used)\\n\t\t\t\tdatabase from backup file (restore)", 1, "00000"},
+	Isc_gbak_activating_idx:                                       {"    activating and creating deferred index @1", 1, "00000"},
+	336331038:                                                     {"check constraint", 0, "00000"},
+	336331039:                                                     {"exception", 0, "00000"},
+	336331040:                                                     {"array dimensions", 0, "00000"},
+	336331041:                                                     {"generator", 0, "00000"},
+	336331042:                                                     {"procedure", 0, "00000"},
+	336331043:                                                     {"procedure parameter", 0, "00000"},
+	336331044:                                                     {"referential constraint", 0, "00000"},
+	336331045:                                                     {"type (in RDB$TYPES)", 0, "00000"},
+	336331046:                                                     {"    @1NOD(BTRIGGERS)       do not run database triggers", 1, "00000"},
+	336331047:                                                     {"    @1TRU(STED)            use trusted authentication", 1, "00000"},
+	Isc_write_map_1:                                               {"writing names mapping", 0, "00000"},
+	Isc_write_map_2:                                               {"    writing map for @1", 1, "00000"},
+	Isc_get_map_1:                                                 {"    restoring map for @1", 1, "00000"},
+	Isc_get_map_2:                                                 {"name mapping", 0, "00000"},
+	Isc_get_map_3:                                                 {"cannot restore arbitrary mapping", 0, "00000"},
+	Isc_get_map_4:                                                 {"restoring names mapping", 0, "00000"},
+	336331054:                                                     {"    @1FIX_FSS_D(ATA)       fix malformed UNICODE_FSS data", 1, "00000"},
+	336331055:                                                     {"    @1FIX_FSS_M(ETADATA)   fix malformed UNICODE_FSS metadata", 1, "00000"},
+	336331056:                                                     {"Character set parameter missing", 0, "00000"},
+	336331057:                                                     {"Character set @1 not found", 1, "00000"},
+	336331058:                                                     {"    @1FE(TCH_PASSWORD)     fetch password from file", 1, "00000"},
+	336331059:                                                     {"too many passwords provided", 0, "00000"},
+	336331060:                                                     {"could not open password file @1, errno @2", 2, "00000"},
+	336331061:                                                     {"could not read password file @1, errno @2", 2, "00000"},
+	336331062:                                                     {"empty password file @1", 1, "00000"},
+	336331063:                                                     {"Attribute @1 was already processed for exception @2", 2, "00000"},
+	336331064:                                                     {"Skipping attribute @1 because the message already exists for exception @2", 2, "00000"},
+	336331065:                                                     {"Trying to recover from unexpected attribute @1 due to wrong message length for exception @2", 2, "00000"},
+	336331066:                                                     {"Attribute not specified for storing text bigger than 255 bytes", 0, "00000"},
+	336331067:                                                     {"Unable to store text bigger than 65536 bytes", 0, "00000"},
+	336331068:                                                     {"Failed while adjusting the security class name", 0, "00000"},
+	336331069:                                                     {"Usage:", 0, "00000"},
+	336331070:                                                     {"     gbak -b <db set> <backup set> [backup options] [general options]", 0, "00000"},
+	336331071:                                                     {"     gbak -c <backup set> <db set> [restore options] [general options]", 0, "00000"},
+	336331072:                                                     {"     <db set> = <database> | <db1 size1>...<dbN> (size in db pages)", 0, "00000"},
+	336331073:                                                     {"     <backup set> = <backup> | <bk1 size1>...<bkN> (size in bytes = n[K|M|G])", 0, "00000"},
+	336331074:                                                     {"     -recreate overwrite and -replace can be used instead of -c", 0, "00000"},
+	336331075:                                                     {"backup options are:", 0, "00000"},
+	336331076:                                                     {"restore options are:", 0, "00000"},
+	336331077:                                                     {"general options are:", 0, "00000"},
 	Isc_gbak_missing_interval:                                     {"verbose interval value parameter missing", 0, "00000"},
 	Isc_gbak_wrong_interval:                                       {"verbose interval value cannot be smaller than @1", 1, "00000"},
+	336331080:                                                     {"    @1VERBI(NT) <n>        verbose information with explicit interval", 1, "00000"},
 	Isc_gbak_verify_verbint:                                       {"verify (verbose) and verbint options are mutually exclusive", 0, "00000"},
 	Isc_gbak_option_only_restore:                                  {"option -@1 is allowed only on restore or create", 1, "00000"},
 	Isc_gbak_option_only_backup:                                   {"option -@1 is allowed only on backup", 1, "00000"},
 	Isc_gbak_option_conflict:                                      {"options -@1 and -@2 are mutually exclusive", 2, "00000"},
 	Isc_gbak_param_conflict:                                       {"parameter for option -@1 was already specified with value \"@2\"", 2, "00000"},
 	Isc_gbak_option_repeated:                                      {"option -@1 was already specified", 1, "00000"},
+	336331087:                                                     {"writing package @1", 1, "00000"},
+	336331088:                                                     {"writing packages", 0, "00000"},
+	336331089:                                                     {"restoring package @1", 1, "00000"},
+	336331090:                                                     {"package", 0, "00000"},
 	Isc_gbak_max_dbkey_recursion:                                  {"dependency depth greater than @1 for view @2", 2, "00000"},
 	Isc_gbak_max_dbkey_length:                                     {"value greater than @1 when calculating length of rdb$db_key for view @2", 2, "00000"},
 	Isc_gbak_invalid_metadata:                                     {"Invalid metadata detected. Use -FIX_FSS_METADATA option.", 0, "00000"},
 	Isc_gbak_invalid_data:                                         {"Invalid data detected. Use -FIX_FSS_DATA option.", 0, "00000"},
+	336331095:                                                     {"text for attribute @1 is too large in @2, truncating to @3 bytes", 3, "00000"},
 	Isc_gbak_inv_bkup_ver2:                                        {"Expected backup version @2..@3.  Found @1", 3, "00000"},
+	336331097:                                                     {"    writing view @1", 1, "00000"},
+	336331098:                                                     {"    table @1 is a view", 1, "00000"},
+	336331099:                                                     {"writing security classes", 0, "00000"},
 	Isc_gbak_db_format_too_old2:                                   {"database format @1 is too old to backup", 1, "00000"},
+	336331101:                                                     {"backup version is @1", 1, "00000"},
+	336331102:                                                     {"adjusting system generators", 0, "00000"},
+	336331103:                                                     {"Error closing database, but backup file is OK", 0, "00000"},
+	336331104:                                                     {"database", 0, "00000"},
+	336331105:                                                     {"required mapping attributes are missing in backup file", 0, "00000"},
+	336331106:                                                     {"missing regular expression to skip tables", 0, "00000"},
+	336331107:                                                     {"    @1SKIP_D(ATA)          skip data for table", 1, "00000"},
+	336331108:                                                     {"regular expression to skip tables was already set", 0, "00000"},
+	336331109:                                                     {"adjusting views dbkey length", 0, "00000"},
+	336331110:                                                     {"updating ownership of packages, procedures and tables", 0, "00000"},
+	336331111:                                                     {"adding missing privileges", 0, "00000"},
+	336331112:                                                     {"adjusting the ONLINE and FORCED WRITES flags", 0, "00000"},
+	336331113:                                                     {"    @1ST(ATISTICS) TDRW    show statistics:", 1, "00000"},
+	336331114:                                                     {"        T                 time from start", 0, "00000"},
+	336331115:                                                     {"        D                 delta time", 0, "00000"},
+	336331116:                                                     {"        R                 page reads", 0, "00000"},
+	336331117:                                                     {"        W                 page writes", 0, "00000"},
+	Isc_gbak_missing_perf:                                         {"statistics parameter missing", 0, "00000"},
+	Isc_gbak_wrong_perf:                                           {"wrong char \"@1\" at statistics parameter", 1, "00000"},
+	Isc_gbak_too_long_perf:                                        {"too many chars at statistics parameter", 0, "00000"},
+	336331121:                                                     {"total statistics", 0, "00000"},
+	336331122:                                                     {"could not append BLOB data to batch", 0, "00000"},
+	336331123:                                                     {"could not start batch when restoring table @1, trying old way", 1, "00000"},
+	336331124:                                                     {"    @1KEYNAME              name of a key to be used for encryption", 1, "00000"},
+	336331125:                                                     {"    @1CRYPT                crypt plugin name", 1, "00000"},
+	336331126:                                                     {"    @1ZIP                  backup file is in zstd compressed format", 1, "00000"},
+	336331127:                                                     {"Keyname parameter missing", 0, "00000"},
+	336331128:                                                     {"Key holder parameter missing but backup file is encrypted", 0, "00000"},
+	336331129:                                                     {"CryptPlugin parameter missing", 0, "00000"},
+	336331130:                                                     {"Unknown crypt plugin name - use -CRYPT switch", 0, "00000"},
+	336331131:                                                     {"Decompress error @1", 1, "00000"},
+	336331132:                                                     {"Compress error @1", 1, "00000"},
+	336331133:                                                     {"Key holder parameter missing", 0, "00000"},
+	336331134:                                                     {"    @1KEYHOLDER            name of a key holder plugin", 1, "00000"},
+	336331135:                                                     {"Decompression stream init error @1", 1, "00000"},
+	336331136:                                                     {"Compression stream init error @1", 1, "00000"},
+	336331137:                                                     {"Invalid reply from getInfo() when waiting for DB encryption", 0, "00000"},
+	336331138:                                                     {"Problems with just created database encryption", 0, "00000"},
+	336331139:                                                     {"Skipped trigger @1 on system table @2", 2, "00000"},
+	336331140:                                                     {"    @1INCLUDE(_DATA)       backup data of table(s)", 1, "00000"},
+	336331141:                                                     {"missing regular expression to include tables", 0, "00000"},
+	336331142:                                                     {"regular expression to include tables was already set", 0, "00000"},
+	336331143:                                                     {"writing database create grants", 0, "00000"},
+	336331144:                                                     {"    database create grant for @1", 1, "00000"},
+	336331145:                                                     {"    restoring database create grant for @1", 1, "00000"},
+	336331146:                                                     {"restoring database create grants", 0, "00000"},
+	336331147:                                                     {"database create grant", 0, "00000"},
+	336331148:                                                     {"writing publications", 0, "00000"},
+	336331149:                                                     {"    writing publication @1", 1, "00000"},
+	336331150:                                                     {"    writing publication for table @1", 1, "00000"},
+	336331151:                                                     {"restoring publication @1", 1, "00000"},
+	336331152:                                                     {"publication", 0, "00000"},
+	336331153:                                                     {"restoring publication for table @1", 1, "00000"},
+	336331154:                                                     {"publication for table", 0, "00000"},
+	Isc_gbak_opt_replica:                                          {"    @1REPLICA <mode>      \"none\", \"read_only\" or \"read_write\" replica mode", 1, "00000"},
+	Isc_gbak_replica_req:                                          {"\"none\", \"read_only\" or \"read_write\" required", 0, "00000"},
+	336331157:                                                     {"could not access batch parameters", 0, "00000"},
+	336331158:                                                     {"    @1PAR(ALLEL)           parallel workers", 1, "00000"},
+	Isc_gbak_missing_prl_wrks:                                     {"parallel workers parameter missing", 0, "00000"},
+	Isc_gbak_inv_prl_wrks:                                         {"expected parallel workers, encountered \"@1\"", 1, "00000"},
+	336331161:                                                     {"    @1D(IRECT_IO)          direct IO for backup file(s)", 1, "00000"},
+	336331162:                                                     {"use up to @1 parallel workers", 1, "00000"},
+	336331163:                                                     {"writing schema @1", 1, "00000"},
+	336331164:                                                     {"writing schemas", 0, "00000"},
+	336331165:                                                     {"restoring schema @1", 1, "00000"},
+	336331166:                                                     {"schema", 0, "00000"},
+	336331167:                                                     {"    @1SKIP_SCHEMA_D(ATA)    skip data for schema", 1, "00000"},
+	336331168:                                                     {"    @1INCLUDE_SCHEMA_D(ATA) backup data of schema(s)", 1, "00000"},
+	336331169:                                                     {"missing regular expression to skip schemas", 0, "00000"},
+	336331170:                                                     {"missing regular expression to include schemas", 0, "00000"},
+	336331171:                                                     {"regular expression to skip schemas was already set", 0, "00000"},
+	336331172:                                                     {"regular expression to include schemas was already set", 0, "00000"},
+	Isc_gbak_plugin_schema_migration:                              {"migrating @1 plugin objects to schema @2", 2, "00000"},
+	Isc_gbak_plugin_schema_migration_err:                          {"error migrating @1 plugin objects to schema @2. Plugin objects will be in inconsistent state:", 2, "00000"},
 	Isc_gbak_writing_constants:                                    {"writing constants", 0, "00000"},
 	Isc_gbak_writing_constant:                                     {"writing constant %s", 0, "00000"},
 	Isc_gbak_constant:                                             {"constant (in RDB$CONSTANTS)", 0, "00000"},
 	Isc_gbak_restoring_constant:                                   {"restoring constant %s", 0, "00000"},
+	336331752:                                                     {"wait for a port of feature: @1", 1, "00000"},
+	336331753:                                                     {"    @1RDB_MAP(PING_FILE) <mapping file>        mapping file for fixing RDB2.x Java ESP UDFs on the fly", 1, "00000"},
+	336331754:                                                     {"mapping file parameter missing", 0, "00000"},
+	336331755:                                                     {"cannot open mapping file \"@1\"", 1, "00000"},
+	336331756:                                                     {"Updating entry point \"@1\" -> \"@2\"", 2, "00000"},
+	336331757:                                                     {"started at @1", 1, "00000"},
+	336331758:                                                     {"stopped at @1", 1, "00000"},
+	336331759:                                                     {"missing regular expression to keep tables", 0, "00000"},
+	336331760:                                                     {"    @1KEEP_D(ATA)          keep data for table", 1, "00000"},
+	336331761:                                                     {"regular expression to keep tables was already set", 0, "00000"},
 	Isc_gbak_db_not_online:                                        {"Database is not online due to failure to restore one or more objects.", 0, "00000"},
 	Isc_gbak_gfix_online:                                          {"Run gfix -online to bring database online.", 0, "00000"},
+	336331764:                                                     {"    @1IG(NORE)             backup: ignore bad checksums\n\t\t\t  restore: ignore errors in object's BLR", 1, "00000"},
+	336331765:                                                     {"    @1PAR(ALLEL)           parallel workers", 1, "00000"},
+	336331766:                                                     {"parallel workers parameter missing", 0, "00000"},
+	336331767:                                                     {"expected parallel workers, encountered \"@1\"", 1, "00000"},
+	336331768:                                                     {"Warning: The \"@1\" feature is not supported", 1, "00000"},
+	336331777:                                                     {"parameter for option -@1 is missing", 1, "00000"},
 	Isc_gbak_db_not_online_reason:                                 {"Database is not online due to @1.", 1, "00000"},
+	336331779:                                                     {"Compressor plugin '@1' not found", 1, "00000"},
+	336331780:                                                     {"    @1COM(PRESSOR)         plugin name, compression level and threads count", 1, "00000"},
+	336331781:                                                     {"writing foreign servers", 0, "00000"},
+	336331782:                                                     {"    writing foreign server @1", 1, "00000"},
+	336331783:                                                     {"restoring foreign server @1", 1, "00000"},
+	336331784:                                                     {"foreign server", 0, "00000"},
+	336331785:                                                     {"         writing foreign server option @1", 1, "00000"},
+	336331786:                                                     {"    restoring foreign server option @1", 1, "00000"},
+	336331787:                                                     {"foreign server option", 0, "00000"},
+	336331788:                                                     {"         writing foreign table option @1", 1, "00000"},
+	336331789:                                                     {"    restoring foreign table option @1", 1, "00000"},
+	336331790:                                                     {"foreign table option", 0, "00000"},
+	336331791:                                                     {"              writing foreign table column option @1", 1, "00000"},
+	336331792:                                                     {"         restoring foreign table column option @1", 1, "00000"},
+	336331793:                                                     {"foreign table column option", 0, "00000"},
+	336331794:                                                     {"writing foreign user mappings", 0, "00000"},
+	336331795:                                                     {"    writing foreign user mapping for user @1 and server @2", 2, "00000"},
+	336331796:                                                     {"restoring foreign user mapping for user @1 and server @2", 2, "00000"},
+	336331797:                                                     {"foreign user mapping", 0, "00000"},
+	336331798:                                                     {"         writing foreign user mapping option @1", 1, "00000"},
+	336331799:                                                     {"    restoring foreign user mapping option @1", 1, "00000"},
+	336331800:                                                     {"foreign user mapping option", 0, "00000"},
+	336331801:                                                     {"Expected @1 instead of @2", 2, "00000"},
+	336331802:                                                     {"compression level @1", 1, "00000"},
+	336331803:                                                     {"'@1' compression plugin used", 1, "00000"},
+	336331804:                                                     {"use up to @1 compression threads", 1, "00000"},
+	336396289:                                                     {"Red Database error", 0, "00000"},
+	336396362:                                                     {"Rollback not performed", 0, "00000"},
+	336396364:                                                     {"Connection error", 0, "00000"},
+	336396365:                                                     {"Connection not established", 0, "00000"},
+	336396366:                                                     {"Connection authorization failure.", 0, "00000"},
+	336396375:                                                     {"deadlock", 0, "00000"},
+	336396376:                                                     {"Unsuccessful execution caused by deadlock.", 0, "00000"},
+	336396377:                                                     {"record from transaction @1 is stuck in limbo", 1, "00000"},
+	336396379:                                                     {"operation completed with errors", 0, "00000"},
+	336396382:                                                     {"the SQL statement cannot be executed", 0, "00000"},
+	336396384:                                                     {"Unsuccessful execution caused by an unavailable resource.", 0, "00000"},
+	336396386:                                                     {"Unsuccessful execution caused by a system error that precludes successful execution of subsequent statements", 0, "00000"},
+	336396387:                                                     {"Unsuccessful execution caused by system error that does not preclude successful execution of subsequent statements", 0, "00000"},
+	336396446:                                                     {"Wrong numeric type", 0, "00000"},
+	336396447:                                                     {"too many versions", 0, "00000"},
+	336396448:                                                     {"intermediate journal file full", 0, "00000"},
+	336396449:                                                     {"journal file wrong format", 0, "00000"},
+	336396450:                                                     {"database @1 shutdown in @2 seconds", 2, "00000"},
+	336396451:                                                     {"restart shared cache manager", 0, "00000"},
+	336396452:                                                     {"exception @1", 1, "00000"},
+	336396453:                                                     {"bad checksum", 0, "00000"},
+	336396454:                                                     {"refresh range number @1 not found", 1, "00000"},
+	336396455:                                                     {"expression evaluation not supported", 0, "00000"},
+	336396456:                                                     {"FOREIGN KEY column count does not match PRIMARY KEY", 0, "00000"},
+	336396457:                                                     {"Attempt to define a second PRIMARY KEY for the same table", 0, "00000"},
+	336396458:                                                     {"column used with aggregate", 0, "00000"},
+	336396459:                                                     {"invalid column reference", 0, "00000"},
+	336396460:                                                     {"invalid key position", 0, "00000"},
+	336396461:                                                     {"invalid direction for find operation", 0, "00000"},
+	336396462:                                                     {"Invalid statement handle", 0, "00000"},
+	336396463:                                                     {"invalid lock handle", 0, "00000"},
+	336396464:                                                     {"invalid lock level @1", 1, "00000"},
+	336396465:                                                     {"invalid bookmark handle", 0, "00000"},
+	336396468:                                                     {"wrong or obsolete version", 0, "00000"},
+	336396471:                                                     {"The INSERT, UPDATE, DELETE, DDL or authorization statement cannot be executed because the transaction is inquiry only", 0, "00000"},
+	336396472:                                                     {"external file could not be opened for output", 0, "00000"},
+	336396477:                                                     {"multiple rows in singleton select", 0, "00000"},
+	336396478:                                                     {"No subqueries permitted for VIEW WITH CHECK OPTION", 0, "00000"},
+	336396479:                                                     {"DISTINCT, GROUP or HAVING not permitted for VIEW WITH CHECK OPTION", 0, "00000"},
+	336396480:                                                     {"Only one table allowed for VIEW WITH CHECK OPTION", 0, "00000"},
+	336396481:                                                     {"No WHERE clause for VIEW WITH CHECK OPTION", 0, "00000"},
+	336396482:                                                     {"Only simple column names permitted for VIEW WITH CHECK OPTION", 0, "00000"},
+	336396484:                                                     {"An error was found in the application program input parameters for the SQL statement.", 0, "00000"},
+	336396485:                                                     {"Invalid insert or update value(s): object columns are constrained - no 2 table rows can have duplicate column values", 0, "00000"},
+	336396486:                                                     {"Arithmetic overflow or division by zero has occurred.", 0, "00000"},
+	336396594:                                                     {"cannot access column @1 in view @2", 2, "00000"},
+	336396595:                                                     {"Too many concurrent executions of the same request", 0, "00000"},
+	336396596:                                                     {"maximum indexes per table (@1) exceeded", 1, "00000"},
+	336396597:                                                     {"new record size of @1 bytes is too big", 1, "00000"},
+	336396598:                                                     {"segments not allowed in expression index @1", 1, "00000"},
+	336396599:                                                     {"wrong page type", 0, "00000"},
+	336396603:                                                     {"invalid ARRAY or BLOB operation", 0, "00000"},
+	336396611:                                                     {"@1 extension error", 1, "00000"},
+	336396624:                                                     {"key size exceeds implementation restriction for index \"@1\"", 1, "00000"},
+	336396625:                                                     {"definition error for index @1", 1, "00000"},
+	336396628:                                                     {"cannot create index", 0, "00000"},
+	336396651:                                                     {"duplicate specification of @1 - not supported", 1, "00000"},
+	336396663:                                                     {"The insert failed because a column definition includes validation constraints.", 0, "00000"},
+	336396670:                                                     {"Cannot delete object referenced by another object", 0, "00000"},
+	336396671:                                                     {"Cannot modify object referenced by another object", 0, "00000"},
+	336396672:                                                     {"Object is referenced by another object", 0, "00000"},
+	336396673:                                                     {"lock on conflicts with existing lock", 0, "00000"},
+	336396681:                                                     {"This operation is not defined for system tables.", 0, "00000"},
+	336396683:                                                     {"Inappropriate self-reference of column", 0, "00000"},
+	336396684:                                                     {"Illegal array dimension range", 0, "00000"},
+	336396687:                                                     {"database or file exists", 0, "00000"},
+	336396688:                                                     {"sort error: corruption in data structure", 0, "00000"},
+	336396689:                                                     {"node not supported", 0, "00000"},
+	336396690:                                                     {"Shadow number must be a positive integer", 0, "00000"},
+	336396691:                                                     {"Preceding file did not specify length, so @1 must include starting page number", 1, "00000"},
+	336396692:                                                     {"illegal operation when at beginning of stream", 0, "00000"},
+	336396693:                                                     {"the current position is on a crack", 0, "00000"},
+	336396735:                                                     {"cannot modify an existing user privilege", 0, "00000"},
+	336396736:                                                     {"user does not have the privilege to perform operation", 0, "00000"},
+	336396737:                                                     {"This user does not have privilege to perform this operation on this object.", 0, "00000"},
+	336396756:                                                     {"transaction marked invalid by I/O error", 0, "00000"},
+	336396757:                                                     {"Cannot prepare a CREATE DATABASE/SCHEMA statement", 0, "00000"},
+	336396758:                                                     {"violation of FOREIGN KEY constraint \"@1\"", 1, "00000"},
+	336396769:                                                     {"The prepare statement identifies a prepare statement with an open cursor", 0, "00000"},
+	336396770:                                                     {"Unknown statement or request", 0, "00000"},
+	336396778:                                                     {"Attempt to update non-updatable cursor", 0, "00000"},
+	336396780:                                                     {"The cursor identified in the UPDATE or DELETE statement is not positioned on a row.", 0, "00000"},
+	336396784:                                                     {"Unknown cursor", 0, "00000"},
+	336396786:                                                     {"The cursor identified in an OPEN statement is already open.", 0, "00000"},
+	336396787:                                                     {"The cursor identified in a FETCH or CLOSE statement is not open.", 0, "00000"},
+	336396875:                                                     {"Overflow occurred during data type conversion.", 0, "00000"},
+	336396881:                                                     {"null segment of UNIQUE KEY", 0, "00000"},
+	336396882:                                                     {"subscript out of bounds", 0, "00000"},
+	336396886:                                                     {"data operation not supported", 0, "00000"},
+	336396887:                                                     {"invalid comparison operator for find operation", 0, "00000"},
+	336396974:                                                     {"Cannot transliterate character between character sets", 0, "00000"},
+	336396975:                                                     {"count of column list and variable list do not match", 0, "00000"},
+	336396985:                                                     {"Incompatible column/host variable data type", 0, "00000"},
+	336396991:                                                     {"Operation violates CHECK constraint @1 on view or table", 1, "00000"},
+	336396992:                                                     {"internal Red Database consistency check (invalid RDB$CONSTRAINT_TYPE)", 0, "00000"},
+	336396993:                                                     {"Cannot update constraints (RDB$RELATION_CONSTRAINTS).", 0, "00000"},
+	336396994:                                                     {"Cannot delete CHECK constraint entry (RDB$CHECK_CONSTRAINTS)", 0, "00000"},
+	336396995:                                                     {"Cannot update constraints (RDB$CHECK_CONSTRAINTS).", 0, "00000"},
+	336396996:                                                     {"Cannot update constraints (RDB$REF_CONSTRAINTS).", 0, "00000"},
+	336396997:                                                     {"Column used in a PRIMARY constraint must be NOT NULL.", 0, "00000"},
+	336397004:                                                     {"index @1 cannot be used in the specified plan", 1, "00000"},
+	336397005:                                                     {"table @1 is referenced in the plan but not the from list", 1, "00000"},
+	336397006:                                                     {"the table @1 is referenced twice; use aliases to differentiate", 1, "00000"},
+	336397007:                                                     {"table @1 is not referenced in plan", 1, "00000"},
+	336397027:                                                     {"Log file specification partition error", 0, "00000"},
+	336397028:                                                     {"Cache or Log redefined", 0, "00000"},
+	336397029:                                                     {"Write-ahead Log with shadowing configuration not allowed", 0, "00000"},
+	336397030:                                                     {"Overflow log specification required for round-robin log", 0, "00000"},
+	336397031:                                                     {"WAL defined; Cache Manager must be started first", 0, "00000"},
+	336397033:                                                     {"Write-ahead Log without shared cache configuration not allowed", 0, "00000"},
+	336397034:                                                     {"Cannot start WAL writer for the database @1", 1, "00000"},
+	336397035:                                                     {"WAL writer synchronization error for the database @1", 1, "00000"},
+	336397036:                                                     {"WAL setup error.  Please see Red Database log.", 0, "00000"},
+	336397037:                                                     {"WAL buffers cannot be increased.  Please see Red Database log.", 0, "00000"},
+	336397038:                                                     {"WAL writer - Journal server communication error.  Please see Red Database log.", 0, "00000"},
+	336397039:                                                     {"WAL I/O error.  Please see Red Database log.", 0, "00000"},
+	336397040:                                                     {"Unable to roll over; please see Red Database log.", 0, "00000"},
+	336397041:                                                     {"obsolete", 0, "00000"},
+	336397042:                                                     {"obsolete", 0, "00000"},
+	336397043:                                                     {"obsolete", 0, "00000"},
+	336397044:                                                     {"obsolete", 0, "00000"},
+	336397045:                                                     {"database does not use Write-ahead Log", 0, "00000"},
+	336397046:                                                     {"Cannot roll over to the next log file @1", 1, "00000"},
+	336397047:                                                     {"obsolete", 0, "00000"},
+	336397048:                                                     {"obsolete", 0, "00000"},
+	336397049:                                                     {"Cache or Log size too small", 0, "00000"},
+	336397050:                                                     {"Log record header too small at offset @1 in log file @2", 2, "00000"},
+	336397051:                                                     {"Incomplete log record at offset @1 in log file @2", 2, "00000"},
+	336397052:                                                     {"Unexpected end of log file @1 at offset @2", 2, "00000"},
+	336397053:                                                     {"Database name in the log file @1 is different", 1, "00000"},
+	336397054:                                                     {"Log file @1 not closed properly; database recovery may be required", 1, "00000"},
+	336397055:                                                     {"Log file @1 not latest in the chain but open flag still set", 1, "00000"},
+	336397056:                                                     {"Invalid version of log file @1", 1, "00000"},
+	336397057:                                                     {"Log file header of @1 too small", 1, "00000"},
+	336397058:                                                     {"obsolete", 0, "00000"},
+	336397069:                                                     {"table @1 is not defined", 1, "00000"},
+	336397080:                                                     {"invalid ORDER BY clause", 0, "00000"},
+	336397082:                                                     {"Column does not belong to referenced table", 0, "00000"},
+	336397083:                                                     {"column @1 is not defined in table @2", 2, "00000"},
+	336397084:                                                     {"Undefined name", 0, "00000"},
+	336397085:                                                     {"Ambiguous column reference.", 0, "00000"},
+	336397116:                                                     {"function @1 is not defined", 1, "00000"},
+	336397117:                                                     {"Invalid data type, length, or value", 0, "00000"},
+	336397118:                                                     {"Invalid number of arguments", 0, "00000"},
+	336397126:                                                     {"dbkey not available for multi-table views", 0, "00000"},
+	336397130:                                                     {"number of columns does not match select list", 0, "00000"},
+	336397131:                                                     {"must specify column name for view select expression", 0, "00000"},
+	336397133:                                                     {"@1 is not a valid base table of the specified view", 1, "00000"},
+	336397137:                                                     {"This column cannot be updated because it is derived from an SQL function or expression.", 0, "00000"},
+	336397138:                                                     {"The object of the INSERT, DELETE or UPDATE statement is a view for which the requested operation is not permitted.", 0, "00000"},
+	336397183:                                                     {"Invalid String", 0, "00000"},
+	336397184:                                                     {"Invalid token", 0, "00000"},
+	336397185:                                                     {"Invalid numeric literal", 0, "00000"},
+	336397203:                                                     {"An error occurred while trying to update the security database", 0, "00000"},
+	336397204:                                                     {"non-SQL security class defined", 0, "00000"},
 	Isc_dsql_too_old_ods:                                          {"ODS versions before ODS@1 are not supported", 1, "HY000"},
 	Isc_dsql_table_not_found:                                      {"Table @1 does not exist", 1, "42S02"},
 	Isc_dsql_view_not_found:                                       {"View @1 does not exist", 1, "42S02"},
@@ -3154,135 +4550,895 @@ var errmsgs = map[int]fberror{
 	Isc_dsql_recreate_job_failed:                                  {"RECREATE JOB @1 failed", 1, "42000"},
 	Isc_dsql_create_foreign_server_failed:                         {"CREATE SERVER @1 failed", 1, "42000"},
 	Isc_dsql_alter_foreign_server_failed:                          {"ALTER SERVER @1 failed", 1, "42000"},
-	Isc_dsql_create_alter_foreign_server_failed:                   {"CREATE OR ALTER SERVER @1 failed", 1, "42000"},
-	Isc_dsql_recreate_foreign_server_failed:                       {"RECREATE SERVER @1 failed", 1, "42000"},
-	Isc_dsql_drop_foreign_server_failed:                           {"DROP SERVER @1 failed", 1, "42000"},
-	Isc_dsql_create_user_mapping_failed:                           {"CREATE USER MAPPING FOR USER @1 AND SERVER @2 failed", 2, "42000"},
-	Isc_dsql_alter_user_mapping_failed:                            {"ALTER USER MAPPING FOR USER @1 AND SERVER @2 failed", 2, "42000"},
-	Isc_dsql_create_alter_user_mapping_failed:                     {"CREATE OR ALTER USER MAPPING FOR USER @1 AND SERVER @2 failed", 2, "42000"},
-	Isc_dsql_recreate_user_mapping_failed:                         {"RECREATE USER MAPPING FOR USER @1 AND SERVER @2 failed", 2, "42000"},
-	Isc_dsql_drop_user_mapping_failed:                             {"DROP USER MAPPING FOR USER @1 AND SERVER @2 failed", 2, "42000"},
-	Isc_dsql_comment_on_user_mapping_failed:                       {"COMMENT ON USER MAPPING FOR USER @1 AND SERVER @2 failed", 2, "42000"},
-	Isc_dsql_foreign_table_not_found:                              {"Foreign table @1 does not exist", 1, "42S02"},
-	Isc_dsql_create_foreign_table_failed:                          {"CREATE FOREIGN TABLE @1 failed", 1, "42000"},
-	Isc_dsql_alter_foreign_table_failed:                           {"ALTER FOREIGN TABLE @1 failed", 1, "42000"},
-	Isc_dsql_drop_foreign_table_failed:                            {"DROP FOREIGN TABLE @1 failed", 1, "42000"},
-	Isc_dsql_recreate_foreign_table_failed:                        {"RECREATE FOREIGN TABLE @1 failed", 1, "42000"},
-	Isc_gsec_cant_open_db:                                         {"unable to open database", 0, "00000"},
-	Isc_gsec_switches_error:                                       {"error in switch specifications", 0, "00000"},
-	Isc_gsec_no_op_spec:                                           {"no operation specified", 0, "00000"},
-	Isc_gsec_no_usr_name:                                          {"no user name specified", 0, "00000"},
-	Isc_gsec_err_add:                                              {"add record error", 0, "00000"},
-	Isc_gsec_err_modify:                                           {"modify record error", 0, "00000"},
-	Isc_gsec_err_find_mod:                                         {"find/modify record error", 0, "00000"},
-	Isc_gsec_err_rec_not_found:                                    {"record not found for user: @1", 1, "00000"},
-	Isc_gsec_err_delete:                                           {"delete record error", 0, "00000"},
-	Isc_gsec_err_find_del:                                         {"find/delete record error", 0, "00000"},
-	Isc_gsec_err_find_disp:                                        {"find/display record error", 0, "00000"},
-	Isc_gsec_inv_param:                                            {"invalid parameter, no switch defined", 0, "00000"},
-	Isc_gsec_op_specified:                                         {"operation already specified", 0, "00000"},
-	Isc_gsec_pw_specified:                                         {"password already specified", 0, "00000"},
-	Isc_gsec_uid_specified:                                        {"uid already specified", 0, "00000"},
-	Isc_gsec_gid_specified:                                        {"gid already specified", 0, "00000"},
-	Isc_gsec_proj_specified:                                       {"project already specified", 0, "00000"},
-	Isc_gsec_org_specified:                                        {"organization already specified", 0, "00000"},
-	Isc_gsec_fname_specified:                                      {"first name already specified", 0, "00000"},
-	Isc_gsec_mname_specified:                                      {"middle name already specified", 0, "00000"},
-	Isc_gsec_lname_specified:                                      {"last name already specified", 0, "00000"},
-	Isc_gsec_inv_switch:                                           {"invalid switch specified", 0, "00000"},
-	Isc_gsec_amb_switch:                                           {"ambiguous switch specified", 0, "00000"},
-	Isc_gsec_no_op_specified:                                      {"no operation specified for parameters", 0, "00000"},
-	Isc_gsec_params_not_allowed:                                   {"no parameters allowed for this operation", 0, "00000"},
-	Isc_gsec_incompat_switch:                                      {"incompatible switches specified", 0, "00000"},
-	Isc_gsec_inv_username:                                         {"Invalid user name (maximum 31 bytes allowed)", 0, "00000"},
-	Isc_gsec_inv_pw_length:                                        {"Warning - maximum 8 significant bytes of password used", 0, "00000"},
-	Isc_gsec_db_specified:                                         {"database already specified", 0, "00000"},
-	Isc_gsec_db_admin_specified:                                   {"database administrator name already specified", 0, "00000"},
-	Isc_gsec_db_admin_pw_specified:                                {"database administrator password already specified", 0, "00000"},
-	Isc_gsec_sql_role_specified:                                   {"SQL role name already specified", 0, "00000"},
-	Isc_gstat_unknown_switch:                                      {"found unknown switch", 0, "00000"},
-	Isc_gstat_retry:                                               {"please retry, giving a database name", 0, "00000"},
-	Isc_gstat_wrong_ods:                                           {"Wrong ODS version, expected @1, encountered @2", 2, "00000"},
-	Isc_gstat_unexpected_eof:                                      {"Unexpected end of database file.", 0, "00000"},
-	Isc_gstat_open_err:                                            {"Can't open database file @1", 1, "00000"},
-	Isc_gstat_read_err:                                            {"Can't read a database page", 0, "00000"},
-	Isc_gstat_sysmemex:                                            {"System memory exhausted", 0, "00000"},
-	Isc_fbsvcmgr_bad_am:                                           {"Wrong value for access mode", 0, "00000"},
-	Isc_fbsvcmgr_bad_wm:                                           {"Wrong value for write mode", 0, "00000"},
-	Isc_fbsvcmgr_bad_rs:                                           {"Wrong value for reserve space", 0, "00000"},
-	Isc_fbsvcmgr_info_err:                                         {"Unknown tag (@1) in info_svr_db_info block after isc_svc_query()", 1, "00000"},
-	Isc_fbsvcmgr_query_err:                                        {"Unknown tag (@1) in isc_svc_query() results", 1, "00000"},
-	Isc_fbsvcmgr_switch_unknown:                                   {"Unknown switch \"@1\"", 1, "00000"},
-	Isc_fbsvcmgr_bad_sm:                                           {"Wrong value for shutdown mode", 0, "00000"},
-	Isc_fbsvcmgr_fp_open:                                          {"could not open file @1", 1, "00000"},
-	Isc_fbsvcmgr_fp_read:                                          {"could not read file @1", 1, "00000"},
-	Isc_fbsvcmgr_fp_empty:                                         {"empty file @1", 1, "00000"},
-	Isc_fbsvcmgr_bad_arg:                                          {"Invalid or missing parameter for switch @1", 1, "00000"},
-	Isc_fbsvcmgr_info_limbo:                                       {"Unknown tag (@1) in isc_info_svc_limbo_trans block after isc_svc_query()", 1, "00000"},
-	Isc_fbsvcmgr_limbo_state:                                      {"Unknown tag (@1) in isc_spb_tra_state block after isc_svc_query()", 1, "00000"},
-	Isc_fbsvcmgr_limbo_advise:                                     {"Unknown tag (@1) in isc_spb_tra_advise block after isc_svc_query()", 1, "00000"},
-	Isc_fbsvcmgr_bad_rm:                                           {"Wrong value for replica mode", 0, "00000"},
-	Isc_utl_trusted_switch:                                        {"Switches trusted_user and trusted_role are not supported from command line", 0, "00000"},
-	Isc_nbackup_missing_param:                                     {"Missing parameter for switch @1", 1, "00000"},
-	Isc_nbackup_allowed_switches:                                  {"Only one of -LOCK, -UNLOCK, -FIXUP, -BACKUP or -RESTORE should be specified", 0, "00000"},
-	Isc_nbackup_unknown_param:                                     {"Unrecognized parameter @1", 1, "00000"},
-	Isc_nbackup_unknown_switch:                                    {"Unknown switch @1", 1, "00000"},
-	Isc_nbackup_nofetchpw_svc:                                     {"Fetch password can't be used in service mode", 0, "00000"},
-	Isc_nbackup_pwfile_error:                                      {"Error working with password file \"@1\"", 1, "00000"},
-	Isc_nbackup_size_with_lock:                                    {"Switch -SIZE can be used only with -LOCK", 0, "00000"},
-	Isc_nbackup_no_switch:                                         {"None of -LOCK, -UNLOCK, -FIXUP, -BACKUP or -RESTORE specified", 0, "00000"},
-	Isc_nbackup_err_read:                                          {"IO error reading file: @1", 1, "00000"},
-	Isc_nbackup_err_write:                                         {"IO error writing file: @1", 1, "00000"},
-	Isc_nbackup_err_seek:                                          {"IO error seeking file: @1", 1, "00000"},
-	Isc_nbackup_err_opendb:                                        {"Error opening database file: @1", 1, "00000"},
-	Isc_nbackup_err_fadvice:                                       {"Error in posix_fadvise(@1) for database @2", 2, "00000"},
-	Isc_nbackup_err_createdb:                                      {"Error creating database file: @1", 1, "00000"},
-	Isc_nbackup_err_openbk:                                        {"Error opening backup file: @1", 1, "00000"},
-	Isc_nbackup_err_createbk:                                      {"Error creating backup file: @1", 1, "00000"},
-	Isc_nbackup_err_eofdb:                                         {"Unexpected end of database file @1", 1, "00000"},
-	Isc_nbackup_fixup_wrongstate:                                  {"Database @1 is not in state (@2) to be safely fixed up", 2, "00000"},
-	Isc_nbackup_err_db:                                            {"Database error", 0, "00000"},
-	Isc_nbackup_userpw_toolong:                                    {"Username or password is too long", 0, "00000"},
-	Isc_nbackup_lostrec_db:                                        {"Cannot find record for database \"@1\" backup level @2 in the backup history", 2, "00000"},
-	Isc_nbackup_lostguid_db:                                       {"Internal error. History query returned null SCN or GUID", 0, "00000"},
-	Isc_nbackup_err_eofhdrdb:                                      {"Unexpected end of file when reading header of database file \"@1\" (stage @2)", 2, "00000"},
-	Isc_nbackup_db_notlock:                                        {"Internal error. Database file is not locked. Flags are @1", 1, "00000"},
-	Isc_nbackup_lostguid_bk:                                       {"Internal error. Cannot get backup guid clumplet", 0, "00000"},
-	Isc_nbackup_page_changed:                                      {"Internal error. Database page @1 had been changed during backup (page SCN=@2, backup SCN=@3)", 3, "00000"},
-	Isc_nbackup_dbsize_inconsistent:                               {"Database file size is not a multiple of page size", 0, "00000"},
-	Isc_nbackup_failed_lzbk:                                       {"Level 0 backup is not restored", 0, "00000"},
-	Isc_nbackup_err_eofhdrbk:                                      {"Unexpected end of file when reading header of backup file: @1", 1, "00000"},
-	Isc_nbackup_invalid_incbk:                                     {"Invalid incremental backup file: @1", 1, "00000"},
-	Isc_nbackup_unsupvers_incbk:                                   {"Unsupported version @1 of incremental backup file: @2", 2, "00000"},
-	Isc_nbackup_invlevel_incbk:                                    {"Invalid level @1 of incremental backup file: @2, expected @3", 3, "00000"},
-	Isc_nbackup_wrong_orderbk:                                     {"Wrong order of backup files or invalid incremental backup file detected, file: @1", 1, "00000"},
-	Isc_nbackup_err_eofbk:                                         {"Unexpected end of backup file: @1", 1, "00000"},
-	Isc_nbackup_err_copy:                                          {"Error creating database file: @1 via copying from: @2", 2, "00000"},
-	Isc_nbackup_err_eofhdr_restdb:                                 {"Unexpected end of file when reading header of restored database file (stage @1)", 1, "00000"},
-	Isc_nbackup_lostguid_l0bk:                                     {"Cannot get backup guid clumplet from L0 backup", 0, "00000"},
-	Isc_nbackup_switchd_parameter:                                 {"Wrong parameter @1 for switch -D, need ON or OFF", 1, "00000"},
-	Isc_nbackup_user_stop:                                         {"Terminated due to user request", 0, "08006"},
-	Isc_nbackup_deco_parse:                                        {"Too complex decompress command (> @1 arguments)", 1, "54023"},
-	Isc_nbackup_lostrec_guid_db:                                   {"Cannot find record for database \"@1\" backup GUID @2 in the backup history", 2, "00000"},
-	Isc_nbackup_seq_misuse:                                        {"Switch -SEQ(UENCE) can be used only with -FIXUP or -RESTORE", 0, "00000"},
-	Isc_nbackup_wrong_param:                                       {"Wrong parameter value for switch @1", 1, "00000"},
-	Isc_nbackup_clean_hist_misuse:                                 {"Switch -CLEAN_HISTORY can be used only with -BACKUP", 0, "00000"},
-	Isc_nbackup_clean_hist_missed:                                 {"-KEEP can be used only with -CLEAN_HISTORY", 0, "00000"},
-	Isc_nbackup_keep_hist_missed:                                  {"-KEEP is required with -CLEAN_HISTORY", 0, "00000"},
-	Isc_nbackup_second_keep_switch:                                {"-KEEP can be used one time only", 0, "00000"},
-	Isc_trace_conflict_acts:                                       {"conflicting actions \"@1\" and \"@2\" found", 2, "00000"},
-	Isc_trace_act_notfound:                                        {"action switch not found", 0, "00000"},
-	Isc_trace_switch_once:                                         {"switch \"@1\" must be set only once", 1, "00000"},
-	Isc_trace_param_val_miss:                                      {"value for switch \"@1\" is missing", 1, "00000"},
-	Isc_trace_param_invalid:                                       {"invalid value (\"@1\") for switch \"@2\"", 2, "00000"},
-	Isc_trace_switch_unknown:                                      {"unknown switch \"@1\" encountered", 1, "00000"},
-	Isc_trace_switch_svc_only:                                     {"switch \"@1\" can be used by service only", 1, "00000"},
-	Isc_trace_switch_user_only:                                    {"switch \"@1\" can be used by interactive user only", 1, "00000"},
-	Isc_trace_switch_param_miss:                                   {"mandatory parameter \"@1\" for switch \"@2\" is missing", 2, "00000"},
-	Isc_trace_param_act_notcompat:                                 {"parameter \"@1\" is incompatible with action \"@2\"", 2, "00000"},
-	Isc_trace_mandatory_switch_miss:                               {"mandatory switch \"@1\" is missing", 1, "00000"},
-	Isc_diff_incmp_sw:                                             {"incompatible switch combination", 0, "00000"},
-	Isc_diff_unicode_init_error:                                   {"Cannot initialize UNICODE collation", 0, "00000"},
-	Isc_diff_replconf_section_not_found:                           {"Replication config: @1 section not found", 1, "00000"},
-	Isc_diff_param_val_miss:                                       {"Value for switch \"@1\" is missing", 1, "00000"},
+	Isc_dsql_create_alter_foreign_server_failed: {"CREATE OR ALTER SERVER @1 failed", 1, "42000"},
+	Isc_dsql_recreate_foreign_server_failed:     {"RECREATE SERVER @1 failed", 1, "42000"},
+	Isc_dsql_drop_foreign_server_failed:         {"DROP SERVER @1 failed", 1, "42000"},
+	Isc_dsql_create_user_mapping_failed:         {"CREATE USER MAPPING FOR USER @1 AND SERVER @2 failed", 2, "42000"},
+	Isc_dsql_alter_user_mapping_failed:          {"ALTER USER MAPPING FOR USER @1 AND SERVER @2 failed", 2, "42000"},
+	Isc_dsql_create_alter_user_mapping_failed:   {"CREATE OR ALTER USER MAPPING FOR USER @1 AND SERVER @2 failed", 2, "42000"},
+	Isc_dsql_recreate_user_mapping_failed:       {"RECREATE USER MAPPING FOR USER @1 AND SERVER @2 failed", 2, "42000"},
+	Isc_dsql_drop_user_mapping_failed:           {"DROP USER MAPPING FOR USER @1 AND SERVER @2 failed", 2, "42000"},
+	Isc_dsql_comment_on_user_mapping_failed:     {"COMMENT ON USER MAPPING FOR USER @1 AND SERVER @2 failed", 2, "42000"},
+	Isc_dsql_foreign_table_not_found:            {"Foreign table @1 does not exist", 1, "42S02"},
+	Isc_dsql_create_foreign_table_failed:        {"CREATE FOREIGN TABLE @1 failed", 1, "42000"},
+	Isc_dsql_alter_foreign_table_failed:         {"ALTER FOREIGN TABLE @1 failed", 1, "42000"},
+	Isc_dsql_drop_foreign_table_failed:          {"DROP FOREIGN TABLE @1 failed", 1, "42000"},
+	Isc_dsql_recreate_foreign_table_failed:      {"RECREATE FOREIGN TABLE @1 failed", 1, "42000"},
+	336461924:                                   {"Row not found for fetch, update or delete, or the result of a query is an empty table.", 0, "00000"},
+	336461925:                                   {"segment buffer length shorter than expected", 0, "00000"},
+	336462125:                                   {"Datatype needs modification", 0, "00000"},
+	336462436:                                   {"Duplicate column or domain name found.", 0, "00000"},
+	336527507:                                   {"invalid block type encountered", 0, "00000"},
+	336527508:                                   {"wrong packet type", 0, "00000"},
+	336527509:                                   {"cannot map page", 0, "00000"},
+	336527510:                                   {"request to allocate invalid block type", 0, "00000"},
+	336527511:                                   {"request to allocate block type larger than maximum size", 0, "00000"},
+	336527512:                                   {"memory pool free list is invalid", 0, "00000"},
+	336527513:                                   {"invalid pool id encountered", 0, "00000"},
+	336527514:                                   {"attempt to release free block", 0, "00000"},
+	336527515:                                   {"attempt to release block overlapping following free block", 0, "00000"},
+	336527516:                                   {"attempt to release block overlapping prior free block", 0, "00000"},
+	336527517:                                   {"cannot sort on a field that does not exist", 0, "00000"},
+	336527518:                                   {"database file not available", 0, "00000"},
+	336527519:                                   {"cannot assert logical lock", 0, "00000"},
+	336527520:                                   {"wrong ACL version", 0, "00000"},
+	336527521:                                   {"shadow block not found", 0, "00000"},
+	336527522:                                   {"shadow lock not synchronized properly", 0, "00000"},
+	336527523:                                   {"root file name not listed for shadow", 0, "00000"},
+	336527524:                                   {"failed to remove symbol from hash table", 0, "00000"},
+	336527525:                                   {"cannot find tip page", 0, "00000"},
+	336527526:                                   {"invalid rsb type", 0, "00000"},
+	336527527:                                   {"invalid SEND request", 0, "00000"},
+	336527528:                                   {"looper: action not yet implemented", 0, "00000"},
+	336527529:                                   {"return data type not supported", 0, "00000"},
+	336527530:                                   {"unexpected reply from journal server", 0, "00000"},
+	336527531:                                   {"journal server is incompatible version", 0, "00000"},
+	336527532:                                   {"journal server refused connection", 0, "00000"},
+	336527533:                                   {"referenced index description not found", 0, "00000"},
+	336527534:                                   {"index key too big", 0, "00000"},
+	336527535:                                   {"partner index description not found", 0, "00000"},
+	336527536:                                   {"bad difference record", 0, "00000"},
+	336527537:                                   {"applied differences will not fit in record", 0, "00000"},
+	336527538:                                   {"record length inconsistent", 0, "00000"},
+	336527539:                                   {"decompression overran buffer", 0, "00000"},
+	336527540:                                   {"cannot reposition for update after sort for RMS", 0, "00000"},
+	336527541:                                   {"external access type not implemented", 0, "00000"},
+	336527542:                                   {"differences record too long", 0, "00000"},
+	336527543:                                   {"wrong record length", 0, "00000"},
+	336527544:                                   {"limbo impossible", 0, "00000"},
+	336527545:                                   {"wrong record version", 0, "00000"},
+	336527546:                                   {"record disappeared", 0, "00000"},
+	336527547:                                   {"cannot delete system tables", 0, "00000"},
+	336527548:                                   {"cannot update erased record", 0, "00000"},
+	336527549:                                   {"comparison not supported for specified data types", 0, "00000"},
+	336527550:                                   {"conversion not supported for specified data types", 0, "00000"},
+	336527551:                                   {"conversion error", 0, "00000"},
+	336527552:                                   {"overflow during conversion", 0, "00000"},
+	336527553:                                   {"null or invalid array", 0, "00000"},
+	336527554:                                   {"BLOB not found", 0, "00000"},
+	336527555:                                   {"cannot update old BLOB", 0, "00000"},
+	336527556:                                   {"relation for array not known", 0, "00000"},
+	336527557:                                   {"field for array not known", 0, "00000"},
+	336527558:                                   {"array subscript computation error", 0, "00000"},
+	336527559:                                   {"expected field node", 0, "00000"},
+	336527560:                                   {"invalid BLOB ID", 0, "00000"},
+	336527561:                                   {"cannot find BLOB page", 0, "00000"},
+	336527562:                                   {"unknown data type", 0, "00000"},
+	336527563:                                   {"shadow block not found for extend file", 0, "00000"},
+	336527564:                                   {"index inconsistent", 0, "00000"},
+	336527565:                                   {"index bucket overfilled", 0, "00000"},
+	336527566:                                   {"exceeded index level", 0, "00000"},
+	336527567:                                   {"page already in use", 0, "00000"},
+	336527568:                                   {"page not accessed for write", 0, "00000"},
+	336527569:                                   {"attempt to release page not acquired", 0, "00000"},
+	336527570:                                   {"page in use during flush", 0, "00000"},
+	336527571:                                   {"attempt to remove page from dirty page list when not there", 0, "00000"},
+	336527572:                                   {"CCH_precedence: block marked", 0, "00000"},
+	336527573:                                   {"insufficient cache size", 0, "00000"},
+	336527574:                                   {"no cache buffers available for reuse", 0, "00000"},
+	336527575:                                   {"page @1, page type @2 lock conversion denied", 2, "00000"},
+	336527576:                                   {"page @1, page type @2 lock denied", 2, "00000"},
+	336527577:                                   {"buffer marked for update", 0, "00000"},
+	336527578:                                   {"CCH: @1, status = @2 (218)", 2, "00000"},
+	336527579:                                   {"request of unknown resource", 0, "00000"},
+	336527580:                                   {"release of unknown resource", 0, "00000"},
+	336527581:                                   {"(CMP) copy: cannot remap", 0, "00000"},
+	336527582:                                   {"bad BLR -- invalid stream", 0, "00000"},
+	336527583:                                   {"argument of scalar operation must be an array", 0, "00000"},
+	336527584:                                   {"quad word arithmetic not supported", 0, "00000"},
+	336527585:                                   {"data type not supported for arithmetic", 0, "00000"},
+	336527586:                                   {"request size limit exceeded", 0, "00000"},
+	336527587:                                   {"cannot access field @1 in view @2", 2, "00000"},
+	336527588:                                   {"cannot access field in view @1", 1, "00000"},
+	336527589:                                   {"EVL_assign_to: invalid operation", 0, "00000"},
+	336527590:                                   {"EVL_bitmap: invalid operation", 0, "00000"},
+	336527591:                                   {"EVL_boolean: invalid operation", 0, "00000"},
+	336527592:                                   {"EVL_expr: invalid operation", 0, "00000"},
+	336527593:                                   {"eval_statistical: invalid operation", 0, "00000"},
+	336527594:                                   {"Unimplemented conversion, FAO directive O,Z,S", 0, "00000"},
+	336527595:                                   {"Unimplemented conversion, FAO directive X,U", 0, "00000"},
+	336527596:                                   {"Error parsing RDB FAO msg string", 0, "00000"},
+	336527597:                                   {"Error parsing RDB FAO msg str", 0, "00000"},
+	336527598:                                   {"unknown parameter in RdB status vector", 0, "00000"},
+	336527599:                                   {"Red Database status vector inconsistent", 0, "00000"},
+	336527600:                                   {"Red Database message parameter inconsistency", 0, "00000"},
+	336527601:                                   {"error parsing RDB FAO message string", 0, "00000"},
+	336527602:                                   {"unimplemented FAO directive", 0, "00000"},
+	336527603:                                   {"missing pointer page in DPM_data_pages", 0, "00000"},
+	336527604:                                   {"Fragment does not exist", 0, "00000"},
+	336527605:                                   {"pointer page disappeared in DPM_delete", 0, "00000"},
+	336527606:                                   {"pointer page lost from DPM_delete_relation", 0, "00000"},
+	336527607:                                   {"missing pointer page in DPM_dump", 0, "00000"},
+	336527608:                                   {"cannot find record fragment", 0, "00000"},
+	336527609:                                   {"pointer page vanished from DPM_next", 0, "00000"},
+	336527610:                                   {"temporary page buffer too small", 0, "00000"},
+	336527611:                                   {"damaged data page", 0, "00000"},
+	336527612:                                   {"header fragment length changed", 0, "00000"},
+	336527613:                                   {"pointer page vanished from extend_relation", 0, "00000"},
+	336527614:                                   {"pointer page vanished from relation list in locate_space", 0, "00000"},
+	336527615:                                   {"cannot find free space", 0, "00000"},
+	336527616:                                   {"pointer page vanished from mark_full", 0, "00000"},
+	336527617:                                   {"bad record in RDB$PAGES", 0, "00000"},
+	336527618:                                   {"page slot not empty", 0, "00000"},
+	336527619:                                   {"bad pointer page", 0, "00000"},
+	336527620:                                   {"index unexpectedly deleted", 0, "00000"},
+	336527621:                                   {"scalar operator used on field which is not an array", 0, "00000"},
+	336527622:                                   {"active", 0, "00000"},
+	336527623:                                   {"committed", 0, "00000"},
+	336527624:                                   {"rolled back", 0, "00000"},
+	336527625:                                   {"in an ill-defined state", 0, "00000"},
+	336527626:                                   {"next transaction older than oldest active transaction", 0, "00000"},
+	336527627:                                   {"next transaction older than oldest transaction", 0, "00000"},
+	336527628:                                   {"buffer marked during cache unwind", 0, "00000"},
+	336527629:                                   {"error in recovery! database corrupted", 0, "00000"},
+	336527630:                                   {"error in recovery! wrong data page record", 0, "00000"},
+	336527631:                                   {"error in recovery! no space on data page", 0, "00000"},
+	336527632:                                   {"error in recovery! wrong header page record", 0, "00000"},
+	336527633:                                   {"error in recovery! wrong generator page record", 0, "00000"},
+	336527634:                                   {"error in recovery! wrong b-tree page record", 0, "00000"},
+	336527635:                                   {"error in recovery! wrong page inventory page record", 0, "00000"},
+	336527636:                                   {"error in recovery! wrong pointer page record", 0, "00000"},
+	336527637:                                   {"error in recovery! wrong index root page record", 0, "00000"},
+	336527638:                                   {"error in recovery! wrong transaction page record", 0, "00000"},
+	336527639:                                   {"error in recovery! out of sequence log record encountered", 0, "00000"},
+	336527640:                                   {"error in recovery! unknown page type", 0, "00000"},
+	336527641:                                   {"error in recovery! unknown record type", 0, "00000"},
+	336527642:                                   {"journal server cannot archive to specified archive directory", 0, "00000"},
+	336527643:                                   {"checksum error in log record when reading from log file", 0, "00000"},
+	336527644:                                   {"cannot restore singleton select data", 0, "00000"},
+	336527645:                                   {"lock not found in internal lock manager", 0, "00000"},
+	336527646:                                   {"size of opt block exceeded", 0, "00000"},
+	336527647:                                   {"Too many savepoints", 0, "00000"},
+	336527648:                                   {"garbage collect record disappeared", 0, "00000"},
+	336527649:                                   {"Unknown BLOB FILTER ACTION_", 0, "00000"},
+	Isc_savepoint_error:                         {"error during savepoint backout", 0, "00000"},
+	336527651:                                   {"cannot find record back version", 0, "00000"},
+	336527652:                                   {"Illegal user_type.", 0, "00000"},
+	336527653:                                   {"bad ACL", 0, "00000"},
+	336527654:                                   {"inconsistent LATCH_mark release", 0, "00000"},
+	336527655:                                   {"inconsistent LATCH_mark call", 0, "00000"},
+	336527656:                                   {"inconsistent latch downgrade call", 0, "00000"},
+	336527657:                                   {"bdb is unexpectedly marked", 0, "00000"},
+	336527658:                                   {"missing exclusive latch", 0, "00000"},
+	336527659:                                   {"exceeded maximum number of shared latches on a bdb", 0, "00000"},
+	336527660:                                   {"can't find shared latch", 0, "00000"},
+	Isc_cache_non_zero_use_count:                {"Non-zero use_count of a buffer in the empty que", 0, "00000"},
+	Isc_unexpected_page_change:                  {"Unexpected page change from latching", 0, "00000"},
+	336527663:                                   {"Invalid expression for evaluation", 0, "00000"},
+	Isc_rdb_triggers_rdb_flags_corrupt:          {"RDB$FLAGS for trigger @1 in RDB$TRIGGERS is corrupted", 1, "00000"},
+	336527665:                                   {"Blobs accounting is inconsistent", 0, "00000"},
+	336527666:                                   {"Found array data type with more than 16 dimensions", 0, "00000"},
+	336528361:                                   {"Cannot find system index, try to reconnect", 0, "00000"},
+	Isc_GEN_ERR:                                 {"Statement failed, SQLSTATE = @1", 1, "00000"},
+	Isc_USAGE:                                   {"usage:    isql [options] [<database>]", 0, "00000"},
+	Isc_SWITCH:                                  {"Unknown switch: @1", 1, "00000"},
+	Isc_NO_DB:                                   {"Use CONNECT or CREATE DATABASE to specify a database", 0, "00000"},
+	Isc_FILE_OPEN_ERR:                           {"Unable to open @1", 1, "00000"},
+	Isc_COMMIT_PROMPT:                           {"Commit current transaction (y/n)?", 0, "00000"},
+	Isc_COMMIT_MSG:                              {"Committing.", 0, "00000"},
+	Isc_ROLLBACK_MSG:                            {"Rolling back work.", 0, "00000"},
+	Isc_CMD_ERR:                                 {"Command error: @1", 1, "00000"},
+	Isc_ADD_PROMPT:                              {"Enter data or NULL for each column.  RETURN to end.", 0, "00000"},
+	Isc_VERSION:                                 {"ISQL Version: @1", 1, "00000"},
+	Isc_USAGE_ALL:                               {"\t-a(ll)                  extract metadata incl. legacy non-SQL tables", 0, "00000"},
+	Isc_NUMBER_PAGES:                            {"Number of DB pages allocated = @1", 1, "00000"},
+	Isc_SWEEP_INTERV:                            {"Sweep interval = @1", 1, "00000"},
+	Isc_NUM_WAL_BUFF:                            {"Number of wal buffers = @1", 1, "00000"},
+	Isc_WAL_BUFF_SIZE:                           {"Wal buffer size = @1", 1, "00000"},
+	Isc_CKPT_LENGTH:                             {"Check point length = @1", 1, "00000"},
+	Isc_CKPT_INTERV:                             {"Check point interval = @1", 1, "00000"},
+	Isc_WAL_GRPC_WAIT:                           {"Wal group commit wait = @1", 1, "00000"},
+	Isc_BASE_LEVEL:                              {"Base level = @1", 1, "00000"},
+	Isc_LIMBO:                                   {"Transaction in limbo = @1", 1, "00000"},
+	Isc_HLP_FRONTEND:                            {"Frontend commands:", 0, "00000"},
+	Isc_HLP_BLOBED:                              {"BLOBVIEW <blobid>          -- view BLOB in text editor", 0, "00000"},
+	Isc_HLP_BLOBDMP:                             {"BLOBDUMP <blobid> <file>   -- dump BLOB to a file", 0, "00000"},
+	Isc_HLP_EDIT:                                {"EDIT     [<filename>]      -- edit SQL script file and execute", 0, "00000"},
+	Isc_HLP_INPUT:                               {"INput    <filename>        -- take input from the named SQL file", 0, "00000"},
+	Isc_HLP_OUTPUT:                              {"OUTput   [<filename>]      -- write output to named file", 0, "00000"},
+	Isc_HLP_SHELL:                               {"SHELL    <command>         -- execute Operating System command in sub-shell", 0, "00000"},
+	Isc_HLP_HELP:                                {"HELP                       -- display this menu", 0, "00000"},
+	Isc_HLP_SETCOM:                              {"Set commands:", 0, "00000"},
+	Isc_HLP_SET:                                 {"    SET                    -- display current SET options", 0, "00000"},
+	Isc_HLP_SETAUTO:                             {"    SET AUTOddl            -- toggle autocommit of DDL statements", 0, "00000"},
+	Isc_HLP_SETBLOB:                             {"    SET BLOB [ALL|<n>]     -- display BLOBS of subtype <n> or ALL", 0, "00000"},
+	Isc_HLP_SETCOUNT:                            {"    SET COUNT              -- toggle count of selected rows on/off", 0, "00000"},
+	Isc_HLP_SETECHO:                             {"    SET ECHO               -- toggle command echo on/off", 0, "00000"},
+	Isc_HLP_SETSTAT:                             {"    SET STATs              -- toggle display of performance statistics", 0, "00000"},
+	Isc_HLP_SETTERM:                             {"    SET TERM <string>      -- change statement terminator string", 0, "00000"},
+	Isc_HLP_SHOW:                                {"SHOW     <object> [<name>|<pattern>] -- display system information", 0, "00000"},
+	Isc_HLP_OBJTYPE:                             {"    <object> = ALL, CHECK, COLLATION, DATABASE, DOMAIN, EXCEPTION, FILTER, FUNCTION,", 0, "00000"},
+	Isc_HLP_EXIT:                                {"EXIT                       -- exit and commit changes", 0, "00000"},
+	Isc_HLP_QUIT:                                {"QUIT                       -- exit and roll back changes", 0, "00000"},
+	Isc_HLP_ALL:                                 {"All commands may be abbreviated to letters in CAPitals", 0, "00000"},
+	Isc_HLP_SETSCHEMA:                           {"\tSET SCHema/DB <db name> -- changes current database", 0, "00000"},
+	Isc_YES_ANS:                                 {"Yes", 0, "00000"},
+	Isc_REPORT1:                                 {"Current memory = !c\nDelta memory = !d\nMax memory = !x\nElapsed time = !e sec", 0, "00000"},
+	Isc_REPORT2:                                 {"Cpu = !u sec\nBuffers = !b\nReads = !r\nWrites = !w\nFetches = !f", 0, "00000"},
+	Isc_BLOB_SUBTYPE:                            {"BLOB display set to subtype @1. This BLOB: subtype = @2", 2, "00000"},
+	Isc_BLOB_PROMPT:                             {"BLOB: @1, type 'edit' or filename to load>", 1, "00000"},
+	Isc_DATE_PROMPT:                             {"Enter @1 as Y/M/D>", 1, "00000"},
+	Isc_NAME_PROMPT:                             {"Enter @1>", 1, "00000"},
+	Isc_DATE_ERR:                                {"Bad date @1", 1, "00000"},
+	Isc_CON_PROMPT:                              {"CON> ", 0, "00000"},
+	Isc_HLP_SETLIST:                             {"    SET LIST               -- toggle column or table display format", 0, "00000"},
+	Isc_NOT_FOUND:                               {"@1 not found", 1, "00000"},
+	Isc_COPY_ERR:                                {"Errors occurred (possibly duplicate domains) in creating @1 in @2", 2, "00000"},
+	Isc_SERVER_TOO_OLD:                          {"Server version too old to support the isql command", 0, "00000"},
+	Isc_REC_COUNT:                               {"Records affected: @1", 1, "00000"},
+	Isc_UNLICENSED:                              {"Unlicensed for database \"@1\"", 1, "00000"},
+	Isc_HLP_SETWIDTH:                            {"    SET WIDTH <col> [<n>]  -- set/unset print width to <n> for column <col>", 0, "00000"},
+	Isc_HLP_SETPLAN:                             {"    SET PLAN               -- toggle display of query access plan", 0, "00000"},
+	Isc_HLP_SETTIME:                             {"    SET TIME               -- toggle display of timestamp with DATE values", 0, "00000"},
+	Isc_HLP_EDIT2:                               {"EDIT                       -- edit current command buffer and execute", 0, "00000"},
+	Isc_HLP_OUTPUT2:                             {"OUTput                     -- return output to stdout", 0, "00000"},
+	Isc_HLP_SETNAMES:                            {"    SET NAMES <csname>     -- set name of runtime character set", 0, "00000"},
+	Isc_HLP_OBJTYPE2:                            {"               GENERATOR, GRANT, INDEX, PACKAGE, PROCEDURE, ROLE, SQL DIALECT,", 0, "00000"},
+	Isc_HLP_SETBLOB2:                            {"    SET BLOB               -- turn off BLOB display", 0, "00000"},
+	Isc_HLP_SET_ROOT:                            {"SET      <option>          -- (Use HELP SET for complete list)", 0, "00000"},
+	Isc_NO_TABLES:                               {"There are no tables in this database", 0, "00000"},
+	Isc_NO_TABLE:                                {"There is no table @1 in this database", 1, "00000"},
+	Isc_NO_VIEWS:                                {"There are no views in this database", 0, "00000"},
+	Isc_NO_VIEW:                                 {"There is no view @1 in this database", 1, "00000"},
+	Isc_NO_INDICES_ON_REL:                       {"There are no indices on table @1 in this database", 1, "00000"},
+	Isc_NO_REL_OR_INDEX:                         {"There is no table or index @1 in this database", 1, "00000"},
+	Isc_NO_INDICES:                              {"There are no indices in this database", 0, "00000"},
+	Isc_NO_DOMAIN:                               {"There is no domain @1 in this database", 1, "00000"},
+	Isc_NO_DOMAINS:                              {"There are no domains in this database", 0, "00000"},
+	Isc_NO_EXCEPTION:                            {"There is no exception @1 in this database", 1, "00000"},
+	Isc_NO_EXCEPTIONS:                           {"There are no exceptions in this database", 0, "00000"},
+	Isc_NO_FILTER:                               {"There is no filter @1 in this database", 1, "00000"},
+	Isc_NO_FILTERS:                              {"There are no filters in this database", 0, "00000"},
+	Isc_NO_FUNCTION:                             {"There is no user-defined function @1 in this database", 1, "00000"},
+	Isc_NO_FUNCTIONS:                            {"There are no user-defined functions in this database", 0, "00000"},
+	Isc_NO_GEN:                                  {"There is no generator @1 in this database", 1, "00000"},
+	Isc_NO_GENS:                                 {"There are no generators in this database", 0, "00000"},
+	Isc_NO_GRANT_ON_REL:                         {"There is no privilege granted on table @1 in this database", 1, "00000"},
+	Isc_NO_GRANT_ON_PROC:                        {"There is no privilege granted on stored procedure @1 in this database", 1, "00000"},
+	Isc_NO_REL_OR_PROC:                          {"There is no table or stored procedure @1 in this database", 1, "00000"},
+	Isc_NO_PROC:                                 {"There is no stored procedure @1 in this database", 1, "00000"},
+	Isc_NO_PROCS:                                {"There are no stored procedures in this database", 0, "00000"},
+	Isc_NO_TRIGGERS_ON_REL:                      {"There are no triggers on table @1 in this database", 1, "00000"},
+	Isc_NO_REL_OR_TRIGGER:                       {"There is no table or trigger @1 in this database", 1, "00000"},
+	Isc_NO_TRIGGERS:                             {"There are no triggers in this database", 0, "00000"},
+	Isc_NO_CHECKS_ON_REL:                        {"There are no check constraints on table @1 in this database", 1, "00000"},
+	Isc_REPORT2_WINDOWS_ONLY:                    {"Buffers = !b\nReads = !r\nWrites !w\nFetches = !f", 0, "00000"},
+	Isc_BUFFER_OVERFLOW:                         {"Single isql command exceeded maximum buffer size", 0, "00000"},
+	Isc_NO_ROLES:                                {"There are no roles in this database", 0, "00000"},
+	Isc_NO_OBJECT:                               {"There is no metadata object @1 in this database", 1, "00000"},
+	Isc_NO_GRANT_ON_ROL:                         {"There is no membership privilege granted on @1 in this database", 1, "00000"},
+	Isc_UNEXPECTED_EOF:                          {"Expected end of statement, encountered EOF", 0, "00000"},
+	Isc_TIME_ERR:                                {"Bad TIME: @1", 1, "00000"},
+	Isc_HLP_OBJTYPE3:                            {"               SYSTEM, TABLE, TRIGGER, VERSION, USERS, VIEW, WIRE_STATISTICS", 0, "00000"},
+	Isc_NO_ROLE:                                 {"There is no role @1 in this database", 1, "00000"},
+	Isc_USAGE_BAIL:                              {"\t-b(ail)                 bail on errors (set bail on)", 0, "00000"},
+	336658537:                                   {"Incomplete string in @1", 1, "00000"},
+	Isc_HLP_SETSQLDIALECT:                       {"    SET SQL DIALECT <n>    -- set sql dialect to <n>", 0, "00000"},
+	Isc_NO_GRANT_ON_ANY:                         {"There is no privilege granted in this database", 0, "00000"},
+	Isc_HLP_SETPLANONLY:                         {"    SET PLANONLY           -- toggle display of query plan without executing", 0, "00000"},
+	Isc_HLP_SETHEADING:                          {"    SET HEADING            -- toggle display of query column titles", 0, "00000"},
+	Isc_HLP_SETBAIL:                             {"    SET BAIL               -- toggle bailing out on errors in non-interactive mode", 0, "00000"},
+	Isc_USAGE_CACHE:                             {"\t-c(ache) <num>          number of cache buffers", 0, "00000"},
+	Isc_TIME_PROMPT:                             {"Enter @1 as H:M:S>", 1, "00000"},
+	Isc_TIMESTAMP_PROMPT:                        {"Enter @1 as Y/MON/D H:MIN:S[.MSEC]>", 1, "00000"},
+	Isc_TIMESTAMP_ERR:                           {"Bad TIMESTAMP: @1", 1, "00000"},
+	Isc_NO_COMMENTS:                             {"There are no comments for objects in this database", 0, "00000"},
+	Isc_ONLY_FIRST_BLOBS:                        {"Printing only the first @1 blobs.", 1, "00000"},
+	Isc_MSG_TABLES:                              {"Tables:", 0, "00000"},
+	Isc_MSG_FUNCTIONS:                           {"Functions:", 0, "00000"},
+	Isc_EXACTLINE:                               {"At line @1 in file @2", 2, "00000"},
+	Isc_AFTERLINE:                               {"After line @1 in file @2", 2, "00000"},
+	Isc_NO_TRIGGER:                              {"There is no trigger @1 in this database", 1, "00000"},
+	Isc_USAGE_CHARSET:                           {"\t-ch(arset) <charset>    connection charset (set names)", 0, "00000"},
+	Isc_USAGE_DATABASE:                          {"\t-d(atabase) <database>  database name to put in script creation", 0, "00000"},
+	Isc_USAGE_ECHO:                              {"\t-e(cho)                 echo commands (set echo on)", 0, "00000"},
+	Isc_USAGE_EXTRACT:                           {"\t-ex(tract)              extract metadata", 0, "00000"},
+	Isc_USAGE_INPUT:                             {"\t-i(nput) <file>         input file (set input)", 0, "00000"},
+	Isc_USAGE_MERGE:                             {"\t-m(erge)                merge standard error", 0, "00000"},
+	Isc_USAGE_MERGE2:                            {"\t-m2                     merge diagnostic", 0, "00000"},
+	Isc_USAGE_NOAUTOCOMMIT:                      {"\t-n(oautocommit)         no autocommit DDL (set autoddl off)", 0, "00000"},
+	Isc_USAGE_NOWARN:                            {"\t-now(arnings)           do not show warnings", 0, "00000"},
+	Isc_USAGE_OUTPUT:                            {"\t-o(utput) <file>        output file (set output)", 0, "00000"},
+	Isc_USAGE_PAGE:                              {"\t-pag(elength) <size>    page length", 0, "00000"},
+	Isc_USAGE_PASSWORD:                          {"\t-p(assword) <password>  connection password", 0, "00000"},
+	Isc_USAGE_QUIET:                             {"\t-q(uiet)                do not show the message \"Use CONNECT...\"", 0, "00000"},
+	Isc_USAGE_ROLE:                              {"\t-r(ole) <role>          role name", 0, "00000"},
+	Isc_USAGE_ROLE2:                             {"\t-r2 <role>              role (uses quoted identifier)", 0, "00000"},
+	Isc_USAGE_SQLDIALECT:                        {"\t-s(qldialect) <dialect> SQL dialect (set sql dialect)", 0, "00000"},
+	Isc_USAGE_TERM:                              {"\t-t(erminator) <term>    command terminator (set term)", 0, "00000"},
+	Isc_USAGE_USER:                              {"\t-u(ser) <user>          user name", 0, "00000"},
+	Isc_USAGE_XTRACT:                            {"\t-x                      extract metadata", 0, "00000"},
+	Isc_USAGE_VERSION:                           {"\t-z                      show program and server version", 0, "00000"},
+	Isc_USAGE_NOARG:                             {"missing argument for switch \"@1\"", 1, "00000"},
+	Isc_USAGE_NOTINT:                            {"argument \"@1\" for switch \"@2\" is not an integer", 2, "00000"},
+	Isc_USAGE_RANGE:                             {"value \"@1\" for switch \"@2\" is out of range", 2, "00000"},
+	Isc_USAGE_DUPSW:                             {"switch \"@1\" or its equivalent used more than once", 1, "00000"},
+	Isc_USAGE_DUPDB:                             {"more than one database name: \"@1\", \"@2\"", 2, "00000"},
+	Isc_NO_DEPENDENCIES:                         {"No dependencies for @1 were found", 1, "00000"},
+	Isc_NO_COLLATION:                            {"There is no collation @1 in this database", 1, "00000"},
+	Isc_NO_COLLATIONS:                           {"There are no user-defined collations in this database", 0, "00000"},
+	Isc_MSG_COLLATIONS:                          {"Collations:", 0, "00000"},
+	Isc_NO_SECCLASS:                             {"There are no security classes for @1", 1, "00000"},
+	Isc_NO_DB_WIDE_SECCLASS:                     {"There is no database-wide security class", 0, "00000"},
+	Isc_CANNOT_GET_SRV_VER:                      {"Cannot get server version without database connection", 0, "00000"},
+	Isc_USAGE_NODBTRIGGERS:                      {"\t-nod(btriggers)         do not run database triggers", 0, "00000"},
+	Isc_USAGE_TRUSTED:                           {"\t-tr(usted)              use trusted authentication", 0, "00000"},
+	Isc_BULK_PROMPT:                             {"BULK> ", 0, "00000"},
+	Isc_NO_CONNECTED_USERS:                      {"There are no connected users", 0, "00000"},
+	Isc_USERS_IN_DB:                             {"Users in the database", 0, "00000"},
+	Isc_OUTPUT_TRUNCATED:                        {"Output was truncated", 0, "00000"},
+	Isc_VALID_OPTIONS:                           {"Valid options are:", 0, "00000"},
+	Isc_USAGE_FETCH:                             {"\t-f(etch_password)       fetch password from file", 0, "00000"},
+	Isc_PASS_FILE_OPEN:                          {"could not open password file @1, errno @2", 2, "00000"},
+	Isc_PASS_FILE_READ:                          {"could not read password file @1, errno @2", 2, "00000"},
+	Isc_EMPTY_PASS:                              {"empty password file @1", 1, "00000"},
+	Isc_HLP_SETMAXROWS:                          {"    SET MAXROWS [<n>]      -- limit select stmt to <n> rows, zero is no limit", 0, "00000"},
+	Isc_NO_PACKAGE:                              {"There is no package @1 in this database", 1, "00000"},
+	Isc_NO_PACKAGES:                             {"There are no packages in this database", 0, "00000"},
+	Isc_NO_SCHEMA:                               {"There is no schema @1 in this database", 1, "00000"},
+	Isc_NO_SCHEMAS:                              {"There are no schemas in this database", 0, "00000"},
+	Isc_MAXROWS_INVALID:                         {"Unable to convert @1 to a number for MAXROWS option", 1, "00000"},
+	Isc_MAXROWS_OUTOF_RANGE:                     {"Value @1 for MAXROWS is out of range. Max value is @2", 2, "00000"},
+	Isc_MAXROWS_NEGATIVE:                        {"The value (@1) for MAXROWS must be zero or greater", 1, "00000"},
+	Isc_HLP_SETEXPLAIN:                          {"    SET EXPLAIN            -- toggle display of query access plan in the explained form", 0, "00000"},
+	Isc_NO_GRANT_ON_GEN:                         {"There is no privilege granted on generator @1 in this database", 1, "00000"},
+	Isc_NO_GRANT_ON_XCP:                         {"There is no privilege granted on exception @1 in this database", 1, "00000"},
+	Isc_NO_GRANT_ON_FLD:                         {"There is no privilege granted on domain @1 in this database", 1, "00000"},
+	Isc_NO_GRANT_ON_CS:                          {"There is no privilege granted on character set @1 in this database", 1, "00000"},
+	Isc_NO_GRANT_ON_COLL:                        {"There is no privilege granted on collation @1 in this database", 1, "00000"},
+	Isc_NO_GRANT_ON_PKG:                         {"There is no privilege granted on package @1 in this database", 1, "00000"},
+	Isc_NO_GRANT_ON_FUN:                         {"There is no privilege granted on function @1 in this database", 1, "00000"},
+	Isc_REPORT_NEW1:                             {"Current memory = !\nDelta memory = !\nMax memory = !\nElapsed time = ~ sec", 0, "00000"},
+	Isc_REPORT_NEW2:                             {"Cpu = ~ sec", 0, "00000"},
+	Isc_REPORT_NEW3:                             {"Buffers = !\nReads = !\nWrites = !\nFetches = !", 0, "00000"},
+	Isc_NO_MAP:                                  {"There is no mapping @1 in this database", 1, "00000"},
+	Isc_NO_MAPS:                                 {"There are no mappings in this database", 0, "00000"},
+	Isc_INVALID_TERM_CHARS:                      {"Invalid characters for SET TERMINATOR are @1", 1, "00000"},
+	Isc_REC_DISPLAYCOUNT:                        {"Records displayed: @1", 1, "00000"},
+	Isc_COLUMNS_HIDDEN:                          {"Full NULL columns hidden due to RecordBuff: @1", 1, "00000"},
+	Isc_HLP_SETRECORDBUF:                        {"    SET RECORDBuf          -- toggle limited buffering and trimming of columns", 0, "00000"},
+	Isc_NUMBER_USED_PAGES:                       {"Number of DB pages used = @1", 1, "00000"},
+	Isc_NUMBER_FREE_PAGES:                       {"Number of DB pages free = @1", 1, "00000"},
+	Isc_DATABASE_CRYPTED:                        {"Database encrypted", 0, "00000"},
+	Isc_DATABASE_NOT_CRYPTED:                    {"Database not encrypted", 0, "00000"},
+	Isc_DATABASE_CRYPT_PROCESS:                  {"crypt thread not complete", 0, "00000"},
+	Isc_MSG_ROLES:                               {"Roles:", 0, "00000"},
+	Isc_NO_TIMEOUTS:                             {"Timeouts are not supported by server", 0, "00000"},
+	Isc_HLP_SETKEEPTRAN:                         {"    SET KEEP_TRAN_params   -- toggle to keep or not to keep text of following successful SET TRANSACTION statement", 0, "00000"},
+	Isc_HLP_SETPERTAB:                           {"    SET PER_TABle_stats    -- toggle display of detailed per-table statistics", 0, "00000"},
+	Isc_BAD_STMT_TYPE:                           {"Statement type is not recognized", 0, "00000"},
+	Isc_MSG_PACKAGES:                            {"Packages:", 0, "00000"},
+	Isc_NO_PUBLICATION:                          {"There is no publication @1 in this database", 1, "00000"},
+	Isc_NO_PUBLICATIONS:                         {"There is no publications in this database", 0, "00000"},
+	Isc_MSG_PUBLICATIONS:                        {"Publications:", 0, "00000"},
+	Isc_MSG_PROCEDURES:                          {"Procedures:", 0, "00000"},
+	Isc_HLP_EXPLAIN:                             {"EXPLAIN                    -- explain a query access plan", 0, "00000"},
+	Isc_USAGE_AUTOTERM:                          {"\t-autot(erm)             use auto statement terminator (set autoterm on)", 0, "00000"},
+	Isc_AUTOTERM_NOT_SUPPORTED:                  {"SET AUTOTERM ON is not supported in engine/server and has been disabled", 0, "00000"},
+	Isc_HLP_SETAUTOTERM:                         {"    SET AUTOTERM           -- toggle auto statement terminator", 0, "00000"},
+	Isc_HLP_SETWIRESTATS:                        {"    SET WIRE_stats         -- toggle display of wire (network) statistics", 0, "00000"},
+	Isc_USAGE_SEARCH_PATH:                       {"\t-(se)arch_path <path>   set schema search path", 0, "00000"},
+	Isc_MSG_SCHEMAS:                             {"Schemas:", 0, "00000"},
+	Isc_NO_CONSTANTS:                            {"There are no constants in this database", 0, "00000"},
+	Isc_NO_CONSTANT:                             {"There are no constant @1 in this database", 1, "00000"},
+	Isc_NO_OBJECT_BY_PATTERN:                    {"Pattern @1 does not match any object", 1, "00000"},
+	Isc_MSG_GENERATORS:                          {"Generators:", 0, "00000"},
+	Isc_MSG_VIEWS:                               {"Views:", 0, "00000"},
+	Isc_MSG_INDICIES:                            {"Indicies:", 0, "00000"},
+	Isc_MSG_CONSTRAINS:                          {"Constrains:", 0, "00000"},
+	Isc_MSG_DOMAINS:                             {"Domains:", 0, "00000"},
+	Isc_MSG_TRIGGERS:                            {"Triggers:", 0, "00000"},
+	Isc_MSG_EXCEPTIONS:                          {"Exceptions:", 0, "00000"},
+	Isc_MSG_GRANTS:                              {"Grants:", 0, "00000"},
+	Isc_MSG_COMMENTS:                            {"Comments:", 0, "00000"},
+	Isc_MSG_FILTERS:                             {"Filters:", 0, "00000"},
+	Isc_MSG_DEPENDENCIES:                        {"Dependencies:", 0, "00000"},
+	Isc_MSG_SECCLASSES:                          {"Security classes:", 0, "00000"},
+	Isc_MSG_SYSTEM:                              {"System:", 0, "00000"},
+	Isc_MSG_MAP:                                 {"Maps:", 0, "00000"},
+	Isc_USAGE_CERTIFICATE:                       {"\t-ce(rtificate) <alias>  use certificate for authentication", 0, "00000"},
+	Isc_USAGE_PIN:                               {"\t-pi(n) <PIN>            PIN for certificate's private key", 0, "00000"},
+	Isc_USAGE_VERIFY:                            {"\t-v(erify) <alias>       verify server certificate", 0, "00000"},
+	Isc_USAGE_LOGIN:                             {"\t-l(ogin)                effective login for trusted user", 0, "00000"},
+	Isc_CLEAR_HISTORY:                           {"\t-cl(earhistory)         clear command history", 0, "00000"},
+	Isc_MSG_SYS_FUNCTIONS:                       {"System Functions:", 0, "00000"},
+	Isc_MSG_SYS_PROCEDURES:                      {"System Procedures:", 0, "00000"},
+	Isc_MSG_SYS_GENERATORS:                      {"System Generators:", 0, "00000"},
+	Isc_MSG_SYS_COLLATIONS:                      {"System Collations:", 0, "00000"},
+	Isc_MSG_SYS_PACKAGES:                        {"System Packages:", 0, "00000"},
+	Isc_MSG_SYS_PUBLICATIONS:                    {"System Publications:", 0, "00000"},
+	Isc_MSG_SYS_TABLES:                          {"System Tables:", 0, "00000"},
+	Isc_MSG_JOBS:                                {"Jobs:", 0, "00000"},
+	Isc_NO_JOB:                                  {"There is no job @1", 1, "00000"},
+	Isc_NO_JOBS:                                 {"There are no jobs", 0, "00000"},
+	Isc_NO_SYSTEM_COLLATIONS:                    {"There are no system collations in this database", 0, "00000"},
+	Isc_NO_SYSTEM_FUNCTIONS:                     {"There are no system functions in this database", 0, "00000"},
+	Isc_NO_SYSTEM_TABLES:                        {"There are no system tables in this database", 0, "00000"},
+	Isc_NO_SYSTEM_GENS:                          {"There are no system generators in this database", 0, "00000"},
+	Isc_NO_SYSTEM_PROCS:                         {"There are no system procedures in this database", 0, "00000"},
+	Isc_NO_SYSTEM_PACKAGES:                      {"There are no system packages in this database", 0, "00000"},
+	Isc_NO_SYSTEM_PUBLICATIONS:                  {"There is no system publications in this database", 0, "00000"},
+	Isc_NO_SYSTEM_COLLATION:                     {"There is no system collation @1 in this database", 1, "00000"},
+	Isc_NO_SYSTEM_FUNCTION:                      {"There is no system function @1 in this database", 1, "00000"},
+	Isc_NO_SYSTEM_TABLE:                         {"There is no system table @1 in this database", 1, "00000"},
+	Isc_NO_SYSTEM_GEN:                           {"There is no system generator @1 in this database", 1, "00000"},
+	Isc_NO_SYSTEM_PROC:                          {"There is no system procedure @1 in this database", 1, "00000"},
+	Isc_NO_SYSTEM_PACKAGE:                       {"There in no system package @1 in this database", 1, "00000"},
+	Isc_NO_SYSTEM_PUBLICATION:                   {"There is no system publication @1 in this database", 1, "00000"},
+	Isc_NO_ANY_DEPENDENCIES:                     {"No dependencies were found", 0, "00000"},
+	Isc_MSG_SYS_ROLES:                           {"System Roles:", 0, "00000"},
+	Isc_NO_SYSTEM_ROLE:                          {"There is no system role @1 in this database", 1, "00000"},
+	Isc_USAGE_EXTRACT_NO_TERM:                   {"\t-xn                     extract metadata without usage \"SET TERM\"", 0, "00000"},
+	Isc_USAGE_TOKEN:                             {"\t-to(ken) <token>        access token for OpenID Connect", 0, "00000"},
+	Isc_MSG_FOREIGN_SERVERS:                     {"Servers:", 0, "00000"},
+	Isc_MSG_FOREIGN_USER_MAPPINGS:               {"Foreign User Mappings:", 0, "00000"},
+	Isc_NO_FOREIGN_SERVER:                       {"There is no server @1 in this database", 1, "00000"},
+	Isc_NO_FOREIGN_SERVERS:                      {"There are no servers in this database", 0, "00000"},
+	Isc_NO_FOREIGN_USER_MAPPING:                 {"There is no user mappings for @1 in this database", 1, "00000"},
+	Isc_NO_FOREIGN_USER_MAPPINGS:                {"There is no user mappings in this database", 0, "00000"},
+	Isc_USAGE_READ:                              {"\t-re(ad_password)        request password from user", 0, "00000"},
+	Isc_GsecMsg1:                                {"GSEC>", 0, "00000"},
+	Isc_GsecMsg2:                                {"gsec", 0, "00000"},
+	Isc_GsecMsg3:                                {"ADD            add user", 0, "00000"},
+	Isc_GsecMsg4:                                {"DELETE         delete user", 0, "00000"},
+	Isc_GsecMsg5:                                {"DISPLAY        display user(s)", 0, "00000"},
+	Isc_GsecMsg6:                                {"MODIFY         modify user", 0, "00000"},
+	Isc_GsecMsg7:                                {"PW             user's password", 0, "00000"},
+	Isc_GsecMsg8:                                {"UID            user's ID", 0, "00000"},
+	Isc_GsecMsg9:                                {"GID            user's group ID", 0, "00000"},
+	Isc_GsecMsg10:                               {"PROJ           user's project name", 0, "00000"},
+	Isc_GsecMsg11:                               {"ORG            user's organization name", 0, "00000"},
+	Isc_GsecMsg12:                               {"FNAME          user's first name", 0, "00000"},
+	Isc_GsecMsg13:                               {"MNAME          user's middle name/initial", 0, "00000"},
+	Isc_GsecMsg14:                               {"LNAME          user's last name", 0, "00000"},
+	Isc_gsec_cant_open_db:                       {"unable to open database", 0, "00000"},
+	Isc_gsec_switches_error:                     {"error in switch specifications", 0, "00000"},
+	Isc_gsec_no_op_spec:                         {"no operation specified", 0, "00000"},
+	Isc_gsec_no_usr_name:                        {"no user name specified", 0, "00000"},
+	Isc_gsec_err_add:                            {"add record error", 0, "00000"},
+	Isc_gsec_err_modify:                         {"modify record error", 0, "00000"},
+	Isc_gsec_err_find_mod:                       {"find/modify record error", 0, "00000"},
+	Isc_gsec_err_rec_not_found:                  {"record not found for user: @1", 1, "00000"},
+	Isc_gsec_err_delete:                         {"delete record error", 0, "00000"},
+	Isc_gsec_err_find_del:                       {"find/delete record error", 0, "00000"},
+	Isc_GsecMsg25:                               {"users defined for node", 0, "00000"},
+	Isc_GsecMsg26:                               {"     user name                    uid   gid admin     full name", 0, "00000"},
+	Isc_GsecMsg27:                               {"------------------------------------------------------------------------------------------------", 0, "00000"},
+	Isc_gsec_err_find_disp:                      {"find/display record error", 0, "00000"},
+	Isc_gsec_inv_param:                          {"invalid parameter, no switch defined", 0, "00000"},
+	Isc_gsec_op_specified:                       {"operation already specified", 0, "00000"},
+	Isc_gsec_pw_specified:                       {"password already specified", 0, "00000"},
+	Isc_gsec_uid_specified:                      {"uid already specified", 0, "00000"},
+	Isc_gsec_gid_specified:                      {"gid already specified", 0, "00000"},
+	Isc_gsec_proj_specified:                     {"project already specified", 0, "00000"},
+	Isc_gsec_org_specified:                      {"organization already specified", 0, "00000"},
+	Isc_gsec_fname_specified:                    {"first name already specified", 0, "00000"},
+	Isc_gsec_mname_specified:                    {"middle name already specified", 0, "00000"},
+	Isc_gsec_lname_specified:                    {"last name already specified", 0, "00000"},
+	Isc_GsecMsg39:                               {"gsec version", 0, "00000"},
+	Isc_gsec_inv_switch:                         {"invalid switch specified", 0, "00000"},
+	Isc_gsec_amb_switch:                         {"ambiguous switch specified", 0, "00000"},
+	Isc_gsec_no_op_specified:                    {"no operation specified for parameters", 0, "00000"},
+	Isc_gsec_params_not_allowed:                 {"no parameters allowed for this operation", 0, "00000"},
+	Isc_gsec_incompat_switch:                    {"incompatible switches specified", 0, "00000"},
+	Isc_GsecMsg45:                               {"gsec utility - maintains user password database", 0, "00000"},
+	Isc_GsecMsg46:                               {"command line usage:", 0, "00000"},
+	Isc_GsecMsg47:                               {"<command> [ <parameter> ... ]", 0, "00000"},
+	Isc_GsecMsg48:                               {"interactive usage:", 0, "00000"},
+	Isc_GsecMsg49:                               {"available commands:", 0, "00000"},
+	Isc_GsecMsgs50:                              {"adding a new user:", 0, "00000"},
+	Isc_GsecMsg51:                               {"add <name> [ <parameter> ... ]", 0, "00000"},
+	Isc_GsecMsg52:                               {"deleting a current user:", 0, "00000"},
+	Isc_GsecMsg53:                               {"delete <name>", 0, "00000"},
+	Isc_GsecMsg54:                               {"displaying all users:", 0, "00000"},
+	Isc_GsecMsg55:                               {"display", 0, "00000"},
+	Isc_GsecMsg56:                               {"displaying one user:", 0, "00000"},
+	Isc_GsecMsg57:                               {"display <name>", 0, "00000"},
+	Isc_GsecMsg58:                               {"modifying a user's parameters:", 0, "00000"},
+	Isc_GsecMsg59:                               {"modify <name> <parameter> [ <parameter> ... ]", 0, "00000"},
+	Isc_GsecMsg60:                               {"help:", 0, "00000"},
+	Isc_GsecMsg61:                               {"? (interactive only)", 0, "00000"},
+	Isc_GsecMsg62:                               {"help", 0, "00000"},
+	Isc_GsecMsg63:                               {"quit interactive session:", 0, "00000"},
+	Isc_GsecMsg64:                               {"quit (interactive only)", 0, "00000"},
+	Isc_GsecMsg65:                               {"available parameters:", 0, "00000"},
+	Isc_GsecMsg66:                               {"-pw <password>", 0, "00000"},
+	Isc_GsecMsg67:                               {"-uid <uid>", 0, "00000"},
+	Isc_GsecMsg68:                               {"-gid <uid>", 0, "00000"},
+	Isc_GsecMsg69:                               {"-proj <projectname>", 0, "00000"},
+	Isc_GsecMsg70:                               {"-org <organizationname>", 0, "00000"},
+	Isc_GsecMsg71:                               {"-fname <firstname>", 0, "00000"},
+	Isc_GsecMsg72:                               {"-mname <middlename>", 0, "00000"},
+	Isc_GsecMsg73:                               {"-lname <lastname>", 0, "00000"},
+	336724042:                                   {"gsec - memory allocation error", 0, "00000"},
+	336724043:                                   {"gsec error", 0, "00000"},
+	Isc_gsec_inv_username:                       {"Invalid user name (maximum 31 bytes allowed)", 0, "00000"},
+	Isc_gsec_inv_pw_length:                      {"Warning - maximum 8 significant bytes of password used", 0, "00000"},
+	Isc_gsec_db_specified:                       {"database already specified", 0, "00000"},
+	Isc_gsec_db_admin_specified:                 {"database administrator name already specified", 0, "00000"},
+	Isc_gsec_db_admin_pw_specified:              {"database administrator password already specified", 0, "00000"},
+	Isc_gsec_sql_role_specified:                 {"SQL role name already specified", 0, "00000"},
+	Isc_GsecMsg82:                               {"[ <options> ... ]", 0, "00000"},
+	Isc_GsecMsg83:                               {"available options:", 0, "00000"},
+	Isc_GsecMsg84:                               {"-user <database administrator name>", 0, "00000"},
+	Isc_GsecMsg85:                               {"-password <database administrator password>", 0, "00000"},
+	Isc_GsecMsg86:                               {"-role <database administrator SQL role name>", 0, "00000"},
+	Isc_GsecMsg87:                               {"-database <database to manage>", 0, "00000"},
+	Isc_GsecMsg88:                               {"-z", 0, "00000"},
+	Isc_GsecMsg89:                               {"displaying version number:", 0, "00000"},
+	Isc_GsecMsg90:                               {"z (interactive only)", 0, "00000"},
+	Isc_GsecMsg91:                               {"-trusted (use trusted authentication)", 0, "00000"},
+	Isc_GsecMsg92:                               {"invalid switch specified in interactive mode", 0, "00000"},
+	Isc_GsecMsg93:                               {"error closing security database", 0, "00000"},
+	Isc_GsecMsg94:                               {"error releasing request in security database", 0, "00000"},
+	Isc_GsecMsg95:                               {"-fetch_password <file to fetch password from>", 0, "00000"},
+	Isc_GsecMsg96:                               {"error fetching password from file", 0, "00000"},
+	Isc_GsecMsg97:                               {"error changing AUTO ADMINS MAPPING in security database", 0, "00000"},
+	Isc_GsecMsg98:                               {"changing admins mapping to RDB$ADMIN role in security database:", 0, "00000"},
+	Isc_GsecMsg99:                               {"invalid parameter for -MAPPING, only SET or DROP is accepted", 0, "00000"},
+	Isc_GsecMsg100:                              {"mapping {set|drop}", 0, "00000"},
+	Isc_GsecMsg101:                              {"use gsec -? to get help", 0, "00000"},
+	Isc_GsecMsg102:                              {"-admin {yes|no}", 0, "00000"},
+	Isc_GsecMsg103:                              {"invalid parameter for -ADMIN, only YES or NO is accepted", 0, "00000"},
+	Isc_GsecMsg104:                              {"not enough privileges to complete operation", 0, "00000"},
+	Isc_GsecMsg200:                              {"user not found in LDAP", 0, "00000"},
+	Isc_GsecMsg201:                              {"error changing LDAP password", 0, "00000"},
+	Isc_GsecMsg202:                              {"cannot bind to LDAP server", 0, "00000"},
+	Isc_gstat_unknown_switch:                    {"found unknown switch", 0, "00000"},
+	Isc_gstat_retry:                             {"please retry, giving a database name", 0, "00000"},
+	Isc_gstat_wrong_ods:                         {"Wrong ODS version, expected @1, encountered @2", 2, "00000"},
+	Isc_gstat_unexpected_eof:                    {"Unexpected end of database file.", 0, "00000"},
+	336920581:                                   {"gstat version @1", 1, "00000"},
+	336920582:                                   {"\nDatabase \"@1\"", 1, "00000"},
+	336920583:                                   {"\n\nDatabase file sequence:", 0, "00000"},
+	336920584:                                   {"File @1 continues as file @2", 2, "00000"},
+	336920585:                                   {"File @1 is the @2 file", 2, "00000"},
+	336920586:                                   {"\nAnalyzing database pages ...", 0, "00000"},
+	336920587:                                   {"    Primary pointer page: @1, Index root page: @2", 2, "00000"},
+	336920588:                                   {"    Data pages: @1, data page slots: @2, average fill: @3", 3, "00000"},
+	336920589:                                   {"    Fill distribution:", 0, "00000"},
+	336920590:                                   {"    Index @1 (@2)", 2, "00000"},
+	336920591:                                   {"\tDepth: @1, leaf buckets: @2, nodes: @3", 3, "00000"},
+	336920592:                                   {"\tAverage data length: @1, total dup: @2, max dup: @3", 3, "00000"},
+	336920593:                                   {"\tFill distribution:", 0, "00000"},
+	336920594:                                   {"    Expected data on page @1", 1, "00000"},
+	336920595:                                   {"    Expected b-tree bucket on page @1 from @2", 2, "00000"},
+	336920596:                                   {"unknown switch \"@1\"", 1, "00000"},
+	336920597:                                   {"Available switches:", 0, "00000"},
+	336920598:                                   {"    -a      analyze data and index pages", 0, "00000"},
+	336920599:                                   {"    -d      analyze data pages", 0, "00000"},
+	336920600:                                   {"    -h      analyze header page ONLY", 0, "00000"},
+	336920601:                                   {"    -i      analyze index leaf pages", 0, "00000"},
+	336920602:                                   {"    -l      analyze log page", 0, "00000"},
+	336920603:                                   {"    -s      analyze system relations in addition to user tables", 0, "00000"},
+	336920604:                                   {"    -z      display version number", 0, "00000"},
+	Isc_gstat_open_err:                          {"Can't open database file @1", 1, "00000"},
+	Isc_gstat_read_err:                          {"Can't read a database page", 0, "00000"},
+	Isc_gstat_sysmemex:                          {"System memory exhausted", 0, "00000"},
+	Isc_gstat_username:                          {"    -u      username", 0, "00000"},
+	Isc_gstat_password:                          {"    -p      password", 0, "00000"},
+	336920610:                                   {"    -r      analyze average record and version length", 0, "00000"},
+	336920611:                                   {"    -t      tablename <tablename2...> (case sensitive)", 0, "00000"},
+	336920612:                                   {"    -tr     use trusted authentication", 0, "00000"},
+	336920613:                                   {"    -fetch  fetch password from file", 0, "00000"},
+	336920614:                                   {"option -h is incompatible with options -a, -d, -i, -r, -schema, -s, -b and -t", 0, "00000"},
+	336920615:                                   {"usage:   gstat [options] <database> or gstat <database> [options]", 0, "00000"},
+	336920616:                                   {"database name was already specified", 0, "00000"},
+	336920617:                                   {"option -t needs a table name", 0, "00000"},
+	336920618:                                   {"option -t got a too long table name @1", 1, "00000"},
+	336920619:                                   {"option -t accepts several table names only if used after <database>", 0, "00000"},
+	336920620:                                   {"table \"@1\" not found", 1, "00000"},
+	336920621:                                   {"use gstat -? to get help", 0, "00000"},
+	336920622:                                   {"    Primary pages: @1, secondary pages: @2, swept pages: @3", 3, "00000"},
+	336920623:                                   {"    Big record pages: @1", 1, "00000"},
+	336920624:                                   {"    Blobs: @1, total length: @2, blob pages: @3", 3, "00000"},
+	336920625:                                   {"        Level 0: @1, Level 1: @2, Level 2: @3", 3, "00000"},
+	336920626:                                   {"option -e is incompatible with options -a, -d, -h, -i, -r, -schema, -s, -b and -t", 0, "00000"},
+	336920627:                                   {"    -e      analyze database encryption", 0, "00000"},
+	336920628:                                   {"Data pages: total @1, encrypted @2, non-crypted @3", 3, "00000"},
+	336920629:                                   {"Index pages: total @1, encrypted @2, non-crypted @3", 3, "00000"},
+	336920630:                                   {"Blob pages: total @1, encrypted @2, non-crypted @3", 3, "00000"},
+	336920631:                                   {"no encrypted database support, only -e and -h can be used", 0, "00000"},
+	336920632:                                   {"    Empty pages: @1, full pages: @2", 2, "00000"},
+	336920633:                                   {"    -role   SQL role name", 0, "00000"},
+	336920634:                                   {"Other pages: total @1, ENCRYPTED @2 (DB problem!), non-crypted @3", 3, "00000"},
+	336920635:                                   {"Gstat execution time @1", 1, "00000"},
+	336920636:                                   {"Gstat completion time @1", 1, "00000"},
+	336920637:                                   {"    Expected page inventory page @1", 1, "00000"},
+	336920638:                                   {"Generator pages: total @1, encrypted @2, non-crypted @3", 3, "00000"},
+	336920639:                                   {"    Table size: @1 bytes", 1, "00000"},
+	336920640:                                   {"        Level @1: @2, total length: @3, blob pages: @4", 4, "00000"},
+	336920641:                                   {"    -sch    schemaname <schemaname2...> (case sensitive)", 0, "00000"},
+	336920642:                                   {"option -sch needs a schema name", 0, "00000"},
+	336920643:                                   {"option -sch got a too long schema name @1", 1, "00000"},
+	336921576:                                   {"    -b      file blobs' statistics", 0, "00000"},
+	336921577:                                   {"option -b needs a table.field name", 0, "00000"},
+	336921578:                                   {"option -b got a too long table name @1", 1, "00000"},
+	336921579:                                   {"option -b got a too long field name @1", 1, "00000"},
+	336921580:                                   {"option -b accepts several table names only if used after <database>", 0, "00000"},
+	336921581:                                   {"option -b field @1 of table @2 not found or not vaild", 2, "00000"},
+	336921582:                                   {"option -b got an empty column name in parameter @1", 1, "00000"},
+	336921583:                                   {"option -b got an empty table name in parameter @1", 1, "00000"},
+	336921584:                                   {"option -b error while reading field @1 of table @2", 2, "00000"},
+	336921585:                                   {"option -b cannot be entered more than once", 0, "00000"},
+	336921586:                                   {"\nAnalyzing file blobs ...", 0, "00000"},
+	336921587:                                   {"    -par    parallel workers number", 0, "00000"},
+	336921588:                                   {"parallel workers parameter missing", 0, "00000"},
+	336921589:                                   {"expected parallel workers, encountered @1", 1, "00000"},
+	Isc_fbsvcmgr_bad_am:                         {"Wrong value for access mode", 0, "00000"},
+	Isc_fbsvcmgr_bad_wm:                         {"Wrong value for write mode", 0, "00000"},
+	Isc_fbsvcmgr_bad_rs:                         {"Wrong value for reserve space", 0, "00000"},
+	Isc_fbsvcmgr_info_err:                       {"Unknown tag (@1) in info_svr_db_info block after isc_svc_query()", 1, "00000"},
+	Isc_fbsvcmgr_query_err:                      {"Unknown tag (@1) in isc_svc_query() results", 1, "00000"},
+	Isc_fbsvcmgr_switch_unknown:                 {"Unknown switch \"@1\"", 1, "00000"},
+	336986119:                                   {"Service Manager Version", 0, "00000"},
+	336986120:                                   {"Server version", 0, "00000"},
+	336986121:                                   {"Server implementation", 0, "00000"},
+	336986122:                                   {"Path to rdbserver.msg", 0, "00000"},
+	336986123:                                   {"Server root", 0, "00000"},
+	336986124:                                   {"Path to lock files", 0, "00000"},
+	336986125:                                   {"Security database", 0, "00000"},
+	336986126:                                   {"Databases", 0, "00000"},
+	336986127:                                   {"   Database in use", 0, "00000"},
+	336986128:                                   {"   Number of attachments", 0, "00000"},
+	336986129:                                   {"   Number of databases", 0, "00000"},
+	336986130:                                   {"Information truncated", 0, "00000"},
+	336986131:                                   {"Usage: rdbsvcmgr manager-name switches...", 0, "00000"},
+	336986132:                                   {"Manager-name should be service_mgr, may be prefixed with host name", 0, "00000"},
+	336986133:                                   {"according to common rules (host:service_mgr, \\\\host\\service_mgr).", 0, "00000"},
+	336986134:                                   {"Switches exactly match SPB tags, used in abbreviated form.", 0, "00000"},
+	336986135:                                   {"Remove isc_, spb_ and svc_ parts of tag and you will get the switch.", 0, "00000"},
+	336986136:                                   {"For example: isc_action_svc_backup is specified as action_backup,", 0, "00000"},
+	336986137:                                   {"             isc_spb_dbname => dbname,", 0, "00000"},
+	336986138:                                   {"             isc_info_svc_implementation => info_implementation,", 0, "00000"},
+	336986139:                                   {"             isc_spb_prp_db_online => prp_db_online and so on.", 0, "00000"},
+	336986140:                                   {"You may specify single action or multiple info items when calling rdbsvcmgr once.", 0, "00000"},
+	336986141:                                   {"Full command line samples:", 0, "00000"},
+	336986142:                                   {"rdbsvcmgr service_mgr user sysdba password masterkey action_db_stats dbname employee sts_hdr_pages", 0, "00000"},
+	336986143:                                   {"  (will list header info in database employee on local machine)", 0, "00000"},
+	336986144:                                   {"rdbsvcmgr yourserver:service_mgr user sysdba password masterkey info_server_version info_svr_db_info", 0, "00000"},
+	336986145:                                   {"  (will show Red Database version and databases usage on yourserver)", 0, "00000"},
+	336986146:                                   {"Transaction in limbo", 0, "00000"},
+	336986147:                                   {"Multidatabase transaction in limbo", 0, "00000"},
+	336986148:                                   {"Host Site", 0, "00000"},
+	336986149:                                   {"Transaction", 0, "00000"},
+	336986150:                                   {"has been prepared", 0, "00000"},
+	336986151:                                   {"has been committed", 0, "00000"},
+	336986152:                                   {"has been rolled back", 0, "00000"},
+	336986153:                                   {"is not available", 0, "00000"},
+	336986154:                                   {"Remote Site", 0, "00000"},
+	336986155:                                   {"Database Path", 0, "00000"},
+	336986156:                                   {"Automated recovery would commit this transaction", 0, "00000"},
+	336986157:                                   {"Automated recovery would rollback this transaction", 0, "00000"},
+	336986158:                                   {"No idea should it be commited or rolled back", 0, "00000"},
+	Isc_fbsvcmgr_bad_sm:                         {"Wrong value for shutdown mode", 0, "00000"},
+	Isc_fbsvcmgr_fp_open:                        {"could not open file @1", 1, "00000"},
+	Isc_fbsvcmgr_fp_read:                        {"could not read file @1", 1, "00000"},
+	Isc_fbsvcmgr_fp_empty:                       {"empty file @1", 1, "00000"},
+	336986163:                                   {"Red Database Services Manager version @1", 1, "00000"},
+	Isc_fbsvcmgr_bad_arg:                        {"Invalid or missing parameter for switch @1", 1, "00000"},
+	336986165:                                   {"To get full list of known services run with -? switch", 0, "00000"},
+	336986166:                                   {"Attaching to services manager:", 0, "00000"},
+	336986167:                                   {"Information requests:", 0, "00000"},
+	336986168:                                   {"Actions:", 0, "00000"},
+	336986169:                                   {"Server capabilities:", 0, "00000"},
+	Isc_fbsvcmgr_info_limbo:                     {"Unknown tag (@1) in isc_info_svc_limbo_trans block after isc_svc_query()", 1, "00000"},
+	Isc_fbsvcmgr_limbo_state:                    {"Unknown tag (@1) in isc_spb_tra_state block after isc_svc_query()", 1, "00000"},
+	Isc_fbsvcmgr_limbo_advise:                   {"Unknown tag (@1) in isc_spb_tra_advise block after isc_svc_query()", 1, "00000"},
+	Isc_fbsvcmgr_bad_rm:                         {"Wrong value for replica mode", 0, "00000"},
+	Isc_utl_trusted_switch:                      {"Switches trusted_user and trusted_role are not supported from command line", 0, "00000"},
+	337117185:                                   {"ERROR: ", 0, "00000"},
+	337117186:                                   {"Physical Backup Manager    Copyright (C) 2004 Firebird/Red Database development team", 0, "00000"},
+	337117187:                                   {"  Original idea is of Sean Leyne <sean@@broadviewsoftware.com>", 0, "00000"},
+	337117188:                                   {"  Designed and implemented by Nickolay Samofatov <skidder@@bssys.com>", 0, "00000"},
+	337117189:                                   {"  This work was funded through a grant from BroadView Software, Inc.\\n", 0, "00000"},
+	337117190:                                   {"Usage: nbackup <options>", 0, "00000"},
+	337117191:                                   {"exclusive options are:", 0, "00000"},
+	337117192:                                   {"  -L(OCK) <database>                     Lock database for filesystem copy", 0, "00000"},
+	337117193:                                   {"  -UN(LOCK) <database>                   Unlock previously locked database", 0, "00000"},
+	337117194:                                   {"  -F(IXUP) <database>                    Fixup database after filesystem copy", 0, "00000"},
+	337117195:                                   {"  -B(ACKUP) <level>|<GUID> <db> [<file>] Create incremental backup", 0, "00000"},
+	337117196:                                   {"  -R(ESTORE) <db> [<file0> [<file1>...]] Restore incremental backup", 0, "00000"},
+	337117197:                                   {"  -U(SER) <user>                         User name", 0, "00000"},
+	337117198:                                   {"  -P(ASSWORD) <password>                 Password", 0, "00000"},
+	337117199:                                   {"  -FETCH_PASSWORD <file>                 Fetch password from file", 0, "00000"},
+	337117200:                                   {"  -NOD(BTRIGGERS)                        Do not run database triggers", 0, "00000"},
+	337117201:                                   {"  -S(IZE)                                Print database size in pages after lock", 0, "00000"},
+	337117202:                                   {"  -Z                                     Print program version", 0, "00000"},
+	337117203:                                   {"Notes:", 0, "00000"},
+	337117204:                                   {"  <database> may specify database alias.", 0, "00000"},
+	337117205:                                   {"  Incremental backups of multi-file databases are not supported yet.", 0, "00000"},
+	337117206:                                   {"  \"stdout\" may be used as a value of <filename> for -B option.", 0, "00000"},
+	337117207:                                   {"PROBLEM ON \"@1\".", 1, "00000"},
+	337117208:                                   {"general options are:", 0, "00000"},
+	337117209:                                   {"switches can be abbreviated to the unparenthesized characters", 0, "00000"},
+	337117210:                                   {"  Option -S(IZE) only is valid together with -L(OCK).", 0, "00000"},
+	337117211:                                   {"  For historical reasons, -N is equivalent to -UN(LOCK)", 0, "00000"},
+	337117212:                                   {"  and -T is equivalent to -NOD(BTRIGGERS).", 0, "00000"},
+	Isc_nbackup_missing_param:                   {"Missing parameter for switch @1", 1, "00000"},
+	Isc_nbackup_allowed_switches:                {"Only one of -LOCK, -UNLOCK, -FIXUP, -BACKUP or -RESTORE should be specified", 0, "00000"},
+	Isc_nbackup_unknown_param:                   {"Unrecognized parameter @1", 1, "00000"},
+	Isc_nbackup_unknown_switch:                  {"Unknown switch @1", 1, "00000"},
+	Isc_nbackup_nofetchpw_svc:                   {"Fetch password can't be used in service mode", 0, "00000"},
+	Isc_nbackup_pwfile_error:                    {"Error working with password file \"@1\"", 1, "00000"},
+	Isc_nbackup_size_with_lock:                  {"Switch -SIZE can be used only with -LOCK", 0, "00000"},
+	Isc_nbackup_no_switch:                       {"None of -LOCK, -UNLOCK, -FIXUP, -BACKUP or -RESTORE specified", 0, "00000"},
+	337117221:                                   {"Failure: ", 0, "00000"},
+	337117222:                                   {"Enter name of the backup file of level @1 (\".\" - do not restore further):", 1, "00000"},
+	Isc_nbackup_err_read:                        {"IO error reading file: @1", 1, "00000"},
+	Isc_nbackup_err_write:                       {"IO error writing file: @1", 1, "00000"},
+	Isc_nbackup_err_seek:                        {"IO error seeking file: @1", 1, "00000"},
+	Isc_nbackup_err_opendb:                      {"Error opening database file: @1", 1, "00000"},
+	Isc_nbackup_err_fadvice:                     {"Error in posix_fadvise(@1) for database @2", 2, "00000"},
+	Isc_nbackup_err_createdb:                    {"Error creating database file: @1", 1, "00000"},
+	Isc_nbackup_err_openbk:                      {"Error opening backup file: @1", 1, "00000"},
+	Isc_nbackup_err_createbk:                    {"Error creating backup file: @1", 1, "00000"},
+	Isc_nbackup_err_eofdb:                       {"Unexpected end of database file @1", 1, "00000"},
+	Isc_nbackup_fixup_wrongstate:                {"Database @1 is not in state (@2) to be safely fixed up", 2, "00000"},
+	Isc_nbackup_err_db:                          {"Database error", 0, "00000"},
+	Isc_nbackup_userpw_toolong:                  {"Username or password is too long", 0, "00000"},
+	Isc_nbackup_lostrec_db:                      {"Cannot find record for database \"@1\" backup level @2 in the backup history", 2, "00000"},
+	Isc_nbackup_lostguid_db:                     {"Internal error. History query returned null SCN or GUID", 0, "00000"},
+	Isc_nbackup_err_eofhdrdb:                    {"Unexpected end of file when reading header of database file \"@1\" (stage @2)", 2, "00000"},
+	Isc_nbackup_db_notlock:                      {"Internal error. Database file is not locked. Flags are @1", 1, "00000"},
+	Isc_nbackup_lostguid_bk:                     {"Internal error. Cannot get backup guid clumplet", 0, "00000"},
+	Isc_nbackup_page_changed:                    {"Internal error. Database page @1 had been changed during backup (page SCN=@2, backup SCN=@3)", 3, "00000"},
+	Isc_nbackup_dbsize_inconsistent:             {"Database file size is not a multiple of page size", 0, "00000"},
+	Isc_nbackup_failed_lzbk:                     {"Level 0 backup is not restored", 0, "00000"},
+	Isc_nbackup_err_eofhdrbk:                    {"Unexpected end of file when reading header of backup file: @1", 1, "00000"},
+	Isc_nbackup_invalid_incbk:                   {"Invalid incremental backup file: @1", 1, "00000"},
+	Isc_nbackup_unsupvers_incbk:                 {"Unsupported version @1 of incremental backup file: @2", 2, "00000"},
+	Isc_nbackup_invlevel_incbk:                  {"Invalid level @1 of incremental backup file: @2, expected @3", 3, "00000"},
+	Isc_nbackup_wrong_orderbk:                   {"Wrong order of backup files or invalid incremental backup file detected, file: @1", 1, "00000"},
+	Isc_nbackup_err_eofbk:                       {"Unexpected end of backup file: @1", 1, "00000"},
+	Isc_nbackup_err_copy:                        {"Error creating database file: @1 via copying from: @2", 2, "00000"},
+	Isc_nbackup_err_eofhdr_restdb:               {"Unexpected end of file when reading header of restored database file (stage @1)", 1, "00000"},
+	Isc_nbackup_lostguid_l0bk:                   {"Cannot get backup guid clumplet from L0 backup", 0, "00000"},
+	337117252:                                   {"Physical Backup Manager version @1", 1, "00000"},
+	337117253:                                   {"Enter name of the backup file of level @1 (\".\" - do not restore further):", 1, "00000"},
+	337117254:                                   {"  -D(IRECT) <ON | OFF>                   Use or not direct I/O when backing up database", 0, "00000"},
+	Isc_nbackup_switchd_parameter:               {"Wrong parameter @1 for switch -D, need ON or OFF", 1, "00000"},
+	337117256:                                   {"special options are:", 0, "00000"},
+	Isc_nbackup_user_stop:                       {"Terminated due to user request", 0, "08006"},
+	337117258:                                   {"  -DE(COMPRESS) <command>                Command to extract archives during restore", 0, "00000"},
+	Isc_nbackup_deco_parse:                      {"Too complex decompress command (> @1 arguments)", 1, "54023"},
+	337117260:                                   {"  -RO(LE) <role>                         SQL role name", 0, "00000"},
+	Isc_nbackup_lostrec_guid_db:                 {"Cannot find record for database \"@1\" backup GUID @2 in the backup history", 2, "00000"},
+	337117262:                                   {"  -I(NPLACE)                             Restore incremental backup(s) to existing database", 0, "00000"},
+	337117263:                                   {"  -INPLACE option could corrupt the database that has changed since previous restore.", 0, "00000"},
+	337117264:                                   {"  -SEQ(UENCE)                            Preserve original replication sequence", 0, "00000"},
+	Isc_nbackup_seq_misuse:                      {"Switch -SEQ(UENCE) can be used only with -FIXUP or -RESTORE", 0, "00000"},
+	337117266:                                   {"  -CLEAN_HIST(ORY)                       Clean old records from backup history", 0, "00000"},
+	337117267:                                   {"  -K(EEP) <N> <(R)OWS | (D)AYS>          How many recent rows (or days back from today) should be kept in the history", 0, "00000"},
+	Isc_nbackup_wrong_param:                     {"Wrong parameter value for switch @1", 1, "00000"},
+	Isc_nbackup_clean_hist_misuse:               {"Switch -CLEAN_HISTORY can be used only with -BACKUP", 0, "00000"},
+	Isc_nbackup_clean_hist_missed:               {"-KEEP can be used only with -CLEAN_HISTORY", 0, "00000"},
+	Isc_nbackup_keep_hist_missed:                {"-KEEP is required with -CLEAN_HISTORY", 0, "00000"},
+	Isc_nbackup_second_keep_switch:              {"-KEEP can be used one time only", 0, "00000"},
+	337118184:                                   {"  \"stdin\" may be used for -R option.", 0, "00000"},
+	337118185:                                   {"Cannot find record for database \"@1\" backup GUID @2 in the backup history", 2, "00000"},
+	337118186:                                   {"  -I                                     Restore incremental backup(s) to existing database", 0, "00000"},
+	337118187:                                   {"  -I option could corrupt the database that has changed since previous restore", 0, "00000"},
+	337182721:                                   {"Red Database Trace Manager version @1", 1, "00000"},
+	337182722:                                   {"ERROR: ", 0, "00000"},
+	337182723:                                   {"Red Database Trace Manager.", 0, "00000"},
+	337182724:                                   {"Usage: rdbtracemgr <action> [<parameters>]", 0, "00000"},
+	337182725:                                   {"Actions:", 0, "00000"},
+	337182726:                                   {"  -STA[RT]                              Start trace session", 0, "00000"},
+	337182727:                                   {"  -STO[P]                               Stop trace session", 0, "00000"},
+	337182728:                                   {"  -SU[SPEND]                            Suspend trace session", 0, "00000"},
+	337182729:                                   {"  -R[ESUME]                             Resume trace session", 0, "00000"},
+	337182730:                                   {"  -L[IST]                               List existing trace sessions", 0, "00000"},
+	337182731:                                   {"  -Z                                    Show program version", 0, "00000"},
+	337182732:                                   {"Action parameters:", 0, "00000"},
+	337182733:                                   {"  -N[AME]    <string>                   Session name", 0, "00000"},
+	337182734:                                   {"  -I[D]      <number>                   Session ID", 0, "00000"},
+	337182735:                                   {"  -C[ONFIG]  <string>                   Trace configuration file name", 0, "00000"},
+	337182736:                                   {"Connection parameters:", 0, "00000"},
+	337182737:                                   {"  -SE[RVICE]  <string>                  Service name", 0, "00000"},
+	337182738:                                   {"  -U[SER]     <string>                  User name", 0, "00000"},
+	337182739:                                   {"  -P[ASSWORD] <string>                  Password", 0, "00000"},
+	337182740:                                   {"  -FE[TCH]    <string>                  Fetch password from file", 0, "00000"},
+	337182741:                                   {"  -T[RUSTED]                            Force trusted authentication", 0, "00000"},
+	337182742:                                   {"Examples:", 0, "00000"},
+	337182743:                                   {"  rdbtracemgr -SE remote_host:service_mgr -USER SYSDBA -PASS masterkey -LIST", 0, "00000"},
+	337182744:                                   {"  rdbtracemgr -SE service_mgr -START -NAME my_trace -CONFIG my_cfg.txt", 0, "00000"},
+	337182745:                                   {"  rdbtracemgr -SE service_mgr -SUSPEND -ID 2", 0, "00000"},
+	337182746:                                   {"  rdbtracemgr -SE service_mgr -RESUME -ID 2", 0, "00000"},
+	337182747:                                   {"  rdbtracemgr -SE service_mgr -STOP -ID 4", 0, "00000"},
+	337182748:                                   {"Notes:", 0, "00000"},
+	337182749:                                   {"  Press CTRL+C to stop interactive trace session", 0, "00000"},
+	Isc_trace_conflict_acts:                     {"conflicting actions \"@1\" and \"@2\" found", 2, "00000"},
+	Isc_trace_act_notfound:                      {"action switch not found", 0, "00000"},
+	Isc_trace_switch_once:                       {"switch \"@1\" must be set only once", 1, "00000"},
+	Isc_trace_param_val_miss:                    {"value for switch \"@1\" is missing", 1, "00000"},
+	Isc_trace_param_invalid:                     {"invalid value (\"@1\") for switch \"@2\"", 2, "00000"},
+	Isc_trace_switch_unknown:                    {"unknown switch \"@1\" encountered", 1, "00000"},
+	Isc_trace_switch_svc_only:                   {"switch \"@1\" can be used by service only", 1, "00000"},
+	Isc_trace_switch_user_only:                  {"switch \"@1\" can be used by interactive user only", 1, "00000"},
+	Isc_trace_switch_param_miss:                 {"mandatory parameter \"@1\" for switch \"@2\" is missing", 2, "00000"},
+	Isc_trace_param_act_notcompat:               {"parameter \"@1\" is incompatible with action \"@2\"", 2, "00000"},
+	Isc_trace_mandatory_switch_miss:             {"mandatory switch \"@1\" is missing", 1, "00000"},
+	337182761:                                   {"  -P[LUGINS]  <string list>             Plugins list for use with trace session; valid list separators: <tab>, <comma>, <semicolon>", 0, "00000"},
+	337182762:                                   {"  fbtracemgr -SE service_mgr -START -NAME my_trace -CONFIG my_cfg.txt -PLUGINS fbtrace,custom_plugin", 0, "00000"},
+	337182820:                                   {"  -F[ORMAT]   <number>                  Trace output format: 0 for text, 1 for binary, and -1 for legacy behavior", 0, "00000"},
+	337182821:                                   {"  -O[UTPUT]   <string>                  Output file", 0, "00000"},
+	337182822:                                   {"  -REP[LACE]                            Overwrite the output file", 0, "00000"},
+	337182830:                                   {"  rdbtracemgr -SE service_mgr -START -NAME my_trace -CONFIG my_cfg.txt -format 0 -output /tmp/log.txt", 0, "00000"},
+	337182831:                                   {"  rdbtracemgr -SE service_mgr -START -NAME my_trace -CONFIG my_cfg.txt -format 1 -output /tmp/log.bin", 0, "00000"},
+	337182840:                                   {"  For format 1, you must specify an output file", 0, "00000"},
+	337510401:                                   {"Usage:", 0, "00000"},
+	337510402:                                   {" -D[ATABASE] <database> : master database name", 0, "00000"},
+	337510403:                                   {" -R[EPLICA] <database>  : replica database name (<user>:<pwd>@@database for simple mode)", 0, "00000"},
+	337510404:                                   {" -U[SER]     <string>   : user name", 0, "00000"},
+	337510405:                                   {" -P[ASSWORD] <string>   : password", 0, "00000"},
+	337510406:                                   {" -C[ONFIG] <config>     : configuration file", 0, "00000"},
+	337510407:                                   {" -M[ETADATA]            : compare only metadata", 0, "00000"},
+	337510408:                                   {" -S[YNCHRONIZE]         : wait until master and slave synchronize", 0, "00000"},
+	337510409:                                   {" -T[IMEOUT]             : timeout (in seconds) to wait for synchronization", 0, "00000"},
+	337510410:                                   {" -N[odbtriggersoff]     : do run database triggers", 0, "00000"},
+	337510411:                                   {" -SI[MPLE]              : compare non-replicated databases", 0, "00000"},
+	337510412:                                   {" -V[ERBOSE]             : verbose output", 0, "00000"},
+	337510413:                                   {" -Z                     : report version", 0, "00000"},
+	337510414:                                   {" -?                     : help", 0, "00000"},
+	Isc_diff_incmp_sw:                           {"incompatible switch combination", 0, "00000"},
+	Isc_diff_unicode_init_error:                 {"Cannot initialize UNICODE collation", 0, "00000"},
+	Isc_diff_replconf_section_not_found:         {"Replication config: @1 section not found", 1, "00000"},
+	Isc_DiffErr_slave_name:                      {"ERROR: The transferred slave name does not match the database_replication parameter in the config", 0, "00000"},
+	Isc_DiffErr_records_number:                  {"ERROR: Number of records does not match in table @1", 1, "00000"},
+	Isc_DiffErr_records:                         {"ERROR: Records in table @1 do not match", 1, "00000"},
+	Isc_DiffErr_tables_number:                   {"ERROR: Number of tables does not match", 0, "00000"},
+	Isc_DiffErr_tables_list:                     {"ERROR: List of tables does not match", 0, "00000"},
+	Isc_DiffErr_primary_keys:                    {"ERROR: Primary keys for table @1 do not match", 1, "00000"},
+	Isc_DiffErr_blobs:                           {"ERROR: Blobs in table @1 do not match", 1, "00000"},
+	Isc_DiffErr_remote_master:                   {"ERROR: Only local master database can be validated", 0, "00000"},
+	Isc_DiffErr_sync_timeout:                    {"ERROR: Master and slave are not in sync after the specified timeout", 0, "00000"},
+	Isc_DiffMgs_waiting:                         {"Waiting for the replica to catch up the master database... ", 0, "00000"},
+	Isc_DiffMgs_checking:                        {"Checking table @1... ", 1, "00000"},
+	Isc_DiffMgs_failed:                          {"FAILED\n\t", 0, "00000"},
+	Isc_DiffMgs_ok_empty:                        {"OK (empty)(hash)", 0, "00000"},
+	Isc_DiffMgs_on_compared:                     {"OK (@1 records compared)@2", 2, "00000"},
+	Isc_DiffMgs_summary_no_diff:                 {"Summary: no differences found", 0, "00000"},
+	Isc_DiffMgs_summary_diff:                    {"Summary: @1 table(s) have different data", 1, "00000"},
+	Isc_DiffMgs_summary_error:                   {"Summary: error during processing", 0, "00000"},
+	Isc_DiffMgs_succeeded:                       {"succeeded", 0, "00000"},
+	Isc_DiffMsg_version:                         {"Replica validation utility, version @1", 1, "00000"},
+	Isc_diff_param_val_miss:                     {"Value for switch \"@1\" is missing", 1, "00000"},
+	337510438:                                   {" -F[ULL]                : find all differences", 0, "00000"},
+	Isc_DiffMsg_table_name:                      {"ERROR: Table @1", 1, "00000"},
+	Isc_DiffErr_index_name:                      {"ERROR: Index name for table @1 does not match", 1, "00000"},
+	Isc_DiffErr_attributes:                      {"ERROR: Attributes in table @1 do not match", 1, "00000"},
+	Isc_DiffErr_field_count:                     {"ERROR: Field count for table @1 does not match", 1, "00000"},
+	Isc_DiffErr_field_names:                     {"ERROR: Field names for table @1 does not match", 1, "00000"},
+	Isc_DiffErrFull_not_found:                   {"Record ID: @1, not found", 1, "00000"},
+	Isc_DiffErrFull_attributes:                  {"Record ID: @1, Attributes do not match (field: @2, type: @3)", 3, "00000"},
+	Isc_DiffErrFull_blobs:                       {"Record ID: @1, Blobs do not match (field: @2, type: @3)", 3, "00000"},
+	Isc_DiffErrFull_records:                     {"Record ID: @1, Records data do not match (field: @2, type: @3)", 3, "00000"},
+	Isc_DiffErrFull_master_has_more_records:     {"Master has @1 additional record(s)", 1, "00000"},
+	Isc_DiffErrFull_slave_has_more_records:      {"Slave has @1 additional record(s)", 1, "00000"},
+	Isc_DiffErrFull_table_not_found:             {"ERROR: Slave does not have %s table", 0, "00000"},
+	Isc_DiffErrFull_master_has_more_tables:      {"\nMaster has @1 additional table(s)", 1, "00000"},
+	Isc_DiffErrFull_slave_has_more_tables:       {"\nSlave has @1 additional table(s)", 1, "00000"},
+	Isc_DiffErrFull_records_value:               {"Record ID: @1, data do not match in @2 field (@3 vs @4)", 4, "00000"},
+	337510454:                                   {" -VA[LUES]              : print mismatched values instead of types", 0, "00000"},
 }

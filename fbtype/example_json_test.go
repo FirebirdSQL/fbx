@@ -5,7 +5,7 @@ package fbtype_test
 // 	"fmt"
 // 	"os"
 
-// 	"rdb.red-soft.ru/fbx"
+// 	"github.com/firebirdsql/fbx"
 // )
 
 // func Example_json() {

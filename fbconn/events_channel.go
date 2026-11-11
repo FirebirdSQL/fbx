@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"sync"
 
-	"rdb.red-soft.ru/fbx/fbproto"
-	"rdb.red-soft.ru/fbx/fbproto/vax"
+	"github.com/firebirdsql/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbproto/vax"
 )
 
 type eventChannel struct {
@@ -102,14 +102,17 @@ func (fbConn *FbConn) requestAuxEventPort(ctx context.Context) (*eventChannel, i
 	}
 
 	if err := fbConn.client.WriteMessage(&fbproto.OpConnectRequest{}); err != nil {
+		fbConn.asyncClose()
 		return nil, 0, err
 	}
 	if err := fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+		fbConn.asyncClose()
 		return nil, 0, err
 	}
 
 	msg, err := fbConn.receiveMessage()
 	if err != nil {
+		fbConn.asyncCloseAfterRead(err)
 		return nil, 0, normalizeTimeoutError(ctx, err)
 	}
 

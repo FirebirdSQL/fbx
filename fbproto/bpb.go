@@ -1,6 +1,6 @@
 package fbproto
 
-import "rdb.red-soft.ru/fbx/internal/fbio"
+import "github.com/firebirdsql/fbx/internal/fbio"
 
 // BlobBPBConfig defines BPB settings for blob create/open operations.
 type BlobBPBConfig struct {

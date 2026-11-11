@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/firebirdsql/fbx/fbproto"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx/fbproto"
 )
 
 func TestParseServiceOutput(t *testing.T) {
@@ -30,6 +30,11 @@ func TestParseServiceOutput(t *testing.T) {
 		{
 			name:      "timeout",
 			response:  []byte{fbproto.Isc_info_svc_to_eof, 0, 0, fbproto.Isc_info_svc_timeout},
+			wantState: serviceOutputTimeout,
+		},
+		{
+			name:      "data not ready",
+			response:  []byte{fbproto.Isc_info_svc_to_eof, 0, 0, fbproto.Isc_info_data_not_ready, fbproto.Isc_info_end},
 			wantState: serviceOutputTimeout,
 		},
 		{
@@ -65,7 +70,7 @@ func TestParseServiceOutput(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			data, state, err := parseServiceOutput(test.response)
+			data, state, err := parseServiceOutput(test.response, fbproto.Isc_info_svc_to_eof)
 			if test.wantError != "" {
 				require.ErrorContains(t, err, test.wantError)
 				return
@@ -79,8 +84,8 @@ func TestParseServiceOutput(t *testing.T) {
 
 func TestBuildServiceOutputSendItems(t *testing.T) {
 	require.Equal(t, []byte{
-		fbproto.Isc_spb_utf8_filename, 0, 0, 0, 0,
-		fbproto.Isc_info_svc_timeout, 1, 0, 0, 0, 1,
+		fbproto.Isc_info_svc_timeout, 4, 0, 1, 0, 0, 0,
+		fbproto.Isc_info_end,
 	}, buildServiceOutputSendItems())
 }
 

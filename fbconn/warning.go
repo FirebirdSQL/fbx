@@ -1,6 +1,6 @@
 package fbconn
 
-import "rdb.red-soft.ru/fbx/fbproto"
+import "github.com/firebirdsql/fbx/fbproto"
 
 type FbWarning struct {
 	GdsCodes []int

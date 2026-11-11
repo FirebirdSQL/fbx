@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/firebirdsql/fbx"
+	"github.com/firebirdsql/fbx/fbxpool"
+	"github.com/firebirdsql/fbx/fbxtest"
+	"github.com/firebirdsql/fbx/tracelog"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
-	"rdb.red-soft.ru/fbx"
-	"rdb.red-soft.ru/fbx/fbxpool"
-	"rdb.red-soft.ru/fbx/fbxtest"
-	"rdb.red-soft.ru/fbx/tracelog"
 )
 
 var defaultConnTestRunner fbxtest.ConnTestRunner

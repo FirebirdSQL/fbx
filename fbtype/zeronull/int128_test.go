@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"rdb.red-soft.ru/fbx"
-	"rdb.red-soft.ru/fbx/fbtype/zeronull"
-	"rdb.red-soft.ru/fbx/fbxtest"
+	"github.com/firebirdsql/fbx"
+	"github.com/firebirdsql/fbx/fbtype/zeronull"
+	"github.com/firebirdsql/fbx/fbxtest"
 )
 
 func mustInt128(t testing.TB, s string) zeronull.Int128 {

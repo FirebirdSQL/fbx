@@ -3,10 +3,10 @@ package fbconn
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 
-	"rdb.red-soft.ru/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbproto"
+	"github.com/firebirdsql/fbx/internal/operationerror"
 )
 
 const (
@@ -182,7 +182,7 @@ func (st *Statement) Exec(ctx context.Context, paramValues [][]byte) *ResultRead
 	rr = st.ExecTx(ctx, tx, paramValues)
 	if rr.err != nil {
 		if rbErr := st.conn.rollbackInternalTxIfAutocommitOnError(ctx, tx, rr.err); rbErr != nil {
-			rr.err = errors.Join(rr.err, fmt.Errorf("rollback internal tx: %w", rbErr))
+			rr.err = operationerror.Join(rr.err, fmt.Errorf("rollback internal tx: %w", rbErr))
 		}
 	}
 	return rr
@@ -274,7 +274,7 @@ func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *
 
 	for i, param := range st.Description.Parameters {
 		if param.IsArray() && paramValues[i] != nil {
-			arrayId, err := putArray(st.conn, ctx, param.ArrayData, paramValues[i])
+			arrayId, err := putArray(st.conn, ctx, tx, param.ArrayData, paramValues[i])
 			if err != nil {
 				rr.concludeCommand(QueryStatus{}, err)
 				rr.closed = true
@@ -308,6 +308,8 @@ func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *
 			return rr
 		}
 	}
+
+	rr.sqlMayHaveExecuted = true
 	writeExecute := func() error {
 		return st.conn.client.WriteMessage(&fbproto.OpExecute{
 			Kind:                  execKind,
@@ -352,7 +354,7 @@ func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *
 
 	msg, err := st.conn.receiveMessage()
 	if err != nil {
-		st.conn.asyncClose()
+		st.conn.asyncCloseAfterRead(err)
 		rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(ctx, err))
 		rr.closed = true
 		return rr
@@ -374,13 +376,14 @@ func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *
 				err = fmt.Errorf("unexpected SQL response message count: %d", r.Messages)
 			}
 			if err != nil {
-				st.conn.asyncClose()
+				st.conn.asyncCloseAfterRead(err)
 				rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(ctx, err))
 				rr.closed = true
 				return rr
 			}
 			switch d := dataResp.(type) {
 			case *fbproto.OpResponse:
+				st.conn.recordSQLTransaction(tx, d.Object)
 				rr.singleton = row
 			case *fbproto.ErrorResponse:
 				rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(d))
@@ -397,17 +400,24 @@ func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *
 			rr.closed = true
 			return rr
 		default:
-			panic(fmt.Sprintf("unexpected response type %T", msg))
+			st.conn.asyncClose()
+			rr.concludeCommand(QueryStatus{}, fmt.Errorf("unexpected execute response: %T", msg))
+			rr.closed = true
+			return rr
 		}
 	} else {
 		switch r := msg.(type) {
 		case *fbproto.OpResponse:
+			st.conn.recordSQLTransaction(tx, r.Object)
 		case *fbproto.ErrorResponse:
 			rr.concludeCommand(QueryStatus{}, ErrorResponseToFbError(r))
 			rr.closed = true
 			return rr
 		default:
-			panic(fmt.Sprintf("unexpected response type %T", msg))
+			st.conn.asyncClose()
+			rr.concludeCommand(QueryStatus{}, fmt.Errorf("unexpected execute response: %T", msg))
+			rr.closed = true
+			return rr
 		}
 	}
 
@@ -508,6 +518,9 @@ func (st *Statement) deallocateLocked(ctx context.Context) error {
 	if st.closed {
 		return nil
 	}
+	if st.conn.IsClosed() {
+		return ErrConnClosed
+	}
 	if err := st.conn.client.WriteMessage(&fbproto.OpFreeStatement{
 		StatementHandle: st.Description.StatementHandle,
 		Option:          fbproto.DSQL_drop,
@@ -536,14 +549,15 @@ func (st *Statement) CloseCursor(ctx context.Context) error {
 // statement handle that has no corresponding *Statement Go object yet. Caller must
 // hold the conn lock. On any wire error the conn is asyncClose'd.
 func (fbConn *FbConn) freeStatementHandleLocked(handle int) error {
-	if err := fbConn.client.WriteMessage(&fbproto.OpFreeStatement{
-		StatementHandle: handle,
-		Option:          fbproto.DSQL_drop,
-	}); err != nil {
-		fbConn.asyncClose()
-		return err
+	if fbConn.IsClosed() {
+		return ErrConnClosed
 	}
-	if err := fbConn.flushWithPotentialWriteReadDeadlock(); err != nil {
+	if err := fbConn.withWriteLockAndFlush(func() error {
+		return fbConn.client.WriteMessage(&fbproto.OpFreeStatement{
+			StatementHandle: handle,
+			Option:          fbproto.DSQL_drop,
+		})
+	}); err != nil {
 		fbConn.asyncClose()
 		return err
 	}

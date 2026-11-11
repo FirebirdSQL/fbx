@@ -5,10 +5,10 @@ import (
 	"os"
 	"testing"
 
+	"github.com/firebirdsql/fbx"
+	"github.com/firebirdsql/fbx/fbtype/zeronull"
+	"github.com/firebirdsql/fbx/fbxtest"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx"
-	"rdb.red-soft.ru/fbx/fbtype/zeronull"
-	"rdb.red-soft.ru/fbx/fbxtest"
 )
 
 var defaultConnTestRunner fbxtest.ConnTestRunner

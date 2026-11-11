@@ -4,7 +4,7 @@ import (
 	"database/sql/driver"
 	"reflect"
 
-	"rdb.red-soft.ru/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbproto"
 )
 
 // Codec converts between Go and Firebird values. A Codec must not be mutated

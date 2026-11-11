@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"rdb.red-soft.ru/fbx/fbxpool"
+	"github.com/firebirdsql/fbx/fbxpool"
 )
 
 func ExampleNew() {

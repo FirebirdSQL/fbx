@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/firebirdsql/fbx/fbconn"
+	"github.com/firebirdsql/fbx/fbproto/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx/fbconn"
-	"rdb.red-soft.ru/fbx/fbproto/auth"
 )
 
 func getDefaultPort(t *testing.T) uint16 {
@@ -432,6 +432,58 @@ func TestParseConfig(t *testing.T) {
 				ConnectTimeout: 5 * time.Second,
 				RuntimeParams: map[string]string{
 					"application_name": "fbxtest",
+				},
+			},
+		},
+		{
+			name:       "database url missing port",
+			connString: "firebird://user:secret@localhost/c:\\db\\mydb.fdb",
+			config: &fbconn.Config{
+				User:          "user",
+				Password:      "secret",
+				Host:          "localhost",
+				Port:          defaultPort,
+				Database:      "c:\\db\\mydb.fdb",
+				RuntimeParams: map[string]string{},
+			},
+		},
+		{
+			name:       "URL multiple hosts with some ports omitted",
+			connString: "firebird://user:secret@foo,bar:3051/c:\\db\\mydb.fdb",
+			config: &fbconn.Config{
+				User:          "user",
+				Password:      "secret",
+				Host:          "foo",
+				Port:          defaultPort,
+				Database:      "c:\\db\\mydb.fdb",
+				RuntimeParams: map[string]string{},
+				Fallbacks: []*fbconn.FallbackConfig{
+					{
+						Host: "bar",
+						Port: 3051,
+					},
+				},
+			},
+		},
+		{
+			name:       "URL multiple hosts with empty middle host",
+			connString: "firebird://user:secret@foo,,baz/c:\\db\\mydb.fdb",
+			config: &fbconn.Config{
+				User:          "user",
+				Password:      "secret",
+				Host:          "foo",
+				Port:          defaultPort,
+				Database:      "c:\\db\\mydb.fdb",
+				RuntimeParams: map[string]string{},
+				Fallbacks: []*fbconn.FallbackConfig{
+					{
+						Host: defaultHost,
+						Port: defaultPort,
+					},
+					{
+						Host: "baz",
+						Port: defaultPort,
+					},
 				},
 			},
 		},

@@ -3,7 +3,7 @@ package fbx
 import (
 	"context"
 
-	"rdb.red-soft.ru/fbx/fbconn"
+	"github.com/firebirdsql/fbx/fbconn"
 )
 
 // QueryTracer traces Query, QueryRow, and Exec.

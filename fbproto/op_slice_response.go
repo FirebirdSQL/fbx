@@ -22,9 +22,15 @@ func (op *OpSliceResponse) Read(x *XDRReader) error {
 	if op.SliceLengthBytes, err = x.ReadInt32(); err != nil {
 		return err
 	}
+	if op.SliceLengthBytes < 0 {
+		return fmt.Errorf("invalid p_slr_length: %d", op.SliceLengthBytes)
+	}
 
 	if sliceLength, err = x.ReadInt32(); err != nil {
 		return err
+	}
+	if sliceLength < 0 {
+		return fmt.Errorf("invalid slice length: %d", sliceLength)
 	}
 
 	if op.SliceLengthBytes != sliceLength {

@@ -10,8 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"rdb.red-soft.ru/fbx/fbconn"
-	"rdb.red-soft.ru/fbx/fbtype"
+	"github.com/firebirdsql/fbx/fbconn"
+	"github.com/firebirdsql/fbx/fbtype"
+	"github.com/firebirdsql/fbx/internal/operationerror"
 )
 
 // Rows is the result set returned from *Conn.Query. Rows must be closed before
@@ -181,9 +182,7 @@ func (rows *baseRows) Close() {
 		}
 		var closeErr error
 		rows.commandTag, closeErr = rows.resultReader.Close()
-		if rows.err == nil {
-			rows.err = closeErr
-		}
+		rows.err = closeErr
 	}
 
 	var statementErr error
@@ -196,10 +195,8 @@ func (rows *baseRows) Close() {
 			statementErr = rows.boundStatement.CloseCursor(rows.ctx)
 		}
 	}
-	if rows.err == nil {
-		rows.err = statementErr
-	} else if rows.ownsStatement && statementErr != nil {
-		rows.err = errors.Join(rows.err, statementErr)
+	if rows.err == nil || rows.ownsStatement {
+		rows.err = operationerror.Join(rows.err, statementErr)
 	}
 
 	if rows.err != nil && rows.conn != nil && rows.sql != "" {
@@ -231,7 +228,8 @@ func (rows *baseRows) Err() error {
 }
 
 // fatal signals an error occurred after the query was sent to the server. It
-// closes the rows automatically.
+// closes the rows automatically. Err returns the error after cleanup, including
+// the ResultReader's retry decision.
 func (rows *baseRows) fatal(err error) {
 	if rows.err != nil {
 		return
@@ -264,7 +262,7 @@ func (rows *baseRows) Scan(dest ...any) error {
 	if len(fieldDescriptions) != len(values) {
 		err := fmt.Errorf("number of field descriptions must equal number of values, got %d and %d", len(fieldDescriptions), len(values))
 		rows.fatal(err)
-		return err
+		return rows.Err()
 	}
 
 	if len(dest) == 1 {
@@ -272,15 +270,16 @@ func (rows *baseRows) Scan(dest ...any) error {
 			err := rc.ScanRow(rows)
 			if err != nil {
 				rows.fatal(err)
+				return rows.Err()
 			}
-			return err
+			return nil
 		}
 	}
 
 	if len(fieldDescriptions) != len(dest) {
 		err := fmt.Errorf("number of field descriptions must equal number of destinations, got %d and %d", len(fieldDescriptions), len(dest))
 		rows.fatal(err)
-		return err
+		return rows.Err()
 	}
 
 	if rows.scanPlans == nil {
@@ -299,7 +298,7 @@ func (rows *baseRows) Scan(dest ...any) error {
 				if err != nil {
 					err = ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: err}
 					rows.fatal(err)
-					return err
+					return rows.Err()
 				}
 				typeMetadata.SetArrayMetadata(arrayData)
 			}
@@ -317,7 +316,7 @@ func (rows *baseRows) Scan(dest ...any) error {
 			if err != nil {
 				err = ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: err}
 				rows.fatal(err)
-				return err
+				return rows.Err()
 			}
 			continue
 		}
@@ -335,7 +334,7 @@ func (rows *baseRows) Scan(dest ...any) error {
 				if err != nil {
 					err = ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: err}
 					rows.fatal(err)
-					return err
+					return rows.Err()
 				}
 				typeMetadata.SetArrayMetadata(arrayData)
 			}
@@ -348,7 +347,7 @@ func (rows *baseRows) Scan(dest ...any) error {
 		if err != nil {
 			err = ScanArgError{ColumnIndex: i, FieldName: fieldDescriptions[i].Name, Err: err}
 			rows.fatal(err)
-			return err
+			return rows.Err()
 		}
 	}
 
@@ -885,11 +884,13 @@ func lookupNamedStructFields(
 	// for a type only once, cache it by type, then use that to compute the column -> fields
 	// mapping for a given set of columns.
 	fieldStack := make([]int, 0, 1)
+	checkedIndexes := make(map[int]bool)
 	fields, missingField := computeNamedStructFields(
 		fldDescs,
 		t,
 		make([]structRowField, len(fldDescs)),
 		&fieldStack,
+		checkedIndexes,
 	)
 	for i, f := range fields {
 		if f.path == nil {
@@ -934,6 +935,7 @@ func computeNamedStructFields(
 	t reflect.Type,
 	fields []structRowField,
 	fieldStack *[]int,
+	checkedIndexes map[int]bool,
 ) ([]structRowField, string) {
 	var missingField string
 	tail := len(*fieldStack)
@@ -953,6 +955,7 @@ func computeNamedStructFields(
 				sf.Type,
 				fields,
 				fieldStack,
+				checkedIndexes,
 			)
 			if missingField == "" {
 				missingField = missingSubField
@@ -970,15 +973,18 @@ func computeNamedStructFields(
 			if !dbTagPresent {
 				colName = sf.Name
 			}
-			fpos := fieldPosByName(fldDescs, colName, !dbTagPresent)
+			fpos, exactMatch := fieldPosByName(fldDescs, colName, !dbTagPresent)
 			if fpos == -1 {
 				if missingField == "" {
 					missingField = colName
 				}
 				continue
 			}
-			fields[fpos] = structRowField{
-				path: append([]int(nil), *fieldStack...),
+			if wasExact, ok := checkedIndexes[fpos]; !ok || !wasExact && exactMatch || wasExact == exactMatch {
+				fields[fpos] = structRowField{
+					path: append([]int(nil), *fieldStack...),
+				}
+				checkedIndexes[fpos] = exactMatch
 			}
 		}
 	}
@@ -989,20 +995,27 @@ func computeNamedStructFields(
 
 const structTagKey = "db"
 
-func fieldPosByName(fldDescs []fbconn.FieldDescription, field string, normalize bool) (i int) {
+func fieldPosByName(fldDescs []fbconn.FieldDescription, field string, normalize bool) (i int, exactMatch bool) {
 	i = -1
 
 	if normalize {
 		field = strings.ReplaceAll(field, "_", "")
+	} else {
+		// Explicit db tags can distinguish quoted identifiers that differ only by case.
+		for i, desc := range fldDescs {
+			if desc.Name == field {
+				return i, true
+			}
+		}
 	}
 	for i, desc := range fldDescs {
 		if normalize {
 			if strings.EqualFold(strings.ReplaceAll(desc.Name, "_", ""), field) {
-				return i
+				return i, false
 			}
 		} else {
-			if desc.Name == field {
-				return i
+			if strings.EqualFold(desc.Name, field) {
+				return i, false
 			}
 		}
 	}

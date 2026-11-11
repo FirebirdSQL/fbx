@@ -6,10 +6,10 @@ import (
 	"os"
 	"testing"
 
+	"github.com/firebirdsql/fbx"
+	"github.com/firebirdsql/fbx/fbconn"
+	"github.com/firebirdsql/fbx/fbxtest"
 	"github.com/stretchr/testify/assert"
-	"rdb.red-soft.ru/fbx"
-	"rdb.red-soft.ru/fbx/fbconn"
-	"rdb.red-soft.ru/fbx/fbxtest"
 
 	"github.com/stretchr/testify/require"
 )

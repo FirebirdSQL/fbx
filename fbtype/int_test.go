@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"rdb.red-soft.ru/fbx/fbproto"
-	"rdb.red-soft.ru/fbx/fbtype"
-	"rdb.red-soft.ru/fbx/fbxtest"
+	"github.com/firebirdsql/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbtype"
+	"github.com/firebirdsql/fbx/fbxtest"
 )
 
 func TestInt2Codec(t *testing.T) {
@@ -513,13 +513,13 @@ func TestIntegerScanInvalidLengthErrorUsesFirebirdTypeName(t *testing.T) {
 			name:         "int4 to uint8",
 			typeMetadata: fbtype.NewTypeMetadata(fbproto.SQL_TYPE_LONG, 0, 4, 0),
 			target:       new(uint8),
-			want:         "invalid length for int4",
+			want:         "int4: invalid length",
 		},
 		{
 			name:         "int8 to uint8",
 			typeMetadata: fbtype.NewTypeMetadata(fbproto.SQL_TYPE_INT64, 0, 8, 0),
 			target:       new(uint8),
-			want:         "invalid length for int8",
+			want:         "int8: invalid length",
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/firebirdsql/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbproto/auth"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx/fbproto"
-	"rdb.red-soft.ru/fbx/fbproto/auth"
 )
 
 func TestBuildServiceAttachSPB(t *testing.T) {

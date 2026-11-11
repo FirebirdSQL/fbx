@@ -1,14 +1,14 @@
-module rdb.red-soft.ru/fbx
+module github.com/firebirdsql/fbx
 
-go 1.26.0
+go 1.26.2
 
 require (
-	github.com/jackc/puddle/v2 v2.2.2
+	github.com/jackc/puddle/v2 v2.2.3
 	github.com/nakagami/chacha20 v0.1.0
 	github.com/stretchr/testify v1.12.1
 	gitlab.com/nyarla/go-crypt v0.0.0-20160106005555-d9a5dc2b789b
-	golang.org/x/sync v0.22.0
-	golang.org/x/text v0.41.0
+	golang.org/x/sync v0.24.0
+	golang.org/x/text v0.43.0
 	modernc.org/mathutil v1.7.1
 )
 

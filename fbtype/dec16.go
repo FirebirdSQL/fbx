@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"rdb.red-soft.ru/fbx/fbtype/decfloat"
+	"github.com/firebirdsql/fbx/fbtype/decfloat"
 )
 
 // SpecialValue identifies whether an IEEE-754 decimal is finite, an infinity,

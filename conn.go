@@ -11,9 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"rdb.red-soft.ru/fbx/fbconn"
-	"rdb.red-soft.ru/fbx/fbtype"
-	"rdb.red-soft.ru/fbx/internal/stmtcache"
+	"github.com/firebirdsql/fbx/fbconn"
+	"github.com/firebirdsql/fbx/fbtype"
+	"github.com/firebirdsql/fbx/internal/operationerror"
+	"github.com/firebirdsql/fbx/internal/stmtcache"
 )
 
 // ConnConfig contains all the options used to establish a connection. It must be created by ParseConfig and
@@ -362,8 +363,11 @@ func connect(ctx context.Context, config *ConnConfig) (c *Conn, err error) {
 	return c, nil
 }
 
-// Close closes a connection. It is safe to call Close on an already closed
-// connection.
+// Close closes a connection. If no request is in progress, it waits for the
+// server to confirm detach and returns any error. An open result prevents
+// confirmation and causes Close to return an error. Close always closes the
+// network connection. Pass a context with a deadline to limit network waits.
+// Calling Close again after the connection is closed returns nil.
 func (c *Conn) Close(ctx context.Context) error {
 	if c.IsClosed() {
 		return nil
@@ -777,6 +781,9 @@ func (c *Conn) execTx(ctx context.Context, tx *dbTx, sql string, arguments ...an
 	}
 
 	if err := c.deallocateInvalidatedCachedStatements(ctx); err != nil {
+		if c.queryTracer != nil {
+			c.queryTracer.TraceQueryEnd(ctx, c, TraceQueryEndData{Err: err})
+		}
 		return fbconn.QueryStatus{}, err
 	}
 
@@ -841,7 +848,7 @@ optionLoop:
 			cleanupCtx, cancel := cleanupContext(ctx)
 			defer cancel()
 			if cleanupErr := st.Deallocate(cleanupCtx); cleanupErr != nil {
-				err = errors.Join(err, cleanupErr)
+				err = operationerror.Join(err, cleanupErr)
 			}
 		}()
 	}
@@ -910,7 +917,7 @@ func (c *Conn) execPrepared(ctx context.Context, tx *dbTx, st *fbconn.Statement,
 	var containsSearchPathInSql bool
 	var sp1, sp2 string
 
-	if st.Description.StatementInfo.StatementType == fbconn.StatementDDL {
+	if st.Description.StatementInfo.StatementType == fbconn.StatementDDL && c.fbConn.ServerVersion().Major >= 6 {
 		containsSearchPathInSql = containsSearchPathChangingInSql(st.Description.SQL)
 		if containsSearchPathInSql {
 			err = c.QueryRow(ctx, "select rdb$get_context('SYSTEM', 'SEARCH_PATH') from rdb$database", QueryExecModeExec).Scan(&sp1)
@@ -929,12 +936,12 @@ func (c *Conn) execPrepared(ctx context.Context, tx *dbTx, st *fbconn.Statement,
 	if result.Err == nil && containsSearchPathInSql {
 		err = c.QueryRow(ctx, "select rdb$get_context('SYSTEM', 'SEARCH_PATH') from rdb$database", QueryExecModeExec).Scan(&sp2)
 		if err != nil {
-			return result.QueryStatus, errors.Join(fmt.Errorf("failed to clear the statement cache after changing the search_path"), err, c.Close(ctx))
+			return result.QueryStatus, operationerror.WithRetry(errors.Join(fmt.Errorf("failed to clear the statement cache after changing the search_path"), err, c.Close(ctx)), false)
 		}
 		if sp1 != sp2 {
 			err = c.DeallocateAll(ctx)
 			if err != nil {
-				return result.QueryStatus, errors.Join(fmt.Errorf("failed to clear the statement cache after changing the search_path"), err, c.Close(ctx))
+				return result.QueryStatus, operationerror.WithRetry(errors.Join(fmt.Errorf("failed to clear the statement cache after changing the search_path"), err, c.Close(ctx)), false)
 			}
 		}
 	}
@@ -1156,7 +1163,7 @@ optionLoop:
 		if temporary {
 			err = st.Deallocate(ctx)
 			if err != nil {
-				err = errors.Join(fmt.Errorf("failed to clear the statement cache after changing the search_path"), err, c.Close(ctx))
+				err = operationerror.WithRetry(errors.Join(fmt.Errorf("failed to clear the statement cache after changing the search_path"), err, c.Close(ctx)), false)
 			}
 		}
 		err = errors.Join(fmt.Errorf(`"%s" not supported by Query method`, sql), err)

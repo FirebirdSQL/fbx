@@ -5,10 +5,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/firebirdsql/fbx"
+	"github.com/firebirdsql/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbtype"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx"
-	"rdb.red-soft.ru/fbx/fbproto"
-	"rdb.red-soft.ru/fbx/fbtype"
 )
 
 type testBytesValuer struct {
@@ -194,6 +194,7 @@ func TestOctetsRoundTripBytes(t *testing.T) {
 			input []byte
 		}{
 			{name: "non-empty", input: []byte{1, 2, 3, 4}},
+			{name: "embedded zero", input: []byte{0, 'A', 0, 'B'}},
 			{name: "empty", input: []byte{}},
 			{name: "nil", input: nil},
 		}

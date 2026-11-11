@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"rdb.red-soft.ru/fbx"
-	"rdb.red-soft.ru/fbx/fbevent"
+	"github.com/firebirdsql/fbx"
+	"github.com/firebirdsql/fbx/fbevent"
 )
 
 func postEvent(ctx context.Context, conn *fbx.Conn, eventName string) error {

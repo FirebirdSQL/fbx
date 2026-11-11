@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"rdb.red-soft.ru/fbx/fbconn"
+	"github.com/firebirdsql/fbx/fbconn"
 )
 
 type fbEventHandler struct {

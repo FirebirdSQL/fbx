@@ -7,12 +7,12 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/firebirdsql/fbx"
+	"github.com/firebirdsql/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbtype"
+	"github.com/firebirdsql/fbx/fbtype/zeronull"
+	"github.com/firebirdsql/fbx/fbxtest"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx"
-	"rdb.red-soft.ru/fbx/fbproto"
-	"rdb.red-soft.ru/fbx/fbtype"
-	"rdb.red-soft.ru/fbx/fbtype/zeronull"
-	"rdb.red-soft.ru/fbx/fbxtest"
 )
 
 type pointerNullValuer struct {

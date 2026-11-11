@@ -6,8 +6,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/firebirdsql/fbx/fbconn"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx/fbconn"
 )
 
 func TestPreparedNameWorksInEveryQueryExecMode(t *testing.T) {

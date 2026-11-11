@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"rdb.red-soft.ru/fbx/fbproto"
-	"rdb.red-soft.ru/fbx/fbproto/auth"
+	"github.com/firebirdsql/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbproto/auth"
 )
 
 const defaultServiceName = "service_mgr"
@@ -72,7 +72,7 @@ func ConnectServiceConfig(ctx context.Context, config *ServiceConfig) (*ServiceC
 
 	fbConn, err := connectConfig(ctx, connectionConfig, connectTargetService)
 	if err != nil {
-		return nil, err
+		return nil, serviceContextError(ctx, err)
 	}
 	return &ServiceConn{conn: fbConn}, nil
 }
@@ -159,7 +159,9 @@ func putServiceAttachTag(spb *fbproto.XPBWriter, tag byte) {
 // Close attempts to detach from the service manager and always closes the
 // underlying network connection. It is safe to call Close more than once.
 // The context limits the time available for the clean detach.
-func (c *ServiceConn) Close(ctx context.Context) error {
+func (c *ServiceConn) Close(ctx context.Context) (err error) {
+	defer func() { err = serviceContextError(ctx, err) }()
+
 	if c == nil || c.conn == nil {
 		return nil
 	}

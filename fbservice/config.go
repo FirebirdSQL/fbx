@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"rdb.red-soft.ru/fbx/fbconn"
+	"github.com/firebirdsql/fbx/fbconn"
 )
 
 // Config contains settings used to connect to the Firebird service manager.

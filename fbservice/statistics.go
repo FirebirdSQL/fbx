@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"rdb.red-soft.ru/fbx/fbconn"
+	"github.com/firebirdsql/fbx/fbconn"
 )
 
 // StatisticsOptions controls the gstat report. Output is required. Leaving all

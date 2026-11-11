@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"rdb.red-soft.ru/fbx/fbconn"
+	"github.com/firebirdsql/fbx/fbconn"
 )
 
 func skipIfBatchUnsupported(ctx context.Context, t testing.TB, conn *Conn) {

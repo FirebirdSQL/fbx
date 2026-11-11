@@ -3,9 +3,9 @@ package fbxpool
 import (
 	"context"
 
+	"github.com/firebirdsql/fbx"
+	"github.com/firebirdsql/fbx/fbconn"
 	"github.com/jackc/puddle/v2"
-	"rdb.red-soft.ru/fbx"
-	"rdb.red-soft.ru/fbx/fbconn"
 )
 
 // Conn is an acquired *fbx.Conn from a Pool.

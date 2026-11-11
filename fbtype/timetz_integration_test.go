@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/firebirdsql/fbx"
+	"github.com/firebirdsql/fbx/fbtype"
+	"github.com/firebirdsql/fbx/fbxtest"
+	"github.com/firebirdsql/fbx/stdlib"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx"
-	"rdb.red-soft.ru/fbx/fbtype"
-	"rdb.red-soft.ru/fbx/fbxtest"
-	"rdb.red-soft.ru/fbx/stdlib"
 )
 
 func sameTimetzClockAndOffset(want time.Time) func(any) bool {

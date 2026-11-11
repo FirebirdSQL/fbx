@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/firebirdsql/fbx"
+	"github.com/firebirdsql/fbx/fbconn"
+	"github.com/firebirdsql/fbx/fbxtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx"
-	"rdb.red-soft.ru/fbx/fbconn"
-	"rdb.red-soft.ru/fbx/fbxtest"
 )
 
 func skipUnlessSchemasSupported(ctx context.Context, t testing.TB, conn *fbx.Conn) {
@@ -465,6 +465,20 @@ func TestAlterSessionResetDeallocateAllOnlyWhenPathChanges(t *testing.T) {
 			assert.Equal(t, 1, val)
 		})
 	}
+}
+
+func TestAlterSessionReset(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	conn := mustConnectString(t, os.Getenv("FBX_TEST_DATABASE"))
+	defer closeConn(t, conn)
+
+	if getServerMajorVersionForConn(ctx, t, conn) < 4 {
+		t.Skip("session reset supported only in Firebird/RedDatabase 4+")
+	}
+
+	mustExecCtx(ctx, t, conn, "alter session reset")
 }
 
 func TestSetSearchPathStatementSyntaxVariants(t *testing.T) {

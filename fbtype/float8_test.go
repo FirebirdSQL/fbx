@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"rdb.red-soft.ru/fbx/fbproto"
-	"rdb.red-soft.ru/fbx/fbtype"
-	"rdb.red-soft.ru/fbx/fbxtest"
+	"github.com/firebirdsql/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbtype"
+	"github.com/firebirdsql/fbx/fbxtest"
 )
 
 func TestFloat8Codec(t *testing.T) {

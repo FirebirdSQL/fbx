@@ -6,7 +6,7 @@ package fbtype_test
 // 	"os"
 // 	"time"
 
-// 	"rdb.red-soft.ru/fbx"
+// 	"github.com/firebirdsql/fbx"
 // )
 
 // type Player struct {

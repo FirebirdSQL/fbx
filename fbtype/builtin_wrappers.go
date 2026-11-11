@@ -516,6 +516,9 @@ func (a anySliceArrayReflect) Dimensions(lowers []int) ([]ArrayDimension, error)
 	if a.slice.IsNil() {
 		return nil, nil
 	}
+	if len(lowers) == 0 {
+		return nil, fmt.Errorf("array lower bound is missing")
+	}
 
 	return []ArrayDimension{{LowerBound: lowers[0], Length: a.slice.Len()}}, nil
 }
@@ -527,8 +530,16 @@ func (a *anySliceArrayReflect) SetDimensions(dimensions []ArrayDimension) error 
 		a.slice.Set(reflect.Zero(sliceType))
 		return nil
 	}
+	if len(dimensions) == 0 {
+		a.slice.Set(reflect.Zero(sliceType))
+		return fmt.Errorf("non-NULL array must have at least one dimension")
+	}
 
-	elementCount := allElementsCount(dimensions)
+	elementCount, err := checkedArrayElementCount(dimensions)
+	if err != nil {
+		a.slice.Set(reflect.Zero(sliceType))
+		return err
+	}
 	slice := reflect.MakeSlice(sliceType, elementCount, elementCount)
 	a.slice.Set(slice)
 	return nil
@@ -570,39 +581,33 @@ func (a *anyMultiDimSliceArray) Dimensions(lowers []int) ([]ArrayDimension, erro
 	if a.slice.IsNil() {
 		return nil, nil
 	}
+	a.dimensions = a.dimensions[:0]
 
 	s := a.slice
-	dimensionNum := 0
-	if s.Len() > 0 {
-		for {
+	for dimensionNum := 0; s.Kind() == reflect.Slice; dimensionNum++ {
+		if len(lowers) == dimensionNum {
+			return nil, fmt.Errorf("argument array has more dimensions than expected")
+		}
+		a.dimensions = append(a.dimensions, ArrayDimension{
+			LowerBound: lowers[dimensionNum],
+			Length:     s.Len(),
+		})
+		if s.Len() > 0 {
+			s = s.Index(0)
+			continue
+		}
+
+		for t := s.Type().Elem(); t.Kind() == reflect.Slice; t = t.Elem() {
+			dimensionNum++
 			if len(lowers) == dimensionNum {
 				return nil, fmt.Errorf("argument array has more dimensions than expected")
 			}
 			a.dimensions = append(a.dimensions, ArrayDimension{
 				LowerBound: lowers[dimensionNum],
-				Length:     s.Len(),
+				Length:     0,
 			})
-			if s.Len() > 0 {
-				s = s.Index(0)
-				dimensionNum++
-			} else {
-				break
-			}
-			if s.Type().Kind() == reflect.Slice {
-			} else {
-				break
-			}
 		}
-	} else {
-		t := s.Type()
-		for t.Kind() == reflect.Slice {
-			if len(lowers) == dimensionNum {
-				return a.dimensions, fmt.Errorf("argument array has more dimensions than expected")
-			}
-			a.dimensions = append(a.dimensions, ArrayDimension{LowerBound: lowers[dimensionNum], Length: 0})
-			t = t.Elem()
-			dimensionNum++
-		}
+		break
 	}
 
 	return a.dimensions, nil
@@ -615,42 +620,34 @@ func (a *anyMultiDimSliceArray) SetDimensions(dimensions []ArrayDimension) error
 		a.slice.Set(reflect.Zero(sliceType))
 		return nil
 	}
-
-	switch len(dimensions) {
-	case 0:
-		// Empty, but non-nil array
-		slice := reflect.MakeSlice(sliceType, 0, 0)
-		a.slice.Set(slice)
-		return nil
-	case 1:
-		elementCount := allElementsCount(dimensions)
-		slice := reflect.MakeSlice(sliceType, elementCount, elementCount)
-		a.slice.Set(slice)
-		return nil
-	default:
-		sliceDimensionCount := 1
-		lowestSliceType := sliceType
-		for ; lowestSliceType.Elem().Kind() == reflect.Slice; lowestSliceType = lowestSliceType.Elem() {
-			sliceDimensionCount++
-		}
-
-		if sliceDimensionCount != len(dimensions) {
-			return fmt.Errorf("firebird array has %d dimensions but slice has %d dimensions", len(dimensions), sliceDimensionCount)
-		}
-
-		elementCount := allElementsCount(dimensions)
-		flatSlice := reflect.MakeSlice(lowestSliceType, elementCount, elementCount)
-
-		multiDimSlice, _ := a.makeMultidimensionalSlice(sliceType, dimensions, flatSlice, 0)
-		a.slice.Set(multiDimSlice)
-
-		// Now that a.slice is a multi-dimensional slice with the underlying data pointed at flatSlice change a.slice to
-		// flatSlice so ScanIndex only has to handle simple one dimensional slices.
-		a.slice = flatSlice
-
-		return nil
+	if len(dimensions) == 0 {
+		a.slice.Set(reflect.Zero(sliceType))
+		return fmt.Errorf("non-NULL array must have at least one dimension")
 	}
 
+	sliceDimensionCount := 1
+	lowestSliceType := sliceType
+	for lowestSliceType.Elem().Kind() == reflect.Slice {
+		sliceDimensionCount++
+		lowestSliceType = lowestSliceType.Elem()
+	}
+	if sliceDimensionCount != len(dimensions) {
+		a.slice.Set(reflect.Zero(sliceType))
+		return fmt.Errorf("firebird array has %d dimensions but slice has %d dimensions", len(dimensions), sliceDimensionCount)
+	}
+
+	elementCount, err := checkedArrayElementCount(dimensions)
+	if err != nil {
+		a.slice.Set(reflect.Zero(sliceType))
+		return err
+	}
+	flatSlice := reflect.MakeSlice(lowestSliceType, elementCount, elementCount)
+
+	multiDimSlice, _ := a.makeMultidimensionalSlice(sliceType, dimensions, flatSlice, 0)
+	a.slice.Set(multiDimSlice)
+	a.slice = flatSlice
+
+	return nil
 }
 
 func (a *anyMultiDimSliceArray) makeMultidimensionalSlice(sliceType reflect.Type, dimensions []ArrayDimension, flatSlice reflect.Value, flatSliceIdx int) (reflect.Value, int) {
@@ -686,6 +683,9 @@ func (a anyArrayArrayReflect) Index(i int) any {
 }
 
 func (a anyArrayArrayReflect) Dimensions(lowers []int) ([]ArrayDimension, error) {
+	if len(lowers) == 0 {
+		return nil, fmt.Errorf("array lower bound is missing")
+	}
 	return []ArrayDimension{{LowerBound: lowers[0], Length: a.array.Len()}}, nil
 }
 
@@ -696,6 +696,9 @@ func (a *anyArrayArrayReflect) SetDimensions(dimensions []ArrayDimension) error 
 
 	if len(dimensions) != 1 {
 		return fmt.Errorf("anyArrayArrayReflect: cannot scan multi-dimensional array into %v", a.array.Type().String())
+	}
+	if _, err := checkedArrayElementCount(dimensions); err != nil {
+		return err
 	}
 
 	if dimensions[0].Length != a.array.Len() {

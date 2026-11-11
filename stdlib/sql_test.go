@@ -16,12 +16,12 @@ import (
 	"testing"
 	"time"
 
-	"rdb.red-soft.ru/fbx"
-	"rdb.red-soft.ru/fbx/fbconn"
-	"rdb.red-soft.ru/fbx/fbtype"
-	"rdb.red-soft.ru/fbx/fbxpool"
-	"rdb.red-soft.ru/fbx/stdlib"
-	"rdb.red-soft.ru/fbx/tracelog"
+	"github.com/firebirdsql/fbx"
+	"github.com/firebirdsql/fbx/fbconn"
+	"github.com/firebirdsql/fbx/fbtype"
+	"github.com/firebirdsql/fbx/fbxpool"
+	"github.com/firebirdsql/fbx/stdlib"
+	"github.com/firebirdsql/fbx/tracelog"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -958,7 +958,11 @@ func TestConnBeginTxReadOnly(t *testing.T) {
 
 func TestBeginTxContextCancel(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		// The query below must wait for database/sql's asynchronous rollback,
+		// rather than opening another connection that cannot see the pending DDL.
+		db.SetMaxOpenConns(1)
 		ctx, cancelFn := context.WithCancel(context.Background())
+		defer cancelFn()
 
 		_, err := db.Exec("drop table t")
 		if err != nil {

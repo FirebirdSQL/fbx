@@ -1,5 +1,42 @@
 # Change Log
 
+# [0.7.0] - 26.10.2026
+
+### Added
+
+- New service manager modules: trace, database maintenance, statistics
+
+### Improved
+
+- Allow to connect service manager with connection string 
+- Ability to pass driver.Valuer as blob value argument
+- Call TraceQueryEnd at early Exec error
+- Normalize representable DECFLOAT text values
+
+### Changed
+
+- Required go version now 1.26.2 
+
+### Fixed
+
+- Service cancellation errors and retry safety
+- Avoid to get search path if server engine doesn't support it
+- Multiple array type support fixes
+- Connection shutdown and compression cleanup
+- SQL_TYPE_NULL parameter encoding
+- Status vector extra args handling
+- Nested pointer scanning and nil destination handling
+- Prefer exact db tag matches when mapping rows to structs
+- Unlimited lifetime of pool connections
+- Statement not released after prepare errors
+- Bound connection cleanup after read timeouts
+- Use checked binary reads in scalar and array codecs
+- Statement cache not cleared after search path changed
+- Prepared statement cache consistency
+- Unsupported timezones silently converted to UTC
+- TIMESTAMPTZ not preserved instants across DST transitions
+- Date and time parsing and time zone handling
+
 # [0.6.0] - 03.09.2026
 
 ### Added

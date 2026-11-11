@@ -5,8 +5,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/firebirdsql/fbx"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx"
 )
 
 func TestDeferredExecuteHighLevel(t *testing.T) {

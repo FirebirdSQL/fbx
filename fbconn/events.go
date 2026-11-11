@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"rdb.red-soft.ru/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbproto"
 )
 
 const eventLockRetryInterval = 5 * time.Millisecond
@@ -101,7 +101,7 @@ func (fbConn *FbConn) QueueEvent(ctx context.Context, handle *EventHandle) error
 	if err != nil {
 		fbConn.unregisterEventHandle(eventID)
 		handle.clearLocalID()
-		fbConn.asyncClose()
+		fbConn.asyncCloseAfterRead(err)
 		return normalizeTimeoutError(ctx, err)
 	}
 
@@ -178,7 +178,7 @@ func (fbConn *FbConn) CancelEvent(ctx context.Context, handle *EventHandle) erro
 
 	response, err := fbConn.receiveMessage()
 	if err != nil {
-		fbConn.asyncClose()
+		fbConn.asyncCloseAfterRead(err)
 		return normalizeTimeoutError(ctx, err)
 	}
 

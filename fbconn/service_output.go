@@ -7,7 +7,8 @@ import (
 	"fmt"
 	"io"
 
-	"rdb.red-soft.ru/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbproto"
+	"github.com/firebirdsql/fbx/internal/operationerror"
 )
 
 const (
@@ -26,8 +27,16 @@ func (c *ServiceConn) runServiceAction(ctx context.Context, actionSPB []byte, ou
 }
 
 func (c *ServiceConn) copyServiceOutput(ctx context.Context, output io.Writer) error {
+	return c.copyServiceData(ctx, output, fbproto.Isc_info_svc_to_eof)
+}
+
+func (c *ServiceConn) copyServiceData(ctx context.Context, output io.Writer, item byte) (err error) {
+	// The server has accepted the action; even a failure before the first
+	// output query cannot guarantee that repeating it is safe.
+	defer func() { err = operationerror.WithRetry(serviceContextError(ctx, err), false) }()
+
 	sendItems := buildServiceOutputSendItems()
-	receiveItems := []byte{fbproto.Isc_info_svc_to_eof}
+	receiveItems := []byte{item}
 	bufferLength := initialServiceOutputBufferLength
 
 	for {
@@ -36,7 +45,7 @@ func (c *ServiceConn) copyServiceOutput(ctx context.Context, output io.Writer) e
 			return err
 		}
 
-		chunk, state, err := parseServiceOutput(response)
+		chunk, state, err := parseServiceOutput(response, item)
 		if err != nil {
 			c.conn.asyncClose()
 			return fmt.Errorf("parse service output: %w", err)
@@ -84,11 +93,10 @@ func writeServiceOutput(ctx context.Context, output io.Writer, chunk []byte) err
 
 func buildServiceOutputSendItems() []byte {
 	return fbproto.NewXPBWriter().
-		AppendByte(fbproto.Isc_spb_utf8_filename).
-		AppendInt32(0).
 		AppendByte(fbproto.Isc_info_svc_timeout).
+		AppendInt16(4).
 		AppendInt32(1).
-		AppendByte(1).
+		AppendByte(fbproto.Isc_info_end).
 		Bytes()
 }
 
@@ -101,13 +109,13 @@ const (
 	serviceOutputComplete
 )
 
-func parseServiceOutput(response []byte) ([]byte, serviceOutputState, error) {
+func parseServiceOutput(response []byte, item byte) ([]byte, serviceOutputState, error) {
 	if len(response) == 0 {
 		return nil, 0, errors.New("empty service output response")
 	}
 
 	switch response[0] {
-	case fbproto.Isc_info_svc_to_eof:
+	case item:
 		if len(response) < 3 {
 			return nil, 0, errors.New("truncated service output length")
 		}
@@ -126,7 +134,7 @@ func parseServiceOutput(response []byte) ([]byte, serviceOutputState, error) {
 			return nil, 0, errors.New("service output response has no end marker")
 		}
 		switch response[3] {
-		case fbproto.Isc_info_svc_timeout:
+		case fbproto.Isc_info_svc_timeout, fbproto.Isc_info_data_not_ready:
 			return nil, serviceOutputTimeout, nil
 		case fbproto.Isc_info_end:
 			return nil, serviceOutputComplete, nil

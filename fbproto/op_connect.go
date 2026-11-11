@@ -6,7 +6,7 @@ import (
 	"bytes"
 	"strings"
 
-	"rdb.red-soft.ru/fbx/fbproto/auth"
+	"github.com/firebirdsql/fbx/fbproto/auth"
 )
 
 type OpConnect struct {

@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/firebirdsql/fbx/fbconn"
+	"github.com/firebirdsql/fbx/fbproto"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx/fbconn"
-	"rdb.red-soft.ru/fbx/fbproto"
 )
 
 const recursiveSeriesSQL = "WITH RECURSIVE generate_series(generate_series) AS (SELECT 1 FROM RDB$DATABASE UNION ALL SELECT (generate_series + 1) FROM generate_series WHERE generate_series < ?) SELECT generate_series FROM generate_series"

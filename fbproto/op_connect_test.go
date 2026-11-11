@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/firebirdsql/fbx/fbproto/auth"
 	"github.com/stretchr/testify/require"
-	"rdb.red-soft.ru/fbx/fbproto/auth"
 )
 
 func TestOpConnectAdvertisesDisabledWireCrypt(t *testing.T) {

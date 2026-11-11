@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"rdb.red-soft.ru/fbx/fbtype/zeronull"
-	"rdb.red-soft.ru/fbx/fbxtest"
+	"github.com/firebirdsql/fbx/fbtype/zeronull"
+	"github.com/firebirdsql/fbx/fbxtest"
 )
 
 func TestTextTranscode(t *testing.T) {

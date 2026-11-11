@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"rdb.red-soft.ru/fbx"
-	"rdb.red-soft.ru/fbx/fbconn"
+	"github.com/firebirdsql/fbx"
+	"github.com/firebirdsql/fbx/fbconn"
 )
 
 func (m *Manager) currentConn() *fbconn.FbConn {

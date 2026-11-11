@@ -5,7 +5,7 @@ import (
 	"io"
 	"sync"
 
-	"rdb.red-soft.ru/fbx/internal/iobufpool"
+	"github.com/firebirdsql/fbx/internal/iobufpool"
 )
 
 const (
@@ -58,6 +58,20 @@ func (r *BGReader) Stop() {
 		r.status = StatusStopping
 	case StatusStopping:
 		// no-op
+	}
+}
+
+// StopAndWait stops background reading and waits for the in-progress Read to
+// return. The caller must first interrupt a blocked Read (for example, with a
+// read deadline) and prevent concurrent Start calls.
+func (r *BGReader) StopAndWait() {
+	r.cond.L.Lock()
+	defer r.cond.L.Unlock()
+	if r.status == StatusRunning {
+		r.status = StatusStopping
+	}
+	for r.status != StatusStopped {
+		r.cond.Wait()
 	}
 }
 

@@ -3,8 +3,8 @@ package fbconn_test
 import (
 	"testing"
 
+	"github.com/firebirdsql/fbx/fbconn"
 	"github.com/stretchr/testify/assert"
-	"rdb.red-soft.ru/fbx/fbconn"
 )
 
 func TestConfigError(t *testing.T) {

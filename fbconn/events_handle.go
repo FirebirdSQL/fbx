@@ -6,7 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"rdb.red-soft.ru/fbx/fbproto"
+	"github.com/firebirdsql/fbx/fbproto"
 )
 
 // EventHandler receives callbacks for queued Firebird events.
