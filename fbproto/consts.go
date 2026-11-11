@@ -10,7 +10,6 @@ const (
 	Ptype_MASK          = 0xFF
 	Pflag_compress      = 0x100
 	Pflag_win_sspi_nego = 0x200
-	StmtDeferExecute    = 4 // Prepare response: a cursor's execute response may be deferred
 
 	P_cnct_min_type = 0
 
@@ -974,6 +973,11 @@ const (
 	ShutdownModeExDenyNewAttachments ShutdownModeEx = Isc_spb_prp_attachments_shutdown
 	//ShutdownModeExDenyNewTransactions Disable new transactions for N seconds then shutdown
 	ShutdownModeExDenyNewTransactions ShutdownModeEx = Isc_spb_prp_transactions_shutdown
+)
+
+// Statement flags returned by op_prepare_statement.
+const (
+	StmtDeferExecute = 4 // A cursor's execute response may be deferred.
 )
 
 // op_free_statement p_sqlfree_option
