@@ -24,17 +24,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
           
-      - name: Go modules Cache
-        uses: actions/cache@v6
-        id: go-cache
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-golang-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-golang-
-
       - name: Run go fmt and go vet
         run: |
           go fmt $(go list ./... | grep -v /vendor/)
@@ -47,17 +36,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-
-      - name: Go modules Cache
-        uses: actions/cache@v6
-        id: go-cache
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-golang-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-golang-
 
       - name: Run golangci-lint
         run: |
@@ -103,17 +81,6 @@ jobs:
           else
             /etc/init.d/firebird start
           fi
-
-      - name: Go modules Cache
-        uses: actions/cache@v6
-        id: go-cache
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-golang-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-golang-
 
       - name: Run test
         run: |
@@ -179,17 +146,6 @@ jobs:
             --retry TERM/10/KILL/5 --exec /opt/firebird/bin/firebird
 
           /etc/init.d/firebird start
-
-      - name: Go modules Cache
-        uses: actions/cache@v6
-        id: go-cache
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-golang-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-golang-
 
       - name: Run test
         run: |
