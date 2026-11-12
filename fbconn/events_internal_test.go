@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"net"
 	"testing"
 	"time"
 
@@ -166,7 +167,8 @@ func TestSetEventErrorHandlerCalledForFirstFailure(t *testing.T) {
 	}
 
 	select {
-	case <-called:
+	case err := <-called:
+		require.ErrorIs(t, err, net.ErrClosed)
 		t.Fatal("event error handler called more than once for same error cycle")
 	default:
 	}

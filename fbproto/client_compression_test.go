@@ -467,7 +467,8 @@ func TestCloseCompressionWaitsForActiveCompressedWrite(t *testing.T) {
 	}()
 	<-closeStarted
 	select {
-	case <-closeDone:
+	case err := <-closeDone:
+		require.ErrorIs(t, err, net.ErrClosed)
 		transport.release()
 		t.Fatal("CloseCompression completed during an active compressed write")
 	case <-time.After(20 * time.Millisecond):
