@@ -296,6 +296,25 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 	}
 
 	settings := mergeSettings(defaultSettings, envSettings, connStringSettings)
+
+	// Resolving the default system_user requires looking up the OS user account,
+	// which can be slow or crash in some restricted NSS/CGO environments.
+	// Memoize the lookup within this parse and perform it only when system_user
+	// is empty. The database user and password are independent of system_user.
+	var cachedOSUserSettings map[string]string
+	lazyOSUserSettings := func() map[string]string {
+		if cachedOSUserSettings == nil {
+			cachedOSUserSettings = osUserSettings()
+		}
+		return cachedOSUserSettings
+	}
+
+	// Fall back to the OS account name when system_user is empty after parsing
+	// the connection string.
+	if settings["system_user"] == "" {
+		settings = mergeSettings(lazyOSUserSettings(), settings)
+	}
+
 	encoding, err := fbproto.NewEncoding(settings["encoding"])
 	if err != nil {
 		return nil, err
