@@ -74,6 +74,11 @@ type Rows interface {
 	// Conn returns the underlying *Conn on which the query was executed. This may return nil if Rows did not come from a
 	// *Conn (e.g. if it was created by RowsFromResultReader)
 	Conn() *Conn
+
+	// TypeMap returns the [fbtype.Map] the values of this Rows are decoded with. It is available even when [Rows.Conn]
+	// is nil, such as for a Rows created by [RowsFromResultReader]. It may return nil if the Rows carries no values,
+	// such as one representing only an error.
+	TypeMap() *fbtype.Map
 }
 
 // Row is a convenience wrapper over Rows that is returned by QueryRow.
@@ -422,6 +427,10 @@ func (rows *baseRows) RawValues() [][]byte {
 
 func (rows *baseRows) Conn() *Conn {
 	return rows.conn
+}
+
+func (rows *baseRows) TypeMap() *fbtype.Map {
+	return rows.typeMap
 }
 
 func (rows *baseRows) scanBlobValue(fd *fbconn.FieldDescription, src []byte, dst any) error {
