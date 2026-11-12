@@ -22,6 +22,7 @@ var defaultMinIdleConns = int32(0)
 var defaultMaxConnLifetime = time.Hour
 var defaultMaxConnIdleTime = time.Minute * 30
 var defaultHealthCheckPeriod = time.Minute
+var defaultPingTimeout = time.Duration(0)
 
 type connResource struct {
 	conn       *fbx.Conn
@@ -353,6 +354,7 @@ func NewWithConfig(ctx context.Context, config *Config) (*Pool, error) {
 //   - pool_max_conn_idle_time: duration string (default 30 minutes)
 //   - pool_health_check_period: duration string (default 1 minute)
 //   - pool_max_conn_lifetime_jitter: duration string (default 0)
+//   - pool_ping_timeout: duration string (default 0, meaning no timeout)
 //
 // See Config for definitions of these arguments.
 //
@@ -451,6 +453,17 @@ func ParseConfig(connString string) (*Config, error) {
 			return nil, fbconn.NewParseConfigError(connString, "cannot parse pool_max_conn_lifetime_jitter", err)
 		}
 		config.MaxConnLifetimeJitter = d
+	}
+
+	if s, ok := config.ConnConfig.RuntimeParams["pool_ping_timeout"]; ok {
+		delete(connConfig.RuntimeParams, "pool_ping_timeout")
+		d, err := time.ParseDuration(s)
+		if err != nil {
+			return nil, fbconn.NewParseConfigError(connString, "cannot parse pool_ping_timeout", err)
+		}
+		config.PingTimeout = d
+	} else {
+		config.PingTimeout = defaultPingTimeout
 	}
 
 	return config, nil
