@@ -47,6 +47,8 @@ jobs:
             KIND: "fb"
           - FB_VERSION: "5.0.4.1812-0"
             KIND: "fb"
+          - FB_VERSION: "snapshot-master"
+            KIND: "fb"
           - RDB_VERSION: "3.0.24"
             RDB_PROJECT: "rdb30"
           - RDB_VERSION: "5.1.6"
@@ -88,13 +90,19 @@ jobs:
             fi
           else
             echo Install dependencies
-            apt update && apt install -y libtommath1 libicu76
+            apt update && apt install -y libtommath1 libicu76 jq
             ln -s /usr/lib/x86_64-linux-gnu/libtommath.so.1 /usr/lib/x86_64-linux-gnu/libtommath.so.0
             ln -s /usr/lib/x86_64-linux-gnu/libncursesw.so.6 /usr/lib/x86_64-linux-gnu/libncurses.so.5
-            echo Download FB            
-            wget -q $FB_DOWNLOAD_URL -O fb.tar.gz
+            echo Download FB
+            if [[ "${{matrix.FB_VERSION}}" == snapshot* ]]; then
+              download_url=$(wget -q -O- https://api.github.com/repos/FirebirdSQL/snapshots/releases/tags/${{matrix.FB_VERSION}} | jq -r '.assets | .[] | select(.name | contains("linux-x64.tar.gz")) .browser_download_url')
+              echo FB ${{matrix.FB_VERSION}} is $download_url
+            else
+              download_url=$FB_DOWNLOAD_URL
+            fi
+            wget -q $download_url -O fb.tar.gz
             tar xf fb.tar.gz
-            pushd Firebird-${FB_VERSION}*
+            pushd Firebird-*
             echo Install FB
             ./install.sh -silent
             popd
