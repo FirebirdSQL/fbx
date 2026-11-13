@@ -393,6 +393,85 @@ func TestStmtExec(t *testing.T) {
 	ensureDBValid(t, db)
 }
 
+func TestExecBatchRows(t *testing.T) {
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		ctx := context.Background()
+		if getServerMajorVersion(t, db) < 4 {
+			t.Skip("batch requires Firebird 4 or newer")
+		}
+		db.SetMaxOpenConns(1)
+		_, err := db.ExecContext(ctx, "recreate table stdlib_exec_batch (id integer primary key, note varchar(30))")
+		require.NoError(t, err)
+		query := "insert into stdlib_exec_batch (id, note) values (?, ?)"
+		result, err := db.ExecContext(ctx, query, fbx.BatchRows{{1, "one"}, {2, "two"}})
+		require.NoError(t, err)
+		affected, err := result.RowsAffected()
+		require.NoError(t, err)
+		require.EqualValues(t, 2, affected)
+
+		stmt, err := db.PrepareContext(ctx, query)
+		require.NoError(t, err)
+		defer closeStmt(t, stmt)
+		_, err = stmt.ExecContext(ctx, fbx.BatchRows{{3, "three"}})
+		require.NoError(t, err)
+		_, err = stmt.ExecContext(ctx, 4, "ordinary")
+		require.NoError(t, err)
+		_, err = stmt.ExecContext(ctx, 5)
+		require.Error(t, err)
+		_, err = stmt.ExecContext(ctx, fbx.BatchRows{{5, "rolled back"}, {1, "duplicate"}})
+		var batchErr *fbx.BatchExecutionError
+		require.ErrorAs(t, err, &batchErr)
+		require.False(t, fbconn.SafeToRetry(err))
+		_, err = stmt.ExecContext(ctx, fbx.BatchRows{{5}})
+		require.ErrorContains(t, err, "expected 2 arguments")
+		result, err = stmt.ExecContext(ctx, fbx.BatchRows(nil))
+		require.NoError(t, err)
+		affected, err = result.RowsAffected()
+		require.NoError(t, err)
+		require.Zero(t, affected)
+
+		var count int
+		require.NoError(t, db.QueryRowContext(ctx, "select count(*) from stdlib_exec_batch").Scan(&count))
+		require.Equal(t, 4, count)
+		tx, err := db.BeginTx(ctx, nil)
+		require.NoError(t, err)
+		defer func() { _ = tx.Rollback() }()
+		_, err = tx.ExecContext(ctx, query, fbx.BatchRows{{5, "first"}})
+		require.NoError(t, err)
+		txStmt, err := tx.PrepareContext(ctx, query)
+		require.NoError(t, err)
+		_, err = txStmt.ExecContext(ctx, fbx.BatchRows{{6, "second"}})
+		require.NoError(t, err)
+		_, err = txStmt.ExecContext(ctx, fbx.BatchRows{{1, "duplicate"}})
+		require.ErrorAs(t, err, &batchErr)
+		require.NoError(t, tx.QueryRowContext(ctx, "select count(*) from stdlib_exec_batch").Scan(&count))
+		require.Equal(t, 6, count)
+		require.NoError(t, txStmt.Close())
+		require.NoError(t, tx.Rollback())
+		require.NoError(t, db.QueryRowContext(ctx, "select count(*) from stdlib_exec_batch").Scan(&count))
+		require.Equal(t, 4, count)
+
+		_, err = stmt.ExecContext(ctx, fbx.BatchRows{{7, "reused"}})
+		require.NoError(t, err)
+		tx, err = db.BeginTx(ctx, nil)
+		require.NoError(t, err)
+		defer func() { _ = tx.Rollback() }()
+		_, err = tx.ExecContext(ctx, query, fbx.BatchRows{{8, "committed"}})
+		require.NoError(t, err)
+		require.NoError(t, tx.Commit())
+		require.NoError(t, db.QueryRowContext(ctx, "select count(*) from stdlib_exec_batch").Scan(&count))
+		require.Equal(t, 6, count)
+
+		selectStmt, err := db.PrepareContext(ctx, "select cast(? as integer) from rdb$database")
+		require.NoError(t, err)
+		defer closeStmt(t, selectStmt)
+		require.Error(t, selectStmt.QueryRowContext(ctx).Scan(&count))
+		require.Error(t, selectStmt.QueryRowContext(ctx, 1, 2).Scan(&count))
+		require.NoError(t, selectStmt.QueryRowContext(ctx, 42).Scan(&count))
+		require.Equal(t, 42, count)
+	})
+}
+
 func TestQueryCloseRowsEarly(t *testing.T) {
 	db := openDB(t)
 	defer closeDB(t, db)

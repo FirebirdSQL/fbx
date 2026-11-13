@@ -1538,6 +1538,11 @@ type QueryStatus struct {
 	rowsAffected  int64
 }
 
+// NewQueryStatus creates a status with the statement type and affected row count.
+func NewQueryStatus(statementType int, rowsAffected int64) QueryStatus {
+	return QueryStatus{statementType: statementType, rowsAffected: rowsAffected}
+}
+
 // RowsAffected returns the number of rows affected
 func (ct QueryStatus) RowsAffected() int64 {
 	return ct.rowsAffected

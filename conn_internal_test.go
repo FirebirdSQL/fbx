@@ -35,7 +35,6 @@ func TestCacheStatementModeRequiresCache(t *testing.T) {
 			DefaultQueryExecMode: QueryExecModeCacheStatement,
 		},
 		preparedStatements: make(map[string]*fbconn.Statement),
-		preparedBatches:    make(map[string]*PreparedBatch),
 	}
 
 	_, err := conn.Exec(context.Background(), "select 1 from rdb$database")

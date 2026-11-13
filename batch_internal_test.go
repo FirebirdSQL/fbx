@@ -3,15 +3,15 @@ package fbx
 import (
 	"context"
 	"errors"
+	"math"
 	"os"
-	"reflect"
-	"sync/atomic"
+	"strconv"
 	"testing"
-	"unsafe"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/firebirdsql/fbx/fbconn"
+	"github.com/firebirdsql/fbx/internal/operationerror"
 )
 
 func skipIfBatchUnsupported(ctx context.Context, t testing.TB, conn *Conn) {
@@ -22,46 +22,282 @@ func skipIfBatchUnsupported(ctx context.Context, t testing.TB, conn *Conn) {
 	}
 }
 
-func forceStatementActiveBatch(t testing.TB, st *fbconn.Statement) {
-	t.Helper()
-	require.NotNil(t, st)
+func TestPreparedBatchInfo(t *testing.T) {
+	for _, scope := range []string{"connection", "transaction"} {
+		t.Run(scope, func(t *testing.T) {
+			ctx := context.Background()
+			conn := mustConnect(t, mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE")))
+			defer func() { require.NoError(t, conn.Close(ctx)) }()
+			if !conn.ServerVersion().AtLeast(4, 0, 1) {
+				t.Skip("batch info requires Firebird 4.0.1 or later")
+			}
+			_, err := conn.Exec(ctx, "recreate table batch_info_test (id integer)")
+			require.NoError(t, err)
+			prepare := conn.PrepareBatchWithOptions
+			var tx Tx
+			if scope == "transaction" {
+				tx, err = conn.Begin(ctx)
+				require.NoError(t, err)
+				prepare = tx.PrepareBatchWithOptions
+			}
+			b, err := prepare(ctx, "insert into batch_info_test values (?)", BatchOptions{BufferBytes: 65536})
+			require.NoError(t, err)
+			defer func() { require.NoError(t, b.Close(ctx)) }()
+			require.NoError(t, b.Add(1))
+			pending := b.PendingBytes()
+			info, err := b.Info(ctx)
+			require.NoError(t, err)
+			require.Equal(t, 65536, info.BufferBytes)
+			require.Zero(t, info.DataBytes)
+			require.Zero(t, info.BlobBytes)
+			require.Positive(t, info.BlobAlignment)
+			require.Positive(t, info.BlobHeaderBytes)
+			require.Equal(t, pending, b.PendingBytes(), "Info must not flush local rows")
+			require.Equal(t, tx != nil, conn.fbConn.ActiveTx())
 
-	field := reflect.ValueOf(st).Elem().FieldByName("activeBatch")
-	require.True(t, field.IsValid())
+			require.NoError(t, b.Flush(ctx))
+			info, err = b.Info(ctx)
+			require.NoError(t, err)
+			require.Positive(t, info.DataBytes)
+			require.Zero(t, b.PendingBytes())
+			require.Equal(t, tx != nil, conn.fbConn.ActiveTx())
+			require.NoError(t, b.Add(2))
+			before, err := b.Info(ctx)
+			require.NoError(t, err)
+			require.Equal(t, info, before)
+			require.Equal(t, pending, b.PendingBytes())
+			canceledCtx, cancel := context.WithCancel(ctx)
+			cancel()
+			_, err = b.Info(canceledCtx)
+			require.ErrorIs(t, err, context.Canceled)
+			require.Equal(t, pending, b.PendingBytes())
 
-	reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Set(reflect.ValueOf(&fbconn.Batch{}))
-}
+			result, err := b.Exec(ctx)
+			require.NoError(t, err)
+			require.EqualValues(t, 2, result.Affected)
+			info, err = b.Info(ctx)
+			require.NoError(t, err)
+			require.Zero(t, info.DataBytes)
+			require.Equal(t, tx != nil, conn.fbConn.ActiveTx(), "Info must not finish a transaction")
+			require.NoError(t, b.Add(3))
+			require.NoError(t, b.Flush(ctx))
+			require.NoError(t, b.Cancel(ctx))
+			info, err = b.Info(ctx)
+			require.NoError(t, err)
+			require.Zero(t, info.DataBytes)
+			require.NoError(t, b.Close(ctx))
+			_, err = b.Info(ctx)
+			require.Error(t, err)
 
-type cancelOnDoneCallContext struct {
-	context.Context
-
-	cancelOnCall int32
-	doneCalls    atomic.Int32
-	closed       chan struct{}
-}
-
-func newCancelOnDoneCallContext(cancelOnCall int32) *cancelOnDoneCallContext {
-	closed := make(chan struct{})
-	close(closed)
-	return &cancelOnDoneCallContext{
-		Context:      context.Background(),
-		cancelOnCall: cancelOnCall,
-		closed:       closed,
+			want := 2
+			if tx != nil {
+				require.NoError(t, tx.Rollback(ctx))
+				want = 0
+			}
+			var count int
+			require.NoError(t, conn.QueryRow(ctx, "select count(*) from batch_info_test").Scan(&count))
+			require.Equal(t, want, count)
+		})
 	}
 }
 
-func (ctx *cancelOnDoneCallContext) Done() <-chan struct{} {
-	if ctx.doneCalls.Add(1) >= ctx.cancelOnCall {
-		return ctx.closed
-	}
-	return nil
+type cancelAfterBatchPrepare struct {
+	cancel context.CancelFunc
 }
 
-func (ctx *cancelOnDoneCallContext) Err() error {
-	if ctx.doneCalls.Load() >= ctx.cancelOnCall {
-		return context.Canceled
+func (tracer cancelAfterBatchPrepare) TracePrepareStart(ctx context.Context, _ *Conn, _ TracePrepareStartData) context.Context {
+	return ctx
+}
+
+func (tracer cancelAfterBatchPrepare) TracePrepareEnd(context.Context, *Conn, TracePrepareEndData) {
+	tracer.cancel()
+}
+
+func TestExecBatchRowsCanceledAfterPrepare(t *testing.T) {
+	for _, mode := range []QueryExecMode{QueryExecModeCacheStatement, QueryExecModeExec} {
+		t.Run(mode.String(), func(t *testing.T) {
+			ctx := context.Background()
+			config := mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE"))
+			config.DefaultQueryExecMode = mode
+			conn := mustConnect(t, config)
+			defer func() { require.NoError(t, conn.Close(ctx)) }()
+			skipIfBatchUnsupported(ctx, t, conn)
+			_, err := conn.Exec(ctx, "recreate table exec_batch_cancel_test (id integer)")
+			require.NoError(t, err)
+
+			canceledCtx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			conn.prepareTracer = cancelAfterBatchPrepare{cancel: cancel}
+			_, err = conn.Exec(canceledCtx, "insert into exec_batch_cancel_test values (?)", BatchRows{{1}})
+			require.ErrorIs(t, err, context.Canceled)
+			require.False(t, conn.IsClosed())
+			require.False(t, conn.fbConn.ActiveTx())
+		})
 	}
-	return nil
+}
+
+func TestBatchInsertRejectsBeforePrepare(t *testing.T) {
+	conn := &Conn{config: &ConnConfig{BatchInsertPendingSize: -1}}
+	source := BatchInsertFunc(func() ([]any, error) {
+		t.Fatal("source must not be read")
+		return nil, nil
+	})
+	_, err := conn.BatchInsert(context.Background(), Identifier{"T"}, []string{"ID"}, source)
+	require.ErrorContains(t, err, "pending size must not be negative")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = conn.BatchInsert(ctx, Identifier{"T"}, []string{"ID"}, source)
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestBatchInsertSourceErrors(t *testing.T) {
+	for _, stage := range []string{"before Next", "Next", "Values", "end of source", "first Next error"} {
+		t.Run(stage, func(t *testing.T) {
+			config := mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE"))
+			config.BatchInsertPendingSize = 0
+			conn := mustConnect(t, config)
+			defer func() { require.NoError(t, conn.Close(context.Background())) }()
+			skipIfBatchUnsupported(context.Background(), t, conn)
+			_, err := conn.Exec(context.Background(), "recreate table batch_insert_source (id integer)")
+			require.NoError(t, err)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			sourceErr := operationerror.WithRetry(errors.New("source failed"), true)
+			calls := 0
+			next := func() ([]any, error) {
+				calls++
+				if stage == "first Next error" {
+					return nil, sourceErr
+				}
+				if calls == 1 {
+					return []any{1}, nil
+				}
+				cancel()
+				if stage == "end of source" {
+					return nil, sourceErr
+				}
+				return []any{2}, nil
+			}
+			source := BatchInsertFunc(next)
+			if stage == "Values" {
+				source = BatchInsertSlice(3, func(int) ([]any, error) { return next() })
+			}
+			if stage == "before Next" {
+				conn.prepareTracer = cancelAfterBatchPrepare{cancel: cancel}
+			}
+			count, err := conn.BatchInsert(ctx, Identifier{"BATCH_INSERT_SOURCE"}, []string{"ID"}, source)
+			if stage == "first Next error" {
+				require.ErrorIs(t, err, sourceErr)
+				require.Equal(t, 1, calls)
+			} else {
+				require.ErrorIs(t, err, context.Canceled)
+				if stage == "before Next" {
+					require.Zero(t, calls)
+				} else {
+					require.Equal(t, 2, calls)
+				}
+			}
+			if stage == "end of source" {
+				require.ErrorIs(t, err, sourceErr)
+			}
+			require.Zero(t, count)
+			require.False(t, fbconn.SafeToRetry(err))
+			require.False(t, conn.IsClosed())
+			require.False(t, conn.fbConn.ActiveTx())
+			conn.prepareTracer = nil
+			require.Zero(t, countStatementHandlesForSQL(t, conn, `insert into "BATCH_INSERT_SOURCE" ("ID") values (?)`))
+			var stored int
+			require.NoError(t, conn.QueryRow(context.Background(), "select count(*) from batch_insert_source").Scan(&stored))
+			require.Zero(t, stored)
+		})
+	}
+}
+
+func TestBatchInsertCleanupFailureClosesConnection(t *testing.T) {
+	ctx := context.Background()
+	config := mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE"))
+	config.BatchInsertPendingSize = 0
+	conn := mustConnect(t, config)
+	defer func() { require.NoError(t, conn.Close(ctx)) }()
+	skipIfBatchUnsupported(ctx, t, conn)
+	_, err := conn.Exec(ctx, "recreate table batch_insert_cleanup (id integer)")
+	require.NoError(t, err)
+
+	sourceErr := operationerror.WithRetry(errors.New("source failed"), true)
+	var rows Rows
+	defer func() {
+		if rows != nil {
+			rows.Close()
+		}
+	}()
+	source := BatchInsertSlice(2, func(i int) ([]any, error) {
+		if i == 0 {
+			return []any{1}, nil
+		}
+		// Leave a result open so cleanup cannot acquire the connection.
+		rows, err = conn.Query(ctx, "select 1 from rdb$database")
+		require.NoError(t, err)
+		return nil, sourceErr
+	})
+	count, err := conn.BatchInsert(ctx, Identifier{"BATCH_INSERT_CLEANUP"}, []string{"ID"}, source)
+	require.Zero(t, count)
+	require.ErrorIs(t, err, sourceErr)
+	require.ErrorContains(t, err, "conn busy")
+	require.False(t, fbconn.SafeToRetry(err))
+	require.True(t, conn.IsClosed())
+}
+
+func TestPrepareBatchRejectsInvalidOptionsBeforePrepare(t *testing.T) {
+	type testCase struct {
+		name string
+		opts BatchOptions
+		err  string
+	}
+	tests := []testCase{
+		{"negative buffer", BatchOptions{BufferBytes: -1}, "batch buffer size"},
+		{"negative details", BatchOptions{DetailedErrors: -1}, "batch detailed error limit"},
+	}
+	if strconv.IntSize == 64 {
+		overflow := int64(math.MaxInt32) + 1
+		tests = append(tests,
+			testCase{"buffer overflow", BatchOptions{BufferBytes: int(overflow)}, "batch buffer size"},
+			testCase{"details overflow", BatchOptions{DetailedErrors: int(overflow)}, "batch detailed error limit"},
+		)
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			conn := &Conn{}
+			tx := &dbTx{conn: conn}
+			for _, prepare := range []func(context.Context, string, BatchOptions) (*PreparedBatch, error){
+				conn.PrepareBatchWithOptions, tx.PrepareBatchWithOptions,
+			} {
+				batch, err := prepare(context.Background(), "insert into t values (?)", tt.opts)
+				require.ErrorContains(t, err, tt.err)
+				require.Nil(t, batch)
+			}
+		})
+	}
+}
+
+func TestNormalizeBatchOptions(t *testing.T) {
+	tests := []struct {
+		name string
+		opts BatchOptions
+		want fbconn.BatchConfig
+	}{
+		{"defaults", BatchOptions{}, fbconn.BatchConfig{RecordCounts: true, BufferBytes: -1, DetailedErrs: 1}},
+		{"multi-error defaults", BatchOptions{ContinueOnError: true}, fbconn.BatchConfig{MultiError: true, RecordCounts: true, BufferBytes: -1, DetailedErrs: -1}},
+		{"maximum wire values", BatchOptions{BufferBytes: math.MaxInt32, DetailedErrors: math.MaxInt32, ContinueOnError: true}, fbconn.BatchConfig{MultiError: true, RecordCounts: true, BufferBytes: math.MaxInt32, DetailedErrs: math.MaxInt32}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := normalizeBatchOptions(tt.opts)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, cfg)
+		})
+	}
 }
 
 func TestPrepareBatchWithOptionsPropagatesConfig(t *testing.T) {
@@ -144,6 +380,7 @@ func TestPrepareBatchConnectionScopeClosesMetadataTransaction(t *testing.T) {
 		err := conn.Close(ctx)
 		require.NoError(t, err)
 	}()
+	skipIfBatchUnsupported(ctx, t, conn)
 
 	table := "batch_internal_tx_meta"
 	_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(50))")
@@ -154,8 +391,39 @@ func TestPrepareBatchConnectionScopeClosesMetadataTransaction(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, conn.fbConn.ActiveTx())
 
+	st := pb.st
+	require.NotNil(t, st)
+	var serverBatch *fbconn.Batch
+	for _, id := range []int{1, 2} {
+		require.NoError(t, pb.Add(id, "saved"))
+		require.NoError(t, pb.Flush(ctx))
+		if serverBatch == nil {
+			serverBatch = pb.lb
+		}
+		require.True(t, pb.lb.HasPending())
+		require.False(t, conn.fbConn.ActiveTx(), "Flush must not open a transaction")
+		result, err := pb.Exec(ctx)
+		require.NoError(t, err)
+		require.EqualValues(t, 1, result.Affected)
+		require.Same(t, st, pb.st, "Exec must retain the original statement")
+		require.Same(t, serverBatch, pb.lb, "Exec must retain the server batch")
+		require.False(t, pb.lb.HasPending())
+		require.False(t, conn.fbConn.ActiveTx())
+	}
+
+	require.NoError(t, pb.Add(3, "discarded"))
+	require.NoError(t, pb.Flush(ctx))
+	require.NoError(t, pb.Cancel(ctx))
+	require.Same(t, st, pb.st, "Cancel must retain the original statement")
+	require.Same(t, serverBatch, pb.lb, "Cancel must retain the server batch")
+	require.False(t, pb.lb.HasPending())
+
 	require.NoError(t, pb.Close(ctx))
+	require.Nil(t, pb.st)
 	require.False(t, conn.fbConn.ActiveTx())
+	var count int
+	require.NoError(t, conn.QueryRow(ctx, "select count(*) from "+table).Scan(&count))
+	require.Equal(t, 2, count)
 }
 
 func TestPrepareBatchRejectClosesMetadataTransaction(t *testing.T) {
@@ -167,12 +435,37 @@ func TestPrepareBatchRejectClosesMetadataTransaction(t *testing.T) {
 		require.NoError(t, err)
 	}()
 
-	_, err := conn.PrepareBatch(ctx, "select cast(? as integer) from rdb$database")
-	require.Error(t, err)
-	require.False(t, conn.fbConn.ActiveTx())
+	for _, sql := range []string{"select cast(? as integer) from rdb$database", "invalid batch SQL"} {
+		prepareCtx, cancel := context.WithCancel(ctx)
+		conn.prepareTracer = cancelAfterBatchPrepare{cancel: cancel}
+		_, err := conn.PrepareBatch(prepareCtx, sql)
+		cancel()
+		require.Error(t, err)
+		require.NotErrorIs(t, err, context.Canceled, "cleanup must preserve the preparation or validation error")
+		require.False(t, conn.fbConn.ActiveTx())
+		require.False(t, conn.IsClosed(), "cleanup after cancellation must preserve a healthy connection")
+	}
 }
 
-func TestPreparedBatchFlushCloseReleasesOwnedInternalTransaction(t *testing.T) {
+func TestPrepareBatchClosesMetadataTransactionWithAnotherTxActive(t *testing.T) {
+	ctx := context.Background()
+	conn := mustConnect(t, mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE")))
+	defer func() { require.NoError(t, conn.Close(ctx)) }()
+
+	firstTx, err := conn.Begin(ctx)
+	require.NoError(t, err)
+	lastTx, err := conn.Begin(ctx)
+	require.NoError(t, err)
+	require.NoError(t, lastTx.Rollback(ctx))
+
+	_, err = conn.PrepareBatch(ctx, "select cast(? as integer) from rdb$database")
+	require.Error(t, err)
+	require.True(t, conn.fbConn.ActiveTx(), "the first user transaction must remain active")
+	require.NoError(t, firstTx.Rollback(ctx))
+	require.False(t, conn.fbConn.ActiveTx(), "preparation must not leave its own transaction behind")
+}
+
+func TestPreparedBatchClosePreservesLaterTransaction(t *testing.T) {
 	ctx := context.Background()
 
 	conn := mustConnect(t, mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE")))
@@ -191,10 +484,56 @@ func TestPreparedBatchFlushCloseReleasesOwnedInternalTransaction(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, pb.Add(1, "pending"))
 	require.NoError(t, pb.Flush(ctx))
-	require.True(t, conn.fbConn.ActiveTx())
-
-	require.NoError(t, pb.Close(ctx))
 	require.False(t, conn.fbConn.ActiveTx())
+
+	tx, err := conn.Begin(ctx)
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, "insert into "+table+" (id, note) values (2, 'user tx')")
+	require.NoError(t, err)
+	require.NoError(t, pb.Close(ctx))
+	require.True(t, conn.fbConn.ActiveTx(), "Close must not finish the user's transaction")
+	var count int
+	require.NoError(t, tx.QueryRow(ctx, "select count(*) from "+table).Scan(&count))
+	require.Equal(t, 1, count)
+	require.NoError(t, tx.Rollback(ctx))
+	require.False(t, conn.fbConn.ActiveTx(), "the batch must not leave an old metadata transaction behind")
+	require.NoError(t, conn.QueryRow(ctx, "select count(*) from "+table).Scan(&count))
+	require.Zero(t, count)
+}
+
+func TestPreparedBatchPreservesImplicitTransaction(t *testing.T) {
+	ctx := context.Background()
+	config := mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE"))
+	config.Autocommit = false
+	conn := mustConnect(t, config)
+	defer func() { require.NoError(t, conn.Close(ctx)) }()
+	skipIfBatchUnsupported(ctx, t, conn)
+
+	table := "batch_manual_commit"
+	_, err := conn.Exec(ctx, "recreate table "+table+" (id integer)")
+	require.NoError(t, err)
+	require.NoError(t, conn.Commit(ctx))
+	_, err = conn.Exec(ctx, "insert into "+table+" values (1)")
+	require.NoError(t, err)
+
+	pb, err := conn.PrepareBatch(ctx, "insert into "+table+" values (?)")
+	require.NoError(t, err)
+	require.NoError(t, pb.Add(2))
+	result, err := pb.Exec(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, result.Affected)
+	require.NoError(t, pb.Close(ctx))
+	require.True(t, conn.fbConn.ActiveTx())
+	_, err = conn.Exec(ctx, "insert into "+table+" values (?)", BatchRows{{3}})
+	require.NoError(t, err)
+	require.True(t, conn.fbConn.ActiveTx(), "BatchRows must preserve the manually managed transaction")
+	var count int
+	require.NoError(t, conn.QueryRow(ctx, "select count(*) from "+table).Scan(&count))
+	require.Equal(t, 3, count, "both batch APIs must preserve earlier uncommitted work")
+	require.NoError(t, conn.Rollback(ctx))
+	require.False(t, conn.fbConn.ActiveTx())
+	require.NoError(t, conn.QueryRow(ctx, "select count(*) from "+table).Scan(&count))
+	require.Zero(t, count, "Exec must not commit when Autocommit is disabled")
 }
 
 func TestPreparedBatchCloseCanceledContextCanRetry(t *testing.T) {
@@ -215,7 +554,7 @@ func TestPreparedBatchCloseCanceledContextCanRetry(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, pb.Add(1, "pending"))
 	require.NoError(t, pb.Flush(ctx))
-	require.True(t, conn.fbConn.ActiveTx())
+	require.False(t, conn.fbConn.ActiveTx())
 
 	canceledCtx, cancel := context.WithCancel(ctx)
 	cancel()
@@ -224,7 +563,12 @@ func TestPreparedBatchCloseCanceledContextCanRetry(t *testing.T) {
 	require.Error(t, err)
 	require.False(t, pb.closed)
 	require.NotNil(t, pb.lb)
-	require.True(t, conn.fbConn.ActiveTx())
+	require.False(t, conn.fbConn.ActiveTx())
+	require.ErrorContains(t, pb.Add(2, "blocked"), "closing")
+	require.ErrorContains(t, pb.Flush(ctx), "closing")
+	_, err = pb.Exec(ctx)
+	require.ErrorContains(t, err, "closing")
+	require.ErrorContains(t, pb.Cancel(ctx), "closing")
 
 	require.NoError(t, pb.Close(ctx))
 	require.True(t, pb.closed)
@@ -232,7 +576,7 @@ func TestPreparedBatchCloseCanceledContextCanRetry(t *testing.T) {
 	require.False(t, conn.fbConn.ActiveTx())
 }
 
-func TestPreparedBatchExecCanceledCleanupCanRetry(t *testing.T) {
+func TestPreparedBatchExecCanceledBeforeSendingCanRetry(t *testing.T) {
 	ctx := context.Background()
 
 	conn := mustConnect(t, mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE")))
@@ -250,7 +594,7 @@ func TestPreparedBatchExecCanceledCleanupCanRetry(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, pb.Add(1, "pending"))
 	require.NoError(t, pb.Flush(ctx))
-	require.True(t, conn.fbConn.ActiveTx())
+	require.False(t, conn.fbConn.ActiveTx())
 
 	canceledCtx, cancel := context.WithCancel(ctx)
 	cancel()
@@ -259,7 +603,12 @@ func TestPreparedBatchExecCanceledCleanupCanRetry(t *testing.T) {
 	require.Error(t, err)
 	require.False(t, pb.closed)
 	require.NotNil(t, pb.lb)
-	require.True(t, conn.fbConn.ActiveTx())
+	require.False(t, conn.fbConn.ActiveTx(), "failed execution must release the owned internal transaction")
+	require.True(t, pb.lb.HasPending())
+	require.False(t, pb.lb.NeedsReset())
+	result, err := pb.Exec(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, result.Affected)
 
 	require.NoError(t, pb.Close(ctx))
 	require.True(t, pb.closed)
@@ -267,7 +616,7 @@ func TestPreparedBatchExecCanceledCleanupCanRetry(t *testing.T) {
 	require.False(t, conn.fbConn.ActiveTx())
 }
 
-func TestPreparedBatchExecCanceledCleanupDoesNotReexecute(t *testing.T) {
+func TestPreparedBatchEmptyExecDoesNotReexecute(t *testing.T) {
 	ctx := context.Background()
 
 	conn := mustConnect(t, mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE")))
@@ -292,15 +641,17 @@ func TestPreparedBatchExecCanceledCleanupDoesNotReexecute(t *testing.T) {
 	require.NoError(t, pb.Add(1))
 	require.NoError(t, pb.Flush(ctx))
 
-	cleanupCanceledCtx := newCancelOnDoneCallContext(3)
-	result, err := pb.Exec(cleanupCanceledCtx)
-	require.ErrorIs(t, err, context.Canceled)
+	result, err := pb.Exec(ctx)
+	require.NoError(t, err)
 	require.EqualValues(t, 1, result.Affected)
 	require.NotNil(t, pb.lb)
 
-	result, err = pb.Exec(ctx)
-	require.Error(t, err, "Exec after a successful execute with pending cleanup must not reexecute the previous batch")
+	canceledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	result, err = pb.Exec(canceledCtx)
+	require.NoError(t, err, "empty Exec must not start a transaction or send a command")
 	require.Zero(t, result.Affected)
+	require.False(t, conn.fbConn.ActiveTx())
 
 	require.NoError(t, pb.Close(ctx))
 
@@ -332,7 +683,7 @@ func TestPreparedBatchFlushCanceledCanRetry(t *testing.T) {
 
 	require.NoError(t, pb.Add(1, "first"))
 	require.NoError(t, pb.Flush(ctx))
-	require.True(t, conn.fbConn.ActiveTx())
+	require.False(t, conn.fbConn.ActiveTx())
 
 	require.NoError(t, pb.Add(2, "second"))
 	canceledCtx, cancel := context.WithCancel(ctx)
@@ -342,7 +693,7 @@ func TestPreparedBatchFlushCanceledCanRetry(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 	require.NotNil(t, pb.lb)
 	require.NotZero(t, pb.PendingBytes())
-	require.True(t, conn.fbConn.ActiveTx())
+	require.False(t, conn.fbConn.ActiveTx())
 
 	require.NoError(t, pb.Flush(ctx))
 	require.Zero(t, pb.PendingBytes())
@@ -395,7 +746,7 @@ func TestTxPreparedBatchCloseCanceledStatementCanRetry(t *testing.T) {
 	require.Nil(t, pb.st)
 }
 
-func TestTxCommitCanceledKeepsNamedBatchForRetry(t *testing.T) {
+func TestTxCommitCanceledPreservesPreparedBatch(t *testing.T) {
 	ctx := context.Background()
 
 	conn := mustConnect(t, mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE")))
@@ -406,7 +757,6 @@ func TestTxCommitCanceledKeepsNamedBatchForRetry(t *testing.T) {
 	skipIfBatchUnsupported(ctx, t, conn)
 
 	table := "batch_tx_commit_retry"
-	name := "batch_tx_commit_retry_named"
 	_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(50))")
 	require.NoError(t, err)
 
@@ -421,12 +771,11 @@ func TestTxCommitCanceledKeepsNamedBatchForRetry(t *testing.T) {
 		}
 	}()
 
-	_, err = tx.Prepare(ctx, name, "batch insert into "+table+" (id, note) values (?, ?)")
+	pb, err := tx.PrepareBatch(ctx, "insert into "+table+" (id, note) values (?, ?)")
 	require.NoError(t, err)
-	_, err = tx.Exec(ctx, name, 1, "pending")
-	require.NoError(t, err)
-	require.NoError(t, tx.Flush(ctx, name))
-	require.Contains(t, conn.preparedBatches, name)
+	defer func() { require.NoError(t, pb.Close(ctx)) }()
+	require.NoError(t, pb.Add(1, "pending"))
+	require.NoError(t, pb.Flush(ctx))
 	require.True(t, conn.fbConn.ActiveTx())
 
 	canceledCtx, cancel := context.WithCancel(ctx)
@@ -435,40 +784,24 @@ func TestTxCommitCanceledKeepsNamedBatchForRetry(t *testing.T) {
 	err = tx.Commit(canceledCtx)
 	require.ErrorIs(t, err, context.Canceled)
 	require.False(t, tx.closed)
-	require.Contains(t, conn.preparedBatches, name)
+	require.False(t, pb.closing)
+	require.True(t, pb.lb.HasPending())
 	require.True(t, conn.fbConn.ActiveTx())
 
+	result, err := pb.Exec(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, result.Affected)
 	require.NoError(t, tx.Commit(ctx))
 	require.True(t, tx.closed)
-	require.NotContains(t, conn.preparedBatches, name)
 	require.False(t, conn.fbConn.ActiveTx())
-}
-
-func TestNamedBatchFlushDeallocateReleasesOwnedInternalTransaction(t *testing.T) {
-	ctx := context.Background()
-
-	conn := mustConnect(t, mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE")))
-	defer func() {
-		err := conn.Close(ctx)
-		require.NoError(t, err)
-	}()
-	skipIfBatchUnsupported(ctx, t, conn)
-
-	table := "batch_internal_tx_flush_named"
-	name := "batch_internal_tx_named"
-	_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(50))")
-	require.NoError(t, err)
-	require.False(t, conn.fbConn.ActiveTx())
-
-	_, err = conn.Prepare(ctx, name, "batch insert into "+table+" (id, note) values (?, ?)")
-	require.NoError(t, err)
-	_, err = conn.Exec(ctx, name, 1, "pending")
-	require.NoError(t, err)
-	require.NoError(t, conn.Flush(ctx, name))
-	require.True(t, conn.fbConn.ActiveTx())
-
-	require.NoError(t, conn.Deallocate(ctx, name))
-	require.False(t, conn.fbConn.ActiveTx())
+	require.ErrorIs(t, pb.Add(2, "after commit"), ErrTxClosed)
+	require.ErrorIs(t, pb.Flush(ctx), ErrTxClosed)
+	_, err = pb.Exec(ctx)
+	require.ErrorIs(t, err, ErrTxClosed)
+	require.NoError(t, pb.Close(ctx))
+	var count int
+	require.NoError(t, conn.QueryRow(ctx, "select count(*) from "+table).Scan(&count))
+	require.Equal(t, 1, count)
 }
 
 func TestPreparedBatchClearPendingClearsBufferedRows(t *testing.T) {
@@ -543,10 +876,15 @@ func TestPreparedBatchCancelGuards(t *testing.T) {
 		require.EqualError(t, pb.Cancel(ctx), "prepared batch is closed")
 	})
 
-	t.Run("cleanup pending refuses cancel", func(t *testing.T) {
+	t.Run("closing batch refuses cancel", func(t *testing.T) {
+		pb := &PreparedBatch{closing: true}
+		require.ErrorContains(t, pb.Cancel(ctx), "prepared batch is closing")
+	})
+
+	t.Run("cancel completes pending cleanup", func(t *testing.T) {
 		pb := &PreparedBatch{cleanupPending: true}
-		require.ErrorContains(t, pb.Cancel(ctx),
-			"prepared batch has pending cleanup after execution")
+		require.NoError(t, pb.Cancel(ctx))
+		require.False(t, pb.cleanupPending)
 	})
 
 	t.Run("no wire state — Cancel clears local buffer and returns nil", func(t *testing.T) {
@@ -565,38 +903,65 @@ func TestPreparedBatchCancelGuards(t *testing.T) {
 }
 
 func TestFinalizePreparedBatchExecJoinsErrors(t *testing.T) {
+	t.Run("unknown affected count is not an execution error", func(t *testing.T) {
+		completion := &fbconn.BatchCompletion{TotalRecords: 2}
+
+		result, err := finalizePreparedBatchExec(completion, nil)
+
+		require.NoError(t, err)
+		require.EqualValues(t, -1, result.Affected)
+		require.Nil(t, result.UpdateCounts)
+	})
+
+	t.Run("completion survives cancellation and retryable cleanup", func(t *testing.T) {
+		rowErr := errors.New("row cancelled")
+		completion := &fbconn.BatchCompletion{
+			TotalRecords: 2,
+			UpdateCounts: []int64{1, -1},
+			Errors:       []fbconn.BatchError{{Row: 1, Err: rowErr}},
+		}
+		cleanupErr := operationerror.WithRetry(errors.New("cleanup failed"), true)
+		result, err := finalizePreparedBatchExec(completion, operationerror.Join(context.DeadlineExceeded, cleanupErr))
+
+		require.EqualValues(t, 1, result.Affected)
+		require.Equal(t, completion.UpdateCounts, result.UpdateCounts)
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		require.ErrorIs(t, err, rowErr)
+		require.ErrorIs(t, err, cleanupErr)
+		require.False(t, fbconn.SafeToRetry(err))
+		var batchErr *BatchExecutionError
+		require.ErrorAs(t, err, &batchErr)
+	})
+
 	t.Run("execute error keeps cleanup errors", func(t *testing.T) {
 		execErr := errors.New("execute failed")
-		closeErr := errors.New("close failed")
-		releaseErr := errors.New("release failed")
+		cleanupErr := errors.New("cancel failed")
 
-		result, err := finalizePreparedBatchExec(nil, execErr, closeErr, releaseErr)
+		result, err := finalizePreparedBatchExec(nil, operationerror.Join(execErr, cleanupErr))
 
 		require.Zero(t, result.Affected)
 		require.ErrorContains(t, err, "execute failed")
-		require.ErrorContains(t, err, "close failed")
-		require.ErrorContains(t, err, "release failed")
+		require.ErrorIs(t, err, cleanupErr)
 	})
 
 	t.Run("batch row error keeps affected and cleanup errors", func(t *testing.T) {
-		closeErr := errors.New("close failed")
-		releaseErr := errors.New("release failed")
+		rollbackErr := errors.New("rollback failed")
 
 		completion := &fbconn.BatchCompletion{
-			UpdateCounts: []int64{1},
+			TotalRecords: 3,
+			UpdateCounts: []int64{1, 0, -1},
 			Errors: []fbconn.BatchError{
 				{Row: 2, Err: errors.New("duplicate key")},
 			},
 		}
 
-		result, err := finalizePreparedBatchExec(completion, nil, closeErr, releaseErr)
+		result, err := finalizePreparedBatchExec(completion, rollbackErr)
 
 		require.EqualValues(t, 1, result.Affected)
-		require.Equal(t, []int64{1}, result.UpdateCounts)
+		require.Equal(t, completion.UpdateCounts, result.UpdateCounts)
 		require.ErrorContains(t, err, "batch failed at row 2")
 		require.ErrorContains(t, err, "duplicate key")
-		require.ErrorContains(t, err, "close failed")
-		require.ErrorContains(t, err, "release failed")
+		require.ErrorIs(t, err, rollbackErr)
 
 		var batchErr *BatchExecutionError
 		require.ErrorAs(t, err, &batchErr)
@@ -605,7 +970,8 @@ func TestFinalizePreparedBatchExecJoinsErrors(t *testing.T) {
 
 	t.Run("multiple batch row errors are exposed", func(t *testing.T) {
 		completion := &fbconn.BatchCompletion{
-			UpdateCounts: []int64{1, -1, 1, -1},
+			TotalRecords: 6,
+			UpdateCounts: []int64{1, -1, 1, -1, 0, -1},
 			Errors: []fbconn.BatchError{
 				{Row: 1, Err: errors.New("first duplicate")},
 				{Row: 3, Err: errors.New("second duplicate")},
@@ -613,10 +979,10 @@ func TestFinalizePreparedBatchExecJoinsErrors(t *testing.T) {
 			},
 		}
 
-		result, err := finalizePreparedBatchExec(completion, nil, nil, nil)
+		result, err := finalizePreparedBatchExec(completion, nil)
 
 		require.EqualValues(t, 2, result.Affected)
-		require.Equal(t, []int64{1, -1, 1, -1}, result.UpdateCounts)
+		require.Equal(t, completion.UpdateCounts, result.UpdateCounts)
 		require.ErrorContains(t, err, "batch failed at row 1")
 		require.ErrorContains(t, err, "2 more batch errors")
 
@@ -631,104 +997,4 @@ func TestFinalizePreparedBatchExecJoinsErrors(t *testing.T) {
 		require.ErrorIs(t, batchErr.Errors[2].Err, ErrBatchRowFailed,
 			"simplified errors must wrap ErrBatchRowFailed so errors.Is can see them")
 	})
-}
-
-func TestTxCommitDoesNotStopOnNamedBatchCloseError(t *testing.T) {
-	ctx := context.Background()
-
-	conn := mustConnect(t, mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE")))
-	defer func() {
-		err := conn.Close(ctx)
-		require.NoError(t, err)
-	}()
-	skipIfBatchUnsupported(ctx, t, conn)
-
-	checkConn := mustConnect(t, mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE")))
-	defer func() {
-		err := checkConn.Close(ctx)
-		require.NoError(t, err)
-	}()
-
-	table := "tx_commit_named_batch_close_err_test"
-
-	_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(50))")
-	require.NoError(t, err)
-
-	txi, err := conn.Begin(ctx)
-	require.NoError(t, err)
-	tx, ok := txi.(*dbTx)
-	require.True(t, ok)
-
-	_, err = tx.Exec(ctx, "insert into "+table+"(id, note) values (?, ?)", 1, "committed")
-	require.NoError(t, err)
-
-	_, err = tx.Prepare(ctx, "commit_close_err_batch", "batch update "+table+" set note = ? where id = ?")
-	require.NoError(t, err)
-
-	pb := conn.preparedBatches["commit_close_err_batch"]
-	require.NotNil(t, pb)
-	require.NotNil(t, pb.st)
-
-	forceStatementActiveBatch(t, pb.st)
-
-	err = tx.Commit(ctx)
-	require.Error(t, err)
-	require.ErrorContains(t, err, "statement has active batch")
-	require.True(t, tx.closed)
-	require.NotContains(t, conn.preparedBatches, "commit_close_err_batch")
-
-	var note string
-	err = checkConn.QueryRow(ctx, "select note from "+table+" where id = ?", 1).Scan(&note)
-	require.NoError(t, err)
-	require.Equal(t, "committed", note)
-}
-
-func TestTxRollbackDoesNotStopOnNamedBatchCloseError(t *testing.T) {
-	ctx := context.Background()
-
-	conn := mustConnect(t, mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE")))
-	defer func() {
-		err := conn.Close(ctx)
-		require.NoError(t, err)
-	}()
-	skipIfBatchUnsupported(ctx, t, conn)
-
-	checkConn := mustConnect(t, mustParseConfig(t, os.Getenv("FBX_TEST_DATABASE")))
-	defer func() {
-		err := checkConn.Close(ctx)
-		require.NoError(t, err)
-	}()
-
-	table := "tx_rollback_named_batch_close_err_test"
-
-	_, err := conn.Exec(ctx, "recreate table "+table+" (id integer not null primary key, note varchar(50))")
-	require.NoError(t, err)
-
-	txi, err := conn.Begin(ctx)
-	require.NoError(t, err)
-	tx, ok := txi.(*dbTx)
-	require.True(t, ok)
-
-	_, err = tx.Exec(ctx, "insert into "+table+"(id, note) values (?, ?)", 1, "rolled back")
-	require.NoError(t, err)
-
-	_, err = tx.Prepare(ctx, "rollback_close_err_batch", "batch update "+table+" set note = ? where id = ?")
-	require.NoError(t, err)
-
-	pb := conn.preparedBatches["rollback_close_err_batch"]
-	require.NotNil(t, pb)
-	require.NotNil(t, pb.st)
-
-	forceStatementActiveBatch(t, pb.st)
-
-	err = tx.Rollback(ctx)
-	require.Error(t, err)
-	require.ErrorContains(t, err, "statement has active batch")
-	require.True(t, tx.closed)
-	require.NotContains(t, conn.preparedBatches, "rollback_close_err_batch")
-
-	var count int
-	err = checkConn.QueryRow(ctx, "select count(*) from "+table).Scan(&count)
-	require.NoError(t, err)
-	require.Zero(t, count)
 }

@@ -1,9 +1,16 @@
 package fbconn
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
+	"io"
+	"math"
+	"net"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/firebirdsql/fbx/fbproto"
 	"github.com/stretchr/testify/assert"
@@ -37,21 +44,555 @@ func TestCommandTag(t *testing.T) {
 	}
 }
 
+func TestBatchInvalidConfigDoesNotClaimStatement(t *testing.T) {
+	type testCase struct {
+		name string
+		cfg  BatchConfig
+		err  string
+	}
+	tests := []testCase{
+		{"negative buffer", BatchConfig{BufferBytes: -2}, "batch buffer size"},
+		{"negative details", BatchConfig{DetailedErrs: -2}, "batch detailed error limit"},
+		{"invalid blob policy", BatchConfig{BlobPolicy: 4}, "batch blob policy"},
+	}
+	if strconv.IntSize == 64 {
+		overflow := int64(math.MaxInt32) + 1
+		tests = append(tests,
+			testCase{"buffer overflow", BatchConfig{BufferBytes: int(overflow)}, "batch buffer size"},
+			testCase{"details overflow", BatchConfig{DetailedErrs: int(overflow)}, "batch detailed error limit"},
+		)
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := &Statement{}
+			b := st.NewBatch(tt.cfg)
+			ctx := context.Background()
+			require.ErrorContains(t, b.Create(ctx), tt.err)
+			require.ErrorContains(t, b.Send(ctx, [][]byte{{0, 0, 0, 1}}), tt.err)
+			completion, err := b.Execute(ctx, nil)
+			require.ErrorContains(t, err, tt.err)
+			require.Nil(t, completion)
+			require.Nil(t, st.activeBatch)
+
+			valid := st.NewBatch(BatchConfig{})
+			require.NoError(t, valid.err)
+			require.NoError(t, b.Close(ctx))
+			require.Same(t, valid, st.activeBatch)
+		})
+	}
+}
+
+func TestBatchConfigParameterBuffer(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  BatchConfig
+		want map[byte][]byte
+	}{
+		{"server defaults", BatchConfig{BufferBytes: -1, DetailedErrs: -1}, map[byte][]byte{
+			fbproto.BatchTagBlobPolicy: {0},
+		}},
+		{"explicit zeros", BatchConfig{}, map[byte][]byte{
+			fbproto.BatchTagBufferBytes:    {0, 0, 0, 0},
+			fbproto.BatchTagDetailedErrors: {0, 0, 0, 0},
+			fbproto.BatchTagBlobPolicy:     {0},
+		}},
+		{"maximum wire values", BatchConfig{MultiError: true, RecordCounts: true, BufferBytes: math.MaxInt32, DetailedErrs: math.MaxInt32, BlobPolicy: fbproto.BatchBlobStream}, map[byte][]byte{
+			fbproto.BatchTagMultiError:     {1, 0, 0, 0},
+			fbproto.BatchTagRecordCounts:   {1, 0, 0, 0},
+			fbproto.BatchTagBufferBytes:    {0xff, 0xff, 0xff, 0x7f},
+			fbproto.BatchTagDetailedErrors: {0xff, 0xff, 0xff, 0x7f},
+			fbproto.BatchTagBlobPolicy:     {fbproto.BatchBlobStream},
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b := (&Statement{}).NewBatch(tt.cfg)
+			require.NoError(t, b.err)
+			r := fbproto.NewXPBReader(b.cfg.parameterBuffer())
+			ok, version := r.Next()
+			require.True(t, ok)
+			require.EqualValues(t, fbproto.BatchVersion1, version)
+			got := make(map[byte][]byte)
+			for ok, tag := r.Next(); ok; ok, tag = r.Next() {
+				value, ok := r.GetBytes(int(r.GetInt32()))
+				require.True(t, ok)
+				got[tag] = value
+			}
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestBatchCompletionAffected(t *testing.T) {
+	tests := []struct {
+		name       string
+		completion *BatchCompletion
+		want       int64
+	}{
+		{"nil completion", nil, 0},
+		{"empty batch", &BatchCompletion{}, 0},
+		{"multiple affected rows per message", &BatchCompletion{TotalRecords: 2, UpdateCounts: []int64{0, 7}}, 7},
+		{"no affected rows", &BatchCompletion{TotalRecords: 2, UpdateCounts: []int64{0, 0}}, 0},
+		{"counts disabled", &BatchCompletion{TotalRecords: 2}, -1},
+		{"incomplete counts", &BatchCompletion{TotalRecords: 2, UpdateCounts: []int64{7}}, -1},
+		{"failed message", &BatchCompletion{TotalRecords: 3, UpdateCounts: []int64{1, fbproto.BatchExecuteFailed, 2}}, 3},
+		{"success without count", &BatchCompletion{TotalRecords: 2, UpdateCounts: []int64{7, fbproto.BatchSuccessNoInfo}}, -1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, tt.completion.Affected())
+		})
+	}
+}
+
+func TestBatchInfoParsing(t *testing.T) {
+	var data []byte
+	for i, value := range []uint32{65536, 24, 64, 4, 16} {
+		data = append(data, byte(fbproto.BatchInfoBufferBytes+i), 4, 0)
+		data = binary.LittleEndian.AppendUint32(data, value)
+	}
+	data = append(data, fbproto.Isc_info_end)
+	want := BatchInfo{BufferBytes: 65536, DataBytes: 24, BlobBytes: 64, BlobAlignment: 4, BlobHeaderBytes: 16}
+	info, err := parseBatchInfo(data)
+	require.NoError(t, err)
+	require.Equal(t, want, info)
+
+	withoutBlobs := append(append([]byte(nil), data[:14]...), data[21:]...)
+	info, err = parseBatchInfo(withoutBlobs)
+	require.NoError(t, err)
+	want.BlobBytes = 0
+	require.Equal(t, want, info)
+
+	for n := 0; n < len(data); n++ {
+		info, err = parseBatchInfo(data[:n])
+		require.Error(t, err, "prefix of %d bytes", n)
+		require.Zero(t, info)
+	}
+	for _, malformed := range [][]byte{
+		{fbproto.Isc_info_truncated}, {fbproto.Isc_info_error}, {99},
+		data[7:],                             // missing buffer capacity
+		{fbproto.BatchInfoBufferBytes, 9, 0}, // invalid integer length
+		{fbproto.BatchInfoBufferBytes, 4, 0, 0xff, 0xff, 0xff, 0xff},
+	} {
+		info, err = parseBatchInfo(malformed)
+		require.Error(t, err)
+		require.Zero(t, info)
+	}
+}
+
+func TestBatchInfoErrorsPreserveQueue(t *testing.T) {
+	for _, mode := range []string{"server error", "malformed info", "lost response", "unexpected response", "write failure", "canceled", "unsupported protocol"} {
+		t.Run(mode, func(t *testing.T) {
+			var input bytes.Buffer
+			w := fbproto.NewXDRWriter(&input)
+			switch mode {
+			case "server error":
+				require.NoError(t, retryTestResponse(w, fbproto.Isc_deadlock))
+			case "malformed info":
+				require.NoError(t, writeProbeResponseData(w, 0, []byte{fbproto.Isc_info_truncated}))
+			case "unexpected response":
+				require.NoError(t, w.WriteInt32(fbproto.Op_sql_response))
+				require.NoError(t, w.WriteInt32(0))
+			}
+			b, transport := newBatchProtocolTest(t, &input)
+			b.bufferState = batchBufferPending
+			ctx := context.Background()
+			if mode == "canceled" {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+			}
+			if mode == "unsupported protocol" {
+				b.st.conn.protocolVersion = fbproto.PROTOCOL_VERSION16
+				b.state = batchStateInit
+			}
+			if mode == "write failure" {
+				transport.writeErr = io.ErrClosedPipe
+			}
+			info, err := b.Info(ctx)
+			require.Error(t, err)
+			require.Zero(t, info)
+			require.Equal(t, batchBufferPending, b.bufferState)
+			require.Equal(t, mode == "lost response" || mode == "unexpected response" || mode == "write failure", b.st.conn.IsClosed())
+			require.Equal(t, mode == "canceled", SafeToRetry(err))
+			if mode == "canceled" {
+				require.ErrorIs(t, err, context.Canceled)
+			}
+			if mode == "unsupported protocol" || mode == "canceled" {
+				require.Zero(t, transport.written.Len(), "must not create or query a batch")
+			} else if !b.st.conn.IsClosed() {
+				require.NoError(t, writeProbeResponse(w, 0))
+				require.NoError(t, writeProbeResponse(w, 0))
+				require.NoError(t, b.Cancel(context.Background()))
+				require.False(t, b.HasPending())
+			}
+		})
+	}
+}
+
 func TestBatchCloseCanceledContextKeepsBatchOpen(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	for _, deadline := range []bool{false, true} {
+		t.Run(fmt.Sprintf("deadline=%t", deadline), func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			if deadline {
+				cancel()
+				ctx, cancel = context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+			}
+			cancel()
 
-	conn := &FbConn{status: connStatusIdle}
-	st := &Statement{conn: conn}
-	b := &Batch{st: st, state: batchStateCreated}
-	st.activeBatch = b
+			conn := &FbConn{status: connStatusIdle}
+			st := &Statement{conn: conn}
+			b := &Batch{st: st, state: batchStateCreated}
+			st.activeBatch = b
 
-	err := b.Close(ctx)
+			err := b.Close(ctx)
 
-	require.Error(t, err)
-	require.False(t, b.isClosed())
-	require.Same(t, b, st.activeBatch)
-	require.False(t, conn.IsClosed())
+			require.ErrorIs(t, err, ctx.Err())
+			require.True(t, SafeToRetry(err))
+			require.False(t, b.isClosed())
+			require.Same(t, b, st.activeBatch)
+			require.False(t, conn.IsClosed())
+		})
+	}
+}
+
+func newBatchProtocolTest(t *testing.T, input io.Reader) (*Batch, *prepareCleanupTestConn) {
+	t.Helper()
+	transport := &prepareCleanupTestConn{}
+	conn := newDetachTestConn(transport)
+	conn.protocolVersion = fbproto.PROTOCOL_VERSION17
+	encoding, err := fbproto.NewEncoding("UTF8")
+	require.NoError(t, err)
+	conn.client = fbproto.NewClient(input, conn.writer, encoding)
+	st := &Statement{conn: conn, Description: &StatementDescription{
+		StatementHandle: 42,
+		StatementInfo: &StatementInfo{
+			ParametersDescriptors: []fbproto.FieldDescriptor{{Type: fbproto.SQL_TYPE_LONG, Length: 4}},
+		},
+	}}
+	b := st.NewBatch(BatchConfig{RecordCounts: true})
+	b.state = batchStateCreated
+	t.Cleanup(func() {
+		conn.asyncClose()
+		waitCleanupDone(t, conn)
+	})
+	return b, transport
+}
+
+func TestBatchSyncResponses(t *testing.T) {
+	for _, mode := range []string{"server error", "sync error", "broken response"} {
+		t.Run(mode, func(t *testing.T) {
+			var input bytes.Buffer
+			w := fbproto.NewXDRWriter(&input)
+			broken := mode == "broken response"
+			if broken {
+				require.NoError(t, w.WriteInt32(fbproto.Op_sql_response))
+				require.NoError(t, w.WriteInt32(0))
+			} else if mode == "server error" {
+				require.NoError(t, retryTestResponse(w, fbproto.Isc_deadlock))
+			} else {
+				require.NoError(t, writeProbeResponse(w, 0))
+			}
+			if mode == "sync error" {
+				require.NoError(t, retryTestResponse(w, fbproto.Isc_deadlock))
+			} else {
+				require.NoError(t, writeProbeResponse(w, 0))
+			}
+			require.NoError(t, writeProbeResponse(w, 77))
+			b, _ := newBatchProtocolTest(t, &input)
+			conn := b.st.conn
+			var resets []int
+			h := &CancelRequestContextWatcherHandler{Conn: conn, sendCancelOperationFunc: func(_ context.Context, kind int) error {
+				resets = append(resets, kind)
+				return nil
+			}}
+			h.pendingCancelReset.Store(true)
+			conn.contextHandler = h
+
+			err := b.Send(context.Background(), [][]byte{{0, 0, 0, 1}})
+			require.Error(t, err)
+			require.True(t, b.NeedsReset())
+			require.True(t, b.HasPending())
+			require.False(t, SafeToRetry(err))
+			require.Equal(t, []int{fbproto.Fb_cancel_disable, fbproto.Fb_cancel_enable}, resets)
+			require.Equal(t, broken, conn.IsClosed())
+			if broken {
+				require.Equal(t, 2*24, input.Len(), "do not read another response after closing the connection")
+				return
+			}
+			var fbErr *FbError
+			require.ErrorAs(t, err, &fbErr)
+			require.Contains(t, fbErr.GdsCodes, fbproto.Isc_deadlock)
+			msg, err := conn.receiveMessage()
+			require.NoError(t, err)
+			require.Equal(t, 77, msg.(*fbproto.OpResponse).Object, "the sync response must be consumed")
+
+			require.NoError(t, retryTestResponse(w, fbproto.Isc_cancelled))
+			require.NoError(t, writeProbeResponse(w, 0))
+			require.Error(t, b.Cancel(context.Background()))
+			require.True(t, b.NeedsReset())
+			require.Same(t, b, b.st.activeBatch, "failed cleanup must retain the handle")
+			require.NoError(t, writeProbeResponse(w, 0))
+			require.NoError(t, writeProbeResponse(w, 0))
+			require.NoError(t, b.Cancel(context.Background()))
+			require.False(t, b.HasPending())
+			require.False(t, b.NeedsReset())
+			require.False(t, b.isClosed())
+		})
+	}
+}
+
+func TestBatchWriteFailureDisallowsRetry(t *testing.T) {
+	t.Run("write error", func(t *testing.T) {
+		b, transport := newBatchProtocolTest(t, bytes.NewReader(nil))
+		transport.writeErr = &fbconnError{msg: "write failed", safeToRetry: true}
+
+		err := b.Send(context.Background(), [][]byte{{0, 0, 0, 1}})
+
+		require.ErrorIs(t, err, transport.writeErr)
+		require.False(t, SafeToRetry(err))
+		require.True(t, b.st.conn.IsClosed())
+		b.st.conn.writeMu.Lock()
+		failed := b.st.conn.writeFailed
+		b.st.conn.writeMu.Unlock()
+		require.True(t, failed)
+	})
+
+	t.Run("canceled during write", func(t *testing.T) {
+		client, server := net.Pipe()
+		defer func() { _ = server.Close() }()
+		conn := newDetachTestConn(client)
+		conn.protocolVersion = fbproto.PROTOCOL_VERSION17
+		t.Cleanup(func() {
+			conn.asyncClose()
+			waitCleanupDone(t, conn)
+		})
+		st := &Statement{conn: conn, Description: &StatementDescription{StatementHandle: 42}}
+		b := st.NewBatch(BatchConfig{})
+		b.state = batchStateCreated
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		done := make(chan error, 1)
+		go func() { done <- b.Send(ctx, [][]byte{{0, 0, 0, 1}, {0, 0, 0, 2}}) }()
+
+		// Read the header and first row, leaving the second row's write blocked.
+		require.NoError(t, server.SetReadDeadline(time.Now().Add(3*time.Second)))
+		r := fbproto.NewXDRReader(server)
+		for _, want := range []int{fbproto.Op_batch_msg, 42, 2, 1} {
+			got, err := r.ReadInt32()
+			require.NoError(t, err)
+			require.Equal(t, want, got)
+		}
+		cancel()
+
+		select {
+		case err := <-done:
+			require.ErrorIs(t, err, context.Canceled)
+			require.False(t, SafeToRetry(err))
+		case <-time.After(3 * time.Second):
+			t.Fatal("batch write did not stop after cancellation")
+		}
+		require.True(t, conn.IsClosed())
+		conn.writeMu.Lock()
+		failed := conn.writeFailed
+		conn.writeMu.Unlock()
+		require.True(t, failed)
+	})
+}
+
+func TestBatchExecuteLostCommitReplyPreservesCompletion(t *testing.T) {
+	var input bytes.Buffer
+	w := fbproto.NewXDRWriter(&input)
+	// Execution succeeded for both rows, but there is no reply to the following commit.
+	for _, n := range []int{fbproto.Op_batch_cs, 42, 2, 2, 0, 0, 1, 1} {
+		require.NoError(t, w.WriteInt32(n))
+	}
+	b, transport := newBatchProtocolTest(t, &input)
+	b.bufferState = batchBufferPending
+	conn := b.st.conn
+	conn.config.Autocommit = true
+	tx := &FBTransaction{Connection: conn, Handle: 42}
+	conn.internalTransaction = tx
+	conn.activeTransactions = map[*FBTransaction]struct{}{tx: {}}
+
+	completion, err := b.Execute(context.Background(), nil)
+
+	var fbErr *FbError
+	require.ErrorAs(t, err, &fbErr)
+	require.Equal(t, "08006", fbErr.Code)
+	require.False(t, SafeToRetry(err))
+	require.True(t, conn.IsClosed())
+	require.NotNil(t, completion)
+	require.EqualValues(t, 2, completion.TotalRecords)
+	require.Equal(t, []int64{1, 1}, completion.UpdateCounts)
+	require.Empty(t, completion.Errors)
+	require.False(t, b.HasPending(), "the completion confirms that the server consumed the queue")
+
+	r := fbproto.NewXDRReader(&transport.written)
+	for _, want := range []int{fbproto.Op_batch_exec, 42, 42, fbproto.Op_commit, 42} {
+		got, err := r.ReadInt32()
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+	}
+	require.Zero(t, transport.written.Len(), "do not send rollback after losing the connection")
+}
+
+func TestBatchAcknowledgementSurvivesSyncError(t *testing.T) {
+	for _, create := range []bool{true, false} {
+		t.Run(fmt.Sprintf("create=%t", create), func(t *testing.T) {
+			var input bytes.Buffer
+			w := fbproto.NewXDRWriter(&input)
+			require.NoError(t, writeProbeResponse(w, 0))
+			require.NoError(t, retryTestResponse(w, fbproto.Isc_cancelled))
+			b, _ := newBatchProtocolTest(t, &input)
+			var err error
+			if create {
+				b.state = batchStateInit
+				err = b.Create(context.Background())
+				require.Equal(t, batchStateCreated, b.state, "Close must release the acknowledged batch")
+			} else {
+				err = b.Close(context.Background())
+				require.True(t, b.isClosed(), "release already succeeded")
+				require.Nil(t, b.st.activeBatch)
+			}
+			require.Error(t, err)
+			require.False(t, b.st.conn.IsClosed())
+			require.Zero(t, input.Len())
+		})
+	}
+}
+
+type batchCancelReader struct {
+	io.Reader
+	cancel context.CancelFunc
+}
+
+func (r *batchCancelReader) Read(p []byte) (int, error) {
+	if r.cancel != nil {
+		r.cancel()
+		r.cancel = nil
+	}
+	return r.Reader.Read(p)
+}
+
+func TestBatchExecuteCancellation(t *testing.T) {
+	for _, explicit := range []bool{false, true} {
+		for _, rowError := range []bool{false, true} {
+			t.Run(fmt.Sprintf("explicit=%t/rowError=%t", explicit, rowError), func(t *testing.T) {
+				var input bytes.Buffer
+				w := fbproto.NewXDRWriter(&input)
+				if rowError {
+					for _, n := range []int{fbproto.Op_batch_cs, 42, 2, 2, 1, 0, 1, -1, 1, fbproto.Isc_arg_gds, fbproto.Isc_cancelled, fbproto.Isc_arg_end} {
+						require.NoError(t, w.WriteInt32(n))
+					}
+				} else {
+					require.NoError(t, retryTestResponse(w, fbproto.Isc_cancelled))
+				}
+				if !explicit {
+					require.NoError(t, writeProbeResponse(w, 0))
+				}
+				if !rowError {
+					require.NoError(t, writeProbeResponse(w, 0))
+					require.NoError(t, writeProbeResponse(w, 0))
+				}
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				b, transport := newBatchProtocolTest(t, &batchCancelReader{Reader: &input, cancel: cancel})
+				conn := b.st.conn
+				conn.config.Autocommit = true
+				conn.explicitTransaction = explicit
+				tx := &FBTransaction{Connection: conn, Handle: 42}
+				conn.internalTransaction = tx
+				conn.activeTransactions = map[*FBTransaction]struct{}{tx: {}}
+
+				completion, err := b.Execute(ctx, tx)
+
+				require.ErrorIs(t, err, context.Canceled)
+				require.False(t, SafeToRetry(err))
+				require.False(t, conn.IsClosed())
+				require.Equal(t, explicit, conn.ActiveTx())
+				require.Equal(t, !rowError, b.NeedsReset(), "only a completion confirms that execution consumed the queue")
+				require.Equal(t, !rowError, b.HasPending())
+				if rowError {
+					require.NotNil(t, completion)
+					require.Equal(t, []int64{1, -1}, completion.UpdateCounts)
+					require.Len(t, completion.Errors, 1)
+				} else {
+					require.Nil(t, completion)
+					var fbErr *FbError
+					require.ErrorAs(t, err, &fbErr)
+					require.Contains(t, fbErr.GdsCodes, fbproto.Isc_cancelled)
+				}
+				if explicit {
+					require.Equal(t, 12, transport.written.Len(), "must not roll back a caller-owned transaction")
+				} else {
+					require.Equal(t, 20, transport.written.Len())
+					require.EqualValues(t, fbproto.Op_rollback, binary.BigEndian.Uint32(transport.written.Bytes()[12:]))
+				}
+				if !rowError {
+					written := transport.written.Len()
+					require.ErrorContains(t, b.Send(context.Background(), [][]byte{{0, 0, 0, 1}}), "requires Cancel")
+					require.Equal(t, written, transport.written.Len(), "do not append to an uncertain server queue")
+					require.NoError(t, b.Cancel(context.Background()))
+					require.False(t, b.NeedsReset())
+					require.False(t, b.HasPending())
+					require.False(t, b.isClosed())
+				}
+				require.Zero(t, input.Len())
+			})
+		}
+	}
+}
+
+func TestBatchPendingSurvivesCanceledOperation(t *testing.T) {
+	for _, execute := range []bool{false, true} {
+		t.Run(fmt.Sprintf("execute=%t", execute), func(t *testing.T) {
+			var input bytes.Buffer
+			w := fbproto.NewXDRWriter(&input)
+			require.NoError(t, writeProbeResponse(w, 0))
+			require.NoError(t, writeProbeResponse(w, 0))
+			b, transport := newBatchProtocolTest(t, &input)
+			rows := [][]byte{{0, 0, 0, 1}}
+			require.NoError(t, b.Send(context.Background(), rows))
+			written := transport.written.Len()
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+
+			var err error
+			if execute {
+				_, err = b.Execute(ctx, &FBTransaction{Connection: b.st.conn, Handle: 42})
+			} else {
+				err = b.Send(ctx, rows)
+			}
+			require.ErrorIs(t, err, context.Canceled)
+			require.True(t, SafeToRetry(err))
+			require.True(t, b.HasPending())
+			require.False(t, b.NeedsReset())
+			require.Equal(t, written, transport.written.Len())
+		})
+	}
+}
+
+func TestBatchExecuteRejectsInvalidReply(t *testing.T) {
+	for _, reply := range [][]int{
+		{fbproto.Op_batch_cs, 43, 0, 0, 0, 0},
+		{fbproto.Op_batch_cs, 42, 1, -1, 0, 0},
+		{fbproto.Op_batch_cs, 42, 1},
+		{fbproto.Op_response, 0, 0, 0, 0, fbproto.Isc_arg_end},
+	} {
+		t.Run(fmt.Sprint(reply), func(t *testing.T) {
+			var input bytes.Buffer
+			for _, n := range reply {
+				require.NoError(t, fbproto.NewXDRWriter(&input).WriteInt32(n))
+			}
+			b, _ := newBatchProtocolTest(t, &input)
+			completion, err := b.Execute(context.Background(), &FBTransaction{Connection: b.st.conn, Handle: 42})
+			require.Nil(t, completion)
+			require.Error(t, err)
+			require.False(t, SafeToRetry(err))
+			require.True(t, b.st.conn.IsClosed())
+		})
+	}
 }
 
 func TestStatementDeallocateCanceledContextKeepsStatementOpen(t *testing.T) {

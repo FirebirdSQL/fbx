@@ -1,5 +1,7 @@
 package fbproto
 
+import "fmt"
+
 // https://firebirdsql.org/file/documentation/html/en/firebirddocs/wireprotocol/firebird-wire-protocol.html#wireprotocol-batches-execute
 
 type BatchDetailedError struct {
@@ -18,6 +20,12 @@ type OpBatchCompletion struct {
 
 func (op *OpBatchCompletion) Read(x *XDRReader) error {
 	var err error
+
+	// Reuse storage, but grow slices only after successfully reading an element.
+	op.UpdateCounts = op.UpdateCounts[:0]
+	clear(op.DetailedErrors)
+	op.DetailedErrors = op.DetailedErrors[:0]
+	op.SimplifiedErrors = op.SimplifiedErrors[:0]
 
 	// p_batch_statement
 	if op.StatementHandle, err = x.ReadInt32(); err != nil {
@@ -46,24 +54,22 @@ func (op *OpBatchCompletion) Read(x *XDRReader) error {
 	if err != nil {
 		return err
 	}
-
-	if cap(op.UpdateCounts) < updateCountCount {
-		op.UpdateCounts = make([]int, updateCountCount)
-	} else {
-		op.UpdateCounts = op.UpdateCounts[:updateCountCount]
+	if op.TotalRecords < 0 || updateCountCount < 0 || detailedErrorCount < 0 || simplifiedErrorCount < 0 {
+		return fmt.Errorf("invalid batch completion counts: records=%d updates=%d vectors=%d errors=%d",
+			op.TotalRecords, updateCountCount, detailedErrorCount, simplifiedErrorCount)
+	}
+	if updateCountCount > op.TotalRecords || detailedErrorCount > op.TotalRecords ||
+		simplifiedErrorCount > op.TotalRecords-detailedErrorCount {
+		return fmt.Errorf("batch completion counts exceed record count %d", op.TotalRecords)
 	}
 
 	// Update counters
 	for i := 0; i < updateCountCount; i++ {
-		if op.UpdateCounts[i], err = x.ReadInt32(); err != nil {
+		count, err := x.ReadInt32()
+		if err != nil {
 			return err
 		}
-	}
-
-	if cap(op.DetailedErrors) < detailedErrorCount {
-		op.DetailedErrors = make([]BatchDetailedError, detailedErrorCount)
-	} else {
-		op.DetailedErrors = op.DetailedErrors[:detailedErrorCount]
+		op.UpdateCounts = append(op.UpdateCounts, count)
 	}
 
 	// Detailed info
@@ -72,24 +78,26 @@ func (op *OpBatchCompletion) Read(x *XDRReader) error {
 		if err != nil {
 			return err
 		}
+		if row < 0 || row >= op.TotalRecords {
+			return fmt.Errorf("invalid batch error row %d for %d records", row, op.TotalRecords)
+		}
 		sv, err := readStatusVector(x, op.Encoding)
 		if err != nil {
 			return err
 		}
-		op.DetailedErrors[i] = BatchDetailedError{Row: row, Error: sv.toErrorResponse()}
-	}
-
-	if cap(op.SimplifiedErrors) < simplifiedErrorCount {
-		op.SimplifiedErrors = make([]int, simplifiedErrorCount)
-	} else {
-		op.SimplifiedErrors = op.SimplifiedErrors[:simplifiedErrorCount]
+		op.DetailedErrors = append(op.DetailedErrors, BatchDetailedError{Row: row, Error: sv.toErrorResponse()})
 	}
 
 	// Simplified error blocks
 	for i := 0; i < simplifiedErrorCount; i++ {
-		if op.SimplifiedErrors[i], err = x.ReadInt32(); err != nil {
+		row, err := x.ReadInt32()
+		if err != nil {
 			return err
 		}
+		if row < 0 || row >= op.TotalRecords {
+			return fmt.Errorf("invalid batch error row %d for %d records", row, op.TotalRecords)
+		}
+		op.SimplifiedErrors = append(op.SimplifiedErrors, row)
 	}
 
 	return nil
