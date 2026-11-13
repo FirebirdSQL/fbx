@@ -104,7 +104,68 @@ func TestOpBatchCompletionRead(t *testing.T) {
 				require.Equal(t, 1, op.DetailedErrors[0].Row)
 				require.Equal(t, []int{2}, op.SimplifiedErrors)
 			}
+			previous := *op
+			previous.DetailedErrors = append([]BatchDetailedError(nil), op.DetailedErrors...)
+			require.NoError(t, op.Read(NewXDRReader(bytes.NewReader(payload))))
+			require.Equal(t, previous, *op)
+			require.Equal(t, cap(previous.UpdateCounts), cap(op.UpdateCounts))
+			require.Equal(t, cap(previous.DetailedErrors), cap(op.DetailedErrors))
+			require.Equal(t, cap(previous.SimplifiedErrors), cap(op.SimplifiedErrors))
 			require.ErrorIs(t, op.Read(NewXDRReader(bytes.NewReader(payload[:len(payload)-1]))), io.ErrUnexpectedEOF)
+			var empty bytes.Buffer
+			for _, n := range []int{42, 0, 0, 0, 0} {
+				require.NoError(t, NewXDRWriter(&empty).WriteInt32(n))
+			}
+			require.NoError(t, op.Read(NewXDRReader(&empty)))
+			require.Empty(t, op.UpdateCounts)
+			require.Empty(t, op.DetailedErrors)
+			require.Empty(t, op.SimplifiedErrors)
+			require.Equal(t, cap(previous.DetailedErrors), cap(op.DetailedErrors))
+			for _, detail := range op.DetailedErrors[:cap(op.DetailedErrors)] {
+				require.Equal(t, BatchDetailedError{}, detail)
+			}
+		})
+	}
+}
+
+func TestOpBatchCompletionReadTruncated(t *testing.T) {
+	const count = 1 << 20
+	for _, tc := range []struct {
+		name    string
+		counts  []int
+		element []int
+	}{
+		{"updates", []int{count, 0, 0}, []int{1}},
+		{"detailed errors", []int{0, count, 0}, []int{0, Isc_arg_gds, Isc_cancelled, Isc_arg_end}},
+		{"simplified errors", []int{0, 0, count}, []int{0}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var data bytes.Buffer
+			w := NewXDRWriter(&data)
+			for _, n := range append([]int{42, count}, tc.counts...) {
+				require.NoError(t, w.WriteInt32(n))
+			}
+			for _, n := range tc.element {
+				require.NoError(t, w.WriteInt32(n))
+			}
+			for _, size := range []int{20, data.Len() - 1, data.Len()} {
+				var op OpBatchCompletion
+				err := op.Read(NewXDRReader(bytes.NewReader(data.Bytes()[:size])))
+				if size == data.Len()-1 {
+					require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+				} else {
+					require.ErrorIs(t, err, io.EOF)
+				}
+				length := len(op.UpdateCounts) + len(op.DetailedErrors) + len(op.SimplifiedErrors)
+				capacity := cap(op.UpdateCounts) + cap(op.DetailedErrors) + cap(op.SimplifiedErrors)
+				if size == data.Len() {
+					require.Equal(t, 1, length)
+					require.Less(t, capacity, count)
+				} else {
+					require.Zero(t, length)
+					require.Zero(t, capacity)
+				}
+			}
 		})
 	}
 }
