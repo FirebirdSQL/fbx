@@ -1843,26 +1843,30 @@ func (fbConn *FbConn) internalPrepareTx(
 }
 
 // CancelRequest sends a cancel request to the server. It returns an error if unable to deliver the cancel
-// request, but lack of an error does not ensure that the query was canceled. Delivery errors do not close the
-// connection; callers that consider a failed cancel request fatal must close the connection themselves.
+// request, but lack of an error does not ensure that the query was canceled. If setting or clearing a context
+// cancellation deadline fails, the connection is closed. Other delivery errors do not close the connection;
+// callers that consider a failed cancel request fatal must close the connection themselves.
 func (fbConn *FbConn) CancelRequest(ctx context.Context) error {
 	return fbConn.sendCancelOperation(ctx, fbproto.Fb_cancel_raise)
 }
 
-func (fbConn *FbConn) sendCancelOperation(ctx context.Context, kind int) error {
+func (fbConn *FbConn) sendCancelOperation(ctx context.Context, kind int) (err error) {
 	if ctx != context.Background() {
-		contextWatcher := ctxwatch.NewContextWatcher(&DeadlineContextWatcherHandler{Conn: fbConn.conn})
+		handler := &DeadlineContextWatcherHandler{Conn: fbConn.conn}
+		contextWatcher := ctxwatch.NewContextWatcher(handler)
 		contextWatcher.Watch(ctx)
-		defer contextWatcher.Unwatch()
+		defer func() {
+			contextWatcher.Unwatch()
+			if handler.err != nil {
+				fbConn.asyncClose()
+				err = operationerror.Join(err, handler.err)
+			}
+		}()
 	}
 
-	if err := fbConn.withWriteLockAndFlush(func() error {
+	return fbConn.withWriteLockAndFlush(func() error {
 		return fbConn.client.WriteMessage(&fbproto.OpCancel{Kind: kind})
-	}); err != nil {
-		return err
-	}
-
-	return nil
+	})
 }
 
 // ExecImmediate executes statement immediate inside internal transaction
@@ -3268,16 +3272,20 @@ type DeadlineContextWatcherHandler struct {
 
 	// DeadlineDelay is the delay to set on the deadline set on net.Conn when the context is canceled.
 	DeadlineDelay time.Duration
+
+	err error
 }
 
 func (h *DeadlineContextWatcherHandler) HandleCancel(ctx context.Context) {
-	if err := h.Conn.SetDeadline(time.Now().Add(h.DeadlineDelay)); err != nil {
+	h.err = h.Conn.SetDeadline(time.Now().Add(h.DeadlineDelay))
+	if h.err != nil {
 		_ = h.Conn.Close()
 	}
 }
 
 func (h *DeadlineContextWatcherHandler) HandleUnwatchAfterCancel() {
 	if err := h.Conn.SetDeadline(time.Time{}); err != nil {
+		h.err = operationerror.Join(h.err, err)
 		_ = h.Conn.Close()
 	}
 }
