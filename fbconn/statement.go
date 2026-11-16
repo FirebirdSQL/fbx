@@ -432,26 +432,6 @@ func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *
 	return rr
 }
 
-// discardFetchAfterFailedExecute consumes the response to a fetch sent before execute failed.
-// The server normally reports "cursor is not open"; this secondary error must not
-// replace the execute error or reach the connection's error callback.
-func (fbConn *FbConn) discardFetchAfterFailedExecute() error {
-	msg, err := fbConn.peekMessage()
-	if err != nil {
-		return err
-	}
-	fbConn.peekedMsg = nil
-	switch m := msg.(type) {
-	case *fbproto.ErrorResponse:
-		return nil
-	case *fbproto.OpFetchResponse:
-		if m.EndOfCursor() {
-			return nil
-		}
-	}
-	return fmt.Errorf("unexpected response %T to fetch after failed execute", msg)
-}
-
 func (st *Statement) internalClose(ctx context.Context, closeOption int) error {
 	if st.closed {
 		return nil

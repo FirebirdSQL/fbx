@@ -1839,7 +1839,7 @@ func (fbConn *FbConn) internalPrepareTx(
 	st := &Statement{
 		conn:         fbConn,
 		Description:  desc,
-		deferExecute: deferExecute && fbConn.protocolVersion >= fbproto.PROTOCOL_VERSION11 && desc.HaveCursorResult(),
+		deferExecute: deferExecute && fbConn.protocolVersion >= fbproto.PROTOCOL_VERSION11,
 	}
 	if scope == statementScopeTransaction {
 		st.transaction = tx
@@ -2637,6 +2637,26 @@ func (rr *ResultReader) receiveDeferredExecute(fetchSent bool) error {
 	}
 }
 
+// discardFetchAfterFailedExecute consumes the response to a fetch sent before execute failed.
+// The server normally reports "cursor is not open"; this secondary error must not
+// replace the execute error or reach the connection's error callback.
+func (fbConn *FbConn) discardFetchAfterFailedExecute() error {
+	msg, err := fbConn.peekMessage()
+	if err != nil {
+		return err
+	}
+	fbConn.peekedMsg = nil
+	switch m := msg.(type) {
+	case *fbproto.ErrorResponse:
+		return nil
+	case *fbproto.OpFetchResponse:
+		if m.EndOfCursor() {
+			return nil
+		}
+	}
+	return fmt.Errorf("unexpected response %T to fetch after failed execute", msg)
+}
+
 func (rr *ResultReader) finishDeferredExecute() error {
 	if !rr.deferredExecute {
 		return nil
@@ -2764,10 +2784,7 @@ func (rr *ResultReader) clearBufferedFetch() {
 }
 
 func (rr *ResultReader) drainCurrentFetch() {
-	if !rr.cursorOpened || rr.eoc {
-		return
-	}
-	if rr.fetchResp == nil {
+	if !rr.cursorOpened || rr.eoc || rr.fetchResp == nil {
 		return
 	}
 	for rr.fetchResp.MoreRows() {

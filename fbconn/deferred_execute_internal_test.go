@@ -41,7 +41,7 @@ func TestDeferredExecuteFollowsPrepareResponse(t *testing.T) {
 		{"select_with_flag", fbproto.StmtDeferExecute, fbproto.Isc_info_sql_stmt_select, true},
 		{"select_without_flag", 0, fbproto.Isc_info_sql_stmt_select, false},
 		{"select_for_update", fbproto.StmtDeferExecute, fbproto.Isc_info_sql_stmt_select_for_upd, true},
-		{"non_cursor", fbproto.StmtDeferExecute, fbproto.Isc_info_sql_stmt_update, false},
+		{"update_without_flag", 0, fbproto.Isc_info_sql_stmt_update, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var responses bytes.Buffer
