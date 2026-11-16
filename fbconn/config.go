@@ -49,12 +49,18 @@ type Config struct {
 	DPB                        []byte
 	ClientVersion              string
 	DefaultTransactionReadOnly bool
-	Autocommit                 bool
-	BlobBufferSize             int
-	UseStreamBlobs             bool
-	MaxInlineBlobSize          int
-	MaxBlobCacheSize           int
-	FetchBatchSize             int
+	// DefaultTransactionIsolation is "serializable", "repeatable read", or
+	// "read committed". Empty preserves the server default. It applies to
+	// implicit transactions (including autocommit) and transaction APIs called
+	// without an explicit isolation level. Raw TPBs and SQL transaction commands
+	// are passed through unchanged.
+	DefaultTransactionIsolation string
+	Autocommit                  bool
+	BlobBufferSize              int
+	UseStreamBlobs              bool
+	MaxInlineBlobSize           int
+	MaxBlobCacheSize            int
+	FetchBatchSize              int
 
 	// ConstructorOptions allows to pass callbacks for setting parameters to authentication plugins.
 	ConstructorOptions map[string][]auth.ConstructorOption
@@ -336,18 +342,22 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		BuildContextWatcherHandler: func(fbConn *FbConn) ctxwatch.Handler {
 			return &CancelRequestContextWatcherHandler{Conn: fbConn}
 		},
-		OnFbError:                  defaultOnFbError,
-		AuthPluginList:             pluginList,
-		WireCrypt:                  convertToBool(settings["wire_crypt"], true),
-		WireCompression:            convertToBool(settings["wire_compression"], false),
-		SystemUser:                 settings["system_user"],
-		SystemHost:                 settings["system_host"],
-		ClientVersion:              settings["client_version"],
-		Encoding:                   settings["encoding"],
-		DefaultTransactionReadOnly: convertToBool(settings["default_transaction_read_only"], false),
-		Autocommit:                 convertToBool(settings["autocommit"], true),
-		UseStreamBlobs:             convertToBool(settings["use_stream_blobs"], true),
-		FetchBatchSize:             DefaultFetchBatchSize,
+		OnFbError:                   defaultOnFbError,
+		AuthPluginList:              pluginList,
+		WireCrypt:                   convertToBool(settings["wire_crypt"], true),
+		WireCompression:             convertToBool(settings["wire_compression"], false),
+		SystemUser:                  settings["system_user"],
+		SystemHost:                  settings["system_host"],
+		ClientVersion:               settings["client_version"],
+		Encoding:                    settings["encoding"],
+		DefaultTransactionReadOnly:  convertToBool(settings["default_transaction_read_only"], false),
+		DefaultTransactionIsolation: strings.ToLower(strings.TrimSpace(settings["default_transaction_isolation"])),
+		Autocommit:                  convertToBool(settings["autocommit"], true),
+		UseStreamBlobs:              convertToBool(settings["use_stream_blobs"], true),
+		FetchBatchSize:              DefaultFetchBatchSize,
+	}
+	if _, err := defaultTransactionTPB(config.DefaultTransactionIsolation, false); err != nil {
+		return nil, &ParseConfigError{ConnString: connString, msg: "invalid default_transaction_isolation", err: err}
 	}
 	if s, ok := settings["max_inline_blob_size"]; ok {
 		value, err := parsePositiveIntSetting(s)
@@ -415,6 +425,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		"client_version":                {},
 		"encoding":                      {},
 		"default_transaction_read_only": {},
+		"default_transaction_isolation": {},
 		"autocommit":                    {},
 		"blob_buffer_size":              {},
 		"use_stream_blobs":              {},

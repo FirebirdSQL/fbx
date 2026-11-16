@@ -674,6 +674,7 @@ func assertConfigsEqual(t *testing.T, expected, actual *fbconn.Config, testName 
 	assert.Equalf(t, expected.Password, actual.Password, "%s - Password", testName)
 	assert.Equalf(t, expected.ConnectTimeout, actual.ConnectTimeout, "%s - ConnectTimeout", testName)
 	assert.Equalf(t, expected.WireCompression, actual.WireCompression, "%s - WireCompression", testName)
+	assert.Equalf(t, expected.DefaultTransactionIsolation, actual.DefaultTransactionIsolation, "%s - DefaultTransactionIsolation", testName)
 	assert.Equalf(t, expected.RuntimeParams, actual.RuntimeParams, "%s - RuntimeParams", testName)
 	expectedFetchBatchSize := expected.FetchBatchSize
 	if expectedFetchBatchSize == 0 {

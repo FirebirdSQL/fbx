@@ -56,7 +56,11 @@ func (c *Conn) Begin(ctx context.Context) (Tx, error) {
 
 // BeginTx starts a transaction with txOptions determining the transaction mode. Unlike database/sql, the context only
 // affects the begin command. i.e. there is no auto-rollback on context cancellation.
+// An empty IsoLevel uses the connection's DefaultTransactionIsolation setting.
 func (c *Conn) BeginTx(ctx context.Context, txOptions TxOptions) (Tx, error) {
+	if txOptions.IsoLevel == "" {
+		txOptions.IsoLevel = TxIsoLevel(c.config.DefaultTransactionIsolation)
+	}
 	tpb, err := txOptions.GetTPB()
 	if err != nil {
 		return nil, err

@@ -254,6 +254,7 @@ func TestManagerClearsDatabaseOnlyConnectionSettings(t *testing.T) {
 		"host=localhost user=sysdba password=masterkey database=employee " +
 			"create_database=true target_session_attrs=read-write " +
 			"default_transaction_read_only=true application_name=fbservice-test " +
+			"default_transaction_isolation='read committed' " +
 			"autocommit=true blob_buffer_size=1 use_stream_blobs=true " +
 			"max_inline_blob_size=1 max_blob_cache_size=1 fetch_batch_size=1",
 	)
@@ -375,6 +376,7 @@ func requireDatabaseConnectionSettingsCleared(t *testing.T, config *fbconn.Confi
 	require.Empty(t, config.Database)
 	require.False(t, config.CreateDatabase)
 	require.False(t, config.DefaultTransactionReadOnly)
+	require.Empty(t, config.DefaultTransactionIsolation)
 	require.False(t, config.Autocommit)
 	require.Zero(t, config.BlobBufferSize)
 	require.False(t, config.UseStreamBlobs)
