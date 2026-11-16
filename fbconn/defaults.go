@@ -44,24 +44,19 @@ func defaultSettings() map[string]string {
 	return settings
 }
 
-// osUserSettings returns the default system_user derived from the current
+// osUser returns the default system_user derived from the current
 // OS account name. This is independent of the database user.
 //
 // Resolving this requires looking up the OS user account, which can be slow
 // or, in some restricted container environments (e.g. distroless images
 // with a broken NSS/CGO setup), crash the process. Callers must only call
-// osUserSettings when system_user is empty after parsing the connection string.
-func osUserSettings() map[string]string {
-	settings := make(map[string]string)
-
-	// Ignore lookup errors and leave system_user without a default. Applications
-	// can supply system_user explicitly in the connection string.
+// osUser when system_user is empty after parsing the connection string.
+func osUser() (string, error) {
 	user, err := currentOSUser()
-	if err == nil {
-		settings["system_user"] = user.Username
+	if err != nil {
+		return "", err
 	}
-
-	return settings
+	return user.Username, err
 }
 
 func defaultHost() string {

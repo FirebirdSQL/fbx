@@ -43,31 +43,23 @@ func defaultSettings() map[string]string {
 	return settings
 }
 
-// osUserSettings returns the default system_user derived from the current
+// osUser returns the default system_user derived from the current
 // OS account name. This is independent of the database user.
 //
 // Resolving this requires looking up the OS user account, which can be slow
 // or, in some restricted container environments (e.g. distroless images
 // with a broken NSS/CGO setup), crash the process. Callers must only call
-// osUserSettings when system_user is empty after parsing the connection string.
-func osUserSettings() map[string]string {
-	settings := make(map[string]string)
-
-	// Ignore lookup errors and leave system_user without a default. Applications
-	// can supply system_user explicitly in the connection string.
+// osUser when system_user is empty after parsing the connection string.
+func osUser() (string, error) {
 	user, err := currentOSUser()
-	if err == nil {
-		// Windows gives us the username here as `DOMAIN\user` or `LOCALPCNAME\user`,
-		// but we strip off the first part.
-		username := user.Username
-		if strings.Contains(username, "\\") {
-			username = username[strings.LastIndex(username, "\\")+1:]
-		}
-
-		settings["system_user"] = username
+	if err != nil {
+		return "", err
 	}
-
-	return settings
+	username := user.Username
+	if i := strings.LastIndexByte(username, '\\'); i >= 0 {
+		username = username[i+1:]
+	}
+	return username, err
 }
 
 func defaultHost() string {
