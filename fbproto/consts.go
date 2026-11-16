@@ -975,6 +975,11 @@ const (
 	ShutdownModeExDenyNewTransactions ShutdownModeEx = Isc_spb_prp_transactions_shutdown
 )
 
+// Statement flags returned by op_prepare_statement.
+const (
+	StmtDeferExecute = 4 // A cursor's execute response may be deferred.
+)
+
 // op_free_statement p_sqlfree_option
 const (
 	DSQL_close     = 1

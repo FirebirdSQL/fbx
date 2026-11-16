@@ -87,3 +87,12 @@ See documentation and more usage examples at https://pkg.go.dev/github.com/fireb
 
 Wire compression is disabled by default. Enable it with `wire_compression=true` in the connection string
 (`wire_compress` and `wireCompression` are accepted aliases) or with `FBWIRECOMPRESSION=true`.
+
+For cursor queries, the driver automatically uses the server's deferred-execute flag from
+`Prepare`. When supported, `Exec` buffers `Execute`; the first row read sends
+`Execute` and `Fetch` together. A result closed before reading sends `Execute`
+alone and reads its response. Errors from a deferred `Execute` are returned by
+the first row read or close. This saves one network round trip while retaining
+both protocol commands. Servers without this flag use separate requests.
+To reduce the number of later `Fetch` commands, increase `fetch_batch_size`
+(default: 400); larger batches can use more client memory.
