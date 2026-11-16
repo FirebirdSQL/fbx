@@ -112,8 +112,8 @@ are gone, while the failed and unprocessed entries retain their registry/cache
 ownership so cleanup can be retried. If the connection remains open, an error
 must not leave a live handle detached from its old LRU.
 
-Named batches use preparedBatches and have their own execution and transaction
-ownership rules. In particular, a batch prepared through Tx belongs to that
-transaction and is closed when it ends; the ordinary statement rules above do
-not change batch ownership.
+Batch objects created by Conn.PrepareBatch or Tx.PrepareBatch are owned by the
+caller and are not registered in preparedStatements or the LRU. Always call
+PreparedBatch.Close to release their batch and statement handles. A batch
+created through Tx.PrepareBatch cannot execute after that transaction ends.
 */

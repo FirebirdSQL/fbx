@@ -51,6 +51,13 @@
 //
 //	db.QueryRowContext(ctx, "select * from users where id=?", userID)
 //
+// Pass one [fbx.BatchRows] argument to ExecContext to execute a complete batch
+// with default options. This also works with sql.Stmt and sql.Tx. All encoded
+// rows must fit in the server batch buffer; executions are not split into chunks.
+//
+//	db.ExecContext(ctx, "insert into users(id, name) values (?, ?)",
+//		fbx.BatchRows{{1, "Alice"}, {2, "Bob"}})
+//
 // Direct query methods also support named placeholder rewriting through
 // [fbx.NamedArgs]. [sql.Named] names are not interpreted as Firebird
 // placeholder names.
@@ -716,10 +723,10 @@ func (s *Stmt) Close() error {
 	return err
 }
 
-// NumInput implements [driver.Stmt] and reports the number of positional
-// parameters described by Firebird.
+// NumInput leaves argument counting to fbx: Exec accepts either ordinary
+// parameters or one BatchRows argument containing multiple parameter sets.
 func (s *Stmt) NumInput() int {
-	return len(s.sd.Parameters)
+	return -1
 }
 
 // Exec implements [driver.Stmt] using a background context.
