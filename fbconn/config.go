@@ -49,8 +49,9 @@ type Config struct {
 	DPB                        []byte
 	ClientVersion              string
 	DefaultTransactionReadOnly bool
-	// DefaultTransactionIsolation is "serializable", "repeatable read", or
-	// "read committed". Empty preserves the server default. It applies to
+	// DefaultTransactionIsolation is [Serializable], [RepeatableRead], or
+	// [ReadCommitted]. The aliases "repeatable_read" and "read_committed" are
+	// also accepted. Empty preserves the server default. It applies to
 	// implicit transactions (including autocommit) and transaction APIs called
 	// without an explicit isolation level. Raw TPBs and SQL transaction commands
 	// are passed through unchanged.

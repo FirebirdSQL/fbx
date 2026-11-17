@@ -18,6 +18,8 @@ func TestDefaultTransactionTPB(t *testing.T) {
 		{"serializable", []byte{fbproto.Isc_tpb_consistency}},
 		{"repeatable read", []byte{fbproto.Isc_tpb_concurrency}},
 		{"read committed", []byte{fbproto.Isc_tpb_read_committed, fbproto.Isc_tpb_rec_version}},
+		{"repeatable_read", []byte{fbproto.Isc_tpb_concurrency}},
+		{"read_committed", []byte{fbproto.Isc_tpb_read_committed, fbproto.Isc_tpb_rec_version}},
 	} {
 		for _, readOnly := range []bool{false, true} {
 			tpb, err := defaultTransactionTPB(tt.isolation, readOnly)
@@ -47,7 +49,12 @@ func TestParseConfigDefaultTransactionIsolation(t *testing.T) {
 		{"default_transaction_isolation='read committed'", "read committed"},
 		{"default_transaction_isolation=' REPEATABLE READ '", "repeatable read"},
 		{"default_transaction_isolation=serializable", "serializable"},
+		{"default_transaction_isolation=read_committed", "read_committed"},
+		{"default_transaction_isolation=repeatable_read", "repeatable_read"},
+		{"default_transaction_isolation=' READ_COMMITTED '", "read_committed"},
 		{"firebird://localhost/test?default_transaction_isolation=read%20committed", "read committed"},
+		{"firebird://localhost/test?default_transaction_isolation=read_committed", "read_committed"},
+		{"firebird://localhost/test?default_transaction_isolation=repeatable_read", "repeatable_read"},
 	} {
 		t.Run(tt.connString, func(t *testing.T) {
 			config, err := ParseConfig(tt.connString)
@@ -57,7 +64,7 @@ func TestParseConfigDefaultTransactionIsolation(t *testing.T) {
 			require.NotContains(t, config.RuntimeParams, "default_transaction_isolation")
 		})
 	}
-	for _, value := range []string{"read uncommitted", "snapshot", "invalid"} {
+	for _, value := range []string{"read uncommitted", "read_uncommitted", "read__committed", "snapshot", "invalid"} {
 		config, err := ParseConfig("default_transaction_isolation='" + value + "'")
 		require.Nil(t, config)
 		var parseErr *ParseConfigError

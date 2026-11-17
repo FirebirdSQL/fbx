@@ -43,6 +43,24 @@ func TestNormalizeTxLockTimeout(t *testing.T) {
 func TestGetTPB(t *testing.T) {
 	t.Parallel()
 
+	t.Run("isolation aliases preserve transaction options", func(t *testing.T) {
+		for _, tt := range []struct {
+			alias     TxIsoLevel
+			canonical TxIsoLevel
+		}{
+			{"read_committed", ReadCommitted},
+			{"repeatable_read", RepeatableRead},
+		} {
+			for _, accessMode := range []TxAccessMode{"", ReadOnly, ReadWrite} {
+				want, err := (TxOptions{IsoLevel: tt.canonical, AccessMode: accessMode, LockTimeout: 7 * time.Second}).GetTPB()
+				require.NoError(t, err)
+				got, err := (TxOptions{IsoLevel: tt.alias, AccessMode: accessMode, LockTimeout: 7 * time.Second}).GetTPB()
+				require.NoError(t, err)
+				require.Equal(t, want, got, "isolation=%q accessMode=%q", tt.alias, accessMode)
+			}
+		}
+	})
+
 	t.Run("no options means nil tpb", func(t *testing.T) {
 		tpb, err := TxOptions{}.GetTPB()
 		require.NoError(t, err)

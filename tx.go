@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/firebirdsql/fbx/fbconn"
@@ -13,13 +14,14 @@ import (
 )
 
 // TxIsoLevel is the transaction isolation level ([fbx.Serializable], [fbx.RepeatableRead], [fbx.ReadCommitted])
+// The strings "repeatable_read" and "read_committed" are accepted aliases.
 type TxIsoLevel string
 
 // Transaction isolation levels
 const (
-	Serializable   TxIsoLevel = "serializable"
-	RepeatableRead TxIsoLevel = "repeatable read"
-	ReadCommitted  TxIsoLevel = "read committed"
+	Serializable   TxIsoLevel = fbconn.Serializable
+	RepeatableRead TxIsoLevel = fbconn.RepeatableRead
+	ReadCommitted  TxIsoLevel = fbconn.ReadCommitted
 )
 
 // TxAccessMode is the transaction access mode ([fbx.ReadWrite], [fbx.ReadOnly])
@@ -124,7 +126,7 @@ func (txOptions TxOptions) GetTPB() ([]byte, error) {
 	}
 
 	if txOptions.IsoLevel != "" {
-		switch txOptions.IsoLevel {
+		switch TxIsoLevel(strings.ReplaceAll(string(txOptions.IsoLevel), "_", " ")) {
 		case Serializable:
 			tpb.PutTag(fbproto.Isc_tpb_consistency)
 		case RepeatableRead:
