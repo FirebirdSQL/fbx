@@ -346,6 +346,10 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 			return fbproto.NewClient(r, w, encoding)
 		},
 		BuildContextWatcherHandler: func(fbConn *FbConn) ctxwatch.Handler {
+			if fbConn.target == connectTargetService {
+				// op_cancel can end a service with a successful response.
+				return &DeadlineContextWatcherHandler{Conn: fbConn.conn}
+			}
 			return &CancelRequestContextWatcherHandler{Conn: fbConn}
 		},
 		OnFbError:                  defaultOnFbError,

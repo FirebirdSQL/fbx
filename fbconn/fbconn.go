@@ -84,6 +84,8 @@ type FbConn struct {
 
 	config *Config
 
+	target connectTarget
+
 	statusMu         sync.Mutex
 	status           byte // One of connStatus* constants
 	protocolFeatures ProtocolFeatures
@@ -680,6 +682,7 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 ) (*FbConn, error) {
 	fbConn := new(FbConn)
 	fbConn.config = config
+	fbConn.target = target
 	fbConn.eventHost = connectConfig.originalHostname
 	if fbConn.eventHost == "" {
 		fbConn.eventHost = config.Host
