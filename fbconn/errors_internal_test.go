@@ -33,8 +33,8 @@ func TestConnectWithValidateConnectSessionAttributeErrors(t *testing.T) {
 	}{
 		{"read-only connection", ErrReadOnlyConnection, "read only connection"},
 		{"read-write connection", ErrReadWriteConnection, "connection is not read only"},
-		{"primary", ErrPrimary, "not replica"},
-		{"replica", ErrReplica, "not primary"},
+		{"primary", ErrPrimaryConnection, "not replica"},
+		{"replica", ErrReplicaConnection, "not primary"},
 		{"replication not configured", ErrReplicationNotConfigured, "replication is not configured"},
 	}
 
@@ -62,9 +62,9 @@ func TestConnectWithValidateConnectSessionAttributeErrors(t *testing.T) {
 	}
 
 	t.Run("prefer-replica", func(t *testing.T) {
-		err := &NotPreferredError{err: ErrPrimary}
-		require.ErrorIs(t, err, ErrPrimary)
-		require.NotErrorIs(t, err, ErrReplica)
+		err := &NotPreferredError{err: ErrPrimaryConnection}
+		require.ErrorIs(t, err, ErrPrimaryConnection)
+		require.NotErrorIs(t, err, ErrReplicaConnection)
 		require.EqualError(t, err, "standby server not found: not replica")
 	})
 }

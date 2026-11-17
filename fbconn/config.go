@@ -681,9 +681,9 @@ var (
 	// ErrReadWriteConnection is returned when a read-only connection is required but the connection is read-write.
 	ErrReadWriteConnection = errors.New("connection is not read only")
 	// ErrPrimary is returned when a replica connection is required but the connection is primary.
-	ErrPrimary = errors.New("not replica")
+	ErrPrimaryConnection = errors.New("not replica")
 	// ErrReplica is returned when a primary connection is required but the connection is replica.
-	ErrReplica = errors.New("not primary")
+	ErrReplicaConnection = errors.New("not primary")
 	// ErrReplicationNotConfigured is returned when replication not configured on host.
 	ErrReplicationNotConfigured = errors.New("replication is not configured")
 )
@@ -743,7 +743,7 @@ func ValidateConnectTargetSessionAttrsReplica(ctx context.Context, fbConn *FbCon
 	}
 
 	if isPrimary {
-		return ErrPrimary
+		return ErrPrimaryConnection
 	}
 
 	return nil
@@ -759,7 +759,7 @@ func ValidateConnectTargetSessionAttrsPrimary(ctx context.Context, fbConn *FbCon
 	}
 
 	if !isPrimary {
-		return ErrReplica
+		return ErrReplicaConnection
 	}
 
 	return nil
@@ -775,7 +775,7 @@ func ValidateConnectTargetSessionAttrsPreferReplica(ctx context.Context, fbConn 
 	}
 
 	if isPrimary {
-		return &NotPreferredError{err: ErrPrimary}
+		return &NotPreferredError{err: ErrPrimaryConnection}
 	}
 
 	return nil
