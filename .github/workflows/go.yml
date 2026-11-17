@@ -117,7 +117,7 @@ jobs:
           COVERDIR=$(pwd)/reports/${REPORT}
           PACKAGES=$(go list ./... 2> /dev/null | grep -v /vendor/|xargs|tr ' ' ",")
           mkdir -p ${COVERDIR}
-          go run gotest.tools/gotestsum@latest --format testname -- -p 1 ${GOTEST_EXTRA_ARGS} -cover ./... -coverpkg=${PACKAGES} -test.gocoverdir=${COVERDIR}
+          go run gotest.tools/gotestsum@v1.13.0 --format testname -- -p 1 ${GOTEST_EXTRA_ARGS} -cover ./... -coverpkg=${PACKAGES} -test.gocoverdir=${COVERDIR}
 
       - uses: actions/upload-artifact@v7
         with:
@@ -152,10 +152,10 @@ jobs:
             set -e
             mkdir merged
             REPORTS=$(find reports/* -maxdepth 0|xargs|sed 's/ /,/g')
-            go get github.com/boumenot/gocover-cobertura
+            go get github.com/boumenot/gocover-cobertura@v1.5.0
             go tool covdata merge -i=${REPORTS} -o merged
             go tool covdata textfmt -i=merged -o coverage.txt
-            go run github.com/boumenot/gocover-cobertura < coverage.txt > coverage.xml
+            go run github.com/boumenot/gocover-cobertura@v1.5.0 < coverage.txt > coverage.xml
 
       - name: Upload coverage report
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
