@@ -299,7 +299,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 
 	// Fall back to the OS account name when system_user is empty after parsing
 	// the connection string.
-	if settings["system_user"] == "" {
+	if _, ok := settings["system_user"]; !ok {
 		username, err := osUser()
 		// Ignore lookup errors and leave system_user without a default. Applications
 		// can supply system_user explicitly in the connection string.
