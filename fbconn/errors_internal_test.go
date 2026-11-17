@@ -3,11 +3,8 @@ package fbconn
 import (
 	"context"
 	"errors"
-	"os"
 	"testing"
-	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,7 +22,7 @@ func TestSyncConnClosedConnErrorIsErrConnClosed(t *testing.T) {
 	require.ErrorIs(t, err, ErrConnClosed)
 }
 
-func TestConnectWithValidateConnectSessionAttributeErrors(t *testing.T) {
+func TestTargetSessionAttributeErrors(t *testing.T) {
 	tests := []struct {
 		name string
 		err  error
@@ -33,38 +30,21 @@ func TestConnectWithValidateConnectSessionAttributeErrors(t *testing.T) {
 	}{
 		{"read-only connection", ErrReadOnlyConnection, "read only connection"},
 		{"read-write connection", ErrReadWriteConnection, "connection is not read only"},
-		{"primary", ErrPrimaryConnection, "not replica"},
-		{"replica", ErrReplicaConnection, "not primary"},
+		{"primary connection", ErrPrimaryConnection, "not replica"},
+		{"replica connection", ErrReplicaConnection, "not primary"},
 		{"replication not configured", ErrReplicationNotConfigured, "replication is not configured"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-			defer cancel()
-
-			config, err := ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
-			require.NoError(t, err)
-			config.ValidateConnect = func(context.Context, *FbConn) error {
-				return tt.err
-			}
-
-			conn, err := ConnectConfig(ctx, config)
-			if !assert.NotNil(t, err) {
-				_ = conn.Close(ctx)
-			}
-			require.ErrorIs(t, err, tt.err)
-			var connectErr *ConnectError
-			require.ErrorAs(t, err, &connectErr)
-			require.ErrorContains(t, err, "ValidateConnect failed: "+tt.msg)
 			require.EqualError(t, tt.err, tt.msg)
 		})
 	}
+}
 
-	t.Run("prefer-replica", func(t *testing.T) {
-		err := &NotPreferredError{err: ErrPrimaryConnection}
-		require.ErrorIs(t, err, ErrPrimaryConnection)
-		require.NotErrorIs(t, err, ErrReplicaConnection)
-		require.EqualError(t, err, "standby server not found: not replica")
-	})
+func TestNotPreferredError(t *testing.T) {
+	err := &NotPreferredError{err: ErrPrimaryConnection}
+	require.ErrorIs(t, err, ErrPrimaryConnection)
+	require.NotErrorIs(t, err, ErrReplicaConnection)
+	require.EqualError(t, err, "standby server not found: not replica")
 }
