@@ -393,6 +393,33 @@ func TestStmtExec(t *testing.T) {
 	ensureDBValid(t, db)
 }
 
+func TestExecRowsAffectedExecuteBlock(t *testing.T) {
+	db := openDB(t)
+	defer closeDB(t, db)
+
+	tests := []struct {
+		name  string
+		query string
+	}{
+		{"without internal reads", `execute block returns (v integer) as begin
+			v = 1; suspend; v = 2; suspend;
+		end`},
+		{"with internal reads", `execute block returns (v integer) as begin
+			select 1 from rdb$database into :v;
+			suspend; suspend;
+		end`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := db.Exec(tt.query)
+			require.NoError(t, err)
+			affected, err := result.RowsAffected()
+			require.NoError(t, err)
+			assert.EqualValues(t, 2, affected)
+		})
+	}
+}
+
 func TestQueryCloseRowsEarly(t *testing.T) {
 	db := openDB(t)
 	defer closeDB(t, db)

@@ -82,7 +82,7 @@ func (sd *StatementDescription) GetAffectedCount() int64 {
 	if modifiedCount != 0 {
 		return modifiedCount
 	}
-	return sd.StatementInfo.Counts.SelectCount
+	return 0
 }
 
 func (sd *StatementDescription) EncodeBatchRow(values [][]byte) ([]byte, error) {
