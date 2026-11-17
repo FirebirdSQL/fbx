@@ -152,7 +152,6 @@ jobs:
             set -e
             mkdir merged
             REPORTS=$(find reports/* -maxdepth 0|xargs|sed 's/ /,/g')
-            go get github.com/boumenot/gocover-cobertura@v1.5.0
             go tool covdata merge -i=${REPORTS} -o merged
             go tool covdata textfmt -i=merged -o coverage.txt
             go run github.com/boumenot/gocover-cobertura@v1.5.0 < coverage.txt > coverage.xml
