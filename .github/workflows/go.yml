@@ -118,7 +118,6 @@ jobs:
           PACKAGES=$(go list ./... 2> /dev/null | grep -v /vendor/|xargs|tr ' ' ",")
           mkdir -p ${COVERDIR}
           go run gotest.tools/gotestsum@latest --format testname -- -p 1 ${GOTEST_EXTRA_ARGS} -cover ./... -coverpkg=${PACKAGES} -test.gocoverdir=${COVERDIR}
-          ls ${COVERDIR}
 
       - uses: actions/upload-artifact@v7
         with:
@@ -151,8 +150,6 @@ jobs:
         shell: bash
         run: |
             set -e
-            set -x
-            find reports
             mkdir merged
             REPORTS=$(find reports/* -maxdepth 0|xargs|sed 's/ /,/g')
             go get github.com/boumenot/gocover-cobertura
