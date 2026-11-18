@@ -685,6 +685,9 @@ func codecScan(codec Codec, m *Map, typeMetadata TypeMetadata, src []byte, dst a
 // If v already implements sql.Scanner it is returned unchanged. Otherwise v
 // must be a target supported by the Firebird array scan path, such as *[]T,
 // *Array[T], *FlatArray[T], or a compatible array/slice target.
+//
+// As of Go 1.27, [database/sql] calls the driver directly to scan columns when using fbx's stdlib package, so this is
+// no longer necessary.
 func (m *Map) SQLScanner(v any) sql.Scanner {
 	if s, ok := v.(sql.Scanner); ok {
 		return s
