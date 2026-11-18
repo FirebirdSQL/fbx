@@ -320,6 +320,10 @@ type fakeServiceConnection struct {
 	database          string
 	backupFile        string
 	backupOptions     fbconn.BackupOptions
+	nbackupOptions    fbconn.NBackupOptions
+	nrestoreFiles     []string
+	nrestoreOptions   fbconn.NRestoreOptions
+	nfixupOptions     fbconn.NFixupOptions
 	restoreBackupFile string
 	restoreDatabase   string
 	restoreOptions    fbconn.RestoreOptions

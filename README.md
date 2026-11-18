@@ -15,11 +15,11 @@ Firebird values, tracing hooks, and modern Firebird features.
 - Concurrency-safe `fbxpool` connection pool for application workloads, with lifecycle hooks, health checks, configurable ping behavior, acquire tracing, release tracing, and pool statistics
 - URL and keyword/value connection strings, environment variable support, and multi-host fallback configuration
 - Database creation and deletion through `CreateDatabase`, `DropDatabase`, and related config helpers
-- Services manager API for server-side backup, restore, database statistics, gfix maintenance, and trace session management through `fbservice.Manager`, including background streaming with `TraceStartSession` and access to the session ID and completion errors
+- Services manager API for server-side logical and physical backup/restore (nbackup), database statistics, gfix maintenance, and trace session management through `fbservice.Manager`, including background streaming with `TraceStartSession` and access to the session ID and completion errors
 - Firebird `POST_EVENT` subscriptions through `fbevent.Manager`, including one-shot waits, callback listeners, channel subscriptions, and pgx-like notifications
 - Firebird 6 schema-qualified identifiers
 - Prepared statements, statement cache, configurable statement cache size, and configurable query execution mode
-- Batch DML operations through object batches and named batches
+- Batch DML operations through PreparedBatch or Exec with BatchRows
 - Positional `?` parameters plus `NamedArgs` query rewriting
 - Transactions with Firebird TPB support, isolation/access mode options, lock timeout, raw TPB mode, helper functions, and pseudo-nested transactions via savepoints
 - Streaming and lazy BLOB support, text and binary BLOB handling, configurable segment buffer size, stream BLOB mode, inline BLOB size, and inline BLOB cache settings
@@ -87,3 +87,12 @@ See documentation and more usage examples at https://pkg.go.dev/github.com/fireb
 
 Wire compression is disabled by default. Enable it with `wire_compression=true` in the connection string
 (`wire_compress` and `wireCompression` are accepted aliases) or with `FBWIRECOMPRESSION=true`.
+
+For cursor queries, the driver automatically uses the server's deferred-execute flag from
+`Prepare`. When supported, `Exec` buffers `Execute`; the first row read sends
+`Execute` and `Fetch` together. A result closed before reading sends `Execute`
+alone and reads its response. Errors from a deferred `Execute` are returned by
+the first row read or close. This saves one network round trip while retaining
+both protocol commands. Servers without this flag use separate requests.
+To reduce the number of later `Fetch` commands, increase `fetch_batch_size`
+(default: 400); larger batches can use more client memory.

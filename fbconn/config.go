@@ -296,6 +296,18 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 	}
 
 	settings := mergeSettings(defaultSettings, envSettings, connStringSettings)
+
+	// Fall back to the OS account name when system_user is empty after parsing
+	// the connection string.
+	if _, ok := settings["system_user"]; !ok {
+		username, err := osUser()
+		// Ignore lookup errors and leave system_user without a default. Applications
+		// can supply system_user explicitly in the connection string.
+		if err == nil {
+			settings["system_user"] = username
+		}
+	}
+
 	encoding, err := fbproto.NewEncoding(settings["encoding"])
 	if err != nil {
 		return nil, err
@@ -603,6 +615,9 @@ func parseKeywordValueSettings(s string) (map[string]string, error) {
 				}
 				if s[end] == '\\' {
 					end++
+					if end == len(s) {
+						return nil, errors.New("unterminated quoted string in connection info string")
+					}
 				}
 			}
 			if end == len(s) {

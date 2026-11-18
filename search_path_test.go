@@ -751,14 +751,13 @@ func TestPreparedBatchSearchPath(t *testing.T) {
 		assert.Equal(t, 3, countIn(schema1))
 		assert.Equal(t, 2, countIn(schema2))
 
-		_, err = conn.Prepare(ctx, "sp_batch", fmt.Sprintf("batch insert into %s.test(val) values (?)", schema1))
+		pb, err = conn.PrepareBatch(ctx, fmt.Sprintf("insert into %s.test(val) values (?)", schema1))
 		require.NoError(t, err)
-		_, err = conn.Exec(ctx, "sp_batch", 30)
-		require.NoError(t, err)
-		res, err = conn.ExecBatch(ctx, "sp_batch")
+		require.NoError(t, pb.Add(30))
+		res, err = pb.Exec(ctx)
 		require.NoError(t, err)
 		assert.EqualValues(t, 1, res.Affected)
-		require.NoError(t, conn.Deallocate(ctx, "sp_batch"))
+		require.NoError(t, pb.Close(ctx))
 		assert.Equal(t, 4, countIn(schema1))
 
 		ensureConnValid(t, conn)
