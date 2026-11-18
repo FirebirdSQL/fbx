@@ -56,7 +56,9 @@ func (r *Rows) ScanColumn(scanCtx driver.ScanContext, index int, dest any) error
 		return errors.New("destination not a pointer")
 	}
 	rv := reflect.ValueOf(dest)
-	if rv.Kind() == reflect.Pointer && rv.IsNil() {
+	if rv.Kind() == reflect.Pointer &&
+		rv.IsNil() &&
+		!rv.Type().Implements(reflect.TypeFor[sql.Scanner]()) {
 		return errors.New("destination pointer is nil")
 	}
 

@@ -394,7 +394,7 @@ func TestScanPreservesScannerError(t *testing.T) {
 
 func TestScanRejectsNilDestination(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		for _, dest := range []any{nil, (*int64)(nil), (*string)(nil), (*[]int32)(nil), (*sql.NullString)(nil)} {
+		for _, dest := range []any{nil, (*int64)(nil), (*string)(nil), (*[]int32)(nil)} {
 			for _, query := range []string{"select cast(42 as integer) from rdb$database", "select cast(null as integer) from rdb$database"} {
 				err := db.QueryRow(query).Scan(dest)
 				require.Error(t, err)
