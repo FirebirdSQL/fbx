@@ -37,7 +37,7 @@ jobs:
   test:
     runs-on: self-hosted
     container:
-      image: golang:1.26
+      image: golang:${{ matrix.GO_VERSION || '1.26' }}
     strategy:    
       matrix:
         include:
@@ -47,6 +47,10 @@ jobs:
             KIND: "fb"
           - FB_VERSION: "5.0.4.1812-0"
             KIND: "fb"
+          - FB_VERSION: "5.0.4.1812-0"
+            KIND: "fb"
+            GO_VERSION: "1.27"
+            REPORT_SUFFIX: _go1.27
           - RDB_VERSION: "3.0.24"
             RDB_PROJECT: "rdb30"
           - RDB_VERSION: "5.1.6"
@@ -60,7 +64,7 @@ jobs:
     env:
       FB_DOWNLOAD_URL: http://minio.red-soft.biz/3rdparty/firebird/Firebird-${{matrix.FB_VERSION}}-linux-x64.tar.gz
       RDB_DOWNLOAD_URL: http://builds.red-soft.biz/release_hub/${{matrix.RDB_PROJECT}}/${{matrix.RDB_VERSION}}/download/red-database:linux-x86_64-enterprise:${{matrix.RDB_VERSION}}:bin
-      REPORT: ${{matrix.KIND || 'rdb'}}_${{matrix.FB_VERSION}}${{matrix.RDB_VERSION}}
+      REPORT: ${{matrix.KIND || 'rdb'}}_${{matrix.FB_VERSION}}${{matrix.RDB_VERSION}}${{matrix.REPORT_SUFFIX}}
       FBX_TEST_DATABASE: database=employee host=localhost port=3050 user=sysdba password=masterkey
     steps:
       - name: Checkout
@@ -120,8 +124,9 @@ jobs:
           go run gotest.tools/gotestsum@v1.13.0 --format testname -- -p 1 ${GOTEST_EXTRA_ARGS} -cover ./... -coverpkg=${PACKAGES} -test.gocoverdir=${COVERDIR}
 
       - uses: actions/upload-artifact@v7
+        if: matrix.GO_VERSION != '1.27'
         with:
-          name: coverage-${{matrix.KIND || 'rdb'}}_${{matrix.FB_VERSION}}${{matrix.RDB_VERSION}}
+          name: coverage-${{matrix.KIND || 'rdb'}}_${{matrix.FB_VERSION}}${{matrix.RDB_VERSION}}${{matrix.REPORT_SUFFIX}}
           path: ./reports
 
   coverage:
