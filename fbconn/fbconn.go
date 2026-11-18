@@ -3290,7 +3290,8 @@ func (fbConn *FbConn) ensureInternalTransaction(ctx context.Context, tpb []byte,
 }
 
 // StartTransaction starts a transaction not bound to the connection, using
-// its default isolation setting.
+// DefaultTransactionIsolation, or the server's default isolation if the setting
+// is empty.
 func (fbConn *FbConn) StartTransaction(ctx context.Context) (*FBTransaction, error) {
 	tpb, err := defaultTransactionTPB(fbConn.config.DefaultTransactionIsolation, false)
 	if err != nil {

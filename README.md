@@ -88,11 +88,10 @@ See documentation and more usage examples at https://pkg.go.dev/github.com/fireb
 Wire compression is disabled by default. Enable it with `wire_compression=true` in the connection string
 (`wire_compress` and `wireCompression` are accepted aliases) or with `FBWIRECOMPRESSION=true`.
 
-Set `default_transaction_isolation='read committed'` in a keyword/value connection
-string, or `?default_transaction_isolation=read%20committed` in a URL, to choose
-the default transaction isolation. Supported values are `read committed`,
-`repeatable read`, and `serializable`. The aliases `read_committed` and
-`repeatable_read` are also accepted; an empty value preserves the server default.
+Set `default_transaction_isolation=read_committed` in a keyword/value connection
+string, or `?default_transaction_isolation=read_committed` in a URL, to choose
+the default transaction isolation. Supported values are `read_committed`,
+`repeatable_read`, and `serializable`; an empty value preserves the server default.
 The setting also applies to autocommit, `Begin`, and `database/sql` transactions
 using `sql.LevelDefault`. An explicit `TxOptions.IsoLevel` or `sql.TxOptions.Isolation`
 overrides it. Raw TPBs passed to `BeginTxTPB` or `StartTransactionTPB` are unchanged.

@@ -2,7 +2,6 @@ package fbconn
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/firebirdsql/fbx/fbproto"
 )
@@ -10,8 +9,8 @@ import (
 // Transaction isolation levels accepted by Config.DefaultTransactionIsolation.
 const (
 	Serializable   = "serializable"
-	RepeatableRead = "repeatable read"
-	ReadCommitted  = "read committed"
+	RepeatableRead = "repeatable_read"
+	ReadCommitted  = "read_committed"
 )
 
 func defaultTransactionTPB(isolation string, readOnly bool) ([]byte, error) {
@@ -22,7 +21,7 @@ func defaultTransactionTPB(isolation string, readOnly bool) ([]byte, error) {
 	if readOnly {
 		tpb.PutTag(fbproto.Isc_tpb_read)
 	}
-	switch strings.ReplaceAll(isolation, "_", " ") {
+	switch isolation {
 	case "":
 	case Serializable:
 		tpb.PutTag(fbproto.Isc_tpb_consistency)

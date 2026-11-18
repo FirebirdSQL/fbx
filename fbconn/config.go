@@ -50,8 +50,7 @@ type Config struct {
 	ClientVersion              string
 	DefaultTransactionReadOnly bool
 	// DefaultTransactionIsolation is [Serializable], [RepeatableRead], or
-	// [ReadCommitted]. The aliases "repeatable_read" and "read_committed" are
-	// also accepted. Empty preserves the server default. It applies to
+	// [ReadCommitted]. Empty preserves the server default. It applies to
 	// implicit transactions (including autocommit) and transaction APIs called
 	// without an explicit isolation level. Raw TPBs and SQL transaction commands
 	// are passed through unchanged.
@@ -343,22 +342,25 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		BuildContextWatcherHandler: func(fbConn *FbConn) ctxwatch.Handler {
 			return &CancelRequestContextWatcherHandler{Conn: fbConn}
 		},
-		OnFbError:                   defaultOnFbError,
-		AuthPluginList:              pluginList,
-		WireCrypt:                   convertToBool(settings["wire_crypt"], true),
-		WireCompression:             convertToBool(settings["wire_compression"], false),
-		SystemUser:                  settings["system_user"],
-		SystemHost:                  settings["system_host"],
-		ClientVersion:               settings["client_version"],
-		Encoding:                    settings["encoding"],
-		DefaultTransactionReadOnly:  convertToBool(settings["default_transaction_read_only"], false),
-		DefaultTransactionIsolation: strings.ToLower(strings.TrimSpace(settings["default_transaction_isolation"])),
-		Autocommit:                  convertToBool(settings["autocommit"], true),
-		UseStreamBlobs:              convertToBool(settings["use_stream_blobs"], true),
-		FetchBatchSize:              DefaultFetchBatchSize,
+		OnFbError:                  defaultOnFbError,
+		AuthPluginList:             pluginList,
+		WireCrypt:                  convertToBool(settings["wire_crypt"], true),
+		WireCompression:            convertToBool(settings["wire_compression"], false),
+		SystemUser:                 settings["system_user"],
+		SystemHost:                 settings["system_host"],
+		ClientVersion:              settings["client_version"],
+		Encoding:                   settings["encoding"],
+		DefaultTransactionReadOnly: convertToBool(settings["default_transaction_read_only"], false),
+		Autocommit:                 convertToBool(settings["autocommit"], true),
+		UseStreamBlobs:             convertToBool(settings["use_stream_blobs"], true),
+		FetchBatchSize:             DefaultFetchBatchSize,
 	}
-	if _, err := defaultTransactionTPB(config.DefaultTransactionIsolation, false); err != nil {
-		return nil, &ParseConfigError{ConnString: connString, msg: "invalid default_transaction_isolation", err: err}
+	if s, ok := settings["default_transaction_isolation"]; ok {
+		s = strings.ToLower(strings.TrimSpace(s))
+		if _, err := defaultTransactionTPB(s, false); err != nil {
+			return nil, &ParseConfigError{ConnString: connString, msg: "invalid default_transaction_isolation", err: err}
+		}
+		config.DefaultTransactionIsolation = s
 	}
 	if s, ok := settings["max_inline_blob_size"]; ok {
 		value, err := parsePositiveIntSetting(s)
