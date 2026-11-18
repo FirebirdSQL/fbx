@@ -78,7 +78,7 @@ func (sd *StatementDescription) HaveSingletonResult() bool {
 }
 
 func (sd *StatementDescription) GetAffectedCount() int64 {
-	return sd.StatementInfo.Counts.SelectCount + sd.StatementInfo.Counts.InsertCount + sd.StatementInfo.Counts.UpdateCount + sd.StatementInfo.Counts.DeleteCount
+	return sd.StatementInfo.Counts.InsertCount + sd.StatementInfo.Counts.UpdateCount + sd.StatementInfo.Counts.DeleteCount
 }
 
 func (sd *StatementDescription) EncodeBatchRow(values [][]byte) ([]byte, error) {

@@ -104,9 +104,7 @@ begin
 end`, "rows_counts_test", "rows_counts_test", "rows_counts_test"))
 		require.NoError(t, err)
 
-		// Firebird reports counts for all operations inside the block (including internal reads),
-		// so the aggregated RowsAffected should reflect the sum returned by isc_info_sql_records.
-		require.EqualValues(t, 5, ct.RowsAffected())
+		require.EqualValues(t, 3, ct.RowsAffected())
 	})
 }
 

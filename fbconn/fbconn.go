@@ -1546,7 +1546,8 @@ func NewQueryStatus(statementType int, rowsAffected int64) QueryStatus {
 	return QueryStatus{statementType: statementType, rowsAffected: rowsAffected}
 }
 
-// RowsAffected returns the number of rows affected
+// RowsAffected returns the number of rows fetched for cursor statements, or the
+// total number of inserted, updated, and deleted rows for other statements.
 func (ct QueryStatus) RowsAffected() int64 {
 	return ct.rowsAffected
 }
@@ -2419,6 +2420,7 @@ type ResultReader struct {
 	fetchExecuted        bool
 	deferredExecute      bool
 	fetchResp            *fbproto.OpFetchResponse
+	rowsFetched          int64
 	eoc                  bool
 	rowsInfoPopulated    bool
 
@@ -2743,6 +2745,7 @@ func (rr *ResultReader) bufferCurrentFetchRows() bool {
 			panic(fmt.Sprintf("wrong response message type %T instead expected OpFetchResponse or ErrorResponse", m))
 		}
 
+		rr.rowsFetched++
 		for i := 0; i < colCount; i++ {
 			col := make([]byte, 0)
 			if row.RowData[i] == nil {
@@ -2812,6 +2815,7 @@ func (rr *ResultReader) drainCurrentFetch() {
 		default:
 			panic(fmt.Sprintf("wrong response message type %T instead expected OpFetchResponse or ErrorResponse", m))
 		}
+		rr.rowsFetched++
 	}
 	if rr.fetchResp.EndOfCursor() {
 		rr.eoc = true
@@ -2975,6 +2979,10 @@ func (rr *ResultReader) populateRowsAffected() error {
 	}
 
 	rows := rr.statementDescription.GetAffectedCount()
+	if rr.statementDescription.HaveCursorResult() {
+		// SelectCount includes reads inside PSQL and can differ from the rows returned.
+		rows = rr.rowsFetched
+	}
 
 	rr.queryStatus.rowsAffected = rows
 	rr.rowsInfoPopulated = true
