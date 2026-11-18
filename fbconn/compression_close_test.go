@@ -198,9 +198,8 @@ func testSynchronousCloseUnblocksCompressedReadBeforeCleanup(
 
 	select {
 	case err := <-closeDone:
-		require.ErrorIs(t, err, net.ErrClosed)
 		transport.releaseRead()
-		t.Fatal("Close returned while the compressed read was active")
+		t.Fatalf("Close returned while the compressed read was active: %v", err)
 	case <-time.After(20 * time.Millisecond):
 	}
 
