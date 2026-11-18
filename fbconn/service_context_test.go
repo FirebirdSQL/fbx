@@ -16,6 +16,9 @@ import (
 
 func serviceContextCalls() map[string]func(context.Context, *ServiceConn, io.Writer) error {
 	calls := maintenanceOutputCalls()
+	for name, call := range nbackupOutputCalls() {
+		calls[name] = call
+	}
 	calls["backup"] = func(ctx context.Context, c *ServiceConn, output io.Writer) error {
 		return c.Backup(ctx, "db", "backup", BackupOptions{Output: output})
 	}

@@ -66,6 +66,40 @@ Set AccessMode to override the access mode recorded in the backup:
 		AccessMode: fbservice.RestoreAccessModeReadOnly,
 	})
 
+Create a full physical backup, then a level-one incremental backup with NBackup:
+
+	err = manager.NBackup(ctx, database, "/backup/full.nbk")
+	err = manager.NBackup(ctx, database, "/backup/level1.nbk", fbservice.NBackupOptions{
+		Level: 1,
+	})
+
+Restore the files in dependency order into a new database:
+
+	err = manager.NRestore(ctx, []string{"/backup/full.nbk", "/backup/level1.nbk"}, restoredDatabase)
+
+NBackupOptions.GUID selects a previous backup by its RDB$BACKUP_HISTORY GUID
+instead of a level. CleanHistory requires exactly one positive KeepDays or
+KeepRows value. Removing history needed by the next backup can break the chain.
+DirectIO is optional: nil uses the server default and new(false) disables it.
+NRestoreOptions.InPlace explicitly permits applying incremental files to an
+existing database; callers must select the correct base and chain.
+
+NFixup makes a physical database copy in backup mode usable:
+
+	err = manager.NFixup(ctx, copiedDatabase)
+
+Fixup does not merge the delta file and can lose changes if used on the live
+source. Use ALTER DATABASE END BACKUP to unlock the source. NRestore and NFixup
+accept PreserveSequence to retain the original database GUID and replication
+sequence. GUID, InPlace, PreserveSequence and service fixup require Firebird 4+;
+history cleanup requires Firebird 4.0.3+.
+Unsupported options return server errors without a retry. A valid request with
+an already canceled context returns before connecting.
+All three physical operations accept at most one options value; nil Output
+discards service output. Their paths are interpreted by the server.
+On POSIX, non-ASCII paths also depend on the server process locale. Start the
+server with a UTF-8 locale when using Unicode paths.
+
 Collect a gstat report with the same Manager:
 
 	err = manager.Statistics(ctx, database, fbservice.StatisticsOptions{

@@ -15,6 +15,9 @@ const serviceCloseTimeout = 5 * time.Second
 type serviceConnection interface {
 	Backup(context.Context, string, string, fbconn.BackupOptions) error
 	Restore(context.Context, string, string, fbconn.RestoreOptions) error
+	NBackup(context.Context, string, string, fbconn.NBackupOptions) error
+	NRestore(context.Context, []string, string, fbconn.NRestoreOptions) error
+	NFixup(context.Context, string, fbconn.NFixupOptions) error
 	Statistics(context.Context, string, fbconn.StatisticsOptions) error
 	TraceStart(context.Context, string, string, fbconn.TraceOptions) error
 	TraceStop(context.Context, int, fbconn.TraceOptions) error
@@ -35,7 +38,8 @@ type serviceCloser interface {
 
 type connectServiceFunc func(context.Context, *fbconn.ServiceConfig) (serviceConnection, error)
 
-// Manager runs Firebird backup, restore, statistics, trace and database maintenance services.
+// Manager runs Firebird logical and physical backup/restore, statistics, trace
+// and database maintenance services.
 //
 // A Manager is safe for concurrent use. Each service action opens and closes
 // its own service connection. Checked limbo resolution uses two consecutive

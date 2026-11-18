@@ -187,7 +187,6 @@ type Tx interface {
 
 	// Prepare resolves SQL in this transaction and registers the statement on
 	// the connection. The statement remains usable after Commit or Rollback.
-	// Named batches (SQL prefixed with "batch ") belong to this transaction.
 	Prepare(ctx context.Context, name, sql string) (*fbconn.StatementDescription, error)
 	// PrepareBatch creates a batch object inside the transaction.
 	//
@@ -198,17 +197,6 @@ type Tx interface {
 	//
 	// Executing the batch does not commit or roll back the transaction.
 	PrepareBatchWithOptions(ctx context.Context, sql string, opts BatchOptions) (*PreparedBatch, error)
-	// Flush sends queued rows for a named batch without executing it.
-	Flush(ctx context.Context, name string) error
-	// ExecBatch flushes queued rows for a named batch, executes it, and returns
-	// the result.
-	//
-	// ExecBatch does not commit or roll back the transaction.
-	ExecBatch(ctx context.Context, name string) (BatchResult, error)
-	// CancelBatch discards every row queued for a named batch — both the local
-	// buffer and any rows already flushed to the server. The prepared batch
-	// statement is kept and can be reused.
-	CancelBatch(ctx context.Context, name string) error
 
 	Exec(ctx context.Context, sql string, arguments ...any) (commandTag fbconn.QueryStatus, err error)
 	Query(ctx context.Context, sql string, args ...any) (Rows, error)
@@ -250,15 +238,14 @@ func (tx *dbTx) Commit(ctx context.Context) error {
 		return ErrTxClosed
 	}
 
-	cleanupErr := tx.conn.closePreparedBatchesForTx(ctx, tx)
 	err := tx.tx.Commit(ctx)
 	if err != nil {
 		tx.closed = tx.tx.Closed || tx.conn.IsClosed()
-		return operationerror.Join(err, cleanupErr)
+		return err
 	}
 
 	tx.closed = true
-	return operationerror.WithRetry(cleanupErr, false)
+	return nil
 }
 
 // Rollback rolls back the transaction. Rollback will return ErrTxClosed if the
@@ -270,16 +257,15 @@ func (tx *dbTx) Rollback(ctx context.Context) error {
 		return ErrTxClosed
 	}
 
-	cleanupErr := tx.conn.closePreparedBatchesForTx(ctx, tx)
 	err := tx.tx.Rollback(ctx)
 	tx.closed = true
 	if err != nil {
 		// A rollback failure leaves the connection in an undefined state.
 		tx.conn.die()
-		return operationerror.Join(err, cleanupErr)
+		return err
 	}
 
-	return operationerror.WithRetry(cleanupErr, false)
+	return nil
 }
 
 // Exec delegates to the underlying *Conn
@@ -338,34 +324,6 @@ func (tx *dbTx) QueryRow(ctx context.Context, sql string, args ...any) Row {
 
 func (tx *dbTx) Conn() *Conn {
 	return tx.conn
-}
-
-// Flush sends queued rows for a named batch without executing it.
-func (tx *dbTx) Flush(ctx context.Context, name string) error {
-	if tx.closed {
-		return ErrTxClosed
-	}
-	return tx.conn.flushTx(ctx, tx, name)
-}
-
-// ExecBatch flushes queued rows for a named batch, executes it, and returns the result.
-//
-// ExecBatch does not commit or roll back the transaction.
-func (tx *dbTx) ExecBatch(ctx context.Context, name string) (BatchResult, error) {
-	if tx.closed {
-		return BatchResult{}, ErrTxClosed
-	}
-	return tx.conn.execBatchTx(ctx, tx, name)
-}
-
-// CancelBatch discards every row queued for a named batch — both the local
-// buffer and any rows already flushed to the server. The prepared batch
-// statement is kept and can be reused.
-func (tx *dbTx) CancelBatch(ctx context.Context, name string) error {
-	if tx.closed {
-		return ErrTxClosed
-	}
-	return tx.conn.cancelBatchTx(ctx, tx, name)
 }
 
 // dbSimulatedNestedTx represents a simulated nested transaction implemented by a savepoint.
@@ -443,34 +401,6 @@ func (sp *dbSimulatedNestedTx) PrepareBatchWithOptions(ctx context.Context, sql 
 	}
 
 	return sp.tx.PrepareBatchWithOptions(ctx, sql, opts)
-}
-
-// Flush sends queued rows for a named batch without executing it.
-func (sp *dbSimulatedNestedTx) Flush(ctx context.Context, name string) error {
-	if sp.closed {
-		return ErrTxClosed
-	}
-	return sp.tx.Flush(ctx, name)
-}
-
-// ExecBatch flushes queued rows for a named batch, executes it, and returns the result.
-//
-// ExecBatch does not commit or roll back the transaction.
-func (sp *dbSimulatedNestedTx) ExecBatch(ctx context.Context, name string) (BatchResult, error) {
-	if sp.closed {
-		return BatchResult{}, ErrTxClosed
-	}
-	return sp.tx.ExecBatch(ctx, name)
-}
-
-// CancelBatch discards every row queued for a named batch — both the local
-// buffer and any rows already flushed to the server. The prepared batch
-// statement is kept and can be reused.
-func (sp *dbSimulatedNestedTx) CancelBatch(ctx context.Context, name string) error {
-	if sp.closed {
-		return ErrTxClosed
-	}
-	return sp.tx.CancelBatch(ctx, name)
 }
 
 // Query delegates to the underlying Tx

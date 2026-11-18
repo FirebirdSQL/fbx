@@ -93,16 +93,15 @@ func (sd *StatementDescription) EncodeBatchRow(values [][]byte) ([]byte, error) 
 		return nil, err
 	}
 
-	// row := fbproto.AppendRowData(nil, b.sd.StatementInfo.ParametersDescriptors, b.eqb.ParamValues)
-
 	return buf.Bytes(), nil
 }
 
 type Statement struct {
-	conn        *FbConn
-	Description *StatementDescription
-	transaction *FBTransaction
-	closed      bool
+	conn         *FbConn
+	Description  *StatementDescription
+	transaction  *FBTransaction
+	closed       bool
+	deferExecute bool
 
 	// The cursor belongs to the transaction used for execution, which can
 	// differ from transaction or conn.internalTransaction. Nil means no cursor.
@@ -127,8 +126,12 @@ func (st *Statement) SetInlineBlobSize(size int) {
 	st.conn.inlineBlobSize = size
 }
 
+// NewBatch creates a local batch for st without performing network I/O.
+// [Batch.Create], also called by Send and Execute, creates the server batch.
+// A statement may have only one open batch; configuration and initialization
+// errors are reported by Create without sending a request.
 func (st *Statement) NewBatch(cfg BatchConfig) *Batch {
-	b := &Batch{st: st, cfg: cfg.normalize()}
+	b := &Batch{st: st, cfg: cfg}
 	if st.closed {
 		b.err = fmt.Errorf("statement is closed")
 		return b
@@ -137,11 +140,17 @@ func (st *Statement) NewBatch(cfg BatchConfig) *Batch {
 		b.err = fmt.Errorf("batch is already opened for this statement")
 		return b
 	}
+	if err := cfg.validate(); err != nil {
+		b.err = err
+		return b
+	}
 	st.activeBatch = b
 	return b
 }
 
-// Exec executed a prepared statement inside bound transaction
+// Exec executes a prepared statement inside its bound transaction.
+// For a cursor with deferred execution, the server's execute response is read
+// by the first NextRow or Close call.
 //
 // ResultReader must be closed before FbConn can be used again.
 func (st *Statement) Exec(ctx context.Context, paramValues [][]byte) *ResultReader {
@@ -307,7 +316,7 @@ func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *
 	}
 
 	rr.sqlMayHaveExecuted = true
-	if err = st.conn.withWriteLockAndFlush(func() error {
+	writeExecute := func() error {
 		return st.conn.client.WriteMessage(&fbproto.OpExecute{
 			Kind:                  execKind,
 			TransactionHandle:     tx.Handle,
@@ -321,10 +330,31 @@ func (st *Statement) internalExecTx(ctx context.Context, tx *FBTransaction, rr *
 			InlineBlobSize:        st.conn.inlineBlobSize,
 			ProtocolFeatures:      st.conn.protocolFeatures,
 		})
-	}); err != nil {
+	}
+	if st.deferExecute {
+		err = st.conn.withWriteLock(func() error {
+			st.conn.deferredExecutePending.Store(true)
+			if writeErr := writeExecute(); writeErr != nil {
+				st.conn.deferredExecutePending.Store(false)
+				return writeErr
+			}
+			return nil
+		})
+	} else {
+		err = st.conn.withWriteLockAndFlush(writeExecute)
+	}
+	if err != nil {
 		st.conn.asyncClose()
 		rr.concludeCommand(QueryStatus{}, normalizeTimeoutError(ctx, err))
 		rr.closed = true
+		return rr
+	}
+	if st.deferExecute {
+		st.closed = false
+		st.cursorTransaction = tx
+		rr.cursorOpened = true
+		rr.deferredExecute = true
+		rr.queryStatus = st.conn.makeQueryStatus(st.Description.GetQueryType())
 		return rr
 	}
 
