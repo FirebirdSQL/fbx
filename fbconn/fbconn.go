@@ -889,6 +889,7 @@ connectLoop:
 	dpb.PutInt32(fbproto.Isc_dpb_sql_dialect, 3)
 	if config.CreateDatabase {
 		dpb.PutInt32(fbproto.Isc_dpb_set_db_sql_dialect, 3)
+		dpb.PutString(fbproto.Isc_dpb_set_db_charset, config.Encoding)
 	}
 	dpb.PutString(fbproto.Isc_dpb_lc_ctype, config.Encoding)
 	if config.User != "" {
