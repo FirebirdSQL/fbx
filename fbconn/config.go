@@ -694,6 +694,19 @@ func makeConnectTimeoutDialFunc(timeout time.Duration) DialFunc {
 	return d.DialContext
 }
 
+var (
+	// ErrReadOnlyConnection is returned when a read-write connection is required but the connection is read-only.
+	ErrReadOnlyConnection = errors.New("read only connection")
+	// ErrReadWriteConnection is returned when a read-only connection is required but the connection is read-write.
+	ErrReadWriteConnection = errors.New("connection is not read only")
+	// ErrPrimary is returned when a replica connection is required but the connection is primary.
+	ErrPrimaryConnection = errors.New("not replica")
+	// ErrReplica is returned when a primary connection is required but the connection is replica.
+	ErrReplicaConnection = errors.New("not primary")
+	// ErrReplicationNotConfigured is returned when replication not configured on host.
+	ErrReplicationNotConfigured = errors.New("replication is not configured")
+)
+
 // ValidateConnectTargetSessionAttrsReadWrite is a ValidateConnectFunc that implements libpq compatible
 // target_session_attrs=read-write.
 func ValidateConnectTargetSessionAttrsReadWrite(ctx context.Context, fbConn *FbConn) error {
@@ -703,7 +716,7 @@ func ValidateConnectTargetSessionAttrsReadWrite(ctx context.Context, fbConn *FbC
 	}
 
 	if res.Rows[0][0][3] == 1 {
-		return errors.New("read only connection")
+		return ErrReadOnlyConnection
 	}
 
 	return nil
@@ -718,7 +731,7 @@ func ValidateConnectTargetSessionAttrsReadOnly(ctx context.Context, fbConn *FbCo
 	}
 
 	if res.Rows[0][0][3] != 1 {
-		return errors.New("connection is not read only")
+		return ErrReadWriteConnection
 	}
 
 	return nil
@@ -736,7 +749,7 @@ func checkSessionAttrIsPrimary(ctx context.Context, fbConn *FbConn) (bool, error
 		return false, nil
 	}
 
-	return false, errors.New("replication is not configured")
+	return false, ErrReplicationNotConfigured
 }
 
 // ValidateConnectTargetSessionAttrsReplica is a [ValidateConnectFunc] that implements
@@ -749,7 +762,7 @@ func ValidateConnectTargetSessionAttrsReplica(ctx context.Context, fbConn *FbCon
 	}
 
 	if isPrimary {
-		return errors.New("not replica")
+		return ErrPrimaryConnection
 	}
 
 	return nil
@@ -765,7 +778,7 @@ func ValidateConnectTargetSessionAttrsPrimary(ctx context.Context, fbConn *FbCon
 	}
 
 	if !isPrimary {
-		return errors.New("not primary")
+		return ErrReplicaConnection
 	}
 
 	return nil
@@ -781,7 +794,7 @@ func ValidateConnectTargetSessionAttrsPreferReplica(ctx context.Context, fbConn 
 	}
 
 	if isPrimary {
-		return &NotPreferredError{err: errors.New("not replica")}
+		return &NotPreferredError{err: ErrPrimaryConnection}
 	}
 
 	return nil
