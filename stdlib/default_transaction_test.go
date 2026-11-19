@@ -20,8 +20,8 @@ func TestDefaultTransactionIsolation(t *testing.T) {
 	defer cancel()
 	const query = "select mon$isolation_mode, mon$read_only from mon$transactions where mon$transaction_id = current_transaction"
 	for _, mode := range []fbx.QueryExecMode{fbx.QueryExecModeCacheStatement, fbx.QueryExecModeExec} {
-		for _, isolation := range []string{"read_committed", "repeatable_read", "serializable"} {
-			t.Run(mode.String()+"/"+isolation, func(t *testing.T) {
+		for _, isolation := range []fbx.TxIsoLevel{"read_committed", "repeatable_read", "serializable"} {
+			t.Run(mode.String()+"/"+string(isolation), func(t *testing.T) {
 				config, err := fbx.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 				require.NoError(t, err)
 				config.DefaultTransactionIsolation = isolation
@@ -29,7 +29,7 @@ func TestDefaultTransactionIsolation(t *testing.T) {
 				db := stdlib.OpenDB(*config)
 				defer closeDB(t, db)
 				db.SetMaxOpenConns(1)
-				want := map[string]int{"read_committed": 4, "repeatable_read": 1, "serializable": 0}[isolation]
+				want := map[fbx.TxIsoLevel]int{"read_committed": 4, "repeatable_read": 1, "serializable": 0}[isolation]
 				if isolation == "read_committed" && getServerMajorVersion(t, db) <= 3 {
 					want = 2
 				}

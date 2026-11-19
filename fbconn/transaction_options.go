@@ -6,14 +6,17 @@ import (
 	"github.com/firebirdsql/fbx/fbproto"
 )
 
-// Transaction isolation levels accepted by Config.DefaultTransactionIsolation.
+// TxIsoLevel is the transaction isolation level ([Serializable], [RepeatableRead], [ReadCommitted]).
+type TxIsoLevel string
+
+// Transaction isolation levels.
 const (
-	Serializable   = "serializable"
-	RepeatableRead = "repeatable_read"
-	ReadCommitted  = "read_committed"
+	Serializable   TxIsoLevel = "serializable"
+	RepeatableRead TxIsoLevel = "repeatable_read"
+	ReadCommitted  TxIsoLevel = "read_committed"
 )
 
-func defaultTransactionTPB(isolation string, readOnly bool) ([]byte, error) {
+func defaultTransactionTPB(isolation TxIsoLevel, readOnly bool) ([]byte, error) {
 	if isolation == "" && !readOnly {
 		return nil, nil
 	}

@@ -11,7 +11,7 @@ import (
 
 func TestDefaultTransactionTPB(t *testing.T) {
 	for _, tt := range []struct {
-		isolation string
+		isolation TxIsoLevel
 		tags      []byte
 	}{
 		{"", nil},
@@ -33,7 +33,7 @@ func TestDefaultTransactionTPB(t *testing.T) {
 			require.Equal(t, expected, tpb, "isolation=%q readOnly=%t", tt.isolation, readOnly)
 		}
 	}
-	for _, isolation := range []string{"invalid", "read committed", "repeatable read"} {
+	for _, isolation := range []TxIsoLevel{"invalid", "read committed", "repeatable read"} {
 		_, err := defaultTransactionTPB(isolation, false)
 		require.Error(t, err, "isolation=%q", isolation)
 	}
@@ -42,17 +42,22 @@ func TestDefaultTransactionTPB(t *testing.T) {
 func TestParseConfigDefaultTransactionIsolation(t *testing.T) {
 	for _, tt := range []struct {
 		connString string
-		isolation  string
+		isolation  TxIsoLevel
 	}{
 		{"", ""},
 		{"default_transaction_isolation=''", ""},
+		{"default_transaction_isolation='   '", ""},
 		{"default_transaction_isolation=' REPEATABLE_READ '", "repeatable_read"},
+		{"default_transaction_isolation=' REPEATABLE READ '", "repeatable_read"},
+		{"default_transaction_isolation='read committed'", "read_committed"},
 		{"default_transaction_isolation=serializable", "serializable"},
 		{"default_transaction_isolation=read_committed", "read_committed"},
 		{"default_transaction_isolation=repeatable_read", "repeatable_read"},
 		{"default_transaction_isolation=' READ_COMMITTED '", "read_committed"},
 		{"firebird://localhost/test?default_transaction_isolation=read_committed", "read_committed"},
 		{"firebird://localhost/test?default_transaction_isolation=repeatable_read", "repeatable_read"},
+		{"firebird://localhost/test?default_transaction_isolation=read%20committed", "read_committed"},
+		{"firebird://localhost/test?default_transaction_isolation=repeatable%20read", "repeatable_read"},
 	} {
 		t.Run(tt.connString, func(t *testing.T) {
 			config, err := ParseConfig(tt.connString)
@@ -62,7 +67,7 @@ func TestParseConfigDefaultTransactionIsolation(t *testing.T) {
 			require.NotContains(t, config.RuntimeParams, "default_transaction_isolation")
 		})
 	}
-	for _, value := range []string{"read committed", "repeatable read", "read uncommitted", "read_uncommitted", "read__committed", "snapshot", "invalid"} {
+	for _, value := range []string{"read uncommitted", "read_uncommitted", "read__committed", "read  committed", "snapshot", "invalid"} {
 		config, err := ParseConfig("default_transaction_isolation='" + value + "'")
 		require.Nil(t, config)
 		var parseErr *ParseConfigError
@@ -72,8 +77,8 @@ func TestParseConfigDefaultTransactionIsolation(t *testing.T) {
 }
 
 func TestConnectRejectsInvalidDefaultTransactionIsolation(t *testing.T) {
-	for _, isolation := range []string{"invalid", "read committed", "repeatable read"} {
-		t.Run(isolation, func(t *testing.T) {
+	for _, isolation := range []TxIsoLevel{"invalid", "read committed", "repeatable read"} {
+		t.Run(string(isolation), func(t *testing.T) {
 			config, err := ParseConfig("")
 			require.NoError(t, err)
 			config.DefaultTransactionIsolation = isolation

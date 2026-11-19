@@ -25,7 +25,7 @@ func TestDefaultTransactionIsolation(t *testing.T) {
 			t.Run(fmt.Sprintf("%s/autocommit=%t", isolation, autocommit), func(t *testing.T) {
 				config, err := fbx.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
 				require.NoError(t, err)
-				config.DefaultTransactionIsolation = string(isolation)
+				config.DefaultTransactionIsolation = isolation
 				config.DefaultTransactionReadOnly = true
 				config.Autocommit = autocommit
 				conn := mustConnect(t, config)

@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/firebirdsql/fbx/fbconn"
 	"github.com/firebirdsql/fbx/fbproto"
 	"github.com/stretchr/testify/require"
 )
@@ -74,7 +75,7 @@ func TestGetTPB(t *testing.T) {
 	})
 
 	t.Run("isolation only defaults to read write", func(t *testing.T) {
-		tpb, err := TxOptions{IsoLevel: RepeatableRead}.GetTPB()
+		tpb, err := TxOptions{IsoLevel: fbconn.RepeatableRead}.GetTPB()
 		require.NoError(t, err)
 		require.Equal(t, []byte{
 			fbproto.Isc_tpb_version3,

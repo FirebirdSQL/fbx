@@ -50,11 +50,13 @@ type Config struct {
 	ClientVersion              string
 	DefaultTransactionReadOnly bool
 	// DefaultTransactionIsolation is [Serializable], [RepeatableRead], or
-	// [ReadCommitted]. Empty preserves the server default. It applies to
+	// [ReadCommitted]. Connection strings also accept "repeatable read" and
+	// "read committed", normalized to the corresponding constants.
+	// Empty preserves the server default. It applies to
 	// implicit transactions (including autocommit) and transaction APIs called
 	// without an explicit isolation level. Raw TPBs and SQL transaction commands
 	// are passed through unchanged.
-	DefaultTransactionIsolation string
+	DefaultTransactionIsolation TxIsoLevel
 	Autocommit                  bool
 	BlobBufferSize              int
 	UseStreamBlobs              bool
@@ -356,11 +358,11 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		FetchBatchSize:             DefaultFetchBatchSize,
 	}
 	if s, ok := settings["default_transaction_isolation"]; ok {
-		s = strings.ToLower(strings.TrimSpace(s))
-		if _, err := defaultTransactionTPB(s, false); err != nil {
+		isolation := TxIsoLevel(strings.ReplaceAll(strings.ToLower(strings.TrimSpace(s)), " ", "_"))
+		if _, err := defaultTransactionTPB(isolation, false); err != nil {
 			return nil, &ParseConfigError{ConnString: connString, msg: "invalid default_transaction_isolation", err: err}
 		}
-		config.DefaultTransactionIsolation = s
+		config.DefaultTransactionIsolation = isolation
 	}
 	if s, ok := settings["max_inline_blob_size"]; ok {
 		value, err := parsePositiveIntSetting(s)

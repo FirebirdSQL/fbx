@@ -91,13 +91,16 @@ Wire compression is disabled by default. Enable it with `wire_compression=true` 
 Set `default_transaction_isolation=read_committed` in a keyword/value connection
 string, or `?default_transaction_isolation=read_committed` in a URL, to choose
 the default transaction isolation. Supported values are `read_committed`,
-`repeatable_read`, and `serializable`; an empty value preserves the server default.
+`repeatable_read`, and `serializable`. In connection strings, the aliases
+`read committed` and `repeatable read` are also accepted and normalized to the
+underscore values; an empty value preserves the server default.
 The setting also applies to autocommit, `Begin`, and `database/sql` transactions
 using `sql.LevelDefault`. An explicit `TxOptions.IsoLevel` or `sql.TxOptions.Isolation`
 overrides it. Raw TPBs passed to `BeginTxTPB` or `StartTransactionTPB` are unchanged.
 SQL `SET TRANSACTION` statements use the options in the SQL and server defaults
 for any omitted options.
-The same setting is available as `Config.DefaultTransactionIsolation`.
+The same setting is available as `Config.DefaultTransactionIsolation`, using
+`fbconn.TxIsoLevel` and its constants (`fbx.TxIsoLevel` is an alias).
 
 For cursor queries, the driver automatically uses the server's deferred-execute flag from
 `Prepare`. When supported, `Exec` buffers `Execute`; the first row read sends

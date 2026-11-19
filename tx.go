@@ -13,13 +13,13 @@ import (
 )
 
 // TxIsoLevel is the transaction isolation level ([fbx.Serializable], [fbx.RepeatableRead], [fbx.ReadCommitted]).
-type TxIsoLevel string
+type TxIsoLevel = fbconn.TxIsoLevel
 
 // Transaction isolation levels
 const (
-	Serializable   TxIsoLevel = fbconn.Serializable
-	RepeatableRead TxIsoLevel = fbconn.RepeatableRead
-	ReadCommitted  TxIsoLevel = fbconn.ReadCommitted
+	Serializable   = fbconn.Serializable
+	RepeatableRead = fbconn.RepeatableRead
+	ReadCommitted  = fbconn.ReadCommitted
 )
 
 // TxAccessMode is the transaction access mode ([fbx.ReadWrite], [fbx.ReadOnly])
@@ -61,7 +61,7 @@ func (c *Conn) Begin(ctx context.Context) (Tx, error) {
 // or the server's default isolation if that setting is empty.
 func (c *Conn) BeginTx(ctx context.Context, txOptions TxOptions) (Tx, error) {
 	if txOptions.IsoLevel == "" {
-		txOptions.IsoLevel = TxIsoLevel(c.config.DefaultTransactionIsolation)
+		txOptions.IsoLevel = c.config.DefaultTransactionIsolation
 	}
 	tpb, err := txOptions.GetTPB()
 	if err != nil {
