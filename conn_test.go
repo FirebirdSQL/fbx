@@ -79,6 +79,54 @@ func TestCreateDatabase(t *testing.T) {
 	assert.Equal(t, int32(1), result)
 }
 
+func TestCreateDatabaseWithPageSize(t *testing.T) {
+	t.Parallel()
+
+	for _, pageSize := range []int{8192, 16384} {
+		t.Run(fmt.Sprintf("%d", pageSize), func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+			defer cancel()
+
+			config := newCreateDatabaseTestConfig(t, "page-size.fdb")
+			config.PageSize = pageSize
+
+			conn, err := fbx.CreateDatabaseConfig(ctx, config)
+			require.NoError(t, err)
+			defer closeConn(t, conn)
+
+			var actualPageSize int
+			err = conn.QueryRow(ctx, "select mon$page_size from mon$database").Scan(&actualPageSize)
+			require.NoError(t, err)
+			assert.Equal(t, pageSize, actualPageSize)
+		})
+	}
+}
+
+func TestCreateDatabaseWithInvalidPageSize(t *testing.T) {
+	t.Parallel()
+
+	for _, pageSize := range []int{-1, 12345, 65536} {
+		t.Run(fmt.Sprintf("%d", pageSize), func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+			defer cancel()
+
+			config := newCreateDatabaseTestConfig(t, "invalid-page-size.fdb")
+			config.PageSize = pageSize
+
+			conn, err := fbx.CreateDatabaseConfig(ctx, config)
+			require.ErrorContains(t, err, "only the following values are accepted")
+			require.Nil(t, conn)
+
+			_, err = os.Stat(config.Database)
+			require.ErrorIs(t, err, os.ErrNotExist)
+		})
+	}
+}
+
 func TestDropDatabase(t *testing.T) {
 	t.Parallel()
 
