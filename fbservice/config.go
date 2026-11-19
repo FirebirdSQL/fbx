@@ -141,6 +141,7 @@ func scrubDatabaseConnectionSettings(config *fbconn.Config) {
 	config.Database = ""
 	config.CreateDatabase = false
 	config.DefaultTransactionReadOnly = false
+	config.DefaultTransactionIsolation = ""
 	config.Autocommit = false
 	config.BlobBufferSize = 0
 	config.UseStreamBlobs = false
