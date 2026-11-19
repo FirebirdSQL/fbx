@@ -86,7 +86,7 @@ func TestCreateDatabaseDefaultEncoding(t *testing.T) {
 	defer cancel()
 
 	config := newCreateDatabaseTestConfig(t, "default-encoding.fdb")
-	config.Encoding = mustParseConfig(t, "").Encoding
+	config.SetDbCharset = mustParseConfig(t, "").SetDbCharset
 
 	conn, err := fbx.CreateDatabaseConfig(ctx, config)
 	require.NoError(t, err)
@@ -109,7 +109,7 @@ func TestCreateDatabaseWithEncoding(t *testing.T) {
 			defer cancel()
 
 			config := newCreateDatabaseTestConfig(t, "with-encoding.fdb")
-			config.Encoding = encoding
+			config.SetDbCharset = encoding
 
 			conn, err := fbx.CreateDatabaseConfig(ctx, config)
 			require.NoError(t, err)

@@ -44,8 +44,11 @@ type Config struct {
 	WireCrypt      bool
 	// WireCompression requests zlib wire compression.
 	// The connection remains uncompressed if the server declines the request.
-	WireCompression            bool
-	Encoding                   string
+	WireCompression bool
+	Encoding        string
+	// Stores the character set that should be passed when creating the database.
+	// Default value is UTF8.
+	SetDbCharset               string
 	DPB                        []byte
 	ClientVersion              string
 	DefaultTransactionReadOnly bool
@@ -356,6 +359,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		SystemHost:                 settings["system_host"],
 		ClientVersion:              settings["client_version"],
 		Encoding:                   settings["encoding"],
+		SetDbCharset:               settings["set_db_charset"],
 		DefaultTransactionReadOnly: convertToBool(settings["default_transaction_read_only"], false),
 		Autocommit:                 convertToBool(settings["autocommit"], true),
 		UseStreamBlobs:             convertToBool(settings["use_stream_blobs"], true),
@@ -426,6 +430,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		"system_host":                   {},
 		"client_version":                {},
 		"encoding":                      {},
+		"set_db_charset":                {},
 		"default_transaction_read_only": {},
 		"autocommit":                    {},
 		"blob_buffer_size":              {},

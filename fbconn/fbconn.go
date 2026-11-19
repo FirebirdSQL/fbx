@@ -889,7 +889,12 @@ connectLoop:
 	dpb.PutInt32(fbproto.Isc_dpb_sql_dialect, 3)
 	if config.CreateDatabase {
 		dpb.PutInt32(fbproto.Isc_dpb_set_db_sql_dialect, 3)
-		dpb.PutString(fbproto.Isc_dpb_set_db_charset, config.Encoding)
+		_, err := fbproto.NewEncoding(config.SetDbCharset)
+		if err != nil {
+			_ = fbConn.conn.Close()
+			return nil, newPerDialConnectError("database creation error", err)
+		}
+		dpb.PutString(fbproto.Isc_dpb_set_db_charset, config.SetDbCharset)
 	}
 	dpb.PutString(fbproto.Isc_dpb_lc_ctype, config.Encoding)
 	if config.User != "" {
