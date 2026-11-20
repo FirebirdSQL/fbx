@@ -522,6 +522,41 @@ func TestParseConfigWireCompression(t *testing.T) {
 	}
 }
 
+func TestParseConfigPageSize(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		value   string
+		want    int
+		wantErr bool
+	}{
+		{value: "4096", want: 4096},
+		{value: "8192", want: 8192},
+		{value: "16384", want: 16384},
+		{value: "32768", want: 32768},
+		{value: "12345", wantErr: true},
+		{value: "invalid", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		for _, connString := range []string{
+			"page_size=" + tt.value,
+			"firebird://localhost/testdb?page_size=" + tt.value,
+		} {
+			t.Run(connString, func(t *testing.T) {
+				config, err := fbconn.ParseConfig(connString)
+				if tt.wantErr {
+					require.Error(t, err)
+					return
+				}
+
+				require.NoError(t, err)
+				assert.Equal(t, tt.want, config.PageSize)
+			})
+		}
+	}
+}
+
 func TestParseConfigKVTrailingWhitespace(t *testing.T) {
 	config, err := fbconn.ParseConfig("host=localhost port=3050 database=testdb   \t\n")
 	require.NoError(t, err)

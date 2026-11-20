@@ -8,6 +8,7 @@ import (
 	"math"
 	"net"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -58,6 +59,10 @@ type Config struct {
 	MaxInlineBlobSize          int
 	MaxBlobCacheSize           int
 	FetchBatchSize             int
+
+	// PageSize specifies the requested database page size in bytes.
+	// Zero leaves the page size unspecified.
+	PageSize int
 
 	// ConstructorOptions allows to pass callbacks for setting parameters to authentication plugins.
 	ConstructorOptions map[string][]auth.ConstructorOption
@@ -369,6 +374,16 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		UseStreamBlobs:             convertToBool(settings["use_stream_blobs"], true),
 		FetchBatchSize:             DefaultFetchBatchSize,
 	}
+	if s, ok := settings["page_size"]; ok {
+		value, err := parsePositiveIntSetting(s)
+		if err != nil {
+			return nil, &ParseConfigError{ConnString: connString, msg: "invalid page_size", err: err}
+		}
+		if !isValidPageSize(value) {
+			return nil, &ParseConfigError{ConnString: connString, msg: "invalid page_size", err: errInvalidPageSize}
+		}
+		config.PageSize = value
+	}
 	if s, ok := settings["max_inline_blob_size"]; ok {
 		value, err := parsePositiveIntSetting(s)
 		if err != nil {
@@ -443,6 +458,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		"max_blob_cache_size":           {},
 		"fetch_batch_size":              {},
 		"target_session_attrs":          {},
+		"page_size":                     {},
 	}
 
 	for k, v := range settings {
@@ -798,4 +814,11 @@ func convertToBool(s string, defaultValue bool) bool {
 		v = defaultValue
 	}
 	return v
+}
+
+var validPageSizeValues = []int{4096, 8192, 16384, 32768}
+var errInvalidPageSize = fmt.Errorf("only the following values are accepted: %v", validPageSizeValues)
+
+func isValidPageSize(size int) bool {
+	return slices.Contains(validPageSizeValues, size)
 }
