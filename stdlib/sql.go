@@ -47,9 +47,15 @@
 //	}
 //	db := stdlib.OpenDB(*connConfig)
 //
-// Firebird parameters are positional and use question mark placeholders:
+// Firebird parameters are positional and use question mark placeholders.
+// Call [sql.Row.Scan] on the row returned by QueryRow or QueryRowContext to
+// read the first row and close the result.
 //
-//	db.QueryRowContext(ctx, "select * from users where id=?", userID)
+//	var name string
+//	err = db.QueryRowContext(ctx, "select name from users where id=?", userID).Scan(&name)
+//
+// When iterating over [sql.Rows], call [sql.Rows.Close] if you leave the loop
+// early, including after a conversion error from [sql.Rows.Scan].
 //
 // Pass one [fbx.BatchRows] argument to ExecContext to execute a complete batch
 // with default options. This also works with sql.Stmt and sql.Tx. All encoded
@@ -62,7 +68,7 @@
 // [fbx.NamedArgs]. [sql.Named] names are not interpreted as Firebird
 // placeholder names.
 //
-//	db.QueryRowContext(ctx, "select * from users where id=@id", fbx.NamedArgs{"id": userID})
+//	err = db.QueryRowContext(ctx, "select name from users where id=@id", fbx.NamedArgs{"id": userID}).Scan(&name)
 //
 // [sql.Conn.Raw] exposes the underlying [fbx.Conn] for the duration of its
 // callback. The underlying connection must not be retained after the callback

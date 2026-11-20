@@ -199,7 +199,10 @@ type Tx interface {
 	PrepareBatchWithOptions(ctx context.Context, sql string, opts BatchOptions) (*PreparedBatch, error)
 
 	Exec(ctx context.Context, sql string, arguments ...any) (commandTag fbconn.QueryStatus, err error)
+	// Query works like [Conn.Query] within this transaction.
 	Query(ctx context.Context, sql string, args ...any) (Rows, error)
+	// QueryRow works like [Conn.QueryRow] within this transaction. Call [Row.Scan]
+	// to close the result. Finish the transaction with [Tx.Commit] or [Tx.Rollback].
 	QueryRow(ctx context.Context, sql string, args ...any) Row
 
 	// Conn returns the underlying *Conn that on which this transaction is executing.

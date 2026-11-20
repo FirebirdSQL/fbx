@@ -754,7 +754,9 @@ func (p *Pool) Exec(ctx context.Context, sql string, arguments ...any) (fbconn.Q
 
 // Query acquires a connection and executes a query that returns fbx.Rows.
 // Arguments should be referenced positionally from the SQL string as $1, $2, etc.
-// See fbx.Rows documentation to close the returned Rows and return the acquired connection to the Pool.
+// Closing the returned [fbx.Rows] releases the connection. The rows close when
+// [fbx.Rows.Next] returns false or when [fbx.Rows.Scan] or [fbx.Rows.Values]
+// returns an error. Call [fbx.Rows.Close] if you stop reading early.
 //
 // If there is an error, the returned fbx.Rows will be returned in an error state.
 // If preferred, ignore the error returned from Query and handle errors using the returned fbx.Rows.
@@ -773,12 +775,10 @@ func (p *Pool) Query(ctx context.Context, sql string, args ...any) (fbx.Rows, er
 	return c.getPoolRows(rows), nil
 }
 
-// QueryRow acquires a connection and executes a query that is expected
-// to return at most one row (fbx.Row). Errors are deferred until fbx.Row's
-// Scan method is called. If the query selects no rows, fbx.Row's Scan will
-// return ErrNoRows. Otherwise, fbx.Row's Scan scans the first selected row
-// and discards the rest. The acquired connection is returned to the Pool when
-// fbx.Row's Scan method is called.
+// QueryRow acquires a connection and runs [fbx.Conn.QueryRow]. Call [fbx.Row.Scan]
+// on the returned row. Scan reads the first row, discards any remaining rows,
+// and reports query errors, including [fbx.ErrNoRows] for an empty result.
+// Scan closes the result and releases the connection before returning, even on error.
 //
 // Arguments should be referenced positionally from the SQL string as $1, $2, etc.
 func (p *Pool) QueryRow(ctx context.Context, sql string, args ...any) fbx.Row {

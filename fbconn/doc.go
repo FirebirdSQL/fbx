@@ -11,7 +11,8 @@ environment (see ParseConfig for supported environment variables and parameters)
 Executing a Statement
 
 Exec and ExecParams execute a single SQL statement and return a ResultReader that iterates over rows.
-Call Close on the ResultReader before reusing the connection. The Read method reads the entire result into memory.
+After iterating with [ResultReader.NextRow], call [ResultReader.Close] before reusing the connection.
+[ResultReader.Read] reads the entire result into memory and closes the reader.
 
 Prepared Statements
 

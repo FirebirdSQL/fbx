@@ -100,6 +100,9 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) (fbx.Rows, er
 	return c.Conn().Query(ctx, sql, args...)
 }
 
+// QueryRow runs [fbx.Conn.QueryRow] on this connection. Call [fbx.Row.Scan] to
+// close the result. If you acquired the connection with [Pool.Acquire], call
+// [Conn.Release] when finished with it.
 func (c *Conn) QueryRow(ctx context.Context, sql string, args ...any) fbx.Row {
 	return c.Conn().QueryRow(ctx, sql, args...)
 }
