@@ -24,6 +24,7 @@ func defaultSettings() map[string]string {
 	settings["wire_crypt"] = "true"
 	settings["wire_compression"] = "false"
 	settings["encoding"] = "UTF8"
+	settings["set_db_charset"] = "UTF8"
 	settings["blob_buffer_size"] = "16384"
 	settings["use_stream_blobs"] = "true"
 	settings["max_inline_blob_size"] = "65536"
