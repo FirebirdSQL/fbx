@@ -250,6 +250,12 @@ func connectConfig(ctx context.Context, config *Config, target connectTarget) (*
 
 	var allErrors []error
 
+	if config.CreateDatabase &&
+		!isValidPageSize(config.PageSize) &&
+		config.PageSize != 0 {
+		return nil, errInvalidPageSize
+	}
+
 	connectConfigs, errs := buildConnectOneConfigs(ctx, config)
 	if len(errs) > 0 {
 		allErrors = append(allErrors, errs...)
@@ -889,10 +895,6 @@ connectLoop:
 	dpb.PutInt32(fbproto.Isc_dpb_sql_dialect, 3)
 	if config.CreateDatabase {
 		dpb.PutInt32(fbproto.Isc_dpb_set_db_sql_dialect, 3)
-		if !isValidPageSize(config.PageSize) && config.PageSize != 0 {
-			_ = fbConn.conn.Close()
-			return nil, newPerDialConnectError("database creation error", errInvalidPageSize)
-		}
 		if config.PageSize > 0 {
 			dpb.PutInt32(fbproto.Isc_dpb_page_size, int32(config.PageSize))
 		}
