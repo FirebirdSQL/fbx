@@ -12,6 +12,43 @@ The primary way of establishing a connection is with [Connect]:
 The connection string can be in URL or key/value format. A config can also be
 created with [ParseConfig] and then passed to [ConnectConfig].
 
+# Closing Query Results
+
+[Conn.QueryRow] and [Tx.QueryRow] return a [Row]. Always call [Row.Scan] on it.
+Scan reads the first row and closes the underlying [Rows] before returning,
+including on [ErrNoRows] or another error. No separate Close call is needed.
+Use [CollectExactlyOneRow] to require exactly one row.
+
+The same rules apply to nested transactions and QueryRow on Pool, Conn, and Tx
+in [github.com/firebirdsql/fbx/fbxpool]. Pool.QueryRow also releases the connection
+it acquired when Scan completes. A connection acquired explicitly with
+Pool.Acquire still requires Release. Finish an explicit transaction with
+[Tx.Commit] or [Tx.Rollback]. Close any BLOB stream returned as an [io.ReadCloser]
+separately.
+
+[ForEachRow], [AppendRows], [CollectRows], [CollectOneRow], and
+[CollectExactlyOneRow] close the Rows passed to them before returning, even when
+the callback returns an error. Converters such as [RowTo] and [RowToStructByName]
+read one row and leave result cleanup to their caller.
+
+With [Conn.Query] or [Tx.Query], [Rows.Next] closes the result when it returns
+false. Check [Rows.Err] after iteration or after closing the result. Use
+defer rows.Close() after a successful Query to cover early returns. If you stop
+reading early and need the connection again before returning, call [Rows.Close]
+before the next query. Pool.Query releases the connection when the result closes
+and closes the result on errors from [Rows.Scan] or [Rows.Values].
+
+With [database/sql], [sql.Row.Scan] closes the result of QueryRow or
+QueryRowContext on [sql.DB], [sql.Tx], and [sql.Stmt], and of QueryRowContext on
+[sql.Conn]. A conversion error from [sql.Rows.Scan] can leave a result open.
+Call [sql.Rows.Close] when leaving the iteration early and [sql.Conn.Close]
+when finished with a dedicated connection.
+
+[fbconn.ResultReader.Read] and [fbconn.ResultReader.ReadAll] close the reader
+before returning. When iterating with [fbconn.ResultReader.NextRow], call
+[fbconn.ResultReader.Close] even after NextRow returns false. Closing the Rows
+returned by [RowsFromResultReader] also closes its reader.
+
 # Batching
 
 fbx exposes Firebird native batch DML for INSERT, UPDATE, and DELETE statements
