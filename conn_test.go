@@ -127,6 +127,50 @@ func TestCreateDatabaseWithInvalidPageSize(t *testing.T) {
 	}
 }
 
+func TestCreateDatabaseDefaultEncoding(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	config := newCreateDatabaseTestConfig(t, "default-encoding.fdb")
+	config.SetDbCharset = mustParseConfig(t, "").SetDbCharset
+
+	conn, err := fbx.CreateDatabaseConfig(ctx, config)
+	require.NoError(t, err)
+	defer closeConn(t, conn)
+
+	var encoding string
+	err = conn.QueryRow(ctx, "select trim(rdb$character_set_name) from rdb$database").Scan(&encoding)
+	require.NoError(t, err)
+	assert.Equal(t, "UTF8", encoding)
+}
+
+func TestCreateDatabaseWithEncoding(t *testing.T) {
+	t.Parallel()
+
+	for _, encoding := range []string{"UTF8", "NONE", "ASCII", "UNICODE_FSS"} {
+		t.Run(encoding, func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+			defer cancel()
+
+			config := newCreateDatabaseTestConfig(t, "with-encoding.fdb")
+			config.SetDbCharset = encoding
+
+			conn, err := fbx.CreateDatabaseConfig(ctx, config)
+			require.NoError(t, err)
+			defer closeConn(t, conn)
+
+			var actualEncoding string
+			err = conn.QueryRow(ctx, "select trim(rdb$character_set_name) from rdb$database").Scan(&actualEncoding)
+			require.NoError(t, err)
+			assert.Equal(t, encoding, actualEncoding)
+		})
+	}
+}
+
 func TestDropDatabase(t *testing.T) {
 	t.Parallel()
 

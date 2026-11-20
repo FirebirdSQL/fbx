@@ -84,6 +84,8 @@ type FbConn struct {
 
 	config *Config
 
+	target connectTarget
+
 	statusMu         sync.Mutex
 	status           byte // One of connStatus* constants
 	protocolFeatures ProtocolFeatures
@@ -686,6 +688,7 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 ) (*FbConn, error) {
 	fbConn := new(FbConn)
 	fbConn.config = config
+	fbConn.target = target
 	fbConn.eventHost = connectConfig.originalHostname
 	if fbConn.eventHost == "" {
 		fbConn.eventHost = config.Host
@@ -898,6 +901,12 @@ connectLoop:
 		if config.PageSize > 0 {
 			dpb.PutInt32(fbproto.Isc_dpb_page_size, int32(config.PageSize))
 		}
+		_, err := fbproto.NewEncoding(config.SetDbCharset)
+		if err != nil {
+			_ = fbConn.conn.Close()
+			return nil, newPerDialConnectError("database creation error", err)
+		}
+		dpb.PutString(fbproto.Isc_dpb_set_db_charset, config.SetDbCharset)
 	}
 	dpb.PutString(fbproto.Isc_dpb_lc_ctype, config.Encoding)
 	if config.User != "" {
