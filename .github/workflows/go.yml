@@ -124,7 +124,6 @@ jobs:
           go run gotest.tools/gotestsum@v1.13.0 --format testname -- -p 1 ${GOTEST_EXTRA_ARGS} -cover ./... -coverpkg=${PACKAGES} -test.gocoverdir=${COVERDIR}
 
       - uses: actions/upload-artifact@v7
-        if: matrix.GO_VERSION != '1.27'
         with:
           name: coverage-${{matrix.KIND || 'rdb'}}_${{matrix.FB_VERSION}}${{matrix.RDB_VERSION}}${{matrix.REPORT_SUFFIX}}
           path: ./reports
@@ -132,7 +131,7 @@ jobs:
   coverage:
     runs-on: self-hosted
     container:
-      image: golang:1.26
+      image: golang:1.27
     needs: test
     steps:
       - name: Install dependencies
