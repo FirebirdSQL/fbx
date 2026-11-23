@@ -680,9 +680,9 @@ var (
 	ErrReadOnlyConnection = errors.New("read only connection")
 	// ErrReadWriteConnection is returned when a read-only connection is required but the connection is read-write.
 	ErrReadWriteConnection = errors.New("connection is not read only")
-	// ErrPrimary is returned when a replica connection is required but the connection is primary.
+	// ErrPrimaryConnection is returned when a replica connection is required but the connection is primary.
 	ErrPrimaryConnection = errors.New("not replica")
-	// ErrReplica is returned when a primary connection is required but the connection is replica.
+	// ErrReplicaConnection is returned when a primary connection is required but the connection is replica.
 	ErrReplicaConnection = errors.New("not primary")
 	// ErrReplicationNotConfigured is returned when replication not configured on host.
 	ErrReplicationNotConfigured = errors.New("replication is not configured")
