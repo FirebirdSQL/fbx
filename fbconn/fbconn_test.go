@@ -420,6 +420,26 @@ func TestConnectWithValidateConnectTargetSessionAttrsReadWrite(t *testing.T) {
 	if !assert.NotNil(t, err) {
 		_ = conn.Close(ctx)
 	}
+	require.ErrorIs(t, err, fbconn.ErrReadOnlyConnection)
+}
+
+func TestConnectWithValidateConnectTargetSessionAttrsReadOnly(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	config, err := fbconn.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+
+	config.ValidateConnect = fbconn.ValidateConnectTargetSessionAttrsReadOnly
+	config.DefaultTransactionReadOnly = false
+
+	conn, err := fbconn.ConnectConfig(ctx, config)
+	if !assert.NotNil(t, err) {
+		_ = conn.Close(ctx)
+	}
+	require.ErrorIs(t, err, fbconn.ErrReadWriteConnection)
 }
 
 func TestConnectWithAfterConnect(t *testing.T) {
