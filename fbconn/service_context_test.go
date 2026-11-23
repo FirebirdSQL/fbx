@@ -151,6 +151,44 @@ func TestServiceContextSuccessfulResponse(t *testing.T) {
 	}
 }
 
+func TestServiceTraceCancellationCompletesOutput(t *testing.T) {
+	client, server := net.Pipe()
+	t.Cleanup(func() { _ = client.Close() })
+	t.Cleanup(func() { _ = server.Close() })
+	require.NoError(t, server.SetDeadline(time.Now().Add(5*time.Second)))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		defer func() { _ = server.Close() }()
+		done <- runServiceContextProbe(server, "cancel complete", cancel)
+	}()
+	config := serviceContextConfig(t, client)
+	defaults, err := ParseConfig("firebird://sysdba:masterkey@mock/employee")
+	require.NoError(t, err)
+	config.ConnectionConfig.BuildContextWatcherHandler = func(conn *FbConn) ctxwatch.Handler {
+		handler := defaults.BuildContextWatcherHandler(conn)
+		if cancelHandler, ok := handler.(*CancelRequestContextWatcherHandler); ok {
+			// Keep the transport fallback beyond the probe's watchdog.
+			cancelHandler.DeadlineDelay = time.Minute
+			cancelHandler.sendCancelOperationFunc = func(ctx context.Context, kind int) error {
+				if kind == fbproto.Fb_cancel_raise {
+					return conn.sendCancelOperation(ctx, kind)
+				}
+				return nil
+			}
+		}
+		return handler
+	}
+	conn, err := ConnectServiceConfig(context.Background(), config)
+	require.NoError(t, err)
+	err = conn.TraceStart(ctx, "name", "config", TraceOptions{Output: io.Discard})
+	require.NoError(t, conn.Close(context.Background()))
+	require.NoError(t, <-done)
+	require.ErrorIs(t, err, context.Canceled)
+	require.False(t, SafeToRetry(err), "the server has already accepted the action")
+}
+
 func TestServiceContextWriterFailureDisallowsRetry(t *testing.T) {
 	calls := serviceContextCalls()
 	delete(calls, "limbo")
@@ -293,7 +331,25 @@ func runServiceContextProbe(conn net.Conn, phase string, interrupt func()) error
 	if interrupt != nil {
 		interrupt()
 		var err error
-		if phase == "complete" {
+		if phase == "cancel complete" {
+			// A service can finish normally in response to op_cancel. Wait for
+			// that request, or EOF when cancellation closes the transport instead.
+			opcode, err := r.ReadInt32()
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			kind, err := r.ReadInt32()
+			if err != nil {
+				return err
+			}
+			if opcode != fbproto.Op_cancel || kind != fbproto.Fb_cancel_raise {
+				return fmt.Errorf("expected cancel raise, got %d/%d", opcode, kind)
+			}
+		}
+		if phase == "complete" || phase == "cancel complete" {
 			err = writeProbeResponseData(w, 0, []byte{fbproto.Isc_info_end})
 		} else {
 			err = writeServiceContextShutdown(w)

@@ -84,6 +84,8 @@ type FbConn struct {
 
 	config *Config
 
+	target connectTarget
+
 	statusMu         sync.Mutex
 	status           byte // One of connStatus* constants
 	protocolFeatures ProtocolFeatures
@@ -252,6 +254,12 @@ func connectConfig(ctx context.Context, config *Config, target connectTarget) (*
 	}
 
 	var allErrors []error
+
+	if config.CreateDatabase &&
+		!isValidPageSize(config.PageSize) &&
+		config.PageSize != 0 {
+		return nil, errInvalidPageSize
+	}
 
 	connectConfigs, errs := buildConnectOneConfigs(ctx, config)
 	if len(errs) > 0 {
@@ -683,6 +691,7 @@ func connectOne(ctx context.Context, config *Config, connectConfig *connectOneCo
 ) (*FbConn, error) {
 	fbConn := new(FbConn)
 	fbConn.config = config
+	fbConn.target = target
 	fbConn.eventHost = connectConfig.originalHostname
 	if fbConn.eventHost == "" {
 		fbConn.eventHost = config.Host
@@ -892,6 +901,15 @@ connectLoop:
 	dpb.PutInt32(fbproto.Isc_dpb_sql_dialect, 3)
 	if config.CreateDatabase {
 		dpb.PutInt32(fbproto.Isc_dpb_set_db_sql_dialect, 3)
+		if config.PageSize > 0 {
+			dpb.PutInt32(fbproto.Isc_dpb_page_size, int32(config.PageSize))
+		}
+		_, err := fbproto.NewEncoding(config.SetDbCharset)
+		if err != nil {
+			_ = fbConn.conn.Close()
+			return nil, newPerDialConnectError("database creation error", err)
+		}
+		dpb.PutString(fbproto.Isc_dpb_set_db_charset, config.SetDbCharset)
 	}
 	dpb.PutString(fbproto.Isc_dpb_lc_ctype, config.Encoding)
 	if config.User != "" {
@@ -1544,7 +1562,13 @@ type QueryStatus struct {
 	rowsAffected  int64
 }
 
-// RowsAffected returns the number of rows affected
+// NewQueryStatus creates a status with the statement type and affected row count.
+func NewQueryStatus(statementType int, rowsAffected int64) QueryStatus {
+	return QueryStatus{statementType: statementType, rowsAffected: rowsAffected}
+}
+
+// RowsAffected returns the number of rows fetched for cursor statements, or the
+// total number of inserted, updated, and deleted rows for other statements.
 func (ct QueryStatus) RowsAffected() int64 {
 	return ct.rowsAffected
 }
@@ -1852,26 +1876,30 @@ func (fbConn *FbConn) internalPrepareTx(
 }
 
 // CancelRequest sends a cancel request to the server. It returns an error if unable to deliver the cancel
-// request, but lack of an error does not ensure that the query was canceled. Delivery errors do not close the
-// connection; callers that consider a failed cancel request fatal must close the connection themselves.
+// request, but lack of an error does not ensure that the query was canceled. Errors setting or clearing the
+// context's network deadline close the connection. Other delivery errors leave it open; callers that consider
+// a failed cancel request fatal must close the connection themselves.
 func (fbConn *FbConn) CancelRequest(ctx context.Context) error {
 	return fbConn.sendCancelOperation(ctx, fbproto.Fb_cancel_raise)
 }
 
-func (fbConn *FbConn) sendCancelOperation(ctx context.Context, kind int) error {
+func (fbConn *FbConn) sendCancelOperation(ctx context.Context, kind int) (err error) {
 	if ctx != context.Background() {
-		contextWatcher := ctxwatch.NewContextWatcher(&DeadlineContextWatcherHandler{Conn: fbConn.conn})
+		handler := &DeadlineContextWatcherHandler{Conn: fbConn.conn}
+		contextWatcher := ctxwatch.NewContextWatcher(handler)
 		contextWatcher.Watch(ctx)
-		defer contextWatcher.Unwatch()
+		defer func() {
+			contextWatcher.Unwatch()
+			if handler.err != nil {
+				fbConn.asyncClose()
+				err = operationerror.Join(err, handler.err)
+			}
+		}()
 	}
 
-	if err := fbConn.withWriteLockAndFlush(func() error {
+	return fbConn.withWriteLockAndFlush(func() error {
 		return fbConn.client.WriteMessage(&fbproto.OpCancel{Kind: kind})
-	}); err != nil {
-		return err
-	}
-
-	return nil
+	})
 }
 
 // ExecImmediate executes statement immediate inside internal transaction
@@ -2413,6 +2441,7 @@ type ResultReader struct {
 	fetchExecuted        bool
 	deferredExecute      bool
 	fetchResp            *fbproto.OpFetchResponse
+	rowsFetched          int64
 	eoc                  bool
 	rowsInfoPopulated    bool
 
@@ -2737,6 +2766,7 @@ func (rr *ResultReader) bufferCurrentFetchRows() bool {
 			panic(fmt.Sprintf("wrong response message type %T instead expected OpFetchResponse or ErrorResponse", m))
 		}
 
+		rr.rowsFetched++
 		for i := 0; i < colCount; i++ {
 			col := make([]byte, 0)
 			if row.RowData[i] == nil {
@@ -2806,6 +2836,7 @@ func (rr *ResultReader) drainCurrentFetch() {
 		default:
 			panic(fmt.Sprintf("wrong response message type %T instead expected OpFetchResponse or ErrorResponse", m))
 		}
+		rr.rowsFetched++
 	}
 	if rr.fetchResp.EndOfCursor() {
 		rr.eoc = true
@@ -2969,6 +3000,10 @@ func (rr *ResultReader) populateRowsAffected() error {
 	}
 
 	rows := rr.statementDescription.GetAffectedCount()
+	if rr.statementDescription.HaveCursorResult() {
+		// SelectCount includes reads inside PSQL and can differ from the rows returned.
+		rows = rr.rowsFetched
+	}
 
 	rr.queryStatus.rowsAffected = rows
 	rr.rowsInfoPopulated = true
@@ -3379,16 +3414,21 @@ type DeadlineContextWatcherHandler struct {
 
 	// DeadlineDelay is the delay to set on the deadline set on net.Conn when the context is canceled.
 	DeadlineDelay time.Duration
+
+	// err is safe to read after ContextWatcher.Unwatch returns.
+	err error
 }
 
 func (h *DeadlineContextWatcherHandler) HandleCancel(ctx context.Context) {
 	if err := h.Conn.SetDeadline(time.Now().Add(h.DeadlineDelay)); err != nil {
+		h.err = err
 		_ = h.Conn.Close()
 	}
 }
 
 func (h *DeadlineContextWatcherHandler) HandleUnwatchAfterCancel() {
 	if err := h.Conn.SetDeadline(time.Time{}); err != nil {
+		h.err = errors.Join(h.err, err)
 		_ = h.Conn.Close()
 	}
 }

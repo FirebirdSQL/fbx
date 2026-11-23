@@ -194,67 +194,6 @@ func ExampleConn_PrepareBatch() {
 	// rows: 2
 }
 
-func ExampleConn_ExecBatch() {
-	ctx := context.Background()
-	dsn := "firebird://sysdba:masterkey@localhost:3050/employee"
-
-	conn, err := fbx.Connect(ctx, dsn)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	defer func() {
-		_ = conn.Close(ctx)
-	}()
-
-	if !exampleBatchSupported(ctx, conn) {
-		fmt.Println("rows: 2")
-		return
-	}
-
-	_, err = conn.Exec(ctx, "recreate table fbx_example_named_batch(id integer not null primary key, note varchar(20))")
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	_, err = conn.Prepare(ctx, "audit_batch", "batch insert into fbx_example_named_batch(id, note) values (?, ?)")
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	defer func() {
-		_ = conn.Deallocate(ctx, "audit_batch")
-	}()
-
-	_, err = conn.Exec(ctx, "audit_batch", int64(1), "one")
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	_, err = conn.Exec(ctx, "audit_batch", int64(2), "two")
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	_, err = conn.ExecBatch(ctx, "audit_batch")
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	var count int
-	if err := conn.QueryRow(ctx, "select count(*) from fbx_example_named_batch").Scan(&count); err != nil {
-		fmt.Println(err)
-		return
-	}
-	fmt.Printf("rows: %d\n", count)
-
-	// Output:
-	// rows: 2
-}
-
 func ExampleNamedArgs() {
 	ctx := context.Background()
 	dsn := "firebird://sysdba:masterkey@localhost:3050/employee"

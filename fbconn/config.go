@@ -8,6 +8,7 @@ import (
 	"math"
 	"net"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -44,8 +45,11 @@ type Config struct {
 	WireCrypt      bool
 	// WireCompression requests zlib wire compression.
 	// The connection remains uncompressed if the server declines the request.
-	WireCompression            bool
-	Encoding                   string
+	WireCompression bool
+	Encoding        string
+	// Stores the character set that should be passed when creating the database.
+	// Default value is UTF8.
+	SetDbCharset               string
 	DPB                        []byte
 	ClientVersion              string
 	DefaultTransactionReadOnly bool
@@ -63,6 +67,10 @@ type Config struct {
 	MaxInlineBlobSize           int
 	MaxBlobCacheSize            int
 	FetchBatchSize              int
+
+	// PageSize specifies the requested database page size in bytes.
+	// Zero leaves the page size unspecified.
+	PageSize int
 
 	// ConstructorOptions allows to pass callbacks for setting parameters to authentication plugins.
 	ConstructorOptions map[string][]auth.ConstructorOption
@@ -304,6 +312,18 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 	}
 
 	settings := mergeSettings(defaultSettings, envSettings, connStringSettings)
+
+	// Fall back to the OS account name when system_user is empty after parsing
+	// the connection string.
+	if _, ok := settings["system_user"]; !ok {
+		username, err := osUser()
+		// Ignore lookup errors and leave system_user without a default. Applications
+		// can supply system_user explicitly in the connection string.
+		if err == nil {
+			settings["system_user"] = username
+		}
+	}
+
 	encoding, err := fbproto.NewEncoding(settings["encoding"])
 	if err != nil {
 		return nil, err
@@ -342,6 +362,10 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 			return fbproto.NewClient(r, w, encoding)
 		},
 		BuildContextWatcherHandler: func(fbConn *FbConn) ctxwatch.Handler {
+			if fbConn.target == connectTargetService {
+				// op_cancel can end a service with a successful response.
+				return &DeadlineContextWatcherHandler{Conn: fbConn.conn}
+			}
 			return &CancelRequestContextWatcherHandler{Conn: fbConn}
 		},
 		OnFbError:                  defaultOnFbError,
@@ -352,6 +376,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		SystemHost:                 settings["system_host"],
 		ClientVersion:              settings["client_version"],
 		Encoding:                   settings["encoding"],
+		SetDbCharset:               settings["set_db_charset"],
 		DefaultTransactionReadOnly: convertToBool(settings["default_transaction_read_only"], false),
 		Autocommit:                 convertToBool(settings["autocommit"], true),
 		UseStreamBlobs:             convertToBool(settings["use_stream_blobs"], true),
@@ -363,6 +388,16 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 			return nil, &ParseConfigError{ConnString: connString, msg: "invalid default_transaction_isolation", err: err}
 		}
 		config.DefaultTransactionIsolation = isolation
+	}
+	if s, ok := settings["page_size"]; ok {
+		value, err := parsePositiveIntSetting(s)
+		if err != nil {
+			return nil, &ParseConfigError{ConnString: connString, msg: "invalid page_size", err: err}
+		}
+		if !isValidPageSize(value) {
+			return nil, &ParseConfigError{ConnString: connString, msg: "invalid page_size", err: errInvalidPageSize}
+		}
+		config.PageSize = value
 	}
 	if s, ok := settings["max_inline_blob_size"]; ok {
 		value, err := parsePositiveIntSetting(s)
@@ -429,6 +464,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		"system_host":                   {},
 		"client_version":                {},
 		"encoding":                      {},
+		"set_db_charset":                {},
 		"default_transaction_read_only": {},
 		"default_transaction_isolation": {},
 		"autocommit":                    {},
@@ -438,6 +474,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		"max_blob_cache_size":           {},
 		"fetch_batch_size":              {},
 		"target_session_attrs":          {},
+		"page_size":                     {},
 	}
 
 	for k, v := range settings {
@@ -619,6 +656,9 @@ func parseKeywordValueSettings(s string) (map[string]string, error) {
 				}
 				if s[end] == '\\' {
 					end++
+					if end == len(s) {
+						return nil, errors.New("unterminated quoted string in connection info string")
+					}
 				}
 			}
 			if end == len(s) {
@@ -790,4 +830,11 @@ func convertToBool(s string, defaultValue bool) bool {
 		v = defaultValue
 	}
 	return v
+}
+
+var validPageSizeValues = []int{4096, 8192, 16384, 32768}
+var errInvalidPageSize = fmt.Errorf("only the following values are accepted: %v", validPageSizeValues)
+
+func isValidPageSize(size int) bool {
+	return slices.Contains(validPageSizeValues, size)
 }

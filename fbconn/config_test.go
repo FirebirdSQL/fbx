@@ -522,6 +522,41 @@ func TestParseConfigWireCompression(t *testing.T) {
 	}
 }
 
+func TestParseConfigPageSize(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		value   string
+		want    int
+		wantErr bool
+	}{
+		{value: "4096", want: 4096},
+		{value: "8192", want: 8192},
+		{value: "16384", want: 16384},
+		{value: "32768", want: 32768},
+		{value: "12345", wantErr: true},
+		{value: "invalid", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		for _, connString := range []string{
+			"page_size=" + tt.value,
+			"firebird://localhost/testdb?page_size=" + tt.value,
+		} {
+			t.Run(connString, func(t *testing.T) {
+				config, err := fbconn.ParseConfig(connString)
+				if tt.wantErr {
+					require.Error(t, err)
+					return
+				}
+
+				require.NoError(t, err)
+				assert.Equal(t, tt.want, config.PageSize)
+			})
+		}
+	}
+}
+
 func TestParseConfigKVTrailingWhitespace(t *testing.T) {
 	config, err := fbconn.ParseConfig("host=localhost port=3050 database=testdb   \t\n")
 	require.NoError(t, err)
@@ -770,6 +805,34 @@ func TestParseConfigEnv(t *testing.T) {
 			assert.Nilf(t, err, "Test %d (%s)", i, tt.name)
 
 			assertConfigsEqual(t, tt.config, config, fmt.Sprintf("Test %d (%s)", i, tt.name))
+		})
+	}
+}
+
+// A backslash as the last byte of an unterminated quoted value must be
+// rejected as an unterminated string, not panic with a slice bounds error.
+// The quoted-string loop advances past a backslash without bounds-checking
+// the resulting index, so `='\` (and `0='\`, reached via the fbxpool path)
+// previously panicked with "slice bounds out of range [:2] with length 1".
+func TestParseConfigKVQuotedTrailingBackslashDoesNotPanic(t *testing.T) {
+	tests := []struct {
+		name       string
+		connString string
+	}{
+		{name: "bare quoted trailing backslash", connString: `='\`},
+		{name: "quoted trailing backslash with key", connString: `0='\`},
+		{name: "quoted trailing backslash after value", connString: `host='a\`},
+		{name: "quoted trailing backslash after escaped pair", connString: `host='a\\b\`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var err error
+			assert.NotPanics(t, func() {
+				_, err = fbconn.ParseConfig(tt.connString)
+			})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "unterminated quoted string in connection info string")
 		})
 	}
 }
