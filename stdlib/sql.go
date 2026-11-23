@@ -536,14 +536,15 @@ func (c *Conn) Close() error {
 	return c.close(ctx)
 }
 
-// Begin implements [driver.Conn] using the server's default transaction
-// options and a background context.
+// Begin implements [driver.Conn] using a background context and the configured
+// default isolation, or the server's default isolation if none is configured.
 func (c *Conn) Begin() (driver.Tx, error) {
 	return c.BeginTx(context.Background(), driver.TxOptions{})
 }
 
-// BeginTx implements [driver.ConnBeginTx]. LevelDefault preserves the server
-// default; repeatable-read and snapshot both map to Firebird concurrency mode.
+// BeginTx implements [driver.ConnBeginTx]. LevelDefault uses the configured default
+// isolation, or the server's default if none is configured. Repeatable-read and
+// snapshot map to Firebird concurrency mode.
 func (c *Conn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
 	if c.conn.IsClosed() {
 		return nil, driver.ErrBadConn
@@ -552,7 +553,7 @@ func (c *Conn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, e
 	var fbxOpts fbx.TxOptions
 	switch sql.IsolationLevel(opts.Isolation) {
 	case sql.LevelDefault:
-		// Empty options preserve the server and database defaults.
+		// An empty IsoLevel uses the configured default isolation, or the server's default.
 	case sql.LevelReadCommitted:
 		fbxOpts.IsoLevel = fbx.ReadCommitted
 	case sql.LevelRepeatableRead, sql.LevelSnapshot:

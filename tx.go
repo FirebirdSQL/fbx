@@ -12,14 +12,14 @@ import (
 	"github.com/firebirdsql/fbx/internal/operationerror"
 )
 
-// TxIsoLevel is the transaction isolation level ([fbx.Serializable], [fbx.RepeatableRead], [fbx.ReadCommitted])
-type TxIsoLevel string
+// TxIsoLevel is the transaction isolation level ([fbx.Serializable], [fbx.RepeatableRead], [fbx.ReadCommitted]).
+type TxIsoLevel = fbconn.TxIsoLevel
 
 // Transaction isolation levels
 const (
-	Serializable   TxIsoLevel = "serializable"
-	RepeatableRead TxIsoLevel = "repeatable read"
-	ReadCommitted  TxIsoLevel = "read committed"
+	Serializable   = fbconn.Serializable
+	RepeatableRead = fbconn.RepeatableRead
+	ReadCommitted  = fbconn.ReadCommitted
 )
 
 // TxAccessMode is the transaction access mode ([fbx.ReadWrite], [fbx.ReadOnly])
@@ -48,15 +48,21 @@ var ErrTxClosed = errors.New("tx is closed")
 // ErrTxCommitRollback indicates that Commit() did not commit changes and the transaction was rolled back instead
 var ErrTxCommitRollback = errors.New("commit unexpectedly resulted in rollback")
 
-// Begin starts a transaction. Unlike database/sql, the context only affects the begin command. i.e. there is no
-// auto-rollback on context cancellation.
+// Begin starts a transaction using DefaultTransactionIsolation, or the server's
+// default isolation if the setting is empty. Unlike database/sql, the context only
+// affects the begin command; there is no auto-rollback on context cancellation.
 func (c *Conn) Begin(ctx context.Context) (Tx, error) {
 	return c.BeginTx(ctx, TxOptions{})
 }
 
 // BeginTx starts a transaction with txOptions determining the transaction mode. Unlike database/sql, the context only
 // affects the begin command. i.e. there is no auto-rollback on context cancellation.
+// An empty IsoLevel uses the connection's DefaultTransactionIsolation setting,
+// or the server's default isolation if that setting is empty.
 func (c *Conn) BeginTx(ctx context.Context, txOptions TxOptions) (Tx, error) {
+	if txOptions.IsoLevel == "" {
+		txOptions.IsoLevel = c.config.DefaultTransactionIsolation
+	}
 	tpb, err := txOptions.GetTPB()
 	if err != nil {
 		return nil, err
@@ -98,8 +104,6 @@ func (txOptions TxOptions) GetTPB() ([]byte, error) {
 		return nil, err
 	}
 
-	// If no options are specified, use server / database defaults. This matches Firebird semantics and keeps
-	// database/sql LevelDefault behaving as expected (i.e. do not silently force READ COMMITTED).
 	if txOptions.AccessMode == "" && txOptions.IsoLevel == "" && lockTimeoutSeconds == 0 {
 		return nil, nil
 	}

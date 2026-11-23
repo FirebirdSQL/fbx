@@ -249,6 +249,9 @@ func connectConfig(ctx context.Context, config *Config, target connectTarget) (*
 	if !config.createdByParseConfig {
 		panic("config must be created by ParseConfig")
 	}
+	if _, err := defaultTransactionTPB(config.DefaultTransactionIsolation, false); err != nil {
+		return nil, &ConnectError{Config: config, err: err}
+	}
 
 	var allErrors []error
 
@@ -3304,17 +3307,14 @@ func Construct(hc *HijackedConn) (*FbConn, error) {
 func (fbConn *FbConn) ensureInternalTransaction(ctx context.Context, tpb []byte, locked bool) (*FBTransaction, error) {
 	if fbConn.internalTransaction == nil || fbConn.internalTransaction.Closed {
 
-		var txTpb []byte
-		if tpb != nil {
-			txTpb = tpb
-		} else {
-			if fbConn.config.DefaultTransactionReadOnly {
-				w := fbproto.NewTPBWriterV3()
-				w.PutTag(fbproto.Isc_tpb_read)
-				txTpb = w.Bytes()
+		if tpb == nil {
+			var err error
+			tpb, err = defaultTransactionTPB(fbConn.config.DefaultTransactionIsolation, fbConn.config.DefaultTransactionReadOnly)
+			if err != nil {
+				return nil, err
 			}
 		}
-		tx, err := fbConn.startTransactionTPB(ctx, txTpb, locked)
+		tx, err := fbConn.startTransactionTPB(ctx, tpb, locked)
 		if err != nil {
 			return nil, err
 		}
@@ -3324,12 +3324,19 @@ func (fbConn *FbConn) ensureInternalTransaction(ctx context.Context, tpb []byte,
 	return fbConn.internalTransaction, nil
 }
 
-// StartTransaction starts new transaction not bound to connection
+// StartTransaction starts a transaction not bound to the connection, using
+// DefaultTransactionIsolation, or the server's default isolation if the setting
+// is empty.
 func (fbConn *FbConn) StartTransaction(ctx context.Context) (*FBTransaction, error) {
-	return fbConn.StartTransactionTPB(ctx, nil)
+	tpb, err := defaultTransactionTPB(fbConn.config.DefaultTransactionIsolation, false)
+	if err != nil {
+		return nil, err
+	}
+	return fbConn.StartTransactionTPB(ctx, tpb)
 }
 
-// StartTransactionTPB starts new transaction not bound to connection with TPB block
+// StartTransactionTPB starts a transaction not bound to the connection. The TPB
+// is passed to the server as-is, including nil or empty TPBs.
 func (fbConn *FbConn) StartTransactionTPB(ctx context.Context, tpb []byte) (*FBTransaction, error) {
 	return fbConn.startTransactionTPB(ctx, tpb, false)
 }

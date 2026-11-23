@@ -53,12 +53,20 @@ type Config struct {
 	DPB                        []byte
 	ClientVersion              string
 	DefaultTransactionReadOnly bool
-	Autocommit                 bool
-	BlobBufferSize             int
-	UseStreamBlobs             bool
-	MaxInlineBlobSize          int
-	MaxBlobCacheSize           int
-	FetchBatchSize             int
+	// DefaultTransactionIsolation is [Serializable], [RepeatableRead], or
+	// [ReadCommitted]. Connection strings also accept "repeatable read" and
+	// "read committed", normalized to the corresponding constants.
+	// Empty preserves the server default. It applies to
+	// implicit transactions (including autocommit) and transaction APIs called
+	// without an explicit isolation level. Raw TPBs and SQL transaction commands
+	// are passed through unchanged.
+	DefaultTransactionIsolation TxIsoLevel
+	Autocommit                  bool
+	BlobBufferSize              int
+	UseStreamBlobs              bool
+	MaxInlineBlobSize           int
+	MaxBlobCacheSize            int
+	FetchBatchSize              int
 
 	// PageSize specifies the requested database page size in bytes.
 	// Zero leaves the page size unspecified.
@@ -374,6 +382,13 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		UseStreamBlobs:             convertToBool(settings["use_stream_blobs"], true),
 		FetchBatchSize:             DefaultFetchBatchSize,
 	}
+	if s, ok := settings["default_transaction_isolation"]; ok {
+		isolation := TxIsoLevel(strings.ReplaceAll(strings.ToLower(strings.TrimSpace(s)), " ", "_"))
+		if _, err := defaultTransactionTPB(isolation, false); err != nil {
+			return nil, &ParseConfigError{ConnString: connString, msg: "invalid default_transaction_isolation", err: err}
+		}
+		config.DefaultTransactionIsolation = isolation
+	}
 	if s, ok := settings["page_size"]; ok {
 		value, err := parsePositiveIntSetting(s)
 		if err != nil {
@@ -451,6 +466,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		"encoding":                      {},
 		"set_db_charset":                {},
 		"default_transaction_read_only": {},
+		"default_transaction_isolation": {},
 		"autocommit":                    {},
 		"blob_buffer_size":              {},
 		"use_stream_blobs":              {},
