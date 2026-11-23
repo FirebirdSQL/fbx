@@ -5,6 +5,7 @@ package stdlib_test
 import (
 	"database/sql"
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -86,6 +87,106 @@ func TestScanBlobNullClearsDestination(t *testing.T) {
 		data, err := emptyBlob.Bytes()
 		require.NoError(t, err)
 		require.Empty(t, data)
+	})
+}
+
+func TestScanBlobIntoString(t *testing.T) {
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		var actual string
+		err := db.QueryRow("select cast('blob' as blob sub_type text) from rdb$database").Scan(&actual)
+		require.NoError(t, err)
+		require.Equal(t, "blob", actual)
+	})
+}
+
+func TestScanBlobIntoByteSlice(t *testing.T) {
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		var actual []byte
+		err := db.QueryRow("select cast(x'0001ff' as blob sub_type binary) from rdb$database").Scan(&actual)
+		require.NoError(t, err)
+		require.Equal(t, []byte{0, 1, 255}, actual)
+	})
+}
+
+func TestScanBlobIntoNullString(t *testing.T) {
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		var actual sql.NullString
+		err := db.QueryRow("select cast('blob' as blob sub_type text) from rdb$database").Scan(&actual)
+		require.NoError(t, err)
+		require.Equal(t, sql.NullString{String: "blob", Valid: true}, actual)
+	})
+}
+
+func TestScanBlobIntoGenericNullString(t *testing.T) {
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		var actual sql.Null[string]
+		err := db.QueryRow("select cast('blob' as blob sub_type text) from rdb$database").Scan(&actual)
+		require.NoError(t, err)
+		require.Equal(t, sql.Null[string]{V: "blob", Valid: true}, actual)
+	})
+}
+
+func TestScanBlobNullClearsNullString(t *testing.T) {
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		actual := sql.NullString{String: "previous value", Valid: true}
+		err := db.QueryRow("select cast(null as blob sub_type text) from rdb$database").Scan(&actual)
+		require.NoError(t, err)
+		require.Equal(t, sql.NullString{}, actual)
+	})
+}
+
+func TestScanBlobNullClearsGenericNullString(t *testing.T) {
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		actual := sql.Null[string]{V: "previous value", Valid: true}
+		err := db.QueryRow("select cast(null as blob sub_type text) from rdb$database").Scan(&actual)
+		require.NoError(t, err)
+		require.Equal(t, sql.Null[string]{}, actual)
+	})
+}
+
+func TestScanBlobIntoReadCloser(t *testing.T) {
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		var actual io.ReadCloser
+		err := db.QueryRow("select cast('blob' as blob sub_type text) from rdb$database").Scan(&actual)
+		require.NoError(t, err)
+		defer closeResource(t, actual)
+
+		data, err := io.ReadAll(actual)
+		require.NoError(t, err)
+		require.Equal(t, []byte("blob"), data)
+	})
+}
+
+func TestScanBlobNullClearsReadCloser(t *testing.T) {
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		var actual io.ReadCloser = stdlib.Blob{}
+		err := db.QueryRow("select cast(null as blob sub_type text) from rdb$database").Scan(&actual)
+		require.NoError(t, err)
+		require.Nil(t, actual)
+	})
+}
+
+func TestScanBlobIntoReader(t *testing.T) {
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		var actual io.Reader
+		err := db.QueryRow("select cast('blob' as blob sub_type text) from rdb$database").Scan(&actual)
+		require.NoError(t, err)
+		defer closeResource(t, actual.(io.Closer))
+
+		data, err := io.ReadAll(actual)
+		require.NoError(t, err)
+		require.Equal(t, []byte("blob"), data)
+	})
+}
+
+func TestScanBlobPreservesMetadata(t *testing.T) {
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		var actual stdlib.Blob
+		err := db.QueryRow("select cast('blob' as blob sub_type text character set UTF8) from rdb$database").Scan(&actual)
+		require.NoError(t, err)
+		defer closeResource(t, &actual)
+		require.Equal(t, int32(1), actual.SubType)
+		require.Equal(t, "UTF8", actual.Charset)
 	})
 }
 

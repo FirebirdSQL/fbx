@@ -82,11 +82,37 @@ func (r *Rows) ScanColumn(scanCtx driver.ScanContext, index int, dest any) error
 
 	if fd.IsBlob() {
 		if src == nil {
+			if d, ok := dest.(*io.ReadCloser); ok {
+				*d = nil
+				return nil
+			}
 			return sql.ConvertAssign(scanCtx, dest, nil)
 		}
 		blobValue, err := buildBlobValue(r.blobValues[index], &r.rows.FieldDescriptions()[index])
 		if err != nil {
 			return err
+		}
+		switch d := dest.(type) {
+		case *string:
+			str, err := blobValue.Text()
+			if err != nil {
+				return err
+			}
+			*d = str
+			return nil
+		case *[]byte:
+			bin, err := blobValue.Bytes()
+			if err != nil {
+				return err
+			}
+			*d = bin
+			return nil
+		case *sql.NullString, *sql.Null[string]:
+			str, err := blobValue.Text()
+			if err != nil {
+				return err
+			}
+			return sql.ConvertAssign(scanCtx, dest, str)
 		}
 
 		return sql.ConvertAssign(scanCtx, dest, blobValue)
