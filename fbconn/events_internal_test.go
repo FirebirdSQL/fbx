@@ -166,8 +166,8 @@ func TestSetEventErrorHandlerCalledForFirstFailure(t *testing.T) {
 	}
 
 	select {
-	case <-called:
-		t.Fatal("event error handler called more than once for same error cycle")
+	case err := <-called:
+		t.Fatalf("event error handler called more than once for same error cycle: %v", err)
 	default:
 	}
 
