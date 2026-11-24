@@ -89,7 +89,7 @@ func (sd *StatementDescription) EncodeBatchRow(values [][]byte) ([]byte, error) 
 	var buf bytes.Buffer
 	x := fbproto.NewXDRWriter(&buf)
 
-	if err := fbproto.WriteRowData(x, sd.StatementInfo.ParametersDescriptors, values); err != nil {
+	if err := fbproto.WriteBatchRowData(x, sd.StatementInfo.ParametersDescriptors, values); err != nil {
 		return nil, err
 	}
 

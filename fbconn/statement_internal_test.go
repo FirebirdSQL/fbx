@@ -10,6 +10,49 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestEncodeBatchRowFixedChar(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		charset int
+		length  int
+		value   []byte
+		want    []byte
+		wantErr bool
+	}{
+		{"utf8", 4, 12, []byte("abc"), []byte("abc         "), false},
+		{"ascii with padding", 2, 5, []byte("abc"), []byte("abc     "), false},
+		{"empty text", 2, 5, []byte{}, []byte("        "), false},
+		{"null", 4, 12, nil, nil, false},
+		{"octets", fbproto.CS_BINARY, 5, []byte{1, 0, 2}, []byte{1, 0, 2, 0, 0, 0, 0, 0}, false},
+		{"empty octets", fbproto.CS_BINARY, 5, []byte{}, make([]byte, 8), false},
+		{"text too long", 4, 2, []byte("abc"), nil, true},
+		{"octets too long", fbproto.CS_BINARY, 2, []byte{1, 2, 3}, nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sd := &StatementDescription{StatementInfo: &StatementInfo{
+				ParametersDescriptors: []fbproto.FieldDescriptor{
+					{Type: fbproto.SQL_TYPE_TEXT, Subtype: tc.charset, Length: tc.length},
+					{Type: fbproto.SQL_TYPE_LONG, Length: 4},
+				},
+			}}
+			row, err := sd.EncodeBatchRow([][]byte{tc.value, {0, 0, 0, 42}})
+			if tc.wantErr {
+				require.ErrorContains(t, err, "exceeds declared length")
+				require.Nil(t, row)
+				return
+			}
+			require.NoError(t, err)
+			want := []byte{0, 0, 0, 0}
+			if tc.value == nil {
+				want[0] = 1
+			}
+			want = append(want, tc.want...)
+			want = append(want, 0, 0, 0, 42)
+			require.Equal(t, want, row, "CHAR padding must preserve the following parameter")
+		})
+	}
+}
+
 type prepareCleanupTestConn struct {
 	noopConn
 	written  bytes.Buffer

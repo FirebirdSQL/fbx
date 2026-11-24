@@ -92,6 +92,20 @@ func TestXDRReaderBufferLengths(t *testing.T) {
 	}
 }
 
+func TestWriteRowDataUsesActualCharLength(t *testing.T) {
+	fields := []FieldDescriptor{
+		{Type: SQL_TYPE_TEXT, Subtype: 4, Length: 12},
+		{Type: SQL_TYPE_LONG, Length: 4},
+	}
+	var buf bytes.Buffer
+	require.NoError(t, WriteRowData(NewXDRWriter(&buf), fields, [][]byte{[]byte("abc"), {0, 0, 0, 42}}))
+	require.Equal(t, []byte{
+		0, 0, 0, 0,
+		'a', 'b', 'c', ' ',
+		0, 0, 0, 42,
+	}, buf.Bytes())
+}
+
 func TestReadRowDataVaryingLength(t *testing.T) {
 	fields := []FieldDescriptor{{Type: SQL_TYPE_VARYING, Length: 8}, {Type: SQL_TYPE_LONG}}
 	var scratch rowScratch
