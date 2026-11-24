@@ -22,6 +22,7 @@ import (
 	"github.com/firebirdsql/fbx/fbproto"
 	"github.com/firebirdsql/fbx/fbproto/auth"
 	"github.com/firebirdsql/fbx/fbproto/wirecrypt"
+	"github.com/firebirdsql/fbx/internal/cleanupctx"
 	"github.com/firebirdsql/fbx/internal/operationerror"
 )
 
@@ -1423,7 +1424,7 @@ func (fbConn *FbConn) asyncClose() {
 func (fbConn *FbConn) asyncCloseAfterRead(err error) {
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
-		fbConn.asyncCloseWithTimeout(cleanupGracePeriod)
+		fbConn.asyncCloseWithTimeout(cleanupTimeout())
 	} else {
 		fbConn.asyncClose()
 	}
@@ -2867,14 +2868,25 @@ func (rr *ResultReader) SetCallerErr(err error) {
 	}
 }
 
-// cleanupGracePeriod bounds cleanup network calls (e.g. op_free_statement) that
-// must run even after the caller's ctx has been cancelled.
-const cleanupGracePeriod = 5 * time.Second
+// SetCleanupTimeout sets the timeout for the resource cleanup context.
+// The default timeout is 5 seconds.
+// It must be called before using the driver and must not be called
+// concurrently with driver operations.
+// The transmitted timeout must be at least 150 ms.
+func SetCleanupTimeout(timeout time.Duration) error {
+	return cleanupctx.SetCleanupTimeout(timeout)
+}
 
-// cleanupContext detaches from parent cancellation but preserves Values, with a
-// bounded timeout for the network call.
+// cleanupContext returns a context for releasing server-side resources after the
+// user's request has finished.
 func cleanupContext(parent context.Context) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.WithoutCancel(parent), cleanupGracePeriod)
+	return cleanupctx.CleanupContext(parent)
+}
+
+// cleanupTimeout returns a timeout for releasing server-side resources after the
+// user's request has finished.
+func cleanupTimeout() time.Duration {
+	return cleanupctx.CleanupTimeout()
 }
 
 // commitInternalTx rolls back a rejected implicit commit so the next request
@@ -2962,7 +2974,7 @@ func (rr *ResultReader) closeWithoutCommit() (QueryStatus, error) {
 			rr.fbConn.contextWatcher.Unwatch()
 			cleanupWatcher := ctxwatch.NewContextWatcher(&DeadlineContextWatcherHandler{
 				Conn:          rr.fbConn.conn,
-				DeadlineDelay: cleanupGracePeriod,
+				DeadlineDelay: cleanupTimeout(),
 			})
 			cleanupWatcher.Watch(rr.ctx)
 			defer cleanupWatcher.Unwatch()
@@ -3602,7 +3614,7 @@ func (h *CancelRequestContextWatcherHandler) HandleUnwatchAfterCancel() {
 func (h *CancelRequestContextWatcherHandler) sendCancelOperationWithTimeout(kind int) error {
 	timeout := h.CancelResetTimeout
 	if timeout <= 0 {
-		timeout = 5 * time.Second
+		timeout = cleanupTimeout()
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()

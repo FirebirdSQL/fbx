@@ -13,6 +13,7 @@ import (
 
 	"github.com/firebirdsql/fbx/fbconn"
 	"github.com/firebirdsql/fbx/fbtype"
+	"github.com/firebirdsql/fbx/internal/cleanupctx"
 	"github.com/firebirdsql/fbx/internal/operationerror"
 	"github.com/firebirdsql/fbx/internal/stmtcache"
 )
@@ -127,14 +128,19 @@ var (
 	errDisabledStatementCache = fmt.Errorf("cannot use QueryExecModeCacheStatement with disabled statement cache")
 )
 
-// cleanupGracePeriod bounds cleanup network calls (op_free_statement, etc.) that must
-// run even after the user's ctx has been cancelled.
-const cleanupGracePeriod = 5 * time.Second
+// SetCleanupTimeout sets the timeout for the resource cleanup context.
+// The default timeout is 5 seconds.
+// It must be called before using the driver and must not be called
+// concurrently with driver operations.
+// The timeout must be at least 150 ms.
+func SetCleanupTimeout(timeout time.Duration) error {
+	return cleanupctx.SetCleanupTimeout(timeout)
+}
 
 // cleanupContext returns a context for releasing server-side resources after the
 // user's request has finished.
 func cleanupContext(parent context.Context) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.WithoutCancel(parent), cleanupGracePeriod)
+	return cleanupctx.CleanupContext(parent)
 }
 
 // Connect establishes a connection with a Firebird server with a connection string. See

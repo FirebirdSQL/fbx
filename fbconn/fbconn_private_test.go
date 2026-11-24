@@ -836,3 +836,12 @@ func TestArrayGenerateSDLIncludesInt128Scale(t *testing.T) {
 		})
 	}
 }
+
+func TestSetCleanupTimeout(t *testing.T) {
+	previous := cleanupTimeout()
+	t.Cleanup(func() { require.NoError(t, SetCleanupTimeout(previous)) })
+
+	const timeout = 300 * time.Millisecond
+	require.NoError(t, SetCleanupTimeout(timeout))
+	require.Equal(t, timeout, cleanupTimeout())
+}

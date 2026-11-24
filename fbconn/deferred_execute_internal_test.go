@@ -298,12 +298,12 @@ func TestDeferredExecuteInternalReadCleanupTimeout(t *testing.T) {
 			select {
 			case result := <-done:
 				require.ErrorIs(t, result.Err, context.Canceled)
-				require.GreaterOrEqual(t, time.Since(start), cleanupGracePeriod,
+				require.GreaterOrEqual(t, time.Since(start), cleanupTimeout(),
 					"cleanup must replace the original short cancellation deadline")
 				require.True(t, conn.IsClosed(), "a missing Execute response prevents reuse")
 				require.NoError(t, server.Close())
 				waitCleanupDone(t, conn)
-			case <-time.After(cleanupGracePeriod + 2*time.Second):
+			case <-time.After(cleanupTimeout() + 2*time.Second):
 				t.Fatal("internal read cleanup exceeded its timeout")
 			}
 		})
