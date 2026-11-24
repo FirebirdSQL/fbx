@@ -2,10 +2,14 @@ package bgreader_test
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"math/rand/v2"
+	"net"
+	"os"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/firebirdsql/fbx/fbconn/internal/bgreader"
@@ -92,6 +96,54 @@ func TestBGReaderErrorWhenStopped(t *testing.T) {
 	buf, err := io.ReadAll(bgr)
 	require.Equal(t, []byte("foobarbaz"), buf)
 	require.EqualError(t, err, "oops")
+}
+
+func TestBGReaderUsesCurrentReadDeadline(t *testing.T) {
+	for _, mode := range []string{"expired", "cleared"} {
+		t.Run(mode, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				client, server := net.Pipe()
+				defer func() { _ = client.Close() }()
+				defer func() { _ = server.Close() }()
+				bgr := bgreader.New(client)
+				bgr.Start()
+				_, err := server.Write([]byte("ab"))
+				require.NoError(t, err)
+				synctest.Wait() // The next speculative read is blocked.
+				require.NoError(t, client.SetReadDeadline(time.Now()))
+				bgr.StopAndWait()
+				if mode == "cleared" {
+					require.NoError(t, client.SetReadDeadline(time.Time{}))
+					go func() { _, _ = server.Write([]byte("cd")) }()
+				}
+				buf := make([]byte, 4)
+				n, err := io.ReadFull(bgr, buf)
+				if mode == "cleared" {
+					require.NoError(t, err)
+					require.Equal(t, "abcd", string(buf[:n]))
+				} else {
+					require.ErrorIs(t, err, os.ErrDeadlineExceeded)
+					require.Equal(t, "ab", string(buf[:n]))
+				}
+			})
+		})
+	}
+}
+
+func TestBGReaderPreservesBackgroundErrors(t *testing.T) {
+	for _, tc := range []struct {
+		data string
+		err  error
+	}{{"abc", os.ErrDeadlineExceeded}, {"", context.DeadlineExceeded}} {
+		r := &mockReader{readFuncs: []mockReadFunc{
+			func(p []byte) (int, error) { return copy(p, tc.data), tc.err },
+		}}
+		bgr := bgreader.New(r)
+		bgr.Start()
+		data, err := io.ReadAll(bgr)
+		require.ErrorIs(t, err, tc.err)
+		require.Equal(t, tc.data, string(data))
+	}
 }
 
 type numberReader struct {

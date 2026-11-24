@@ -504,26 +504,13 @@ func (st *Statement) deallocateLocked(ctx context.Context) error {
 	if st.closed {
 		return nil
 	}
-	if st.conn.IsClosed() {
-		return ErrConnClosed
-	}
-	if err := st.conn.client.WriteMessage(&fbproto.OpFreeStatement{
-		StatementHandle: st.Description.StatementHandle,
-		Option:          fbproto.DSQL_drop,
-	}); err != nil {
-		st.conn.asyncClose()
-		return err
-	}
-	if err := st.conn.flushWithPotentialWriteReadDeadlock(); err != nil {
-		st.conn.asyncClose()
-		st.cursorTransaction = nil
-		st.closed = true
-		return err
-	}
 	st.cursorTransaction = nil
 	st.closed = true
 	delete(st.conn.activeStatements, st)
-	return nil
+	if st.conn.IsClosed() {
+		return nil
+	}
+	return st.conn.freeStatementHandleLocked(ctx, st.Description.StatementHandle)
 }
 
 // CloseCursor close opened cursor without deallocating statement on server
@@ -531,10 +518,9 @@ func (st *Statement) CloseCursor(ctx context.Context) error {
 	return st.internalClose(ctx, fbproto.DSQL_close)
 }
 
-// freeStatementHandleLocked sends op_free_statement DSQL_drop for a raw server-side
-// statement handle that has no corresponding *Statement Go object yet. Caller must
-// hold the conn lock. On any wire error the conn is asyncClose'd.
-func (fbConn *FbConn) freeStatementHandleLocked(handle int) error {
+// freeStatementHandleLocked sends DSQL_drop for a server-side statement handle.
+// The caller holds the conn lock and manages cancellation.
+func (fbConn *FbConn) freeStatementHandleLocked(ctx context.Context, handle int) error {
 	if fbConn.IsClosed() {
 		return ErrConnClosed
 	}
@@ -545,7 +531,7 @@ func (fbConn *FbConn) freeStatementHandleLocked(handle int) error {
 		})
 	}); err != nil {
 		fbConn.asyncClose()
-		return err
+		return withContextError(ctx, err)
 	}
 	return nil
 }

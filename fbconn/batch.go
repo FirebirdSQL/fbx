@@ -156,14 +156,11 @@ func (fbConn *FbConn) PrepareBatchStatement(ctx context.Context, sql string) (*S
 	if err != nil {
 		return nil, err
 	}
-	st, err := fbConn.prepareTx(ctx, tx, sql, statementScopeConnection)
+	rollback := prepareKeepTx
 	if startedTx {
-		err = operationerror.Join(err, fbConn.rollbackOwnedInternalTx(ctx, tx))
+		rollback = prepareRollbackAlways
 	}
-	if err != nil {
-		return nil, err
-	}
-	return st, nil
+	return fbConn.prepareTx(ctx, tx, sql, statementScopeConnection, rollback)
 }
 
 func (b *Batch) isClosed() bool {
@@ -391,7 +388,7 @@ func (b *Batch) Execute(ctx context.Context, tx *FBTransaction) (*BatchCompletio
 		err = operationerror.Join(errBatchExecutionFailed, normalizeTimeoutError(ctx, ctx.Err()))
 	}
 	if err != nil || completion.HasErrors() {
-		if rbErr := b.st.conn.rollbackOwnedInternalTx(ctx, execTx); rbErr != nil {
+		if rbErr := b.st.conn.rollbackOwnedInternalTx(ctx, execTx, false); rbErr != nil {
 			if err == nil {
 				err = errBatchExecutionFailed
 			}

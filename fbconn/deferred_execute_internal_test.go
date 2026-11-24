@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/firebirdsql/fbx/fbconn/ctxwatch"
@@ -124,6 +127,8 @@ func (h *deferredExecuteCancelHandler) HandleCancel(ctx context.Context) {
 	close(h.canceled)
 }
 
+const deferredExecuteTestCancelDelay = 50 * time.Millisecond
+
 func newDeferredExecutePipe(t *testing.T) (*FbConn, *Statement, net.Conn, *deferredExecuteWriteConn, <-chan struct{}) {
 	t.Helper()
 	client, server := net.Pipe()
@@ -133,7 +138,7 @@ func newDeferredExecutePipe(t *testing.T) (*FbConn, *Statement, net.Conn, *defer
 	handler := &deferredExecuteCancelHandler{
 		CancelRequestContextWatcherHandler: &CancelRequestContextWatcherHandler{
 			Conn:          conn,
-			DeadlineDelay: 50 * time.Millisecond,
+			DeadlineDelay: deferredExecuteTestCancelDelay,
 			// Keep cancel state operations out of the scripted query exchange.
 			sendCancelOperationFunc: func(context.Context, int) error { return nil },
 		},
@@ -273,39 +278,344 @@ func respondToDeferredExecuteAndRollback(server net.Conn) error {
 	return nil
 }
 
-func TestDeferredExecuteInternalReadCleanupTimeout(t *testing.T) {
+func TestDeferredExecuteInternalReadUsesRequestDeadline(t *testing.T) {
 	for _, blockedAt := range []string{"flush", "response"} {
 		t.Run(blockedAt, func(t *testing.T) {
-			conn, st, server, _, canceled := newDeferredExecutePipe(t)
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			require.NoError(t, conn.lock())
-			defer conn.unlock()
-			conn.contextWatcher.Watch(ctx)
-			rr := st.internalExecTx(ctx, st.transaction, &ResultReader{fbConn: conn, ctx: ctx}, nil)
-			cancel()
-			select {
-			case <-canceled:
-			case <-time.After(time.Second):
-				t.Fatal("context cancellation was not observed")
-			}
-			if blockedAt == "response" {
-				go func() { _, _ = io.Copy(io.Discard, server) }()
-			}
-			start := time.Now()
-			done := make(chan *Result, 1)
-			go func() { done <- rr.readWithoutCommit() }()
-			select {
-			case result := <-done:
+			synctest.Test(t, func(t *testing.T) {
+				conn, st, server, _, canceled := newDeferredExecutePipe(t)
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				require.NoError(t, conn.lock())
+				defer conn.unlock()
+				conn.contextWatcher.Watch(ctx)
+				rr := st.internalExecTx(ctx, st.transaction, &ResultReader{fbConn: conn, ctx: ctx}, nil)
+				cancel()
+				select {
+				case <-canceled:
+				case <-time.After(time.Second):
+					t.Fatal("context cancellation was not observed")
+				}
+				if blockedAt == "response" {
+					go func() { _, _ = io.Copy(io.Discard, server) }()
+				}
+				timer := time.AfterFunc(2*cleanupGracePeriod, func() { _ = server.Close() })
+				defer timer.Stop()
+
+				start := time.Now()
+				result := rr.readWithoutCommit()
 				require.ErrorIs(t, result.Err, context.Canceled)
-				require.GreaterOrEqual(t, time.Since(start), cleanupGracePeriod,
-					"cleanup must replace the original short cancellation deadline")
+				require.Equal(t, deferredExecuteTestCancelDelay, time.Since(start))
 				require.True(t, conn.IsClosed(), "a missing Execute response prevents reuse")
 				require.NoError(t, server.Close())
 				waitCleanupDone(t, conn)
-			case <-time.After(cleanupGracePeriod + 2*time.Second):
-				t.Fatal("internal read cleanup exceeded its timeout")
-			}
+			})
+		})
+	}
+}
+
+type arrayPrepareCleanupConn struct {
+	net.Conn
+	dropped          []int
+	rollbackSent     bool
+	deadlineResetErr error
+	readDeadlineOnly bool
+	stallExecute     bool
+}
+
+func (c *arrayPrepareCleanupConn) SetDeadline(deadline time.Time) error {
+	if deadline.IsZero() && c.deadlineResetErr != nil {
+		return c.deadlineResetErr
+	}
+	if c.readDeadlineOnly {
+		return c.SetReadDeadline(deadline)
+	}
+	return c.Conn.SetDeadline(deadline)
+}
+
+func (c *arrayPrepareCleanupConn) Write(p []byte) (int, error) {
+	if len(p) == 4 && binary.BigEndian.Uint32(p) == fbproto.Op_ping {
+		return c.Conn.Write(p)
+	}
+	if len(p) == 8 && binary.BigEndian.Uint32(p) == fbproto.Op_rollback {
+		c.rollbackSent = true
+		return c.Conn.Write(p)
+	}
+	if c.stallExecute && len(p) >= 4 && binary.BigEndian.Uint32(p) == fbproto.Op_execute {
+		return c.Conn.Write(p)
+	}
+	if len(p) == 12 && binary.BigEndian.Uint32(p) == fbproto.Op_free_statement && binary.BigEndian.Uint32(p[8:]) == fbproto.DSQL_drop {
+		handle := int(binary.BigEndian.Uint32(p[4:]))
+		c.dropped = append(c.dropped, handle)
+		return c.Conn.Write(p)
+	}
+	return len(p), nil
+}
+
+type cancelBeforeArrayMetadataFetch struct {
+	context.Context
+	conn   *FbConn
+	cancel context.CancelFunc
+}
+
+func (c cancelBeforeArrayMetadataFetch) Err() error {
+	if c.conn.deferredExecutePending.Load() {
+		c.cancel()
+		synctest.Wait()
+	}
+	return c.Context.Err()
+}
+
+type delayedPrepareCancelHandler struct {
+	*CancelRequestContextWatcherHandler
+	resume <-chan struct{}
+}
+
+func (h *delayedPrepareCancelHandler) HandleCancel(ctx context.Context) {
+	<-h.resume
+	h.CancelRequestContextWatcherHandler.HandleCancel(ctx)
+}
+
+type prepareCancelWithoutDeadline struct{}
+
+func (prepareCancelWithoutDeadline) HandleCancel(context.Context) {}
+func (prepareCancelWithoutDeadline) HandleUnwatchAfterCancel()    {}
+
+func TestPrepareBatchCleansUpNewTransactionAfterLockFailure(t *testing.T) {
+	conn := newDetachTestConn(&prepareCleanupTestConn{})
+	t.Cleanup(func() {
+		conn.asyncClose()
+		waitCleanupDone(t, conn)
+	})
+	conn.config.Autocommit = true
+	tx := &FBTransaction{Connection: conn, Handle: 1}
+	conn.internalTransaction = tx
+	// An event operation acquired the connection between Begin and Prepare.
+	require.NoError(t, conn.lock())
+	defer conn.unlock()
+
+	st, err := conn.prepareTx(context.Background(), tx, "select 1", statementScopeConnection, prepareRollbackAlways)
+	require.Nil(t, st)
+	require.ErrorContains(t, err, "conn busy")
+	require.True(t, SafeToRetry(err))
+	require.True(t, conn.IsClosed(), "a failed rollback must discard the temporary transaction")
+}
+
+func TestPrepareArrayMetadataCleanup(t *testing.T) {
+	const statementHandle, metadataHandle = 42, 43
+	const slowDropDelay = cleanupGracePeriod + time.Second
+	const cancelDeadlineDelay = 2 * time.Second
+	const requestTimeout = 2 * cleanupGracePeriod
+	bothDrops := []int{metadataHandle, statementHandle}
+	resetErr := errors.New("reset deadline failed")
+	for _, tc := range []struct {
+		name             string
+		dropsRead        int
+		readDelay        time.Duration
+		lateCancel       bool
+		resetErr         error
+		readDeadlineOnly bool
+		stallAt          string
+		wantContextErr   error
+		wantDropped      []int
+		wantElapsed      time.Duration
+	}{
+		{
+			name: "successful cleanup after cancellation", dropsRead: 2,
+			wantContextErr: context.Canceled, wantDropped: bothDrops,
+		},
+		{
+			name: "slow drop outlasts the read deadline", dropsRead: 2, readDeadlineOnly: true,
+			readDelay: cancelDeadlineDelay + time.Second, wantElapsed: cancelDeadlineDelay + time.Second,
+			wantContextErr: context.Canceled, wantDropped: bothDrops,
+		},
+		{
+			name: "late cancel after dropping both statements", dropsRead: 2, lateCancel: true,
+			wantContextErr: context.Canceled, wantDropped: bothDrops,
+		},
+		{
+			name:           "metadata statement blocked",
+			wantContextErr: context.Canceled, wantDropped: []int{metadataHandle}, wantElapsed: cancelDeadlineDelay,
+		},
+		{
+			name: "original statement blocked after metadata drop", dropsRead: 1, readDelay: time.Second,
+			wantContextErr: context.Canceled, wantDropped: bothDrops, wantElapsed: cancelDeadlineDelay,
+		},
+		{
+			name:           "caller deadline during metadata drop",
+			wantContextErr: context.DeadlineExceeded, wantDropped: []int{metadataHandle}, wantElapsed: requestTimeout + cancelDeadlineDelay,
+		},
+		{
+			name: "deadline reset fails after both drops", dropsRead: 2, resetErr: resetErr,
+			wantContextErr: context.Canceled, wantDropped: bothDrops,
+		},
+		{
+			name: "slow drop within caller deadline", dropsRead: 2, readDelay: slowDropDelay,
+			wantDropped: bothDrops, wantElapsed: slowDropDelay,
+		},
+		{
+			name: "cleanup grace bounds deferred execute write", stallAt: "execute write",
+			wantContextErr: context.Canceled, wantElapsed: cleanupGracePeriod,
+		},
+		{
+			name: "cleanup grace bounds deferred execute response", stallAt: "execute response",
+			wantContextErr: context.Canceled, wantElapsed: cleanupGracePeriod,
+		},
+		{
+			name: "both drops share the cleanup grace", stallAt: "drop", dropsRead: 1,
+			readDelay:      cleanupGracePeriod - time.Second,
+			wantContextErr: context.Canceled, wantDropped: bothDrops, wantElapsed: cleanupGracePeriod,
+		},
+		{
+			name: "owned rollback shares the cleanup grace", stallAt: "rollback", dropsRead: 2,
+			readDelay:      cleanupGracePeriod - time.Second,
+			wantContextErr: context.Canceled, wantDropped: bothDrops, wantElapsed: cleanupGracePeriod,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var responses bytes.Buffer
+				w := fbproto.NewXDRWriter(&responses)
+				arrayInfo := tagLengthValue(fbproto.Isc_info_sql_stmt_type, fbproto.Isc_info_sql_stmt_select)
+				arrayInfo = append(arrayInfo, fbproto.Isc_info_sql_select)
+				arrayInfo = append(arrayInfo, tagLengthValue(fbproto.Isc_info_sql_describe_vars, 1)...)
+				arrayInfo = append(arrayInfo, tagLengthValue(fbproto.Isc_info_sql_sqlda_seq, 1)...)
+				arrayInfo = append(arrayInfo, tagLengthValue(fbproto.Isc_info_sql_type, fbproto.SQL_TYPE_ARRAY)...)
+				arrayInfo = append(arrayInfo, tagBufferValue(fbproto.Isc_info_sql_field, []byte("VAL"))...)
+				arrayInfo = append(arrayInfo, tagBufferValue(fbproto.Isc_info_sql_relation, []byte("T"))...)
+				arrayInfo = append(arrayInfo, fbproto.Isc_info_sql_describe_end, fbproto.Isc_info_end)
+				selectInfo := append(tagLengthValue(fbproto.Isc_info_sql_stmt_type, fbproto.Isc_info_sql_stmt_select), fbproto.Isc_info_end)
+				require.NoError(t, writeProbeResponse(w, statementHandle))
+				require.NoError(t, writeProbeResponse(w, 0))
+				require.NoError(t, writeProbeResponseData(w, 0, arrayInfo))
+				require.NoError(t, writeProbeResponse(w, metadataHandle))
+				require.NoError(t, writeProbeResponse(w, fbproto.StmtDeferExecute))
+				require.NoError(t, writeProbeResponseData(w, 0, selectInfo))
+				if tc.stallAt != "execute write" && tc.stallAt != "execute response" {
+					require.NoError(t, writeProbeResponse(w, 0)) // Deferred Execute completed.
+				}
+				if tc.stallAt == "rollback" {
+					for range tc.dropsRead {
+						require.NoError(t, writeProbeResponse(w, 0))
+					}
+				}
+				cancelBeforeFetch := tc.wantContextErr == context.Canceled
+				if !cancelBeforeFetch {
+					require.NoError(t, w.WriteInt32(fbproto.Op_fetch_response))
+					require.NoError(t, w.WriteInt32(100)) // End of an empty cursor.
+					require.NoError(t, w.WriteInt32(0))
+					require.NoError(t, writeProbeResponseData(w, 0, []byte{fbproto.Isc_info_end})) // Records.
+				}
+
+				client, server := net.Pipe()
+				wire := &arrayPrepareCleanupConn{
+					Conn: client, deadlineResetErr: tc.resetErr, stallExecute: tc.stallAt == "execute write",
+					readDeadlineOnly: tc.readDeadlineOnly,
+				}
+				conn := newDetachTestConn(wire)
+				conn.config.Autocommit = tc.stallAt == "rollback"
+				peerDone := make(chan struct{})
+				go func() {
+					defer close(peerDone)
+					time.Sleep(tc.readDelay)
+					_, _ = io.CopyN(io.Discard, server, int64(tc.dropsRead)*12)
+					if tc.stallAt == "rollback" {
+						_, _ = io.CopyN(io.Discard, server, 8)
+					}
+				}()
+				defer func() {
+					require.NoError(t, server.Close())
+					<-peerDone
+					conn.asyncClose()
+					waitCleanupDone(t, conn)
+				}()
+				var cancelKinds []int
+				conn.contextHandler = &DeadlineContextWatcherHandler{Conn: wire, DeadlineDelay: cancelDeadlineDelay}
+				switch {
+				case tc.stallAt != "":
+					conn.contextHandler = prepareCancelWithoutDeadline{}
+				case tc.lateCancel:
+					conn.contextHandler = &delayedPrepareCancelHandler{
+						CancelRequestContextWatcherHandler: &CancelRequestContextWatcherHandler{
+							Conn: conn, DeadlineDelay: cancelDeadlineDelay,
+							sendCancelOperationFunc: func(_ context.Context, kind int) error {
+								cancelKinds = append(cancelKinds, kind)
+								return nil
+							},
+						},
+						resume: peerDone,
+					}
+				}
+				conn.contextWatcher = ctxwatch.NewContextWatcher(conn.contextHandler)
+				encoding, err := fbproto.NewEncoding("UTF8")
+				require.NoError(t, err)
+				conn.Encoding = encoding
+				conn.client = fbproto.NewClient(io.MultiReader(&responses, conn.bgReader), conn.writer, encoding)
+				conn.protocolVersion = fbproto.PROTOCOL_VERSION13
+				conn.activeStatements = make(map[*Statement]struct{})
+				conn.internalTransaction = &FBTransaction{Connection: conn, Handle: 1}
+				ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+				defer cancel()
+				if cancelBeforeFetch {
+					ctx = cancelBeforeArrayMetadataFetch{ctx, conn, cancel}
+				}
+				// Release stalled I/O so the test can report a regression.
+				timer := time.AfterFunc(3*cleanupGracePeriod, func() { _ = server.Close() })
+				defer timer.Stop()
+
+				start := time.Now()
+				st, err := conn.Prepare(ctx, "select VAL from T")
+				require.Equal(t, tc.wantElapsed, time.Since(start), "Prepare cleanup duration")
+				require.Nil(t, st)
+				require.NotContains(t, cancelKinds, fbproto.Fb_cancel_raise)
+				if tc.wantContextErr != nil {
+					require.ErrorIs(t, err, tc.wantContextErr)
+				} else {
+					require.ErrorContains(t, err, "cannot resolve array metadata")
+				}
+				require.False(t, SafeToRetry(err))
+				require.False(t, conn.IsBusy())
+				require.False(t, conn.deferredExecutePending.Load())
+				require.Empty(t, conn.activeStatements)
+				require.Equal(t, tc.wantDropped, wire.dropped)
+				if tc.stallAt == "rollback" {
+					require.True(t, wire.rollbackSent)
+					require.ErrorContains(t, err, "rollback internal tx")
+				}
+				require.Zero(t, responses.Len())
+				switch {
+				case tc.stallAt != "":
+					require.True(t, conn.IsClosed())
+					require.ErrorIs(t, err, os.ErrDeadlineExceeded)
+				case tc.resetErr != nil:
+					require.True(t, conn.IsClosed())
+					require.ErrorIs(t, err, tc.resetErr)
+				case tc.dropsRead < len(tc.wantDropped):
+					var timeoutErr net.Error
+					require.ErrorAs(t, err, &timeoutErr)
+					require.True(t, timeoutErr.Timeout())
+					require.True(t, conn.IsClosed())
+					require.ErrorIs(t, err, os.ErrDeadlineExceeded)
+					if tc.wantContextErr == context.DeadlineExceeded {
+						require.True(t, Timeout(err))
+					}
+				default:
+					cancel()
+					time.Sleep(cleanupGracePeriod)
+					require.False(t, conn.IsClosed())
+					go func() {
+						if _, err := io.CopyN(io.Discard, server, 4); err != nil {
+							return
+						}
+						w := fbproto.NewXDRWriter(server)
+						for range tc.dropsRead + 1 {
+							if err := writeProbeResponse(w, 0); err != nil {
+								return
+							}
+						}
+					}()
+					require.NoError(t, conn.Ping(context.Background()))
+				}
+			})
 		})
 	}
 }

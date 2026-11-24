@@ -3,6 +3,8 @@ package fbconn
 import (
 	"context"
 	"errors"
+	"net"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -20,6 +22,31 @@ func TestSyncConnClosedConnErrorIsErrConnClosed(t *testing.T) {
 
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrConnClosed)
+}
+
+type cancelingNetworkTimeout struct {
+	*net.OpError
+	cancel context.CancelFunc
+}
+
+func (e *cancelingNetworkTimeout) Timeout() bool {
+	e.cancel()
+	return e.OpError.Timeout()
+}
+
+func TestWithContextErrorRetainsTransportTimeoutDuringCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	transportErr := &cancelingNetworkTimeout{
+		OpError: &net.OpError{Op: "write", Err: os.ErrDeadlineExceeded},
+		cancel:  cancel,
+	}
+
+	err := withContextError(ctx, transportErr)
+
+	require.ErrorIs(t, ctx.Err(), context.Canceled)
+	require.ErrorIs(t, err, transportErr)
+	require.True(t, Timeout(err))
 }
 
 func TestTargetSessionAttributeErrors(t *testing.T) {

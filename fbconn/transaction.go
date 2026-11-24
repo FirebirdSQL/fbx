@@ -74,15 +74,21 @@ func (tx *FBTransaction) Commit(ctx context.Context) error {
 }
 
 func (tx *FBTransaction) Rollback(ctx context.Context) error {
+	return tx.rollback(ctx, false)
+}
+
+func (tx *FBTransaction) rollback(ctx context.Context, locked bool) error {
 	if tx.Closed {
 		return ErrTransactionClosed
 	}
 	var err error
 
-	if err = tx.Connection.lock(); err != nil {
-		return err
+	if !locked {
+		if err = tx.Connection.lock(); err != nil {
+			return err
+		}
+		defer tx.Connection.unlock()
 	}
-	defer tx.Connection.unlock()
 
 	if err = tx.Connection.beforeRequest(); err != nil {
 		return err

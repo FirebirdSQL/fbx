@@ -2,7 +2,9 @@
 package bgreader
 
 import (
+	"errors"
 	"io"
+	"os"
 	"sync"
 
 	"github.com/firebirdsql/fbx/internal/iobufpool"
@@ -104,7 +106,13 @@ func (r *BGReader) bgRead() {
 		*buf = (*buf)[:n]
 
 		r.cond.L.Lock()
-		r.readResults = append(r.readResults, readResult{buf: buf, err: err})
+		if n == 0 && errors.Is(err, os.ErrDeadlineExceeded) {
+			// A speculative read's socket deadline may be cleared before Read.
+			// Stop here so the caller reads under its current deadline.
+			iobufpool.Put(buf)
+		} else {
+			r.readResults = append(r.readResults, readResult{buf: buf, err: err})
+		}
 		if r.status == StatusStopping || err != nil {
 			r.status = StatusStopped
 			keepReading = false
@@ -119,20 +127,13 @@ func (r *BGReader) Read(p []byte) (int, error) {
 	r.cond.L.Lock()
 	defer r.cond.L.Unlock()
 
+	for len(r.readResults) == 0 && r.status != StatusStopped {
+		r.cond.Wait()
+	}
 	if len(r.readResults) > 0 {
 		return r.readFromReadResults(p)
 	}
-
-	// There are no unread background read results and the background reader is stopped.
-	if r.status == StatusStopped {
-		return r.r.Read(p)
-	}
-
-	// Wait for results from the background reader
-	for len(r.readResults) == 0 {
-		r.cond.Wait()
-	}
-	return r.readFromReadResults(p)
+	return r.r.Read(p)
 }
 
 // readBackgroundResults reads a result previously read by the background reader. r.cond.L must be held.

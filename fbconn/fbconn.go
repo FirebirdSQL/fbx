@@ -74,8 +74,8 @@ type FbConn struct {
 	slowWriteTimer  *time.Timer
 	bgReaderStarted chan struct{}
 	writeInProgress atomic.Bool
-	// A deferred Execute has been written without an explicit flush. The
-	// cancellation callback races with the first Fetch or Close.
+	// Suppress op_cancel for a buffered Execute until the first Fetch takes
+	// over or the request finishes cleaning up the deferred execution.
 	deferredExecutePending atomic.Bool
 	attachmentHandle       int
 	attachmentID           uint64
@@ -1675,14 +1675,7 @@ func (fbConn *FbConn) Prepare(ctx context.Context, sql string) (*Statement, erro
 	if err != nil {
 		return nil, err
 	}
-	st, err := fbConn.prepareTx(ctx, tx, sql, statementScopeConnection)
-	if err != nil {
-		if rbErr := fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx, err); rbErr != nil {
-			err = operationerror.Join(err, fmt.Errorf("rollback internal tx: %w", rbErr))
-		}
-		return nil, err
-	}
-	return st, nil
+	return fbConn.prepareTx(ctx, tx, sql, statementScopeConnection, prepareRollbackOnError)
 }
 
 type statementScope uint8
@@ -1692,9 +1685,17 @@ const (
 	statementScopeConnection
 )
 
+type prepareRollback uint8
+
+const (
+	prepareKeepTx prepareRollback = iota
+	prepareRollbackOnError
+	prepareRollbackAlways
+)
+
 // PrepareTx creates a prepared statement bound to tx.
 func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql string) (*Statement, error) {
-	return fbConn.prepareTx(ctx, tx, sql, statementScopeTransaction)
+	return fbConn.prepareTx(ctx, tx, sql, statementScopeTransaction, prepareKeepTx)
 }
 
 // PrepareTxForConnection creates a connection-scoped prepared statement using
@@ -1703,20 +1704,57 @@ func (fbConn *FbConn) PrepareTx(ctx context.Context, tx *FBTransaction, sql stri
 // Callers must only retain the statement while its metadata remains valid
 // outside tx.
 func (fbConn *FbConn) PrepareTxForConnection(ctx context.Context, tx *FBTransaction, sql string) (*Statement, error) {
-	return fbConn.prepareTx(ctx, tx, sql, statementScopeConnection)
+	return fbConn.prepareTx(ctx, tx, sql, statementScopeConnection, prepareKeepTx)
 }
 
-func (fbConn *FbConn) prepareTx(ctx context.Context, tx *FBTransaction, sql string, scope statementScope) (*Statement, error) {
+func (fbConn *FbConn) prepareTx(ctx context.Context, tx *FBTransaction, sql string, scope statementScope, rollback prepareRollback) (st *Statement, err error) {
 	if err := fbConn.lock(); err != nil {
+		// Batch preparation already started its temporary transaction.
+		if rollback == prepareRollbackAlways {
+			err = operationerror.Join(err, fbConn.rollbackOwnedInternalTx(ctx, tx, false))
+		}
 		return nil, err
 	}
 	defer fbConn.unlock()
+
+	var stopCleanup func() error
+	if ctx.Done() != nil {
+		stopCleanup = fbConn.watchPrepareCleanup(ctx)
+	}
+	defer func() {
+		// Keep op_cancel suppressed through both statement drops and Unwatch.
+		fbConn.deferredExecutePending.Store(false)
+		var cleanupErr error
+		if handler, ok := fbConn.contextHandler.(interface{ deadlineError() error }); ok && stopCleanup != nil {
+			cleanupErr = handler.deadlineError()
+		}
+		needsRollback := rollback == prepareRollbackAlways || (rollback == prepareRollbackOnError && err != nil && !SafeToRetry(err))
+		if cleanupErr == nil && needsRollback {
+			if rbErr := fbConn.rollbackOwnedInternalTx(ctx, tx, true); rbErr != nil {
+				if rollback == prepareRollbackOnError {
+					rbErr = fmt.Errorf("rollback internal tx: %w", rbErr)
+				}
+				err = operationerror.Join(err, rbErr)
+			}
+		}
+		if stopCleanup != nil {
+			cleanupErr = operationerror.Join(stopCleanup(), cleanupErr)
+		}
+		if cleanupErr != nil {
+			fbConn.asyncClose()
+			err = withContextError(ctx, operationerror.Join(err, cleanupErr))
+		}
+		if err != nil {
+			delete(fbConn.activeStatements, st)
+			st = nil
+		}
+	}()
 
 	if err := fbConn.beforeRequest(); err != nil {
 		return nil, err
 	}
 
-	if ctx != context.Background() {
+	if ctx.Done() != nil {
 		select {
 		case <-ctx.Done():
 			return nil, newContextAlreadyDoneError(ctx)
@@ -1729,14 +1767,37 @@ func (fbConn *FbConn) prepareTx(ctx context.Context, tx *FBTransaction, sql stri
 	return fbConn.internalPrepareTx(ctx, tx, sql, scope)
 }
 
+// watchPrepareCleanup bounds the whole operation after cancellation, including
+// an owned transaction's rollback, even when the request handler sets no deadline.
+func (fbConn *FbConn) watchPrepareCleanup(ctx context.Context) func() error {
+	done := make(chan struct{})
+	result := make(chan error, 1)
+	stop := context.AfterFunc(ctx, func() {
+		timer := time.NewTimer(cleanupGracePeriod)
+		select {
+		case <-done:
+			timer.Stop()
+			result <- nil
+		case <-timer.C:
+			_ = fbConn.conn.Close()
+			result <- fmt.Errorf("prepare cleanup: %w", os.ErrDeadlineExceeded)
+		}
+	})
+	return func() error {
+		close(done)
+		if stop() {
+			return nil
+		}
+		return <-result
+	}
+}
+
 func (fbConn *FbConn) internalPrepareTx(
 	ctx context.Context,
 	tx *FBTransaction,
 	sql string,
 	scope statementScope,
-) (*Statement, error) {
-	var err error
-
+) (st *Statement, err error) {
 	if err = fbConn.withWriteLockAndFlush(func() error {
 		if err := fbConn.client.WriteMessage(&fbproto.OpAllocateStatement{}); err != nil {
 			return err
@@ -1771,6 +1832,16 @@ func (fbConn *FbConn) internalPrepareTx(
 		return nil, fmt.Errorf("unexpected statement allocation response %T", msg)
 	}
 
+	var reportClosedConn bool
+	defer func() {
+		if err == nil || (!reportClosedConn && fbConn.IsClosed()) {
+			return
+		}
+		if cleanupErr := fbConn.freeStatementHandleLocked(ctx, statementHandle); cleanupErr != nil {
+			err = operationerror.Join(err, fmt.Errorf("free statement after prepare error: %w", cleanupErr))
+		}
+	}()
+
 	msg, err = fbConn.receiveMessage()
 	if err != nil {
 		fbConn.asyncCloseAfterRead(err)
@@ -1781,28 +1852,14 @@ func (fbConn *FbConn) internalPrepareTx(
 	case *fbproto.OpResponse:
 		deferExecute = m.Object&fbproto.StmtDeferExecute != 0
 	case *fbproto.ErrorResponse:
-		err = ErrorResponseToFbError(m)
-		if fbConn.IsClosed() {
-			return nil, err
-		}
-		if cleanupErr := fbConn.freeStatementHandleLocked(statementHandle); cleanupErr != nil {
-			return nil, operationerror.Join(err, fmt.Errorf("free statement after prepare error: %w", cleanupErr))
-		}
-		return nil, err
+		return nil, ErrorResponseToFbError(m)
 	default:
 		fbConn.asyncClose()
 		return nil, fmt.Errorf("unexpected statement prepare response %T", msg)
 	}
 
 	statementInfo := StatementInfo{}
-	err = fbConn.getInfoStatement(statementHandle, statementInfo.parseInfo)
-	if err != nil {
-		if fbConn.IsClosed() {
-			return nil, err
-		}
-		if cleanupErr := fbConn.freeStatementHandleLocked(statementHandle); cleanupErr != nil {
-			return nil, operationerror.Join(err, fmt.Errorf("free statement after prepare error: %w", cleanupErr))
-		}
+	if err := fbConn.getInfoStatement(statementHandle, statementInfo.parseInfo); err != nil {
 		return nil, err
 	}
 
@@ -1842,12 +1899,6 @@ func (fbConn *FbConn) internalPrepareTx(
 			arrays, err = getArrayInfo(fbConn, ctx, tx, fields, tables)
 		}
 		if err != nil {
-			if fbConn.IsClosed() {
-				return nil, err
-			}
-			if cleanupErr := fbConn.freeStatementHandleLocked(statementHandle); cleanupErr != nil {
-				return nil, operationerror.Join(err, fmt.Errorf("free statement after prepare error: %w", cleanupErr))
-			}
 			return nil, err
 		}
 
@@ -1856,14 +1907,13 @@ func (fbConn *FbConn) internalPrepareTx(
 			err = attachArrayMetadata(desc.Parameters, arrays, "parameter")
 		}
 		if err != nil {
-			if cleanupErr := fbConn.freeStatementHandleLocked(statementHandle); cleanupErr != nil {
-				return nil, operationerror.Join(err, fmt.Errorf("free statement after prepare error: %w", cleanupErr))
-			}
+			// Preserve ErrConnClosed as a cleanup cause when attaching array metadata fails.
+			reportClosedConn = true
 			return nil, err
 		}
 	}
 
-	st := &Statement{
+	st = &Statement{
 		conn:         fbConn,
 		Description:  desc,
 		deferExecute: deferExecute && fbConn.protocolVersion >= fbproto.PROTOCOL_VERSION11,
@@ -2043,11 +2093,8 @@ func (fbConn *FbConn) ExecParams(ctx context.Context, sql string, paramValues []
 }
 
 func (fbConn *FbConn) ExecParamsTx(ctx context.Context, tx *FBTransaction, sql string, paramValues [][]byte) *ResultReader {
-	st, err := fbConn.PrepareTx(ctx, tx, sql)
+	st, err := fbConn.prepareTx(ctx, tx, sql, statementScopeTransaction, prepareRollbackOnError)
 	if err != nil {
-		if rbErr := fbConn.rollbackInternalTxIfAutocommitOnError(ctx, tx, err); rbErr != nil {
-			err = operationerror.Join(err, fmt.Errorf("rollback internal tx: %w", rbErr))
-		}
 		res := ResultReader{
 			fbConn: fbConn,
 			ctx:    ctx,
@@ -2197,12 +2244,6 @@ func (fbConn *FbConn) getArrayMetadata(ctx context.Context, tx *FBTransaction, s
 		return nil, nil, err
 	}
 
-	defer func() {
-		cleanupCtx, cancel := cleanupContext(ctx)
-		_ = st.deallocateLocked(cleanupCtx)
-		cancel()
-	}()
-
 	rr := &ResultReader{
 		fbConn:           fbConn,
 		ctx:              ctx,
@@ -2211,8 +2252,8 @@ func (fbConn *FbConn) getArrayMetadata(ctx context.Context, tx *FBTransaction, s
 
 	result := st.internalExecTx(ctx, tx, rr, nil).readWithoutCommit()
 
-	if result.Err != nil {
-		return nil, nil, result.Err
+	if err := operationerror.Join(result.Err, st.deallocateLocked(ctx)); err != nil {
+		return nil, nil, err
 	}
 
 	metadataList := make([]map[string][]byte, 0)
@@ -2293,12 +2334,6 @@ func (fbConn *FbConn) getArrayDimensions(ctx context.Context, tx *FBTransaction,
 		return nil, err
 	}
 
-	defer func() {
-		cleanupCtx, cancel := cleanupContext(ctx)
-		_ = st.deallocateLocked(cleanupCtx)
-		cancel()
-	}()
-
 	rr := &ResultReader{
 		fbConn:           fbConn,
 		ctx:              ctx,
@@ -2307,8 +2342,8 @@ func (fbConn *FbConn) getArrayDimensions(ctx context.Context, tx *FBTransaction,
 
 	result := st.internalExecTx(ctx, tx, rr, nil).readWithoutCommit()
 
-	if result.Err != nil {
-		return nil, result.Err
+	if err := operationerror.Join(result.Err, st.deallocateLocked(ctx)); err != nil {
+		return nil, err
 	}
 
 	dimensions := map[dimensionsMapKey][][]int{}
@@ -2693,7 +2728,6 @@ func (rr *ResultReader) finishDeferredExecute() error {
 	if !rr.deferredExecute {
 		return nil
 	}
-	rr.fbConn.deferredExecutePending.Store(false)
 	if rr.fbConn.IsClosed() {
 		rr.deferredExecute = false
 		return ErrConnClosed
@@ -2885,7 +2919,7 @@ func (fbConn *FbConn) commitInternalTx(ctx context.Context, tx *FBTransaction) e
 		return nil
 	}
 	if !fbConn.IsClosed() {
-		if rbErr := fbConn.rollbackOwnedInternalTx(ctx, tx); rbErr != nil {
+		if rbErr := fbConn.rollbackOwnedInternalTx(ctx, tx, false); rbErr != nil {
 			err = operationerror.Join(err, fmt.Errorf("rollback internal tx: %w", rbErr))
 		}
 	}
@@ -2900,11 +2934,11 @@ func (fbConn *FbConn) rollbackInternalTxIfAutocommitOnError(ctx context.Context,
 	if SafeToRetry(opErr) {
 		return nil
 	}
-	return fbConn.rollbackOwnedInternalTx(ctx, tx)
+	return fbConn.rollbackOwnedInternalTx(ctx, tx, false)
 }
 
 // rollbackOwnedInternalTx resolves the owned transaction independently of retry.
-func (fbConn *FbConn) rollbackOwnedInternalTx(ctx context.Context, tx *FBTransaction) error {
+func (fbConn *FbConn) rollbackOwnedInternalTx(ctx context.Context, tx *FBTransaction, locked bool) error {
 	if tx == nil || tx != fbConn.internalTransaction || tx.Closed {
 		return nil
 	}
@@ -2913,7 +2947,7 @@ func (fbConn *FbConn) rollbackOwnedInternalTx(ctx context.Context, tx *FBTransac
 	}
 	cleanupCtx, cancel := cleanupContext(ctx)
 	defer cancel()
-	if err := tx.Rollback(cleanupCtx); err != nil {
+	if err := tx.rollback(cleanupCtx, locked); err != nil {
 		// A failed rollback leaves the state of the implicit transaction unknown,
 		// so the connection must not be reused even when the error is not fatal.
 		fbConn.asyncClose()
@@ -2926,7 +2960,7 @@ func (fbConn *FbConn) rollbackOwnedInternalTx(ctx context.Context, tx *FBTransac
 // error.
 func (rr *ResultReader) Close() (QueryStatus, error) {
 	if !rr.closed {
-		_, _ = rr.closeWithoutCommit()
+		rr.closeWithDeferredExecuteCleanup()
 		rr.fbConn.contextWatcher.Unwatch()
 		rr.fbConn.unlock()
 
@@ -2953,22 +2987,25 @@ func (rr *ResultReader) Close() (QueryStatus, error) {
 	return rr.queryStatus, rr.err
 }
 
+func (rr *ResultReader) closeWithDeferredExecuteCleanup() {
+	if rr.deferredExecute {
+		// A standalone Close can finish the buffered Execute after cancellation.
+		defer rr.fbConn.deferredExecutePending.Store(false)
+		rr.fbConn.contextWatcher.Unwatch()
+		cleanupWatcher := ctxwatch.NewContextWatcher(&DeadlineContextWatcherHandler{
+			Conn:          rr.fbConn.conn,
+			DeadlineDelay: cleanupGracePeriod,
+		})
+		cleanupWatcher.Watch(rr.ctx)
+		defer cleanupWatcher.Unwatch()
+	}
+	_, _ = rr.closeWithoutCommit()
+}
+
 func (rr *ResultReader) closeWithoutCommit() (QueryStatus, error) {
 	if !rr.closed {
-		if rr.deferredExecute {
-			// Stop the request watcher before flushing the buffered Execute. A
-			// canceled query must not cancel its own protocol cleanup. Internal
-			// metadata reads need the same bounded cleanup as public Close.
-			rr.fbConn.contextWatcher.Unwatch()
-			cleanupWatcher := ctxwatch.NewContextWatcher(&DeadlineContextWatcherHandler{
-				Conn:          rr.fbConn.conn,
-				DeadlineDelay: cleanupGracePeriod,
-			})
-			cleanupWatcher.Watch(rr.ctx)
-			defer cleanupWatcher.Unwatch()
-			if err := rr.finishDeferredExecute(); err != nil {
-				rr.concludeCommand(QueryStatus{}, err)
-			}
+		if err := rr.finishDeferredExecute(); err != nil {
+			rr.concludeCommand(QueryStatus{}, err)
 		}
 		if rr.err == nil {
 			rr.drainCurrentFetch()
@@ -3431,6 +3468,10 @@ func (h *DeadlineContextWatcherHandler) HandleUnwatchAfterCancel() {
 		h.err = errors.Join(h.err, err)
 		_ = h.Conn.Close()
 	}
+}
+
+func (h *DeadlineContextWatcherHandler) deadlineError() error {
+	return h.err
 }
 
 // CancelRequestContextWatcherHandler manages cancel state around each watched request and handles canceled contexts by
