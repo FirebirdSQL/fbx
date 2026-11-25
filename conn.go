@@ -13,7 +13,6 @@ import (
 
 	"github.com/firebirdsql/fbx/fbconn"
 	"github.com/firebirdsql/fbx/fbtype"
-	"github.com/firebirdsql/fbx/internal/cleanupctx"
 	"github.com/firebirdsql/fbx/internal/operationerror"
 	"github.com/firebirdsql/fbx/internal/stmtcache"
 )
@@ -128,20 +127,8 @@ var (
 	errDisabledStatementCache = fmt.Errorf("cannot use QueryExecModeCacheStatement with disabled statement cache")
 )
 
-// SetCleanupTimeout sets the timeout for the resource cleanup context.
-// The default timeout is 5 seconds.
-// It must be called before using the driver and must not be called
-// concurrently with driver operations.
-// The timeout must be at least 150 ms.
-func SetCleanupTimeout(timeout time.Duration) error {
-	return cleanupctx.SetCleanupTimeout(timeout)
-}
-
-// cleanupContext returns a context for releasing server-side resources after the
-// user's request has finished.
-func cleanupContext(parent context.Context) (context.Context, context.CancelFunc) {
-	return cleanupctx.CleanupContext(parent)
-}
+// defaultGracePeriod is used as the default timeout for clean up server resources.
+const defaultGracePeriod = 5 * time.Second
 
 // Connect establishes a connection with a Firebird server with a connection string. See
 // [fbconn.Connect], [fbx.ParseConfig], [fbconn.ParseConfig] for details.
@@ -447,7 +434,7 @@ func (c *Conn) prepareBatchTx(ctx context.Context, tx *dbTx, sql string, opts Ba
 	}
 
 	if err != nil && st != nil {
-		cleanupCtx, cancel := cleanupContext(ctx)
+		cleanupCtx, cancel := c.fbConn.GetCleanupContext(ctx)
 		defer cancel()
 		if deallocErr := st.Deallocate(cleanupCtx); deallocErr != nil {
 			c.die()
@@ -776,7 +763,7 @@ optionLoop:
 	invalidateSQL = st.Description.SQL
 	if temporary {
 		defer func() {
-			cleanupCtx, cancel := cleanupContext(ctx)
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), defaultGracePeriod)
 			defer cancel()
 			if cleanupErr := st.Deallocate(cleanupCtx); cleanupErr != nil {
 				err = operationerror.Join(err, cleanupErr)

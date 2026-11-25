@@ -469,7 +469,11 @@ func BeginTxFunc(
 
 func beginFuncExec(ctx context.Context, tx Tx, fn func(Tx) error) (err error) {
 	defer func() {
-		cleanupCtx, cancel := cleanupContext(ctx)
+		timeout := defaultGracePeriod
+		if conn := tx.Conn(); conn != nil {
+			timeout = conn.FbConn().GetCleanupTimeout()
+		}
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
 		defer cancel()
 		rollbackErr := tx.Rollback(cleanupCtx)
 		if rollbackErr != nil && !errors.Is(rollbackErr, ErrTxClosed) {

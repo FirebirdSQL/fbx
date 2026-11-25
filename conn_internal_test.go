@@ -7,12 +7,10 @@ import (
 	"fmt"
 	"os"
 	"testing"
-	"testing/synctest"
 	"time"
 
 	"github.com/firebirdsql/fbx/fbconn"
 	"github.com/firebirdsql/fbx/fbconn/ctxwatch"
-	"github.com/firebirdsql/fbx/internal/cleanupctx"
 	"github.com/firebirdsql/fbx/internal/stmtcache"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -687,19 +685,4 @@ func TestExecTraceEndsWhenInvalidatedStatementDeallocateFails(t *testing.T) {
 	// Deallocation failed before RemoveInvalidated, so the new statement was not prepared.
 	require.Same(t, st, conn.statementCache.GetInvalidatedBySQL(cachedSQL))
 	require.Nil(t, conn.statementCache.Get(notCachedSQL))
-}
-
-func TestSetCleanupTimeout(t *testing.T) {
-	previous := cleanupctx.CleanupTimeout()
-	t.Cleanup(func() { require.NoError(t, SetCleanupTimeout(previous)) })
-
-	const timeout = 300 * time.Millisecond
-	require.NoError(t, SetCleanupTimeout(timeout))
-	synctest.Test(t, func(t *testing.T) {
-		ctx, cancel := cleanupContext(context.Background())
-		defer cancel()
-		deadline, ok := ctx.Deadline()
-		require.True(t, ok)
-		require.Equal(t, timeout, time.Until(deadline))
-	})
 }

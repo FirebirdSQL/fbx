@@ -44,6 +44,25 @@ func TestCommandTag(t *testing.T) {
 	}
 }
 
+func TestGetCleanupTimeout(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name       string
+		configured time.Duration
+		want       time.Duration
+	}{
+		{name: "positive", configured: 250 * time.Millisecond, want: 250 * time.Millisecond},
+		{name: "zero", want: 5 * time.Second},
+		{name: "negative", configured: -time.Second, want: 5 * time.Second},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			conn := &FbConn{config: &Config{CleanupTimeout: tt.configured}}
+			require.Equal(t, tt.want, conn.GetCleanupTimeout())
+		})
+	}
+}
+
 func TestBatchInvalidConfigDoesNotClaimStatement(t *testing.T) {
 	type testCase struct {
 		name string
@@ -835,13 +854,4 @@ func TestArrayGenerateSDLIncludesInt128Scale(t *testing.T) {
 			assert.Equal(t, byte(fbproto.Isc_sdl_relation), sdl[5])
 		})
 	}
-}
-
-func TestSetCleanupTimeout(t *testing.T) {
-	previous := cleanupTimeout()
-	t.Cleanup(func() { require.NoError(t, SetCleanupTimeout(previous)) })
-
-	const timeout = 300 * time.Millisecond
-	require.NoError(t, SetCleanupTimeout(timeout))
-	require.Equal(t, timeout, cleanupTimeout())
 }

@@ -146,7 +146,7 @@ func (b *batchInsert) run(ctx context.Context) (affected int64, err error) {
 	}
 	sourceRead := false
 	defer func() {
-		cleanupCtx, cancel := cleanupContext(ctx)
+		cleanupCtx, cancel := b.conn.fbConn.GetCleanupContext(ctx)
 		defer cancel()
 		cleanupErr := batch.Close(cleanupCtx)
 		if cleanupErr != nil && !b.conn.IsClosed() {

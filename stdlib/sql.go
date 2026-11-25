@@ -124,7 +124,6 @@ import (
 	"github.com/firebirdsql/fbx/fbproto"
 	"github.com/firebirdsql/fbx/fbtype"
 	"github.com/firebirdsql/fbx/fbxpool"
-	"github.com/firebirdsql/fbx/internal/cleanupctx"
 )
 
 var (
@@ -321,7 +320,7 @@ func (c connector) Connect(ctx context.Context) (driver.Conn, error) {
 		}
 
 		if err = c.afterConnect(ctx, conn); err != nil {
-			closeCtx, cancel := cleanupctx.CleanupContext(context.Background())
+			closeCtx, cancel := conn.FbConn().GetCleanupContext(context.Background())
 			closeErr := conn.Close(closeCtx)
 			cancel()
 			if closeErr != nil {
@@ -540,9 +539,9 @@ func (c *Conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, e
 }
 
 // Close implements [driver.Conn]. The time limit for closing or releasing the base
-// connection is set using [fbx.SetCleanupTimeout] and defaults to 5 seconds.
+// connection is set using [fbconn.Config.CleanupTimeout] and defaults to 5 seconds.
 func (c *Conn) Close() error {
-	ctx, cancel := cleanupctx.CleanupContext(context.Background())
+	ctx, cancel := c.conn.FbConn().GetCleanupContext(context.Background())
 	defer cancel()
 	return c.close(ctx)
 }
@@ -715,7 +714,7 @@ func (s *Stmt) Close() error {
 		return nil
 	}
 
-	ctx, cancel := cleanupctx.CleanupContext(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 
 	refCount, ok := s.conn.psRefCounts[s.sd]
@@ -1222,7 +1221,11 @@ func (wtx wrapTx) Commit() error { return wtx.tx.Commit(wtx.ctx) }
 func (wtx wrapTx) Rollback() error {
 	// database/sql calls Rollback after the begin context is canceled. Give
 	// cleanup its own deadline so the server confirms the rollback before reuse.
-	ctx, cancel := cleanupctx.CleanupContext(wtx.ctx)
+	timeout := 5 * time.Second
+	if conn := wtx.tx.Conn(); conn != nil {
+		timeout = conn.FbConn().GetCleanupTimeout()
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(wtx.ctx), timeout)
 	defer cancel()
 	return wtx.tx.Rollback(ctx)
 }

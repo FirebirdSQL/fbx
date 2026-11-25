@@ -401,7 +401,7 @@ func (b *Batch) Execute(ctx context.Context, tx *FBTransaction) (*BatchCompletio
 	}
 
 	if execTx == b.st.conn.internalTransaction && b.st.conn.config.Autocommit && !b.st.conn.explicitTransaction {
-		commitCtx, cancel := cleanupContext(ctx)
+		commitCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), defaultGracePeriod)
 		defer cancel()
 		if err := b.st.conn.commitInternalTx(commitCtx, execTx); err != nil {
 			return completion, err

@@ -29,7 +29,7 @@ func (c *Conn) execBatchRows(ctx context.Context, tx *dbTx, sql string, mode Que
 	// transaction, or an implicit transaction managed with Autocommit disabled.
 	releaseInternalTx := tx == nil && c.config.Autocommit && !c.fbConn.ActiveExplicitTx()
 	defer func() {
-		cleanupCtx, cancel := cleanupContext(ctx)
+		cleanupCtx, cancel := c.fbConn.GetCleanupContext(ctx)
 		defer cancel()
 		cleanupErr := b.releaseWireResources(cleanupCtx)
 		if cleanupErr == nil && temporary {
@@ -462,7 +462,7 @@ func (b *PreparedBatch) resetAfterError(ctx context.Context, operationErr error)
 	if b.conn.IsClosed() {
 		return operationErr
 	}
-	cleanupCtx, cancel := cleanupContext(ctx)
+	cleanupCtx, cancel := b.conn.fbConn.GetCleanupContext(ctx)
 	defer cancel()
 	return operationerror.Join(operationErr, b.Cancel(cleanupCtx))
 }

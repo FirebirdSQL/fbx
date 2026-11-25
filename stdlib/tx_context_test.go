@@ -15,6 +15,10 @@ type rollbackContextTx struct {
 	rollback func(context.Context) error
 }
 
+func (tx rollbackContextTx) Conn() *fbx.Conn {
+	return nil
+}
+
 func (tx rollbackContextTx) Rollback(ctx context.Context) error {
 	return tx.rollback(ctx)
 }
