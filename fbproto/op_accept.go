@@ -3,10 +3,10 @@ package fbproto
 // https://firebirdsql.org/file/documentation/html/en/firebirddocs/wireprotocol/firebird-wire-protocol.html#wireprotocol-op-accept
 
 type AcceptMetadata struct {
-	Version int
+	Version      int
 	Architecture int
-	Type int
-	Compress bool
+	Type         int
+	Compress     bool
 }
 
 // OpAccept represents an op_accept response from the server.

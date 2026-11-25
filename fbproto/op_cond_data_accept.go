@@ -4,11 +4,11 @@ package fbproto
 
 type OpCondAccept struct {
 	AcceptMetadata
-	Encoding	 *Encoding
-	Data		 []byte
-	PluginName	 string
+	Encoding     *Encoding
+	Data         []byte
+	PluginName   string
 	AuthComplete bool
-	ServerKeys	 []byte
+	ServerKeys   []byte
 }
 
 // OpDataAccept represents an op_accept_data response from the server.
