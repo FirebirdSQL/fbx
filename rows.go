@@ -45,7 +45,7 @@ type Rows interface {
 
 	// Next prepares the next row for reading. It returns true if there is another
 	// row and false if no more rows are available or a fatal error has occurred.
-	// It automatically closes rows when all rows are read.
+	// Next closes the rows when it returns false.
 	//
 	// Callers should check rows.Err() after rows.Next() returns false to detect
 	// whether result-set reading ended prematurely due to an error. See
@@ -58,13 +58,13 @@ type Rows interface {
 	// Scan reads the values from the current row into dest values positionally.
 	// dest can include pointers to core types, values implementing the Scanner
 	// interface, and nil. nil will skip the value entirely. BLOB columns can be
-	// scanned into *[]byte, *string, or *io.ReadCloser. It is an error to call
-	// Scan without first calling Next() and checking that it returned true.
+	// scanned into *[]byte, *string, or *io.ReadCloser. The caller must close
+	// any returned BLOB stream. Call Scan only after [Rows.Next] returns true.
 	Scan(dest ...any) error
 
-	// Values returns the decoded row values. For BLOB columns, the value is an
-	// io.ReadCloser. As with Scan(), it is an error to call Values without first
-	// calling Next() and checking that it returned true.
+	// Values returns the decoded row values. Each non-NULL BLOB value is an
+	// [io.ReadCloser] that the caller must close. Call Values only after
+	// [Rows.Next] returns true.
 	Values() ([]any, error)
 
 	// RawValues returns the unparsed bytes of the row values. The returned data is only valid until the next Next
@@ -88,9 +88,9 @@ type Rows interface {
 // the Row interface is partially excluded from semantic version requirements.
 // Methods will not be removed or changed, but new methods may be added.
 type Row interface {
-	// Scan works the same as Rows. with the following exceptions. If no
-	// rows were found it returns ErrNoRows. If multiple rows are returned it
-	// ignores all but the first.
+	// Scan reads the first row into dest and discards any remaining rows.
+	// It returns [ErrNoRows] for an empty result. Scan closes the underlying
+	// [Rows] before returning, even on error. Close any BLOB stream in dest separately.
 	Scan(dest ...any) error
 }
 
@@ -539,8 +539,9 @@ func ScanRow(typeMap *fbtype.Map, fieldDescriptions []fbconn.FieldDescription, v
 	return nil
 }
 
-// RowsFromResultReader returns a Rows that will read from values resultReader and decode with typeMap. It can be used
-// to read from the lower level fbconn interface. BLOB columns require a *Conn and cannot be read via this helper.
+// RowsFromResultReader wraps a low-level [fbconn.ResultReader] in [Rows] that
+// decode values using typeMap. Closing the Rows also closes resultReader.
+// BLOB columns require a *Conn and cannot be read via this helper.
 func RowsFromResultReader(typeMap *fbtype.Map, resultReader *fbconn.ResultReader) Rows {
 	return &baseRows{
 		typeMap:      typeMap,
@@ -587,7 +588,8 @@ type CollectableRow interface {
 	RawValues() [][]byte
 }
 
-// RowToFunc is a function that scans or otherwise converts row to a T.
+// RowToFunc scans or otherwise converts the current row to a T. Its caller,
+// such as [CollectRows], is responsible for closing the [Rows].
 type RowToFunc[T any] func(row CollectableRow) (T, error)
 
 // AppendRows iterates through rows, calling fn for each row, and appending the results into a slice of T.

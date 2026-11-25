@@ -924,9 +924,11 @@ type QueryRewriter interface {
 // and initializing Rows will be returned. Err() on the returned Rows must be checked after the Rows is closed to
 // determine if the query executed successfully.
 //
-// The returned Rows must be closed before the connection can be used again. It is safe to attempt to read from the
-// returned Rows even if an error is returned. The error will be the available in rows.Err() after rows are closed. It
-// is allowed to ignore the error returned from Query and handle it in Rows.
+// [Rows.Next] closes the result when it returns false. If you stop iterating early, call [Rows.Close] before
+// reusing the connection. Deferring rows.Close() after a successful Query covers early returns.
+//
+// It is safe to read the returned Rows even if Query returns an error. Callers may handle that error
+// immediately or check [Rows.Err] after the rows are closed.
 //
 // It is possible for a call of FieldDescriptions on the returned Rows to return nil even if the Query call did not
 // return an error.
@@ -1042,9 +1044,12 @@ optionLoop:
 	return rows, rows.err
 }
 
-// QueryRow is a convenience wrapper over Query. Any error that occurs while
-// querying is deferred until calling Scan on the returned Row. That Row will
-// error with ErrNoRows if no rows are returned.
+// QueryRow is a convenience wrapper over [Conn.Query]. Call [Row.Scan] on the
+// returned row to read the first row. Scan closes the underlying [Rows] before
+// returning, even on error. Query errors are deferred to Scan, which returns
+// [ErrNoRows] if the result is empty.
+//
+// Use [Conn.Query] with [CollectExactlyOneRow] to require exactly one row.
 func (c *Conn) QueryRow(ctx context.Context, sql string, args ...any) Row {
 	rows, _ := c.Query(ctx, sql, args...)
 	return (*connRow)(rows.(*baseRows))

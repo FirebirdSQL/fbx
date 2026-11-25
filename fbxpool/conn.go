@@ -96,10 +96,16 @@ func (c *Conn) PrepareBatchWithOptions(ctx context.Context, sql string, opts fbx
 	return c.Conn().PrepareBatchWithOptions(ctx, sql, opts)
 }
 
+// Query runs [fbx.Conn.Query] on this connection. [fbx.Rows.Next] closes the rows
+// when it returns false. Call [fbx.Rows.Close] if you stop reading early.
+// If you used [Pool.Acquire], call [Conn.Release] when finished with the connection.
 func (c *Conn) Query(ctx context.Context, sql string, args ...any) (fbx.Rows, error) {
 	return c.Conn().Query(ctx, sql, args...)
 }
 
+// QueryRow runs [fbx.Conn.QueryRow] on this connection. Call [fbx.Row.Scan] to
+// close the result. If you acquired the connection with [Pool.Acquire], call
+// [Conn.Release] when finished with it.
 func (c *Conn) QueryRow(ctx context.Context, sql string, args ...any) fbx.Row {
 	return c.Conn().QueryRow(ctx, sql, args...)
 }

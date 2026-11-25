@@ -2470,7 +2470,7 @@ type Result struct {
 	Err               error
 }
 
-// Read saves the query response to a Result.
+// Read saves the query response to a [Result] and closes the reader.
 func (rr *ResultReader) Read() *Result {
 	br := &Result{}
 
@@ -2521,8 +2521,8 @@ func (rr *ResultReader) readWithoutCommit() *Result {
 	return br
 }
 
-// ReadAll reads the entire result set into memory
-// It will always return single result from ResultReader and its error
+// ReadAll reads the entire result set into memory and closes the reader.
+// It returns a slice containing one [Result], along with that result's error.
 func (rr *ResultReader) ReadAll() ([]*Result, error) {
 	var results []*Result
 	results = append(results, rr.Read())
@@ -2530,6 +2530,7 @@ func (rr *ResultReader) ReadAll() ([]*Result, error) {
 }
 
 // NextRow advances the ResultReader to the next row and returns true if a row is available.
+// Call [ResultReader.Close] when finished iterating, even after NextRow returns false.
 func (rr *ResultReader) NextRow() bool {
 	var err error
 	if rr.closed || rr.err != nil {
