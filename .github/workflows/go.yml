@@ -12,7 +12,7 @@ jobs:
   fmt:
     runs-on: self-hosted
     container:
-      image: golang:1.26
+      image: golang:1.26@sha256:6e59e17a20f13c102e49d82dffab66d41cffe6c266b225d82794328aea859ab5
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.1
@@ -25,7 +25,7 @@ jobs:
   lint:
     runs-on: self-hosted
     container:
-      image: golangci/golangci-lint:v2.15.0
+      image: golangci/golangci-lint:v2.15.0@sha256:fbfcfd12a6f8d7f1b97b3362ca80fc2a244d46863148c73cb88e7793af96c481
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.1
@@ -37,7 +37,7 @@ jobs:
   test:
     runs-on: self-hosted
     container:
-      image: golang:${{ matrix.GO_VERSION || '1.26' }}
+      image: golang:${{ matrix.GO_VERSION || '1.26@sha256:6e59e17a20f13c102e49d82dffab66d41cffe6c266b225d82794328aea859ab5' }}
     strategy:    
       matrix:
         include:
@@ -49,7 +49,7 @@ jobs:
             KIND: "fb"
           - FB_VERSION: "5.0.4.1812-0"
             KIND: "fb"
-            GO_VERSION: "1.27"
+            GO_VERSION: "1.27@sha256:5f1b98fa02fe396ebce2a0227a0e08309e11792915b9dd2e1f71053d7e7e6666"
             REPORT_SUFFIX: _go1.27
           - RDB_VERSION: "3.0.24"
             RDB_PROJECT: "rdb30"
@@ -131,7 +131,7 @@ jobs:
   coverage:
     runs-on: self-hosted
     container:
-      image: golang:1.27
+      image: golang:1.27@sha256:5f1b98fa02fe396ebce2a0227a0e08309e11792915b9dd2e1f71053d7e7e6666
     needs: test
     steps:
       - name: Install dependencies
