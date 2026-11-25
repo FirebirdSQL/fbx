@@ -811,29 +811,41 @@ func TestPreparedBatchAddEncodingErrorReleasesParameters(t *testing.T) {
 	defer func() { require.NoError(t, conn.Close(ctx)) }()
 	skipIfBatchUnsupported(ctx, t, conn)
 
-	_, err := conn.Exec(ctx, "recreate table batch_char_encode_error (v char(5) character set octets)")
+	_, err := conn.Exec(ctx, "recreate table batch_char_encode_error (v char(5) character set octets, id integer)")
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, conn.DeallocateAll(ctx))
 		_, err := conn.Exec(ctx, "drop table batch_char_encode_error")
 		require.NoError(t, err)
 	}()
-	b, err := conn.PrepareBatch(ctx, "insert into batch_char_encode_error values (?)")
+	b, err := conn.PrepareBatch(ctx, "insert into batch_char_encode_error values (?, ?)")
 	require.NoError(t, err)
 	defer func() { require.NoError(t, b.Close(ctx)) }()
 
-	require.NoError(t, b.Add([]byte{1, 0, 2}))
+	require.NoError(t, b.Add([]byte{1, 0, 2}, 1))
 	queuedRow := bytes.Clone(b.encodedRows[0])
 	pending := b.PendingBytes()
 
-	err = b.Add(make([]byte, 16<<20))
-	require.ErrorContains(t, err, "exceeds declared length")
-	require.Nil(t, b.eqb.ParamValues)
-	require.Nil(t, b.eqb.paramValueBytes)
-	require.Equal(t, [][]byte{queuedRow}, b.encodedRows)
-	require.Equal(t, pending, b.PendingBytes())
+	large := make([]byte, 16<<20)
+	for _, tc := range []struct {
+		name    string
+		id      any
+		wantErr string
+	}{
+		{"row encoding", 2, "exceeds declared length"},
+		{"parameter encoding", struct{}{}, "failed to encode args[1]"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := b.Add(large, tc.id)
+			require.ErrorContains(t, err, tc.wantErr)
+			require.Nil(t, b.eqb.ParamValues)
+			require.Nil(t, b.eqb.paramValueBytes)
+			require.Equal(t, [][]byte{queuedRow}, b.encodedRows)
+			require.Equal(t, pending, b.PendingBytes())
+		})
+	}
 
-	require.NoError(t, b.Add([]byte{3, 0, 4}))
+	require.NoError(t, b.Add([]byte{3, 0, 4}, 2))
 	result, err := b.Exec(ctx)
 	require.NoError(t, err)
 	require.EqualValues(t, 2, result.Affected)

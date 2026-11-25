@@ -3,6 +3,7 @@ package fbproto
 // https://firebirdsql.org/file/documentation/html/en/firebirddocs/wireprotocol/firebird-wire-protocol.html#wireprotocol-appendix-xdr
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -249,6 +250,13 @@ func (x *XDRWriter) WriteCustomPadding(length int, paddingByte byte) error {
 			buf[i] = paddingByte
 		}
 		return x.WriteBytes(buf)
+	}
+
+	// Reserve the padding before writing it in chunks.
+	if length > len(block) {
+		if dst, ok := x.writer.(*bytes.Buffer); ok {
+			dst.Grow(length)
+		}
 	}
 
 	for length > len(block) {

@@ -257,6 +257,7 @@ func (b *PreparedBatch) Add(args ...any) error {
 	}
 
 	if err := b.eqb.Build(context.Background(), b.conn, b.tx, b.conn.typeMap, sd, args); err != nil {
+		b.eqb = ExtendedQueryBuilder{}
 		return err
 	}
 
