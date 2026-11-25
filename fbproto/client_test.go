@@ -2,6 +2,7 @@ package fbproto
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"math"
 	"testing"
@@ -90,6 +91,47 @@ func TestXDRReaderBufferLengths(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWriteCustomPadding(t *testing.T) {
+	for _, tc := range []struct {
+		length int
+		value  byte
+	}{
+		{0, ' '},
+		{17, ' '},
+		{17, 0},
+		{17, 'x'},
+		{paddingBlockSize, ' '},
+		{2*paddingBlockSize + 3, 0},
+	} {
+		t.Run(fmt.Sprintf("length=%d/byte=%d", tc.length, tc.value), func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+			err := NewXDRWriter(&buf).WriteCustomPadding(tc.length, tc.value)
+			require.NoError(t, err)
+			require.True(t, bytes.Equal(bytes.Repeat([]byte{tc.value}, tc.length), buf.Bytes()), "unexpected padding bytes")
+		})
+	}
+}
+
+type paddingErrorWriter struct {
+	calls int
+}
+
+func (w *paddingErrorWriter) Write(p []byte) (int, error) {
+	w.calls++
+	if w.calls == 2 {
+		return 0, io.ErrClosedPipe
+	}
+	return len(p), nil
+}
+
+func TestWriteCustomPaddingStopsOnWriteError(t *testing.T) {
+	w := &paddingErrorWriter{}
+	err := NewXDRWriter(w).WriteCustomPadding(3*paddingBlockSize, ' ')
+	require.ErrorIs(t, err, io.ErrClosedPipe)
+	require.Equal(t, 2, w.calls)
 }
 
 func TestWriteRowDataUsesActualCharLength(t *testing.T) {

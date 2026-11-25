@@ -185,20 +185,13 @@ func writeRowData(x *XDRWriter, rowDescriptor []FieldDescriptor, values [][]byte
 			} else {
 				realFieldLen := l - 1
 
-				if valueBufLen >= realFieldLen {
-					if err = x.WriteBytes(valueBuf[:realFieldLen]); err != nil {
-						return err
-					}
-					if err = x.WriteCustomPadding((4-realFieldLen)&3, field.GetPaddingByte()); err != nil {
-						return err
-					}
-				} else {
-					if err = x.WriteBytes(valueBuf); err != nil {
-						return err
-					}
-					if err = x.WriteCustomPadding(realFieldLen-valueBufLen+((4-realFieldLen)&3), field.GetPaddingByte()); err != nil {
-						return err
-					}
+				valueBuf = valueBuf[:min(valueBufLen, realFieldLen)]
+				if err = x.WriteBytes(valueBuf); err != nil {
+					return err
+				}
+				alignedLen := (realFieldLen + 3) &^ 3
+				if err = x.WriteCustomPadding(alignedLen-len(valueBuf), field.GetPaddingByte()); err != nil {
+					return err
 				}
 			}
 		}
