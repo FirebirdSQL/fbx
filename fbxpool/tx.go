@@ -68,6 +68,9 @@ func (tx *Tx) Exec(ctx context.Context, sql string, arguments ...any) (fbconn.Qu
 	return tx.t.Exec(ctx, sql, arguments...)
 }
 
+// Query delegates to [fbx.Tx.Query]. [fbx.Rows.Next] closes the rows when it
+// returns false. Call [fbx.Rows.Close] if you stop reading early.
+// Finish the transaction with [Tx.Commit] or [Tx.Rollback] to release the connection.
 func (tx *Tx) Query(ctx context.Context, sql string, args ...any) (fbx.Rows, error) {
 	return tx.t.Query(ctx, sql, args...)
 }
