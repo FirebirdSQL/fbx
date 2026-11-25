@@ -106,6 +106,26 @@ func TestWriteRowDataUsesActualCharLength(t *testing.T) {
 	}, buf.Bytes())
 }
 
+func TestWriteBatchRowDataValueCount(t *testing.T) {
+	fields := []FieldDescriptor{{Type: SQL_TYPE_TEXT, Subtype: CS_BINARY, Length: 5}}
+	for _, tc := range []struct {
+		name   string
+		values [][]byte
+	}{
+		{"missing", nil},
+		{"empty", [][]byte{}},
+		{"extra", [][]byte{[]byte("abc"), []byte("extra")}},
+		{"extra null", [][]byte{[]byte("abc"), nil}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			buf := bytes.NewBufferString("prefix")
+			err := WriteBatchRowData(NewXDRWriter(buf), fields, tc.values)
+			require.ErrorContains(t, err, "batch values count mismatch")
+			require.Equal(t, "prefix", buf.String(), "invalid value count must not write row data")
+		})
+	}
+}
+
 func TestReadRowDataVaryingLength(t *testing.T) {
 	fields := []FieldDescriptor{{Type: SQL_TYPE_VARYING, Length: 8}, {Type: SQL_TYPE_LONG}}
 	var scratch rowScratch

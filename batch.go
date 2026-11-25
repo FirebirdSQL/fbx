@@ -262,6 +262,7 @@ func (b *PreparedBatch) Add(args ...any) error {
 
 	row, err := sd.EncodeBatchRow(b.eqb.ParamValues)
 	if err != nil {
+		b.eqb = ExtendedQueryBuilder{}
 		return err
 	}
 
