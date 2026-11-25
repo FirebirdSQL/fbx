@@ -25,14 +25,15 @@ jobs:
   lint:
     runs-on: self-hosted
     container:
-      image: golangci/golangci-lint:v2.15.0@sha256:fbfcfd12a6f8d7f1b97b3362ca80fc2a244d46863148c73cb88e7793af96c481
+      image: golang:1.26@sha256:6e59e17a20f13c102e49d82dffab66d41cffe6c266b225d82794328aea859ab5
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.1
 
       - name: Run golangci-lint
-        run: |
-          golangci-lint run --output.code-climate.path codeclimate-report.json --output.text.path stdout
+        uses: golangci/golangci-lint-action@v9.3.0
+        with:
+          version: v2.15.0
 
   test:
     runs-on: self-hosted
