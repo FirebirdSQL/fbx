@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/firebirdsql/fbx/fbproto"
+	"github.com/firebirdsql/fbx/internal/operationerror"
 )
 
 // SafeToRetry reports whether the failed call is guaranteed not to have sent its
@@ -222,6 +223,26 @@ func normalizeTimeoutError(ctx context.Context, err error) error {
 		default:
 			return &errTimeout{err: err}
 		}
+	}
+	return err
+}
+
+// withContextError retains the original failure and its retry policy when
+// cancellation is reported as a server or transport error.
+func withContextError(ctx context.Context, err error) error {
+	if err == nil {
+		return nil
+	}
+	ctxErr := ctx.Err()
+	if ctxErr == nil {
+		// A later cancellation must not replace the transport error.
+		return normalizeTimeoutError(context.Background(), err)
+	}
+	if !errors.Is(err, ctxErr) {
+		err = operationerror.Join(err, ctxErr)
+	}
+	if ctxErr == context.DeadlineExceeded && !Timeout(err) {
+		return &errTimeout{err: err}
 	}
 	return err
 }

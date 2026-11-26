@@ -27,6 +27,9 @@ This can be especially useful when queries that are frequently canceled and the 
 a problem. DeadlineContextWatcherHandler and CancelRequestContextWatcherHandler can be used to introduce a delay before
 interrupting the query in such a way as to close the connection.
 
+During statement preparation, the driver closes the transport if cancellation
+leaves network cleanup blocked for five seconds.
+
 The CancelRequest method may be used to request the server cancel an in-progress query without forcing the
 client to abort.
 
