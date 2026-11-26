@@ -5,88 +5,197 @@ package stdlib_test
 import (
 	"database/sql"
 	"errors"
+	"io"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/firebirdsql/fbx"
 	"github.com/firebirdsql/fbx/fbtype"
 	"github.com/firebirdsql/fbx/stdlib"
 )
 
-func TestScanNonEmptyBlob(t *testing.T) {
-	db := openDB(t)
+func TestScanBlobIntoBlob(t *testing.T) {
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		var blob stdlib.Blob
+		err := db.QueryRow("select cast('blob' as blob sub_type text) from rdb$database").Scan(&blob)
+		require.NoError(t, err)
+		text, err := blob.Text()
+		require.NoError(t, err)
+		require.Equal(t, "blob", text)
 
-	rows, err := db.Query("select cast('blob' as blob sub_type text) from rdb$database")
-	require.NoError(t, err)
-	require.True(t, rows.Next())
-	var blob stdlib.Blob
-	err = rows.Scan(&blob)
-	// Register cleanup after Scan so a panic inside database/sql does not hang in Close.
-	defer closeDB(t, db)
-	defer closeResource(t, rows)
-	require.NoError(t, err)
-	defer closeResource(t, &blob)
-
-	text, err := blob.Text()
-	require.NoError(t, err)
-	require.Equal(t, "blob", text)
+		err = db.QueryRow("select cast(null as blob sub_type text) from rdb$database").Scan(&blob)
+		require.NoError(t, err)
+		require.Equal(t, stdlib.Blob{}, blob)
+	})
 }
 
 func TestScanBlobIntoInterface(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		tests := []struct {
+		var actual any
+		for _, tt := range []struct {
 			name    string
 			query   string
 			subType int32
+			want    string
 		}{
-			{name: "text", query: "select cast('blob' as blob sub_type text) from rdb$database", subType: 1},
-			{name: "binary", query: "select cast('blob' as blob sub_type binary) from rdb$database", subType: 0},
-		}
-
-		for _, tt := range tests {
+			{"text", "select cast('blob' as blob sub_type text) from rdb$database", 1, "blob"},
+			{"binary", "select cast('blob' as blob sub_type binary) from rdb$database", 0, "blob"},
+			{"empty", "select cast('' as blob sub_type text) from rdb$database", 1, ""},
+		} {
 			t.Run(tt.name, func(t *testing.T) {
-				var actual any = "previous value"
-				err := db.QueryRow(tt.query).Scan(&actual)
-				require.NoError(t, err)
+				require.NoError(t, db.QueryRow(tt.query).Scan(&actual))
 				blob, ok := actual.(stdlib.Blob)
 				require.True(t, ok)
-				defer closeResource(t, &blob)
 				require.Equal(t, tt.subType, blob.SubType)
-
 				data, err := blob.Bytes()
 				require.NoError(t, err)
-				require.Equal(t, []byte("blob"), data)
+				require.Equal(t, tt.want, string(data))
+			})
+		}
+
+		require.NoError(t, db.QueryRow("select cast(null as blob sub_type text) from rdb$database").Scan(&actual))
+		require.Nil(t, actual)
+	})
+}
+
+func TestScanBlobIntoString(t *testing.T) {
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		var actual string
+		err := db.QueryRow("select cast('blob' as blob sub_type text) from rdb$database").Scan(&actual)
+		require.NoError(t, err)
+		require.Equal(t, "blob", actual)
+
+		err = db.QueryRow("select cast(x'FF' as blob sub_type binary) from rdb$database").Scan(&actual)
+		require.NoError(t, err)
+		require.Equal(t, "\xff", actual)
+	})
+}
+
+func TestScanBlobIntoByteSlice(t *testing.T) {
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		var actual []byte
+		err := db.QueryRow("select cast(x'0001ff' as blob sub_type binary) from rdb$database").Scan(&actual)
+		require.NoError(t, err)
+		require.Equal(t, []byte{0, 1, 255}, actual)
+	})
+}
+
+func TestScanBlobIntoRawBytes(t *testing.T) {
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		var actual sql.RawBytes
+		for _, tt := range []struct {
+			name  string
+			query string
+			want  sql.RawBytes
+		}{
+			{"text", "select cast('ok' as blob sub_type text) from rdb$database", sql.RawBytes("ok")},
+			{"null", "select cast(null as blob sub_type text) from rdb$database", nil},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				rows, err := db.Query(tt.query)
+				require.NoError(t, err)
+				defer closeResource(t, rows)
+
+				require.True(t, rows.Next())
+				require.NoError(t, rows.Scan(&actual))
+				require.Equal(t, tt.want, actual)
 			})
 		}
 	})
 }
 
-func TestScanBlobNullClearsDestination(t *testing.T) {
+
+func TestScanBlobIntoGenericNullByteSlice(t *testing.T) {
 	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
-		var actual any = "previous value"
-		err := db.QueryRow("select cast(null as blob sub_type text) from rdb$database").Scan(&actual)
+		var actual sql.Null[[]byte]
+		err := db.QueryRow("select cast('ok' as blob sub_type text) from rdb$database").Scan(&actual)
+		require.NoError(t, err)
+		require.Equal(t, sql.Null[[]byte]{V: []byte("ok"), Valid: true}, actual)
+
+		err = db.QueryRow("select cast(null as blob sub_type text) from rdb$database").Scan(&actual)
+		require.NoError(t, err)
+		require.Equal(t, sql.Null[[]byte]{}, actual)
+	})
+}
+
+func TestScanBlobIntoNullString(t *testing.T) {
+	const textBlob = "select cast('blob' as blob sub_type text) from rdb$database"
+	const nullBlob = "select cast(null as blob sub_type text) from rdb$database"
+
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		t.Run("sql.NullString", func(t *testing.T) {
+			var actual sql.NullString
+			require.NoError(t, db.QueryRow(textBlob).Scan(&actual))
+			require.Equal(t, sql.NullString{String: "blob", Valid: true}, actual)
+			require.NoError(t, db.QueryRow(nullBlob).Scan(&actual))
+			require.Equal(t, sql.NullString{}, actual)
+		})
+		t.Run("sql.Null[string]", func(t *testing.T) {
+			var actual sql.Null[string]
+			require.NoError(t, db.QueryRow(textBlob).Scan(&actual))
+			require.Equal(t, sql.Null[string]{V: "blob", Valid: true}, actual)
+			require.NoError(t, db.QueryRow(nullBlob).Scan(&actual))
+			require.Equal(t, sql.Null[string]{}, actual)
+		})
+	})
+}
+
+func TestScanBlobIntoReadCloser(t *testing.T) {
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		var actual io.ReadCloser
+		err := db.QueryRow("select cast('blob' as blob sub_type text) from rdb$database").Scan(&actual)
+		require.NoError(t, err)
+		defer closeResource(t, actual)
+
+		data, err := io.ReadAll(actual)
+		require.NoError(t, err)
+		require.Equal(t, []byte("blob"), data)
+
+		err = db.QueryRow("select cast(null as blob sub_type text) from rdb$database").Scan(&actual)
 		require.NoError(t, err)
 		require.Nil(t, actual)
-
-		var blob stdlib.Blob
-		err = db.QueryRow("select cast('blob' as blob sub_type text) from rdb$database").Scan(&blob)
-		require.NoError(t, err)
-		closeResource(t, &blob)
-
-		err = db.QueryRow("select cast(null as blob sub_type text) from rdb$database").Scan(&blob)
-		require.NoError(t, err)
-		require.Equal(t, stdlib.Blob{}, blob)
-
-		err = db.QueryRow("select cast('' as blob sub_type text) from rdb$database").Scan(&actual)
-		require.NoError(t, err)
-		emptyBlob, ok := actual.(stdlib.Blob)
-		require.True(t, ok)
-		defer closeResource(t, &emptyBlob)
-		data, err := emptyBlob.Bytes()
-		require.NoError(t, err)
-		require.Empty(t, data)
 	})
+}
+
+func TestScanBlobIntoReader(t *testing.T) {
+	testWithAllQueryExecModes(t, func(t *testing.T, db *sql.DB) {
+		var actual io.Reader
+		err := db.QueryRow("select cast('ok' as blob sub_type text) from rdb$database").Scan(&actual)
+		require.NoError(t, err)
+		defer closeResource(t, actual.(io.Closer))
+
+		data, err := io.ReadAll(actual)
+		require.NoError(t, err)
+		require.Equal(t, []byte("ok"), data)
+
+		err = db.QueryRow("select cast(null as blob sub_type text) from rdb$database").Scan(&actual)
+		require.NoError(t, err)
+		require.Nil(t, actual)
+	})
+}
+
+
+func TestScanBlobPreservesMetadata(t *testing.T) {
+	for _, mode := range []fbx.QueryExecMode{fbx.QueryExecModeCacheStatement, fbx.QueryExecModeExec} {
+		t.Run(mode.String(), func(t *testing.T) {
+			config, err := fbx.ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
+			require.NoError(t, err)
+			config.Encoding = "UTF8"
+			config.DefaultQueryExecMode = mode
+			db := stdlib.OpenDB(*config)
+			defer closeDB(t, db)
+
+			var actual stdlib.Blob
+			err = db.QueryRow("select cast('blob' as blob sub_type text character set UTF8) from rdb$database").Scan(&actual)
+			require.NoError(t, err)
+			defer closeResource(t, &actual)
+			require.Equal(t, int32(1), actual.SubType)
+			require.Equal(t, "UTF8", actual.Charset)
+		})
+	}
 }
 
 func TestScanBlobPreservesScannerError(t *testing.T) {
