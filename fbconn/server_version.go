@@ -6,7 +6,7 @@ import (
 	"strconv"
 )
 
-var serverVersionRegexp = regexp.MustCompile(`-V(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:\.(\d+))?`)
+var serverVersionRegexp = regexp.MustCompile(`((\w{2})-(\w)(\d+)\.(\d+)\.(\d+)\.(\d+)(?:-\S+)?) (.+)`)
 
 // ServerVersion identifies the Firebird or RedDatabase server version.
 //
@@ -60,7 +60,7 @@ func parseServerVersion(raw string) (ServerVersion, error) {
 	}
 
 	parts := [4]int{}
-	for i, match := range matches[1:] {
+	for i, match := range matches[4:8] {
 		if match == "" {
 			continue
 		}
@@ -77,4 +77,35 @@ func parseServerVersion(raw string) (ServerVersion, error) {
 		Patch: parts[2],
 		Build: parts[3],
 	}, nil
+}
+
+// Database info encodes a count followed by one-byte-length-prefixed version
+// strings. The first string identifies the server, the rest describe the path.
+func parseDatabaseServerVersion(data string) (ServerVersion, error) {
+	invalid := func() (ServerVersion, error) {
+		return ServerVersion{}, fmt.Errorf("invalid database version entries: %q", data)
+	}
+	if len(data) == 0 || data[0] == 0 {
+		return invalid()
+	}
+	var first string
+	pos := 1
+	for i := 0; i < int(data[0]); i++ {
+		if pos >= len(data) {
+			return invalid()
+		}
+		length := int(data[pos])
+		pos++
+		if length > len(data)-pos {
+			return invalid()
+		}
+		if i == 0 {
+			first = data[pos : pos+length]
+		}
+		pos += length
+	}
+	if pos != len(data) {
+		return invalid()
+	}
+	return parseServerVersion(first)
 }

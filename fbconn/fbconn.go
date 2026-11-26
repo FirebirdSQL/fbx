@@ -1031,7 +1031,7 @@ func (fbConn *FbConn) parseDatabaseInfo(buf []byte) error {
 			if err != nil {
 				return err
 			}
-			fbConn.serverVersion, err = parseServerVersion(v)
+			fbConn.serverVersion, err = parseDatabaseServerVersion(v)
 			if err != nil {
 				return err
 			}

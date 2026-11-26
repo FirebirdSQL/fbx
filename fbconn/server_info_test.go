@@ -24,7 +24,8 @@ func tagBufferValue(tag byte, value []byte) []byte {
 func TestParseDatabaseInfo(t *testing.T) {
 	attachmentID := uint64(1<<63 + 42)
 
-	buf := tagBufferValue(fbproto.Isc_info_firebird_version, []byte("WI-V6.0.0"))
+	version := "WI-V6.0.0.2459 Firebird 6.0"
+	buf := tagBufferValue(fbproto.Isc_info_firebird_version, append([]byte{1, byte(len(version))}, version...))
 	buf = append(buf, tagBufferValue(
 		fbproto.Isc_info_attachment_id,
 		fbio.AppendInt64LE(nil, int64(attachmentID)),
