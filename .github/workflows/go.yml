@@ -84,7 +84,7 @@ jobs:
             ./installer --mode unattended --sysdba_password masterkey
             echo Configure RDB
             cp ci/firebird.conf ci/fbtrace.conf /opt/RedDatabase
-            g++ -o libfbxci.so -shared -fPIC ci/udrs.cpp -I_tools/msgs/include
+            g++ -o libfbxci.so -shared -fPIC ci/udrs.cpp -I/opt/RedDatabase/include
             cp libfbxci.so /opt/RedDatabase/plugins/udr
             echo Start RDB
             if [ -e /etc/init.d/reddatabase ]; then
@@ -109,7 +109,7 @@ jobs:
             export ISC_PASSWORD
             echo "alter user sysdba set password 'masterkey';" | /opt/firebird/bin/isql -u sysdba localhost:employee
             cp ci/firebird.conf /opt/firebird
-            g++ -o /opt/firebird/plugins/udr/libfbxci.so -shared -fPIC ci/udrs.cpp -I_tools/msgs/include
+            g++ -o /opt/firebird/plugins/udr/libfbxci.so -shared -fPIC ci/udrs.cpp -I/opt/firebird/include
             echo Start FB
             runuser -u firebird -- start-stop-daemon --stop --oknodo \
               --retry TERM/35/KILL/5 --exec /opt/firebird/bin/fbguard
