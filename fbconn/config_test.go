@@ -560,32 +560,38 @@ func TestParseConfigPageSize(t *testing.T) {
 func TestParseConfigCleanupTimeout(t *testing.T) {
 	t.Parallel()
 
-	for _, connString := range []string{
-		"cleanup_timeout=250ms",
-		"firebird://localhost/testdb?cleanup_timeout=250ms",
-	} {
-		t.Run(connString, func(t *testing.T) {
-			config, err := fbconn.ParseConfig(connString)
-			require.NoError(t, err)
-			require.Equal(t, 250*time.Millisecond, config.CleanupTimeout)
-			require.NotContains(t, config.RuntimeParams, "cleanup_timeout")
-		})
+	tests := []struct {
+		value   string
+		want    time.Duration
+		wantErr bool
+	}{
+		{value: "10s", want: 10 * time.Second},
+		{value: "150ns", want: 150 * time.Nanosecond},
+		{value: "250ms", want: 250 * time.Millisecond},
+		{value: "0s", want: 5 * time.Second},
+		{value: "-100s", want: 5 * time.Second},
+		{value: "-250ms", want: 5 * time.Second},
+		{value: "250", wantErr: true},
+		{value: "invalid", wantErr: true},
 	}
-}
 
-func TestParseConfigInvalidCleanupTimeout(t *testing.T) {
-	t.Parallel()
-
-	for _, value := range []string{"invalid", "250", "0s", "-250ms"} {
+	for _, tt := range tests {
 		for _, connString := range []string{
-			"cleanup_timeout=" + value,
-			"firebird://localhost/testdb?cleanup_timeout=" + value,
+			"cleanup_timeout=" + tt.value,
+			"firebird://localhost/testdb?cleanup_timeout=" + tt.value,
 		} {
 			t.Run(connString, func(t *testing.T) {
-				_, err := fbconn.ParseConfig(connString)
-				var parseErr *fbconn.ParseConfigError
-				require.ErrorAs(t, err, &parseErr)
-				require.ErrorContains(t, err, "invalid cleanup_timeout")
+				config, err := fbconn.ParseConfig(connString)
+				if tt.wantErr {
+					var parseErr *fbconn.ParseConfigError
+					require.ErrorAs(t, err, &parseErr)
+					require.ErrorContains(t, err, "invalid cleanup_timeout")
+					return
+				}
+
+				require.NoError(t, err)
+				assert.Equal(t, tt.want, config.CleanupTimeout)
+				require.NotContains(t, config.RuntimeParams, "cleanup_timeout")
 			})
 		}
 	}

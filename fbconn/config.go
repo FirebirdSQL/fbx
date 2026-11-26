@@ -40,8 +40,7 @@ type Config struct {
 	ConnectTimeout time.Duration
 	// CleanupTimeout used to clean up server resources in the event of an error.
 	// The value must be greater than 0; otherwise, the default value of
-	// 5 seconds will be used. When parsing from a configuration string,
-	// a parsing error will occur if the value is less than or equal to 0.
+	// 5 seconds will be used.
 	CleanupTimeout time.Duration
 	DialFunc       DialFunc   // e.g. net.Dialer.DialContext
 	LookupFunc     LookupFunc // e.g. net.Resolver.LookupHost
@@ -458,9 +457,10 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 			return nil, &ParseConfigError{ConnString: connString, msg: "invalid cleanup_timeout", err: err}
 		}
 		if cleanupTimeout <= 0 {
-			return nil, &ParseConfigError{ConnString: connString, msg: "invalid cleanup_timeout", err: errors.New("cleanup_timeout must be positive")}
+			config.CleanupTimeout = defaultGracePeriod
+		} else {
+			config.CleanupTimeout = cleanupTimeout
 		}
-		config.CleanupTimeout = cleanupTimeout
 	}
 
 	config.LookupFunc = makeDefaultResolver().LookupHost
