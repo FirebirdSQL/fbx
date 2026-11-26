@@ -3,6 +3,7 @@ package fbproto
 // https://firebirdsql.org/file/documentation/html/en/firebirddocs/wireprotocol/firebird-wire-protocol.html#wireprotocol-appendix-xdr
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -225,12 +226,46 @@ func (x *XDRWriter) WritePadding(len int) error {
 	return x.WriteBytes(make([]byte, len))
 }
 
-func (x *XDRWriter) WriteCustomPadding(len int, paddingByte byte) error {
-	buf := make([]byte, len)
-	for i := range len {
-		buf[i] = paddingByte
+const paddingBlockSize = 1024
+
+// Shared blocks are never modified and avoid allocating padding for each field.
+var zeroPaddingBlock [paddingBlockSize]byte
+var spacePaddingBlock = func() (block [paddingBlockSize]byte) {
+	for i := range block {
+		block[i] = ' '
 	}
-	return x.WriteBytes(buf)
+	return block
+}()
+
+func (x *XDRWriter) WriteCustomPadding(length int, paddingByte byte) error {
+	var block []byte
+	switch paddingByte {
+	case 0:
+		block = zeroPaddingBlock[:]
+	case ' ':
+		block = spacePaddingBlock[:]
+	default:
+		buf := make([]byte, length)
+		for i := range buf {
+			buf[i] = paddingByte
+		}
+		return x.WriteBytes(buf)
+	}
+
+	// Reserve the padding before writing it in chunks.
+	if length > len(block) {
+		if dst, ok := x.writer.(*bytes.Buffer); ok {
+			dst.Grow(length)
+		}
+	}
+
+	for length > len(block) {
+		if err := x.WriteBytes(block); err != nil {
+			return err
+		}
+		length -= len(block)
+	}
+	return x.WriteBytes(block[:length])
 }
 
 func (x *XDRWriter) WriteString(s string, encoding *Encoding) error {

@@ -12,6 +12,77 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestPreparedBatchFixedChar(t *testing.T) {
+	for _, tc := range []struct {
+		charset string
+		length  string
+		full    string
+	}{
+		{"UTF8", "3", "😀😁😂"},
+		{"ASCII", "5", "abcde"},
+	} {
+		t.Run(tc.charset, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			config := defaultConnTestRunner.CreateConfig(ctx, t)
+			config.Encoding = tc.charset
+			conn := mustConnect(t, config)
+			defer closeConn(t, conn)
+			skipIfBatchUnsupported(ctx, t, conn)
+			table := "batch_fixed_char_" + strings.ToLower(tc.charset)
+			_, err := conn.Exec(ctx, "recreate table "+table+" (v char("+tc.length+") character set "+tc.charset+", b char(5) character set OCTETS, id integer primary key)")
+			require.NoError(t, err)
+			defer func() {
+				require.NoError(t, conn.DeallocateAll(context.Background()))
+				_, err := conn.Exec(context.Background(), "drop table "+table)
+				require.NoError(t, err)
+			}()
+			query := "insert into " + table + " (v, b, id) values (?, ?, ?)"
+			batch, err := conn.PrepareBatch(ctx, query)
+			require.NoError(t, err)
+			defer func() { require.NoError(t, batch.Close(context.Background())) }()
+
+			require.ErrorContains(t, batch.Add("abc", []byte{1, 2, 3, 4, 5, 6}, 0), "exceeds declared length")
+			require.Zero(t, batch.PendingBytes())
+			values := [][]any{
+				{"abc", []byte{1, 0, 2}, 1},
+				{"", []byte{}, 2},
+				{nil, nil, 3},
+				{tc.full, []byte{1, 2, 3, 4, 5}, 4},
+			}
+			for _, row := range values {
+				require.NoError(t, batch.Add(row...))
+			}
+			require.NoError(t, batch.Flush(ctx))
+			result, err := batch.Exec(ctx)
+			require.NoError(t, err)
+			require.EqualValues(t, len(values), result.Affected)
+
+			ordinary := []any{"xy", []byte{0xff}, 5}
+			_, err = conn.Exec(ctx, query, ordinary...)
+			require.NoError(t, err)
+			for _, row := range append(values, ordinary) {
+				var text *string
+				var binary []byte
+				var id int
+				err := conn.QueryRow(ctx, "select trim(v), b, id from "+table+" where id = ?", row[2]).Scan(&text, &binary, &id)
+				require.NoError(t, err)
+				require.Equal(t, row[2], id)
+				if row[0] == nil {
+					require.Nil(t, text)
+					require.Nil(t, binary)
+				} else {
+					require.NotNil(t, text)
+					require.Equal(t, row[0], *text)
+					wantBinary := make([]byte, 5)
+					copy(wantBinary, row[1].([]byte))
+					require.Equal(t, wantBinary, binary)
+				}
+			}
+		})
+	}
+}
+
 func TestExecBatchRows(t *testing.T) {
 	ctx := context.Background()
 	fbxtest.RunWithQueryExecModes(ctx, t, defaultConnTestRunner, nil, func(ctx context.Context, t testing.TB, conn *fbx.Conn) {

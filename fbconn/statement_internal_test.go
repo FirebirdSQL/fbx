@@ -10,6 +10,94 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestEncodeBatchRowFixedChar(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		charset int
+		length  int
+		value   []byte
+		want    []byte
+		wantErr bool
+	}{
+		{"utf8", 4, 12, []byte("abc"), []byte("abc         "), false},
+		{"ascii with padding", 2, 5, []byte("abc"), []byte("abc     "), false},
+		{"full text with padding", 2, 5, []byte("abcde"), []byte("abcde   "), false},
+		{"full aligned text", 2, 4, []byte("abcd"), []byte("abcd"), false},
+		{"text across padding blocks", 2, 2049, []byte("abc"), append([]byte("abc"), bytes.Repeat([]byte{' '}, 2049)...), false},
+		{"empty text", 2, 5, []byte{}, []byte("        "), false},
+		{"null", 4, 12, nil, nil, false},
+		{"octets", fbproto.CS_BINARY, 5, []byte{1, 0, 2}, []byte{1, 0, 2, 0, 0, 0, 0, 0}, false},
+		{"empty octets", fbproto.CS_BINARY, 5, []byte{}, make([]byte, 8), false},
+		{"text too long", 4, 2, []byte("abc"), nil, true},
+		{"octets too long", fbproto.CS_BINARY, 2, []byte{1, 2, 3}, nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sd := &StatementDescription{StatementInfo: &StatementInfo{
+				ParametersDescriptors: []fbproto.FieldDescriptor{
+					{Type: fbproto.SQL_TYPE_TEXT, Subtype: tc.charset, Length: tc.length},
+					{Type: fbproto.SQL_TYPE_LONG, Length: 4},
+				},
+			}}
+			row, err := sd.EncodeBatchRow([][]byte{tc.value, {0, 0, 0, 42}})
+			if tc.wantErr {
+				require.ErrorContains(t, err, "exceeds declared length")
+				require.Nil(t, row)
+				return
+			}
+			require.NoError(t, err)
+			want := []byte{0, 0, 0, 0}
+			if tc.value == nil {
+				want[0] = 1
+			}
+			want = append(want, tc.want...)
+			want = append(want, 0, 0, 0, 42)
+			require.Equal(t, want, row, "CHAR padding must preserve the following parameter")
+		})
+	}
+}
+
+func BenchmarkEncodeBatchRowPadding(b *testing.B) {
+	for _, tc := range []struct {
+		name   string
+		fields []fbproto.FieldDescriptor
+		values [][]byte
+	}{
+		{"ascii_country_char2", []fbproto.FieldDescriptor{{Type: fbproto.SQL_TYPE_TEXT, Subtype: 2, Length: 2}}, [][]byte{[]byte("DE")}},
+		{"ascii_code_char8", []fbproto.FieldDescriptor{{Type: fbproto.SQL_TYPE_TEXT, Subtype: 2, Length: 8}}, [][]byte{[]byte("AB-1042")}},
+		{"ascii_uuid_char36", []fbproto.FieldDescriptor{{Type: fbproto.SQL_TYPE_TEXT, Subtype: 2, Length: 36}}, [][]byte{[]byte("550e8400-e29b-41d4-a716-446655440000")}},
+		{"ascii_label_char32", []fbproto.FieldDescriptor{{Type: fbproto.SQL_TYPE_TEXT, Subtype: 2, Length: 32}}, [][]byte{[]byte("North warehouse")}},
+		{"utf8_name_char32", []fbproto.FieldDescriptor{{Type: fbproto.SQL_TYPE_TEXT, Subtype: 4, Length: 32 * 4}}, [][]byte{[]byte("Иван Петров")}},
+		{"utf8_label_char64", []fbproto.FieldDescriptor{{Type: fbproto.SQL_TYPE_TEXT, Subtype: 4, Length: 64 * 4}}, [][]byte{[]byte("Основной склад в Москве")}},
+		{"octets_id_char16", []fbproto.FieldDescriptor{{Type: fbproto.SQL_TYPE_TEXT, Subtype: fbproto.CS_BINARY, Length: 16}}, [][]byte{{0x55, 0x0e, 0x84, 0, 0xe2, 0x9b, 0x41, 0xd4, 0xa7, 0x16, 0x44, 0x66, 0x55, 0x44, 0, 0}}},
+		{
+			"mixed_row",
+			[]fbproto.FieldDescriptor{
+				{Type: fbproto.SQL_TYPE_TEXT, Subtype: 2, Length: 2},
+				{Type: fbproto.SQL_TYPE_TEXT, Subtype: 2, Length: 8},
+				{Type: fbproto.SQL_TYPE_TEXT, Subtype: 4, Length: 32 * 4},
+				{Type: fbproto.SQL_TYPE_TEXT, Subtype: fbproto.CS_BINARY, Length: 16},
+			},
+			[][]byte{[]byte("DE"), []byte("AB-1042"), []byte("Иван Петров"), {0x55, 0x0e, 0x84, 0, 0xe2, 0x9b, 0x41, 0xd4, 0xa7, 0x16, 0x44, 0x66, 0x55, 0x44, 0, 0}},
+		},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			fields := []fbproto.FieldDescriptor{{Type: fbproto.SQL_TYPE_LONG, Length: 4}}
+			fields = append(fields, tc.fields...)
+			fields = append(fields, fbproto.FieldDescriptor{Type: fbproto.SQL_TYPE_LONG, Length: 4})
+			values := [][]byte{{0, 0, 0, 42}}
+			values = append(values, tc.values...)
+			values = append(values, []byte{0, 0, 0, 7})
+			sd := &StatementDescription{StatementInfo: &StatementInfo{ParametersDescriptors: fields}}
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, err := sd.EncodeBatchRow(values); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
 type prepareCleanupTestConn struct {
 	noopConn
 	written  bytes.Buffer
