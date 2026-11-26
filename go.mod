@@ -3,7 +3,7 @@ module github.com/firebirdsql/fbx
 go 1.26.2
 
 require (
-	github.com/jackc/puddle/v2 v2.2.3
+	github.com/jackc/puddle/v2 v2.2.4
 	github.com/nakagami/chacha20 v0.1.0
 	github.com/stretchr/testify v1.12.1
 	gitlab.com/nyarla/go-crypt v0.0.0-20160106005555-d9a5dc2b789b
