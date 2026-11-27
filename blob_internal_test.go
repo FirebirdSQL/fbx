@@ -2,6 +2,7 @@ package fbx
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/firebirdsql/fbx/fbconn"
+	"github.com/firebirdsql/fbx/fbconn/ctxwatch"
 	"github.com/firebirdsql/fbx/fbproto"
 	"github.com/stretchr/testify/require"
 )
@@ -213,4 +215,45 @@ func inlineBlobDataLen(handle any) (int, bool) {
 		return 0, false
 	}
 	return data.Len(), true
+}
+
+type cancelingBlobSource struct {
+	cancel context.CancelFunc
+	err    error
+}
+
+func (r cancelingBlobSource) Read([]byte) (int, error) {
+	r.cancel()
+	return 0, r.err
+}
+
+func TestBlobParameterCleanupAfterCancellation(t *testing.T) {
+	ctx := context.Background()
+	var handler *cleanupDeadlineHandler
+	runWithBlobStreamModesInternal(ctx, t, func(config *ConnConfig) {
+		config.CleanupTimeout = time.Second
+		config.BuildContextWatcherHandler = func(conn *fbconn.FbConn) ctxwatch.Handler {
+			handler = &cleanupDeadlineHandler{DeadlineContextWatcherHandler: &fbconn.DeadlineContextWatcherHandler{Conn: conn.Conn()}}
+			return handler
+		}
+	}, func(ctx context.Context, t testing.TB, conn *Conn) {
+		tx, err := conn.Begin(ctx)
+		require.NoError(t, err)
+		defer func() { require.NoError(t, tx.Rollback(ctx)) }()
+		requestCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		sourceErr := errors.New("source read failed")
+		handler.timeout = 0
+		var builder ExtendedQueryBuilder
+		_, err = builder.createBlobFromReader(requestCtx, conn, tx.(*dbTx), fbproto.BLOB_SUB_TYPE_BINARY, 0,
+			cancelingBlobSource{cancel: cancel, err: sourceErr})
+		require.ErrorIs(t, err, sourceErr)
+		require.False(t, fbconn.SafeToRetry(err))
+		require.InDelta(t, float64(time.Second), float64(handler.timeout), float64(100*time.Millisecond),
+			"CancelBlob must use a live cleanup context after the source cancels the query")
+		require.False(t, conn.IsClosed())
+		var n int
+		require.NoError(t, tx.QueryRow(ctx, "select 1 from rdb$database").Scan(&n))
+		require.Equal(t, 1, n)
+	})
 }
