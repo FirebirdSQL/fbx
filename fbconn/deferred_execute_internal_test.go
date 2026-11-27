@@ -273,7 +273,7 @@ func respondToDeferredExecuteAndRollback(server net.Conn) error {
 	return nil
 }
 
-func TestDeferredExecuteInternalReadCleanupTimeout(t *testing.T) {
+func TestDeferredExecuteInternalReadUsesRequestDeadline(t *testing.T) {
 	const cleanupTimeout = 250 * time.Millisecond
 	for _, blockedAt := range []string{"flush", "response"} {
 		t.Run(blockedAt, func(t *testing.T) {
@@ -300,8 +300,8 @@ func TestDeferredExecuteInternalReadCleanupTimeout(t *testing.T) {
 			select {
 			case result := <-done:
 				require.ErrorIs(t, result.Err, context.Canceled)
-				require.GreaterOrEqual(t, time.Since(start), cleanupTimeout,
-					"cleanup must replace the original short cancellation deadline")
+				require.Less(t, time.Since(start), cleanupTimeout,
+					"internal reads must retain the request cancellation deadline")
 				require.True(t, conn.IsClosed(), "a missing Execute response prevents reuse")
 				require.NoError(t, server.Close())
 				waitCleanupDone(t, conn)
@@ -309,5 +309,77 @@ func TestDeferredExecuteInternalReadCleanupTimeout(t *testing.T) {
 				t.Fatal("internal read cleanup exceeded its timeout")
 			}
 		})
+	}
+}
+
+func TestDeferredExecuteCloseCleanupTimeout(t *testing.T) {
+	const cleanupTimeout = 150 * time.Millisecond
+	for _, blockedAt := range []string{"flush", "response"} {
+		t.Run(blockedAt, func(t *testing.T) {
+			conn, st, server, _, _ := newDeferredExecutePipe(t)
+			conn.config.CleanupTimeout = cleanupTimeout
+			require.NoError(t, conn.lock())
+			defer conn.unlock()
+			ctx := context.Background()
+			rr := st.internalExecTx(ctx, st.transaction, &ResultReader{fbConn: conn, ctx: ctx}, nil)
+			if blockedAt == "response" {
+				go func() { _, _ = io.Copy(io.Discard, server) }()
+			}
+			start := time.Now()
+			done := make(chan error, 1)
+			go func() {
+				_, err := rr.closeWithoutCommit(true)
+				done <- err
+			}()
+			select {
+			case err := <-done:
+				require.Error(t, err)
+				require.True(t, Timeout(err))
+				require.GreaterOrEqual(t, time.Since(start), cleanupTimeout)
+				require.True(t, conn.IsClosed())
+			case <-time.After(cleanupTimeout + 2*time.Second):
+				_ = server.Close()
+				<-done
+				t.Fatal("Close with Background did not enforce CleanupTimeout")
+			}
+			require.NoError(t, server.Close())
+			waitCleanupDone(t, conn)
+		})
+	}
+}
+
+func TestInternalCleanupKeepsRequestWatcher(t *testing.T) {
+	var responses bytes.Buffer
+	require.NoError(t, writeProbeResponse(fbproto.NewXDRWriter(&responses), 0))
+	wire := &deferredExecuteScriptConn{responses: bytes.NewReader(responses.Bytes())}
+	conn := newDetachTestConn(wire)
+	handler := &deferredExecuteCancelHandler{
+		CancelRequestContextWatcherHandler: &CancelRequestContextWatcherHandler{
+			Conn:                    conn,
+			sendCancelOperationFunc: func(context.Context, int) error { return nil },
+		},
+		canceled: make(chan struct{}),
+	}
+	conn.contextWatcher = ctxwatch.NewContextWatcher(handler)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	conn.contextWatcher.Watch(ctx)
+	defer func() {
+		conn.contextWatcher.Unwatch()
+		conn.asyncClose()
+		waitCleanupDone(t, conn)
+	}()
+	require.NoError(t, conn.lock())
+	defer conn.unlock()
+	conn.deferredExecutePending.Store(true)
+	rr := &ResultReader{fbConn: conn, ctx: ctx, deferredExecute: true, rowsInfoPopulated: true}
+	_, err := rr.closeWithoutCommit(false)
+	require.NoError(t, err)
+	require.False(t, conn.IsClosed())
+	cancel()
+	select {
+	case <-handler.canceled:
+	case <-time.After(time.Second):
+		t.Fatal("internal cleanup stopped the outer request watcher")
 	}
 }

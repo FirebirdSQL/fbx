@@ -1791,7 +1791,7 @@ func (fbConn *FbConn) internalPrepareTx(
 		if fbConn.IsClosed() {
 			return nil, err
 		}
-		if cleanupErr := fbConn.freeStatementHandleLocked(statementHandle); cleanupErr != nil {
+		if cleanupErr := fbConn.freeStatementHandleLocked(ctx, statementHandle); cleanupErr != nil {
 			return nil, operationerror.Join(err, fmt.Errorf("free statement after prepare error: %w", cleanupErr))
 		}
 		return nil, err
@@ -1806,7 +1806,7 @@ func (fbConn *FbConn) internalPrepareTx(
 		if fbConn.IsClosed() {
 			return nil, err
 		}
-		if cleanupErr := fbConn.freeStatementHandleLocked(statementHandle); cleanupErr != nil {
+		if cleanupErr := fbConn.freeStatementHandleLocked(ctx, statementHandle); cleanupErr != nil {
 			return nil, operationerror.Join(err, fmt.Errorf("free statement after prepare error: %w", cleanupErr))
 		}
 		return nil, err
@@ -1851,7 +1851,7 @@ func (fbConn *FbConn) internalPrepareTx(
 			if fbConn.IsClosed() {
 				return nil, err
 			}
-			if cleanupErr := fbConn.freeStatementHandleLocked(statementHandle); cleanupErr != nil {
+			if cleanupErr := fbConn.freeStatementHandleLocked(ctx, statementHandle); cleanupErr != nil {
 				return nil, operationerror.Join(err, fmt.Errorf("free statement after prepare error: %w", cleanupErr))
 			}
 			return nil, err
@@ -1862,7 +1862,7 @@ func (fbConn *FbConn) internalPrepareTx(
 			err = attachArrayMetadata(desc.Parameters, arrays, "parameter")
 		}
 		if err != nil {
-			if cleanupErr := fbConn.freeStatementHandleLocked(statementHandle); cleanupErr != nil {
+			if cleanupErr := fbConn.freeStatementHandleLocked(ctx, statementHandle); cleanupErr != nil {
 				return nil, operationerror.Join(err, fmt.Errorf("free statement after prepare error: %w", cleanupErr))
 			}
 			return nil, err
@@ -2203,12 +2203,6 @@ func (fbConn *FbConn) getArrayMetadata(ctx context.Context, tx *FBTransaction, s
 		return nil, nil, err
 	}
 
-	defer func() {
-		cleanupCtx, cancel := fbConn.GetCleanupContext(ctx)
-		_ = st.deallocateLocked(cleanupCtx)
-		cancel()
-	}()
-
 	rr := &ResultReader{
 		fbConn:           fbConn,
 		ctx:              ctx,
@@ -2217,8 +2211,8 @@ func (fbConn *FbConn) getArrayMetadata(ctx context.Context, tx *FBTransaction, s
 
 	result := st.internalExecTx(ctx, tx, rr, nil).readWithoutCommit()
 
-	if result.Err != nil {
-		return nil, nil, result.Err
+	if err := operationerror.Join(result.Err, st.deallocateLocked(ctx)); err != nil {
+		return nil, nil, err
 	}
 
 	metadataList := make([]map[string][]byte, 0)
@@ -2299,12 +2293,6 @@ func (fbConn *FbConn) getArrayDimensions(ctx context.Context, tx *FBTransaction,
 		return nil, err
 	}
 
-	defer func() {
-		cleanupCtx, cancel := fbConn.GetCleanupContext(ctx)
-		_ = st.deallocateLocked(cleanupCtx)
-		cancel()
-	}()
-
 	rr := &ResultReader{
 		fbConn:           fbConn,
 		ctx:              ctx,
@@ -2313,8 +2301,8 @@ func (fbConn *FbConn) getArrayDimensions(ctx context.Context, tx *FBTransaction,
 
 	result := st.internalExecTx(ctx, tx, rr, nil).readWithoutCommit()
 
-	if result.Err != nil {
-		return nil, result.Err
+	if err := operationerror.Join(result.Err, st.deallocateLocked(ctx)); err != nil {
+		return nil, err
 	}
 
 	dimensions := map[dimensionsMapKey][][]int{}
@@ -2522,7 +2510,7 @@ func (rr *ResultReader) readWithoutCommit() *Result {
 		br.Rows = append(br.Rows, row)
 	}
 
-	br.QueryStatus, br.Err = rr.closeWithoutCommit()
+	br.QueryStatus, br.Err = rr.closeWithoutCommit(false)
 
 	return br
 }
@@ -2882,6 +2870,27 @@ func (fbConn *FbConn) GetCleanupContext(parent context.Context) (context.Context
 	return context.WithTimeout(context.WithoutCancel(parent), fbConn.GetCleanupTimeout())
 }
 
+// withCleanupTimeout bounds protocol cleanup while the caller holds the conn lock.
+// It preserves the request watcher: internal metadata work can continue afterwards.
+// Closing the transport also interrupts I/O when another watcher changes its deadline.
+func (fbConn *FbConn) withCleanupTimeout(parent context.Context, cleanup func() error) (err error) {
+	ctx, cancel := fbConn.GetCleanupContext(parent)
+	defer cancel()
+	done := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		_ = fbConn.conn.Close()
+		close(done)
+	})
+	defer func() {
+		if !stop() {
+			<-done
+			fbConn.asyncClose()
+			err = operationerror.Join(err, &errTimeout{err: ctx.Err()})
+		}
+	}()
+	return cleanup()
+}
+
 // commitInternalTx rolls back a rejected implicit commit so the next request
 // cannot reuse the failed transaction and commit its changes.
 func (fbConn *FbConn) commitInternalTx(ctx context.Context, tx *FBTransaction) error {
@@ -2931,7 +2940,7 @@ func (fbConn *FbConn) rollbackOwnedInternalTx(ctx context.Context, tx *FBTransac
 // error.
 func (rr *ResultReader) Close() (QueryStatus, error) {
 	if !rr.closed {
-		_, _ = rr.closeWithoutCommit()
+		_, _ = rr.closeWithoutCommit(true)
 		rr.fbConn.contextWatcher.Unwatch()
 		rr.fbConn.unlock()
 
@@ -2958,30 +2967,28 @@ func (rr *ResultReader) Close() (QueryStatus, error) {
 	return rr.queryStatus, rr.err
 }
 
-func (rr *ResultReader) closeWithoutCommit() (QueryStatus, error) {
+// Internal reads retain the request watcher; standalone Close ends the request.
+func (rr *ResultReader) closeWithoutCommit(unwatch bool) (QueryStatus, error) {
 	if !rr.closed {
-		if rr.deferredExecute {
-			// Stop the request watcher before flushing the buffered Execute. A
-			// canceled query must not cancel its own protocol cleanup. Internal
-			// metadata reads need the same bounded cleanup as public Close.
-			rr.fbConn.contextWatcher.Unwatch()
-			cleanupWatcher := ctxwatch.NewContextWatcher(&DeadlineContextWatcherHandler{
-				Conn:          rr.fbConn.conn,
-				DeadlineDelay: rr.fbConn.GetCleanupTimeout(),
-			})
-			cleanupWatcher.Watch(rr.ctx)
-			defer cleanupWatcher.Unwatch()
+		rr.err = rr.fbConn.withCleanupTimeout(rr.ctx, func() error {
+			if unwatch {
+				rr.fbConn.contextWatcher.Unwatch()
+			}
 			if err := rr.finishDeferredExecute(); err != nil {
 				rr.concludeCommand(QueryStatus{}, err)
 			}
-		}
-		if rr.err == nil {
-			rr.drainCurrentFetch()
 			if rr.err == nil {
-				if err := rr.populateRowsAffected(); err != nil {
-					rr.SetCallerErr(err)
+				rr.drainCurrentFetch()
+				if rr.err == nil {
+					if err := rr.populateRowsAffected(); err != nil {
+						rr.SetCallerErr(err)
+					}
 				}
 			}
+			return rr.err
+		})
+		if rr.sqlMayHaveExecuted {
+			rr.err = operationerror.WithRetry(rr.err, false)
 		}
 		rr.clearBufferedFetch()
 		rr.closed = true

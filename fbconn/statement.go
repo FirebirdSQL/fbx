@@ -504,26 +504,11 @@ func (st *Statement) deallocateLocked(ctx context.Context) error {
 	if st.closed {
 		return nil
 	}
-	if st.conn.IsClosed() {
-		return ErrConnClosed
-	}
-	if err := st.conn.client.WriteMessage(&fbproto.OpFreeStatement{
-		StatementHandle: st.Description.StatementHandle,
-		Option:          fbproto.DSQL_drop,
-	}); err != nil {
-		st.conn.asyncClose()
-		return err
-	}
-	if err := st.conn.flushWithPotentialWriteReadDeadlock(); err != nil {
-		st.conn.asyncClose()
-		st.cursorTransaction = nil
-		st.closed = true
-		return err
-	}
+	err := st.conn.freeStatementHandleLocked(ctx, st.Description.StatementHandle)
 	st.cursorTransaction = nil
 	st.closed = true
 	delete(st.conn.activeStatements, st)
-	return nil
+	return err
 }
 
 // CloseCursor close opened cursor without deallocating statement on server
@@ -531,17 +516,18 @@ func (st *Statement) CloseCursor(ctx context.Context) error {
 	return st.internalClose(ctx, fbproto.DSQL_close)
 }
 
-// freeStatementHandleLocked sends op_free_statement DSQL_drop for a raw server-side
-// statement handle that has no corresponding *Statement Go object yet. Caller must
-// hold the conn lock. On any wire error the conn is asyncClose'd.
-func (fbConn *FbConn) freeStatementHandleLocked(handle int) error {
+// freeStatementHandleLocked sends DSQL_drop within CleanupTimeout. The caller
+// holds the conn lock. A failed write makes the connection unusable.
+func (fbConn *FbConn) freeStatementHandleLocked(ctx context.Context, handle int) error {
 	if fbConn.IsClosed() {
 		return ErrConnClosed
 	}
-	if err := fbConn.withWriteLockAndFlush(func() error {
-		return fbConn.client.WriteMessage(&fbproto.OpFreeStatement{
-			StatementHandle: handle,
-			Option:          fbproto.DSQL_drop,
+	if err := fbConn.withCleanupTimeout(ctx, func() error {
+		return fbConn.withWriteLockAndFlush(func() error {
+			return fbConn.client.WriteMessage(&fbproto.OpFreeStatement{
+				StatementHandle: handle,
+				Option:          fbproto.DSQL_drop,
+			})
 		})
 	}); err != nil {
 		fbConn.asyncClose()
