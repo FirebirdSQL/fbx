@@ -12,6 +12,7 @@ import (
 
 	"github.com/firebirdsql/fbx/fbproto"
 	"github.com/firebirdsql/fbx/fbproto/vax"
+	"github.com/firebirdsql/fbx/internal/eventctx"
 )
 
 type eventChannel struct {
@@ -52,7 +53,10 @@ func (fbConn *FbConn) ensureEventChannel(ctx context.Context) (*eventChannel, er
 
 	host := fbConn.eventDialHost()
 	address := net.JoinHostPort(host, strconv.Itoa(auxPort))
-	auxConn, err := fbConn.config.DialFunc(ctx, "tcp", address)
+	// After advertising the port, the server waits for this connection.
+	dialCtx, cancel := eventctx.ForResponse(ctx)
+	auxConn, err := fbConn.config.DialFunc(dialCtx, "tcp", address)
+	cancel()
 	if err != nil {
 		return nil, err
 	}
@@ -84,15 +88,11 @@ func (fbConn *FbConn) requestAuxEventPort(ctx context.Context) (*eventChannel, i
 	}
 	defer fbConn.unlock()
 
-	if ctx != context.Background() {
-		select {
-		case <-ctx.Done():
-			return nil, 0, newContextAlreadyDoneError(ctx)
-		default:
-		}
-		fbConn.contextWatcher.Watch(ctx)
-		defer fbConn.contextWatcher.Unwatch()
+	ctx, unwatch, err := fbConn.watchEventResponse(ctx)
+	if err != nil {
+		return nil, 0, err
 	}
+	defer unwatch()
 
 	fbConn.eventMu.Lock()
 	channel := fbConn.eventChannel
@@ -159,12 +159,15 @@ func (fbConn *FbConn) readEventChannelLoop(channel *eventChannel) {
 	var eventBufferScratch []byte
 	for {
 		opcode, err := xdr.ReadInt32()
+		if err == nil && (opcode == fbproto.Op_disconnect || opcode == fbproto.Op_exit) {
+			err = io.EOF
+		}
 		if err != nil {
-			if !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) {
+			if !errors.Is(err, net.ErrClosed) && !fbConn.IsClosed() {
 				fbConn.setEventError(fmt.Errorf("event channel read failed: %w", err))
-				if closeErr := channel.close(); closeErr != nil {
-					fbConn.setEventError(fmt.Errorf("event channel close after read failure: %w", closeErr))
-				}
+			}
+			if closeErr := channel.close(); closeErr != nil {
+				fbConn.setEventError(fmt.Errorf("event channel close after read failure: %w", closeErr))
 			}
 			return
 		}
@@ -172,11 +175,6 @@ func (fbConn *FbConn) readEventChannelLoop(channel *eventChannel) {
 		switch opcode {
 		case fbproto.Op_dummy:
 			continue
-		case fbproto.Op_disconnect, fbproto.Op_exit:
-			if closeErr := channel.close(); closeErr != nil {
-				fbConn.setEventError(fmt.Errorf("event channel close on server disconnect failed: %w", closeErr))
-			}
-			return
 		case fbproto.Op_event:
 			eventID, eventCount, readErr := readSingleEventFromXDR(xdr, &eventBufferScratch)
 			if readErr != nil {

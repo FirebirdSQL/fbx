@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/firebirdsql/fbx"
-	"github.com/firebirdsql/fbx/fbconn"
 )
 
 type managerMode uint8
@@ -30,6 +29,25 @@ type listenerRegistration struct {
 	listener EventListener
 }
 
+// operationLock lets a listener's deadline expire while another registration
+// is waiting for the server.
+type operationLock struct {
+	once sync.Once
+	held chan struct{}
+}
+
+func (l *operationLock) lock(ctx context.Context) error {
+	l.once.Do(func() { l.held = make(chan struct{}, 1) })
+	select {
+	case l.held <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (l *operationLock) unlock() { <-l.held }
+
 // Manager owns Firebird event registrations and delivers matching events to
 // listeners.
 //
@@ -42,7 +60,7 @@ type Manager struct {
 	// first-registration / last-unregistration network I/O. This avoids races
 	// where a listener could be visible in memory without a successful server
 	// registration for that event name.
-	listenerOpMu sync.Mutex
+	listenerOpMu operationLock
 
 	mode       managerMode
 	connString string
@@ -58,7 +76,8 @@ type Manager struct {
 	listenerEventName map[ListenerHandle]string
 	nextListenerID    ListenerHandle
 	handlers          map[string]*fbEventHandler
-	notificationOpMu  sync.Mutex
+	registrationErr   chan error // auxiliary channel failure during the current first registration
+	notificationOpMu  operationLock
 	notifications     *notificationQueue
 	notificationNames map[string]ListenerHandle
 
@@ -213,9 +232,9 @@ func (m *Manager) Connect(ctx context.Context) error {
 	done := m.dispatcherDone
 	lifecycleStop := m.lifecycleWatchStop
 	lifecycleGen := m.lifecycleWatchGen
+	m.bindConnEventErrorHandler(conn, lifecycleStop)
 	m.mu.Unlock()
 
-	m.bindConnEventErrorHandler(conn)
 	m.startConnLifecycleWatcher(conn, lifecycleStop, lifecycleGen)
 	go delivery.run()
 	go m.dispatcherLoop(stop, done, queue, delivery)
@@ -283,21 +302,16 @@ func (m *Manager) disconnect(ctx context.Context, strict bool, waitDispatcher bo
 
 	conn := m.conn
 	ownConn := m.ownConn
-	var lowConn *fbconn.FbConn
-	if conn != nil && !conn.IsClosed() {
-		lowConn = conn.FbConn()
-	}
-
 	m.connected = false
 	if ownConn {
 		m.conn = nil
 	}
+	m.unbindConnEventErrorHandler(conn)
 	m.mu.Unlock()
 
 	for _, reg := range allRegs {
 		closeListenerIfNeeded(reg.listener)
 	}
-	m.unbindConnEventErrorHandler(conn)
 	if lifecycleStop != nil {
 		close(lifecycleStop)
 	}
@@ -320,7 +334,7 @@ func (m *Manager) disconnect(ctx context.Context, strict bool, waitDispatcher bo
 
 	for _, handler := range handlers {
 		unregisterCtx, unregisterCancel := m.operationContext(ctx)
-		err := handler.unregisterOnConn(unregisterCtx, lowConn)
+		err := handler.unregister(unregisterCtx)
 		unregisterCancel()
 		if err != nil {
 			allErr = errors.Join(allErr, err)
@@ -397,17 +411,27 @@ func (m *Manager) SetWaitTimeout(timeout time.Duration) {
 // The manager must be connected, eventName must be non-empty, and listener must
 // be non-nil. Each successful call creates a separate registration, even when
 // the same listener value is registered more than once. Call [ListenerCloser.Close]
-// to remove that registration.
+// to remove that registration. For the first listener on an event name, the
+// method waits for the initial counter and confirmation of the subscription.
 func (m *Manager) AddEventListener(eventName string, listener EventListener) (*ListenerCloser, error) {
+	return m.addEventListener(context.Background(), eventName, listener)
+}
+
+func (m *Manager) addEventListener(ctx context.Context, eventName string, listener EventListener) (*ListenerCloser, error) {
 	if eventName == "" {
 		return nil, errors.New("eventName must not be empty")
 	}
 	if listener == nil {
 		return nil, errors.New("listener must not be nil")
 	}
-	m.listenerOpMu.Lock()
-	defer m.listenerOpMu.Unlock()
+	if err := m.listenerOpMu.lock(ctx); err != nil {
+		return nil, err
+	}
+	defer m.listenerOpMu.unlock()
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	m.mu.Lock()
 	if !m.connected {
 		m.mu.Unlock()
@@ -433,6 +457,8 @@ func (m *Manager) AddEventListener(eventName string, listener EventListener) (*L
 	}
 	m.listeners[eventName] = append(currentListeners, reg)
 	m.listenerEventName[handle] = eventName
+	stop := m.lifecycleWatchStop
+	beforeEnsureHook := m.beforeEnsureEventHandler
 	m.mu.Unlock()
 
 	closer := newListenerCloser(m, handle)
@@ -440,14 +466,11 @@ func (m *Manager) AddEventListener(eventName string, listener EventListener) (*L
 		return closer, nil
 	}
 
-	m.mu.Lock()
-	beforeEnsureHook := m.beforeEnsureEventHandler
-	m.mu.Unlock()
 	if beforeEnsureHook != nil {
 		beforeEnsureHook()
 	}
 
-	if err := m.ensureEventHandler(eventName); err != nil {
+	if err := m.ensureEventHandler(ctx, eventName, stop); err != nil {
 		m.removeListenerSilently(handle)
 		return nil, err
 	}
@@ -463,8 +486,10 @@ func (m *Manager) RemoveEventListener(handle ListenerHandle) error {
 	if handle == InvalidListenerHandle {
 		return errors.New("listener handle must not be invalid")
 	}
-	m.listenerOpMu.Lock()
-	defer m.listenerOpMu.Unlock()
+	if err := m.listenerOpMu.lock(context.Background()); err != nil {
+		return err
+	}
+	defer m.listenerOpMu.unlock()
 
 	var handler *fbEventHandler
 	m.mu.Lock()
@@ -518,9 +543,9 @@ func (m *Manager) RemoveEventListener(handle ListenerHandle) error {
 	return nil
 }
 
-func (m *Manager) ensureEventHandler(eventName string) error {
+func (m *Manager) ensureEventHandler(ctx context.Context, eventName string, stop <-chan struct{}) error {
 	m.mu.Lock()
-	if !m.connected {
+	if !m.connected || m.lifecycleWatchStop != stop {
 		m.mu.Unlock()
 		return errors.New("manager disconnected")
 	}
@@ -528,54 +553,57 @@ func (m *Manager) ensureEventHandler(eventName string) error {
 		m.mu.Unlock()
 		return nil
 	}
-	conn := m.conn
-	m.mu.Unlock()
-
-	if conn == nil || conn.IsClosed() {
+	if m.conn == nil || m.conn.IsClosed() {
+		m.mu.Unlock()
 		return errors.New("not connected to server")
 	}
-
+	conn := m.conn.FbConn()
 	handler := &fbEventHandler{
 		manager:   m,
+		conn:      conn,
+		stop:      stop,
 		eventName: eventName,
+		baseline:  make(chan struct{}),
 	}
-	handle, err := conn.FbConn().CreateEventHandle(eventName, handler)
+	handle, err := conn.CreateEventHandle(eventName, handler)
 	if err != nil {
+		m.mu.Unlock()
 		return err
 	}
 	handler.handle = handle
-	if err := handler.register(context.Background()); err != nil {
-		return err
-	}
-
-	m.mu.Lock()
-	if !m.connected {
-		m.mu.Unlock()
-		unregErr := handler.unregister(context.Background())
-		if unregErr != nil {
-			return errors.Join(errors.New("manager disconnected"), unregErr)
-		}
-		return errors.New("manager disconnected")
-	}
-	listeners := m.listeners[eventName]
-	if len(listeners) == 0 {
-		m.mu.Unlock()
-		if err := handler.unregister(context.Background()); err != nil {
-			return err
-		}
-		return nil
-	}
-	if _, exists := m.handlers[eventName]; exists {
-		m.mu.Unlock()
-		if err := handler.unregister(context.Background()); err != nil {
-			return err
-		}
-		return nil
-	}
+	registrationErr := make(chan error, 1)
+	m.registrationErr = registrationErr
 	m.handlers[eventName] = handler
 	m.mu.Unlock()
 
-	return nil
+	// A live event can arrive before the second QueueEvent returns. Let its
+	// callback proceed only after this registration has succeeded or rolled back.
+	handler.mu.Lock()
+	defer handler.mu.Unlock()
+	err = handler.registerLocked(ctx, registrationErr)
+	m.mu.Lock()
+	m.registrationErr = nil
+	if err == nil {
+		select {
+		case err = <-registrationErr:
+		default:
+			if m.lifecycleWatchStop != stop {
+				err = errors.New("manager disconnected")
+			}
+		}
+	}
+	m.mu.Unlock()
+	if err == nil {
+		return nil
+	}
+	if cancelErr := handler.unregisterLocked(context.Background()); cancelErr != nil {
+		err = errors.Join(err, cancelErr)
+	}
+	handler.registered = false
+	m.mu.Lock()
+	delete(m.handlers, eventName)
+	m.mu.Unlock()
+	return err
 }
 
 func (m *Manager) removeListenerSilently(handle ListenerHandle) {
@@ -607,13 +635,13 @@ func (m *Manager) removeListenerSilently(handle ListenerHandle) {
 	closeListenerIfNeeded(removedListener)
 }
 
-func (m *Manager) enqueueEvent(event DatabaseEvent) {
+func (m *Manager) enqueueEvent(handler *fbEventHandler, event DatabaseEvent) {
 	m.mu.Lock()
 	queue := m.eventQueue
 	stop := m.dispatcherStop
-	connected := m.connected
+	registered := m.handlers[event.EventName] == handler
 	m.mu.Unlock()
-	if !connected || queue == nil {
+	if !registered || queue == nil {
 		return
 	}
 	select {

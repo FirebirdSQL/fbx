@@ -8,238 +8,166 @@ import (
 	"time"
 
 	"github.com/firebirdsql/fbx/fbconn"
+	"github.com/firebirdsql/fbx/internal/eventctx"
 )
 
 type fbEventHandler struct {
 	manager   *Manager
+	conn      *fbconn.FbConn
+	stop      <-chan struct{}
 	eventName string
 	handle    *fbconn.EventHandle
+	baseline  chan struct{}
 
-	// mu protects state transitions and initialized flag.
-	mu sync.Mutex
-	// opMu serializes register/re-register/unregister network operations so state
-	// transitions cannot overlap around server calls.
-	opMu sync.Mutex
-
-	initialized bool
-	state       eventHandlerState
+	mu         sync.Mutex // serializes queue and cancel operations
+	registered bool
 }
 
-// The zero value represents a handler that exists locally but has not yet been
-// registered on the server.
-type eventHandlerState uint8
-
-const (
-	// eventHandlerStateRegistering means a queue/register call is in progress.
-	eventHandlerStateRegistering eventHandlerState = iota + 1
-	// eventHandlerStateRegistered means server-side registration is active.
-	eventHandlerStateRegistered
-	// eventHandlerStateCancelling means cancel call is in progress.
-	eventHandlerStateCancelling
-	// eventHandlerStateCancelled means handler is permanently cancelled.
-	eventHandlerStateCancelled
-)
-
-func (h *fbEventHandler) register(ctx context.Context) error {
-	h.opMu.Lock()
-	defer h.opMu.Unlock()
-
-	h.mu.Lock()
-	switch h.state {
-	case eventHandlerStateCancelled, eventHandlerStateCancelling:
-		h.mu.Unlock()
-		return errors.New("trying to register cancelled event handler")
+func (h *fbEventHandler) registerLocked(ctx context.Context, channelErr <-chan error) error {
+	select {
+	case <-h.stop:
+		return errors.New("manager disconnected")
 	default:
 	}
-	prevState := h.state
-	h.state = eventHandlerStateRegistering
-	handle := h.handle
-	h.mu.Unlock()
-
-	conn := h.manager.currentConn()
-	if conn == nil {
-		h.mu.Lock()
-		if h.state == eventHandlerStateRegistering {
-			h.state = prevState
-		}
-		h.mu.Unlock()
-		return errors.New("manager disconnected")
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	opCtx, cancel := h.manager.operationContext(ctx)
+	waitCtx, cancel := context.WithTimeout(ctx, managerOperationTimeout)
 	defer cancel()
-	err := conn.QueueEvent(opCtx, handle)
-
-	h.mu.Lock()
-	// register can fail; on failure we rollback to previous state instead of
-	// pretending cancellation happened.
-	if h.state == eventHandlerStateRegistering {
-		if err == nil {
-			h.state = eventHandlerStateRegistered
-		} else {
-			h.state = prevState
-		}
+	if err := h.queue(waitCtx); err != nil {
+		return err
 	}
-	h.mu.Unlock()
+
+	select {
+	case <-h.baseline:
+	case err := <-channelErr:
+		return err
+	case <-h.stop:
+		return errors.New("manager disconnected")
+	case <-waitCtx.Done():
+		return waitCtx.Err()
+	}
+
+	if err := waitCtx.Err(); err != nil {
+		return err
+	}
+	// The first notification supplies the counter for the live registration.
+	if err := h.conn.CountEvents(h.handle); err != nil {
+		return err
+	}
+	if err := h.queue(waitCtx); err != nil {
+		return err
+	}
+	h.registered = true
+	return ctx.Err()
+}
+
+func (h *fbEventHandler) queue(ctx context.Context) error {
+	err := h.conn.QueueEvent(eventctx.Queue{Context: ctx, ResponseTimeout: managerOperationTimeout}, h.handle)
+	if ctx.Err() != nil && fbconn.SafeToRetry(err) && errors.Is(err, ctx.Err()) {
+		return ctx.Err()
+	}
 	return err
 }
 
 func (h *fbEventHandler) unregister(ctx context.Context) error {
-	return h.unregisterOnConn(ctx, h.manager.currentConn())
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.unregisterLocked(ctx)
 }
 
-func (h *fbEventHandler) unregisterOnConn(ctx context.Context, conn *fbconn.FbConn) error {
-	h.opMu.Lock()
-	defer h.opMu.Unlock()
-
-	h.mu.Lock()
-	switch h.state {
-	case eventHandlerStateCancelled, eventHandlerStateCancelling:
-		h.mu.Unlock()
-		return nil
-	default:
-	}
-	prevState := h.state
-	// Transition to cancelling before network I/O; if cancel fails we roll back
-	// to previous state (typically registered), so failed cancel does not leave
-	// handler in a permanently cancelled local state.
-	h.state = eventHandlerStateCancelling
-	handle := h.handle
-	h.mu.Unlock()
-
-	if conn == nil {
-		// Connection already unavailable: treat as best-effort local cancellation.
-		h.mu.Lock()
-		if h.state == eventHandlerStateCancelling {
-			h.state = eventHandlerStateCancelled
-		}
-		h.mu.Unlock()
-		return nil
-	}
-	opCtx, cancel := h.manager.operationContext(ctx)
-	defer cancel()
-	err := conn.CancelEvent(opCtx, handle)
-
-	h.mu.Lock()
-	if h.state == eventHandlerStateCancelling {
-		if err == nil {
-			h.state = eventHandlerStateCancelled
-		} else {
-			h.state = prevState
+func (h *fbEventHandler) unregisterLocked(ctx context.Context) error {
+	if !h.registered {
+		select {
+		case <-h.baseline:
+			// Firebird consumed the initial request and no live request was queued.
+			return nil
+		default:
 		}
 	}
-	h.mu.Unlock()
-	return err
+	// The initial request can still need cancellation before the subscription is ready.
+	if h.conn != nil && (h.handle == nil || (h.handle.EventID() != 0 && !h.conn.IsClosed())) {
+		opCtx, cancel := h.manager.operationContext(ctx)
+		defer cancel()
+		if err := h.conn.CancelEvent(opCtx, h.handle); err != nil {
+			return err
+		}
+	}
+	h.registered = false
+	return nil
 }
 
 func (h *fbEventHandler) EventOccurred(handle *fbconn.EventHandle) {
-	if h.isStopping() {
+	// Firebird consumes each queued request once. Only register can queue the
+	// next request after receiving this first counter.
+	select {
+	case <-h.baseline:
+	default:
+		close(h.baseline)
 		return
 	}
-
-	// CountEvents must be serialized via opMu: FbConn is not safe for concurrent
-	// use, and user goroutines call QueueEvent/CancelEvent while holding opMu.
-	h.opMu.Lock()
-	conn := h.manager.currentConn()
-	if conn == nil {
-		h.opMu.Unlock()
-		return
-	}
-	countErr := conn.CountEvents(handle)
-	h.opMu.Unlock()
-
-	if countErr != nil {
-		h.manager.setAsyncError(fmt.Errorf("count events failed for %q: %w", h.eventName, countErr))
-		return
-	}
-
 	h.mu.Lock()
-	if h.state == eventHandlerStateCancelling || h.state == eventHandlerStateCancelled {
+	if !h.registered {
 		h.mu.Unlock()
 		return
 	}
-	emitEvent := h.initialized
-	h.initialized = true
+	countErr := h.conn.CountEvents(handle)
 	h.mu.Unlock()
 
-	if h.isStopping() {
+	if countErr != nil {
+		h.setError(fmt.Errorf("count events failed for %q: %w", h.eventName, countErr))
 		return
 	}
-	if err := h.reRegister(handle); err != nil {
-		h.manager.setAsyncError(fmt.Errorf("re-register failed for %q: %w", h.eventName, err))
-	}
-	if !emitEvent || h.isStopping() {
-		return
+
+	if err := h.reRegister(); err != nil {
+		h.setError(fmt.Errorf("re-register failed for %q: %w", h.eventName, err))
 	}
 	// Keep server-side subscription active before potentially blocking on
 	// manager event queue backpressure.
-	h.manager.enqueueEvent(DatabaseEvent{
+	h.manager.enqueueEvent(h, DatabaseEvent{
 		EventName:  handle.EventName(),
 		EventCount: handle.EventCount(),
 	})
 }
 
-func (h *fbEventHandler) reRegister(handle *fbconn.EventHandle) error {
+func (h *fbEventHandler) reRegister() error {
 	const maxAttempts = 3
 	var lastErr error
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
-		h.opMu.Lock()
-
+		select {
+		case <-h.stop:
+			return nil
+		default:
+		}
 		h.mu.Lock()
-		if h.state == eventHandlerStateCancelling || h.state == eventHandlerStateCancelled {
+		if !h.registered {
 			h.mu.Unlock()
-			h.opMu.Unlock()
 			return nil
 		}
-		prevState := h.state
-		h.state = eventHandlerStateRegistering
-		h.mu.Unlock()
-
-		conn := h.manager.currentConn()
-		if conn == nil {
-			h.mu.Lock()
-			if h.state == eventHandlerStateRegistering {
-				h.state = prevState
-			}
-			h.mu.Unlock()
-			h.opMu.Unlock()
-			return errors.New("manager disconnected")
-		}
-
-		opCtx, cancel := h.manager.operationContext(context.Background())
-		err := conn.QueueEvent(opCtx, handle)
+		ctx, cancel := h.manager.operationContext(context.Background())
+		lastErr = h.queue(ctx)
 		cancel()
-
-		h.mu.Lock()
-		if h.state == eventHandlerStateRegistering {
-			if err == nil {
-				h.state = eventHandlerStateRegistered
-			} else {
-				h.state = prevState
-			}
-		}
 		h.mu.Unlock()
-
-		if err != nil {
-			lastErr = err
-			h.opMu.Unlock()
-		} else {
-			h.opMu.Unlock()
+		if lastErr == nil {
 			return nil
 		}
-
-		time.Sleep(time.Duration(25*(attempt+1)) * time.Millisecond)
-	}
-
-	if lastErr == nil {
-		return errors.New("re-register failed for unknown reason")
+		if attempt+1 < maxAttempts {
+			select {
+			case <-h.stop:
+				return nil
+			case <-time.After(time.Duration(25*(attempt+1)) * time.Millisecond):
+			}
+		}
 	}
 	return lastErr
 }
 
-func (h *fbEventHandler) isStopping() bool {
-	h.mu.Lock()
-	state := h.state
-	h.mu.Unlock()
-	return state == eventHandlerStateCancelling || state == eventHandlerStateCancelled
+func (h *fbEventHandler) setError(err error) {
+	m := h.manager
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.handlers[h.eventName] == h {
+		m.setAsyncErrorLocked(err)
+	}
 }

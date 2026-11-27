@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -129,6 +132,164 @@ func TestManagerAddRemoveEventListener(t *testing.T) {
 		t.Fatalf("unexpected event after listener removal: %+v", unexpected)
 	case <-time.After(500 * time.Millisecond):
 	}
+}
+
+func TestManagerAddEventListenerWaitsForInitialCount(t *testing.T) {
+	manager := connectWithEventRead(t, func(c net.Conn, p []byte) (int, error) {
+		if _, err := c.Read(p); err != nil {
+			return 0, err
+		}
+		return 0, io.EOF
+	})
+	closer, err := manager.AddEventListener(nextEventName("BASELINE"), fbevent.EventListenerFunc(func(fbevent.DatabaseEvent) {}))
+	if skipIfAuxEventPortUnavailable(t, err) {
+		return
+	}
+	require.ErrorIs(t, err, io.EOF)
+	require.Nil(t, closer)
+}
+
+func TestManagerWaitForEventTimeoutDuringInitialCount(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+	manager := connectWithEventRead(t, func(c net.Conn, p []byte) (int, error) {
+		<-release
+		return c.Read(p)
+	})
+
+	count, err := manager.WaitForEvent(t.Context(), nextEventName("BASELINE_TIMEOUT"), 100*time.Millisecond)
+	if skipIfAuxEventPortUnavailable(t, err) {
+		return
+	}
+	require.NoError(t, err)
+	require.Equal(t, -1, count)
+}
+
+func TestManagerCloseDuringFirstRegistration(t *testing.T) {
+	reading, release := make(chan struct{}), make(chan struct{})
+	defer close(release)
+	block := sync.OnceFunc(func() {
+		close(reading)
+		<-release
+	})
+	manager := connectWithEventRead(t, func(c net.Conn, p []byte) (int, error) {
+		n, err := c.Read(p)
+		if err == nil {
+			block()
+		}
+		return n, err
+	})
+	added := make(chan error, 1)
+	go func() {
+		_, err := manager.AddEventListener(nextEventName("CLOSE"), fbevent.EventListenerFunc(func(fbevent.DatabaseEvent) {}))
+		added <- err
+	}()
+	select {
+	case <-reading:
+	case err := <-added:
+		if skipIfAuxEventPortUnavailable(t, err) {
+			return
+		}
+		t.Fatalf("registration returned before the initial count: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Firebird did not send the initial count")
+	}
+
+	count, err := manager.WaitForEvent(t.Context(), nextEventName("OTHER"), 50*time.Millisecond)
+	require.NoError(t, err)
+	require.Equal(t, -1, count)
+	require.NoError(t, manager.Close(t.Context()))
+	require.ErrorContains(t, <-added, "disconnected")
+}
+
+func connectWithEventRead(t *testing.T, read func(net.Conn, []byte) (int, error)) *fbevent.Manager {
+	t.Helper()
+	cfg, err := fbx.ParseConfig(requireIntegrationConnString(t))
+	require.NoError(t, err)
+
+	dial := cfg.DialFunc
+	var eventChannel bool
+	cfg.DialFunc = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		conn, err := dial(ctx, network, addr)
+		if err == nil && eventChannel {
+			return readConn{Conn: conn, read: read}, nil
+		}
+		return conn, err
+	}
+
+	manager, err := fbevent.ConnectConfig(t.Context(), cfg)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, manager.Close(context.Background())) })
+	eventChannel = true
+	return manager
+}
+
+type readConn struct {
+	net.Conn
+	read func(net.Conn, []byte) (int, error)
+}
+
+func (c readConn) Read(p []byte) (int, error) { return c.read(c.Conn, p) }
+
+func TestManagerWaitForEventTimeoutPreservesTransaction(t *testing.T) {
+	const timeout = 50 * time.Millisecond
+	cfg, err := fbx.ParseConfig(requireIntegrationConnString(t))
+	require.NoError(t, err)
+	dial := cfg.DialFunc
+	var delayNextRead atomic.Bool
+	var mainConnected bool
+	cfg.DialFunc = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		conn, err := dial(ctx, network, addr)
+		if err != nil || mainConnected {
+			return conn, err
+		}
+		return readConn{conn, func(c net.Conn, p []byte) (int, error) {
+			if delayNextRead.Swap(false) {
+				time.Sleep(6 * timeout)
+			}
+			return c.Read(p)
+		}}, nil
+	}
+	ctx := t.Context()
+	conn, err := fbx.ConnectConfig(ctx, cfg)
+	require.NoError(t, err)
+	mainConnected = true
+	defer func() { require.NoError(t, conn.Close(context.Background())) }()
+	manager, err := fbevent.ConnectFor(ctx, conn)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, manager.Close(context.Background())) }()
+
+	tx, err := conn.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, tx.Rollback(context.Background())) }()
+
+	var value int
+	// The first wait opens the auxiliary channel. The next one goes straight to QueueEvent.
+	for _, name := range []string{"AUX_TIMEOUT", "ACK_TIMEOUT"} {
+		delayNextRead.Store(true)
+		count, err := manager.WaitForEvent(ctx, nextEventName(name), timeout)
+		if skipIfAuxEventPortUnavailable(t, err) {
+			return
+		}
+		require.NoError(t, err, name)
+		require.Equal(t, -1, count)
+		require.False(t, delayNextRead.Load())
+		require.NoError(t, tx.QueryRow(ctx, "select 1 from rdb$database").Scan(&value))
+		require.Equal(t, 1, value)
+	}
+
+	rows, err := tx.Query(ctx, "select 2 from rdb$database")
+	require.NoError(t, err)
+	defer rows.Close()
+	require.True(t, conn.FbConn().IsBusy())
+	start := time.Now()
+	count, err := manager.WaitForEvent(ctx, nextEventName("BUSY_TIMEOUT"), timeout)
+	require.NoError(t, err)
+	require.Equal(t, -1, count)
+	require.Less(t, time.Since(start), time.Second)
+	require.True(t, rows.Next())
+	require.NoError(t, rows.Scan(&value))
+	require.Equal(t, 2, value)
 }
 
 func TestManagerMultipleListeners(t *testing.T) {
