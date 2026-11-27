@@ -395,6 +395,7 @@ func (c *writeErrorConn) Write(_ []byte) (int, error) {
 
 func newCancelOperationTestFbConn(conn net.Conn) *FbConn {
 	fbConn := &FbConn{
+		config:      &Config{},
 		conn:        conn,
 		writer:      bufio.NewWriter(conn),
 		status:      connStatusIdle,

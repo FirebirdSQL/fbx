@@ -13,6 +13,70 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type cleanupDeadlineHandler struct {
+	*fbconn.DeadlineContextWatcherHandler
+	timeout time.Duration
+}
+
+func (h *cleanupDeadlineHandler) HandleWatch(ctx context.Context) {
+	if deadline, ok := ctx.Deadline(); ok {
+		h.timeout = time.Until(deadline)
+	}
+}
+
+func (h *cleanupDeadlineHandler) HandleUnwatch() {}
+
+func TestCleanupTimeoutForExecAndRows(t *testing.T) {
+	if os.Getenv("FBX_TEST_DATABASE") == "" {
+		t.Skip("FBX_TEST_DATABASE is not configured")
+	}
+	ctx := context.Background()
+	config, err := ParseConfig(os.Getenv("FBX_TEST_DATABASE"))
+	require.NoError(t, err)
+	config.Autocommit = true
+	config.DefaultQueryExecMode = QueryExecModeExec
+	config.CleanupTimeout = time.Second
+	var handler *cleanupDeadlineHandler
+	config.BuildContextWatcherHandler = func(conn *fbconn.FbConn) ctxwatch.Handler {
+		handler = &cleanupDeadlineHandler{
+			DeadlineContextWatcherHandler: &fbconn.DeadlineContextWatcherHandler{Conn: conn.Conn()},
+		}
+		return handler
+	}
+	conn, err := ConnectConfig(ctx, config)
+	require.NoError(t, err)
+	defer func() { _ = conn.Close(ctx) }()
+
+	for _, operation := range []string{"Exec", "Rows.Scan"} {
+		for _, failed := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/error=%t", operation, failed), func(t *testing.T) {
+				handler.timeout = 0
+				var operationErr error
+				if operation == "Exec" {
+					var value any = 1
+					if failed {
+						value = struct{}{}
+					}
+					_, operationErr = conn.Exec(ctx, "select cast(? as integer) from rdb$database", value)
+				} else {
+					var value int
+					var dst any = &value
+					if failed {
+						dst = struct{}{}
+					}
+					operationErr = conn.QueryRow(ctx, "select 1 from rdb$database").Scan(dst)
+				}
+				if failed {
+					require.Error(t, operationErr)
+				} else {
+					require.NoError(t, operationErr)
+				}
+				require.InDelta(t, float64(config.CleanupTimeout), float64(handler.timeout), float64(100*time.Millisecond))
+			})
+		}
+	}
+}
+
 // Fail the next protocol operation after a successful implicit commit. The
 // failure happens before cleanup can send anything, but the INSERT is committed.
 type cleanupFailureHandler struct {

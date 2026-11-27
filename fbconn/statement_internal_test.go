@@ -3,6 +3,7 @@ package fbconn
 import (
 	"bytes"
 	"context"
+	"net"
 	"testing"
 	"time"
 
@@ -176,4 +177,37 @@ func TestStatementCloseCursorAfterExecutionTransactionEnds(t *testing.T) {
 	require.Nil(t, st.cursorTransaction)
 	require.Same(t, currentTx, st.transaction)
 	require.False(t, currentTx.Closed)
+}
+
+func TestLockedStatementCleanupTimeout(t *testing.T) {
+	for _, canceled := range []bool{false, true} {
+		t.Run(map[bool]string{false: "Background", true: "canceled"}[canceled], func(t *testing.T) {
+			client, server := net.Pipe()
+			defer func() { _ = server.Close() }()
+			conn := newDetachTestConn(client)
+			conn.config.CleanupTimeout = 50 * time.Millisecond
+			conn.activeStatements = make(map[*Statement]struct{})
+			st := &Statement{conn: conn, Description: &StatementDescription{StatementHandle: 42}}
+			conn.activeStatements[st] = struct{}{}
+			ctx := context.Background()
+			if canceled {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+			}
+			require.NoError(t, conn.lock())
+			defer conn.unlock()
+			guard := time.AfterFunc(time.Second, func() { _ = server.Close() })
+			defer guard.Stop()
+			start := time.Now()
+			err := st.deallocateLocked(ctx)
+			require.ErrorIs(t, err, context.DeadlineExceeded)
+			require.True(t, Timeout(err))
+			require.GreaterOrEqual(t, time.Since(start), conn.config.CleanupTimeout)
+			require.True(t, conn.IsClosed())
+			require.True(t, st.closed)
+			require.Empty(t, conn.activeStatements)
+			waitCleanupDone(t, conn)
+		})
+	}
 }

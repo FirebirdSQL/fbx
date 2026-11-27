@@ -294,7 +294,9 @@ func NewWithConfig(ctx context.Context, config *Config) (*Pool, error) {
 					if err != nil {
 						// Preserve the callback error; the connection is unusable even if
 						// best-effort cleanup also fails.
-						_ = conn.Close(ctx)
+						cleanupCtx, cancel := conn.FbConn().GetCleanupContext(ctx)
+						_ = conn.Close(cleanupCtx)
+						cancel()
 						return nil, err
 					}
 				}
@@ -313,18 +315,18 @@ func NewWithConfig(ctx context.Context, config *Config) (*Pool, error) {
 				return cr, nil
 			},
 			Destructor: func(value *connResource) {
-				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 				conn := value.conn
 				if p.beforeClose != nil {
 					p.beforeClose(conn)
 				}
+				ctx, cancel := conn.FbConn().GetCleanupContext(context.Background())
+				defer cancel()
 				// puddle destructors cannot return cleanup errors.
 				_ = conn.Close(ctx)
 				select {
 				case <-conn.FbConn().CleanupDone():
 				case <-ctx.Done():
 				}
-				cancel()
 			},
 			MaxSize: config.MaxConns,
 		},

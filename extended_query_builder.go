@@ -10,6 +10,7 @@ import (
 
 	"github.com/firebirdsql/fbx/fbconn"
 	"github.com/firebirdsql/fbx/fbtype"
+	"github.com/firebirdsql/fbx/internal/operationerror"
 )
 
 // ExtendedQueryBuilder encodes parameters.
@@ -225,15 +226,13 @@ func (pb *ExtendedQueryBuilder) createBlobFromString(ctx context.Context, conn *
 	}
 	writer, err := blob.Writer(ctx)
 	if err != nil {
-		_ = blob.Cancel(ctx)
-		return nil, err
+		return nil, cancelBlobAfterError(ctx, blob, err)
 	}
 	if _, err := writer.WriteString(s); err != nil {
-		_ = writer.Cancel()
-		return nil, err
+		return nil, cancelBlobAfterError(ctx, blob, err)
 	}
 	if err := writer.Close(); err != nil {
-		return nil, err
+		return nil, cancelBlobAfterError(ctx, blob, err)
 	}
 	return fbconn.EncodeBlobID(int64(blob.ID())), nil
 }
@@ -256,17 +255,26 @@ func (pb *ExtendedQueryBuilder) createBlobFromReader(ctx context.Context, conn *
 	}
 	writer, err := blob.Writer(ctx)
 	if err != nil {
-		_ = blob.Cancel(ctx)
-		return 0, err
+		return 0, cancelBlobAfterError(ctx, blob, err)
 	}
 	if _, err := io.Copy(writer, r); err != nil {
-		_ = writer.Cancel()
-		return 0, err
+		return 0, cancelBlobAfterError(ctx, blob, err)
 	}
 	if err := writer.Close(); err != nil {
-		return 0, err
+		return 0, cancelBlobAfterError(ctx, blob, err)
 	}
 	return blob.ID(), nil
+}
+
+// The driver owns parameter blobs until encoding succeeds. A canceled request
+// must not prevent releasing an unfinished blob, including a failed Close.
+func cancelBlobAfterError(ctx context.Context, blob *blob, cause error) error {
+	if blob.conn.IsClosed() {
+		return cause
+	}
+	cleanupCtx, cancel := blob.conn.fbConn.GetCleanupContext(ctx)
+	defer cancel()
+	return operationerror.Join(cause, blob.Cancel(cleanupCtx))
 }
 
 func resolveExecTx(ctx context.Context, conn *Conn, tx *dbTx) (*fbconn.FBTransaction, error) {
