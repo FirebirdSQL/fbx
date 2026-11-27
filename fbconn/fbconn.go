@@ -171,7 +171,9 @@ func DropDatabase(ctx context.Context, connString string) error {
 	}
 	err = fbConn.DropDatabase(ctx)
 	if !fbConn.IsClosed() {
-		err = errors.Join(err, fbConn.Close(context.Background()))
+		cleanupCtx, cancel := fbConn.GetCleanupContext(ctx)
+		err = errors.Join(err, fbConn.Close(cleanupCtx))
+		cancel()
 	}
 	return err
 }
@@ -216,7 +218,9 @@ func DropDatabaseWithOptions(ctx context.Context, connString string, parseConfig
 	}
 	err = fbConn.DropDatabase(ctx)
 	if !fbConn.IsClosed() {
-		err = errors.Join(err, fbConn.Close(context.Background()))
+		cleanupCtx, cancel := fbConn.GetCleanupContext(ctx)
+		err = errors.Join(err, fbConn.Close(cleanupCtx))
+		cancel()
 	}
 	return err
 }
@@ -299,7 +303,9 @@ func DropDatabaseConfig(ctx context.Context, config *Config) error {
 	}
 	err = fbConn.DropDatabase(ctx)
 	if !fbConn.IsClosed() {
-		err = errors.Join(err, fbConn.Close(context.Background()))
+		cleanupCtx, cancel := fbConn.GetCleanupContext(ctx)
+		err = errors.Join(err, fbConn.Close(cleanupCtx))
+		cancel()
 	}
 	return err
 }
@@ -2870,8 +2876,8 @@ func (rr *ResultReader) SetCallerErr(err error) {
 // defaultGracePeriod is used as the default timeout for clean up server resources.
 const defaultGracePeriod = 5 * time.Second
 
-// GetCleanupContext returns a context for releasing server-side resources after the
-// user's request has finished.
+// GetCleanupContext returns a bounded context for driver-managed resource cleanup.
+// It preserves parent values but does not inherit its cancellation or deadline.
 func (fbConn *FbConn) GetCleanupContext(parent context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(parent), fbConn.GetCleanupTimeout())
 }

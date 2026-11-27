@@ -38,9 +38,11 @@ type Config struct {
 	SystemHost     string
 	Password       string
 	ConnectTimeout time.Duration
-	// CleanupTimeout used to clean up server resources in the event of an error.
-	// The value must be greater than 0; otherwise, the default value of
-	// 5 seconds will be used.
+	// CleanupTimeout limits each driver-managed resource cleanup after success or
+	// failure, including closes and rollbacks without a caller-supplied context.
+	// It does not limit the whole operation, commit, or cancellation control.
+	// Explicit Close, Deallocate, Cancel and Rollback calls use the supplied context.
+	// Values less than or equal to zero use the default of 5 seconds.
 	CleanupTimeout time.Duration
 	DialFunc       DialFunc   // e.g. net.Dialer.DialContext
 	LookupFunc     LookupFunc // e.g. net.Resolver.LookupHost

@@ -538,8 +538,8 @@ func (c *Conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, e
 	return &Stmt{sd: sd, conn: c}, nil
 }
 
-// Close implements [driver.Conn]. The time limit for closing or releasing the base
-// connection is set using [fbconn.Config.CleanupTimeout] and defaults to 5 seconds.
+// Close implements [driver.Conn]. The time limit for closing or releasing the
+// underlying connection is set by [fbconn.Config.CleanupTimeout].
 func (c *Conn) Close() error {
 	ctx, cancel := c.conn.FbConn().GetCleanupContext(context.Background())
 	defer cancel()
@@ -708,13 +708,14 @@ type Stmt struct {
 var errStmtClosed = errors.New("stdlib: statement is closed")
 
 // Close implements [driver.Stmt]. It releases this Stmt's reference and attempts
-// to deallocate the shared native statement after the last reference is closed.
+// to deallocate the shared native statement after the last reference is closed,
+// using [fbconn.Config.CleanupTimeout].
 func (s *Stmt) Close() error {
 	if s.closed {
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	ctx, cancel := s.conn.conn.FbConn().GetCleanupContext(context.Background())
 	defer cancel()
 
 	refCount, ok := s.conn.psRefCounts[s.sd]

@@ -192,13 +192,13 @@ func (rows *baseRows) Close() {
 
 	var statementErr error
 	if rows.boundStatement != nil {
+		ctx, cancel := rows.conn.fbConn.GetCleanupContext(rows.ctx)
 		if rows.ownsStatement {
-			ctx, cancel := context.WithTimeout(context.WithoutCancel(rows.ctx), defaultGracePeriod)
 			statementErr = rows.boundStatement.Deallocate(ctx)
-			cancel()
 		} else {
-			statementErr = rows.boundStatement.CloseCursor(rows.ctx)
+			statementErr = rows.boundStatement.CloseCursor(ctx)
 		}
+		cancel()
 	}
 	if rows.err == nil || rows.ownsStatement {
 		rows.err = operationerror.Join(rows.err, statementErr)

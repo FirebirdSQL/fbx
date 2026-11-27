@@ -165,7 +165,9 @@ func DropDatabase(ctx context.Context, connString string) error {
 	}
 	err = conn.DropDatabase(ctx)
 	if !conn.IsClosed() {
-		err = errors.Join(err, conn.Close(context.Background()))
+		cleanupCtx, cancel := conn.fbConn.GetCleanupContext(ctx)
+		err = errors.Join(err, conn.Close(cleanupCtx))
+		cancel()
 	}
 	return err
 }
@@ -203,7 +205,9 @@ func DropDatabaseWithOptions(ctx context.Context, connString string, options Par
 	}
 	err = conn.DropDatabase(ctx)
 	if !conn.IsClosed() {
-		err = errors.Join(err, conn.Close(context.Background()))
+		cleanupCtx, cancel := conn.fbConn.GetCleanupContext(ctx)
+		err = errors.Join(err, conn.Close(cleanupCtx))
+		cancel()
 	}
 	return err
 }
@@ -238,7 +242,9 @@ func DropDatabaseConfig(ctx context.Context, connConfig *ConnConfig) error {
 	}
 	err = conn.DropDatabase(ctx)
 	if !conn.IsClosed() {
-		err = errors.Join(err, conn.Close(context.Background()))
+		cleanupCtx, cancel := conn.fbConn.GetCleanupContext(ctx)
+		err = errors.Join(err, conn.Close(cleanupCtx))
+		cancel()
 	}
 	return err
 }
@@ -763,7 +769,7 @@ optionLoop:
 	invalidateSQL = st.Description.SQL
 	if temporary {
 		defer func() {
-			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), defaultGracePeriod)
+			cleanupCtx, cancel := c.fbConn.GetCleanupContext(ctx)
 			defer cancel()
 			if cleanupErr := st.Deallocate(cleanupCtx); cleanupErr != nil {
 				err = operationerror.Join(err, cleanupErr)
