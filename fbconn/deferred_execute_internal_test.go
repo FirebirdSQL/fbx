@@ -339,8 +339,8 @@ func TestDeferredExecuteCloseCleanupTimeout(t *testing.T) {
 				require.True(t, conn.IsClosed())
 			case <-time.After(cleanupTimeout + 2*time.Second):
 				_ = server.Close()
-				<-done
-				t.Fatal("Close with Background did not enforce CleanupTimeout")
+				err := <-done
+				t.Fatalf("Close with Background did not enforce CleanupTimeout: %v", err)
 			}
 			require.NoError(t, server.Close())
 			waitCleanupDone(t, conn)
