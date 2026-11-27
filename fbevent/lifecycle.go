@@ -7,23 +7,13 @@ import (
 	"time"
 
 	"github.com/firebirdsql/fbx"
-	"github.com/firebirdsql/fbx/fbconn"
 )
 
-func (m *Manager) currentConn() *fbconn.FbConn {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if !m.connected || m.conn == nil || m.conn.IsClosed() {
-		return nil
-	}
-	return m.conn.FbConn()
-}
-
-func (m *Manager) bindConnEventErrorHandler(conn *fbx.Conn) {
+func (m *Manager) bindConnEventErrorHandler(conn *fbx.Conn, stop <-chan struct{}) {
 	if conn == nil || conn.IsClosed() {
 		return
 	}
-	conn.FbConn().SetEventErrorHandler(m.onConnEventError)
+	conn.FbConn().SetEventErrorHandler(func(err error) { m.onConnEventError(stop, err) })
 }
 
 func (m *Manager) unbindConnEventErrorHandler(conn *fbx.Conn) {
@@ -33,11 +23,21 @@ func (m *Manager) unbindConnEventErrorHandler(conn *fbx.Conn) {
 	conn.FbConn().SetEventErrorHandler(nil)
 }
 
-func (m *Manager) onConnEventError(err error) {
+func (m *Manager) onConnEventError(stop <-chan struct{}, err error) {
 	if err == nil {
 		return
 	}
-	m.setAsyncError(fmt.Errorf("event channel failed: %w", err))
+	err = fmt.Errorf("event channel failed: %w", err)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if stop != m.lifecycleWatchStop {
+		return
+	}
+	m.setAsyncErrorLocked(err)
+	if m.registrationErr != nil {
+		m.registrationErr <- err
+		m.registrationErr = nil
+	}
 }
 
 func (m *Manager) setAsyncError(err error) {

@@ -3,6 +3,7 @@ package fbevent
 import (
 	"context"
 	"errors"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -320,7 +321,7 @@ func TestOnConnEventErrorUnblocksWaitForEventWithoutTimeout(t *testing.T) {
 		return len(m.listeners["EVT"]) == 2
 	}, time.Second, 10*time.Millisecond)
 
-	m.onConnEventError(expectedErr)
+	m.onConnEventError(m.lifecycleWatchStop, expectedErr)
 
 	select {
 	case err := <-resultCh:
@@ -431,29 +432,55 @@ func TestAddEventListenerSerializesConcurrentFirstRegistration(t *testing.T) {
 	require.False(t, exists)
 }
 
+func TestAddEventListenerDuringReconnect(t *testing.T) {
+	dsn := os.Getenv("FBX_TEST_DATABASE")
+	if dsn == "" {
+		t.Skip("FBX_TEST_DATABASE is required")
+	}
+	m, err := Connect(t.Context(), dsn)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, m.Close(context.Background())) }()
+
+	oldStop := m.lifecycleWatchStop
+	m.beforeEnsureEventHandler = func() {
+		require.NoError(t, m.Disconnect(t.Context()))
+		require.NoError(t, m.Connect(t.Context()))
+	}
+	closer, err := m.AddEventListener("RECONNECT", EventListenerFunc(func(DatabaseEvent) {}))
+	require.ErrorContains(t, err, "disconnected")
+	require.Nil(t, closer)
+	require.Empty(t, m.handlers)
+	require.Empty(t, m.listeners)
+
+	m.onConnEventError(oldStop, errors.New("previous connection closed"))
+	require.NoError(t, m.LastError())
+}
+
 func TestUnregisterRollbackOnCancelFailure(t *testing.T) {
 	t.Parallel()
 
 	h := &fbEventHandler{
-		manager:   &Manager{},
-		eventName: "EVT",
-		state:     eventHandlerStateRegistered,
+		manager:    &Manager{},
+		conn:       &fbconn.FbConn{},
+		eventName:  "EVT",
+		registered: true,
 	}
 
 	// Force CancelEvent failure (nil handle).
-	err := h.unregisterOnConn(context.Background(), &fbconn.FbConn{})
+	err := h.unregister(context.Background())
 	require.Error(t, err)
 
 	h.mu.Lock()
-	require.Equal(t, eventHandlerStateRegistered, h.state)
+	require.True(t, h.registered)
 	h.mu.Unlock()
 
 	// Best-effort local cancellation when connection is unavailable.
-	err = h.unregisterOnConn(context.Background(), nil)
+	h.conn = nil
+	err = h.unregister(context.Background())
 	require.NoError(t, err)
 
 	h.mu.Lock()
-	require.Equal(t, eventHandlerStateCancelled, h.state)
+	require.False(t, h.registered)
 	h.mu.Unlock()
 }
 

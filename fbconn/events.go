@@ -7,9 +7,25 @@ import (
 	"time"
 
 	"github.com/firebirdsql/fbx/fbproto"
+	"github.com/firebirdsql/fbx/internal/eventctx"
 )
 
 const eventLockRetryInterval = 5 * time.Millisecond
+
+func (fbConn *FbConn) watchEventResponse(ctx context.Context) (context.Context, func(), error) {
+	if ctx == context.Background() {
+		return ctx, func() {}, nil
+	}
+	if ctx.Err() != nil {
+		return nil, nil, newContextAlreadyDoneError(ctx)
+	}
+	ctx, cancel := eventctx.ForResponse(ctx)
+	fbConn.contextWatcher.Watch(ctx)
+	return ctx, func() {
+		fbConn.contextWatcher.Unwatch()
+		cancel()
+	}, nil
+}
 
 func (fbConn *FbConn) lockEventOperation(ctx context.Context) error {
 	for {
@@ -65,15 +81,11 @@ func (fbConn *FbConn) QueueEvent(ctx context.Context, handle *EventHandle) error
 	}
 	defer fbConn.unlock()
 
-	if ctx != context.Background() {
-		select {
-		case <-ctx.Done():
-			return newContextAlreadyDoneError(ctx)
-		default:
-		}
-		fbConn.contextWatcher.Watch(ctx)
-		defer fbConn.contextWatcher.Unwatch()
+	ctx, unwatch, err := fbConn.watchEventResponse(ctx)
+	if err != nil {
+		return err
 	}
+	defer unwatch()
 
 	eventID := handle.assignNewLocalID()
 	fbConn.registerEventHandle(eventID, handle)

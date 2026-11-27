@@ -40,8 +40,10 @@ func (m *Manager) Listen(ctx context.Context, eventName string) error {
 	default:
 	}
 
-	m.notificationOpMu.Lock()
-	defer m.notificationOpMu.Unlock()
+	if err := m.notificationOpMu.lock(ctx); err != nil {
+		return err
+	}
+	defer m.notificationOpMu.unlock()
 
 	queue := m.ensureNotificationQueue()
 
@@ -62,7 +64,7 @@ func (m *Manager) Listen(ctx context.Context, eventName string) error {
 		})
 	})
 
-	listenerCloser, err := m.AddEventListener(eventName, listener)
+	listenerCloser, err := m.addEventListener(ctx, eventName, listener)
 	if err != nil {
 		return err
 	}
@@ -86,8 +88,10 @@ func (m *Manager) Unlisten(eventName string) error {
 		return errors.New("eventName must not be empty")
 	}
 
-	m.notificationOpMu.Lock()
-	defer m.notificationOpMu.Unlock()
+	if err := m.notificationOpMu.lock(context.Background()); err != nil {
+		return err
+	}
+	defer m.notificationOpMu.unlock()
 
 	m.mu.Lock()
 	handle, exists := m.notificationNames[eventName]
