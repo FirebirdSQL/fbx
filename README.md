@@ -110,3 +110,27 @@ the first row read or close. This saves one network round trip while retaining
 both protocol commands. Servers without this flag use separate requests.
 To reduce the number of later `Fetch` commands, increase `fetch_batch_size`
 (default: 400); larger batches can use more client memory.
+
+### Server resource cleanup timeout
+
+`cleanup_timeout` controls how long the driver allows for server resource cleanup
+on a connection. Cleanup includes rolling back an internal transaction and
+releasing statements or batches. When an operation fails or is canceled, the
+driver can give cleanup a separate deadline so it can finish after the caller's
+context is canceled. Use the operation's context to limit query execution time.
+
+The default is `5s`. Set a Go duration in either connection string format, for
+example `cleanup_timeout=250ms` or
+`firebird://localhost:3050/employee?cleanup_timeout=250ms`. You can also set
+`CleanupTimeout` on the config returned by `fbx.ParseConfig` or `fbconn.ParseConfig`
+before connecting. An omitted, zero, or negative value uses `5s`. An invalid
+duration in the connection string returns a parse error.
+
+The timeout also applies when the driver rolls back the temporary transaction
+used to prepare a batch, releases resources at the end of a batch operation, or
+closes a physical connection opened through `database/sql`. A shorter timeout
+reduces the time spent waiting for cleanup and can cause batch preparation or
+connection close to return an error. Cleanup can also fail after SQL has already
+executed. If the driver cannot confirm an internal rollback, it closes the
+connection so that it cannot be reused. A longer timeout gives the server more
+time to finish cleanup and can delay the return of an error.

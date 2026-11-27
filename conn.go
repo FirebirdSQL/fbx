@@ -127,15 +127,8 @@ var (
 	errDisabledStatementCache = fmt.Errorf("cannot use QueryExecModeCacheStatement with disabled statement cache")
 )
 
-// cleanupGracePeriod bounds cleanup network calls (op_free_statement, etc.) that must
-// run even after the user's ctx has been cancelled.
-const cleanupGracePeriod = 5 * time.Second
-
-// cleanupContext returns a context for releasing server-side resources after the
-// user's request has finished.
-func cleanupContext(parent context.Context) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.WithoutCancel(parent), cleanupGracePeriod)
-}
+// defaultGracePeriod is used as the default timeout for clean up server resources.
+const defaultGracePeriod = 5 * time.Second
 
 // Connect establishes a connection with a Firebird server with a connection string. See
 // [fbconn.Connect], [fbx.ParseConfig], [fbconn.ParseConfig] for details.
@@ -441,7 +434,7 @@ func (c *Conn) prepareBatchTx(ctx context.Context, tx *dbTx, sql string, opts Ba
 	}
 
 	if err != nil && st != nil {
-		cleanupCtx, cancel := cleanupContext(ctx)
+		cleanupCtx, cancel := c.fbConn.GetCleanupContext(ctx)
 		defer cancel()
 		if deallocErr := st.Deallocate(cleanupCtx); deallocErr != nil {
 			c.die()
@@ -770,7 +763,7 @@ optionLoop:
 	invalidateSQL = st.Description.SQL
 	if temporary {
 		defer func() {
-			cleanupCtx, cancel := cleanupContext(ctx)
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), defaultGracePeriod)
 			defer cancel()
 			if cleanupErr := st.Deallocate(cleanupCtx); cleanupErr != nil {
 				err = operationerror.Join(err, cleanupErr)

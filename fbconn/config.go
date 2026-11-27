@@ -38,6 +38,10 @@ type Config struct {
 	SystemHost     string
 	Password       string
 	ConnectTimeout time.Duration
+	// CleanupTimeout used to clean up server resources in the event of an error.
+	// The value must be greater than 0; otherwise, the default value of
+	// 5 seconds will be used.
+	CleanupTimeout time.Duration
 	DialFunc       DialFunc   // e.g. net.Dialer.DialContext
 	LookupFunc     LookupFunc // e.g. net.Resolver.LookupHost
 	BuildFrontend  BuildFrontendFunc
@@ -447,6 +451,18 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		config.DialFunc = defaultDialer.DialContext
 	}
 
+	if cleanupTimeoutSetting, present := settings["cleanup_timeout"]; present {
+		cleanupTimeout, err := time.ParseDuration(cleanupTimeoutSetting)
+		if err != nil {
+			return nil, &ParseConfigError{ConnString: connString, msg: "invalid cleanup_timeout", err: err}
+		}
+		if cleanupTimeout <= 0 {
+			config.CleanupTimeout = defaultGracePeriod
+		} else {
+			config.CleanupTimeout = cleanupTimeout
+		}
+	}
+
 	config.LookupFunc = makeDefaultResolver().LookupHost
 
 	notRuntimeParams := map[string]struct{}{
@@ -475,6 +491,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		"fetch_batch_size":              {},
 		"target_session_attrs":          {},
 		"page_size":                     {},
+		"cleanup_timeout":               {},
 	}
 
 	for k, v := range settings {

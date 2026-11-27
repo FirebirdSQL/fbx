@@ -274,9 +274,11 @@ func respondToDeferredExecuteAndRollback(server net.Conn) error {
 }
 
 func TestDeferredExecuteInternalReadCleanupTimeout(t *testing.T) {
+	const cleanupTimeout = 250 * time.Millisecond
 	for _, blockedAt := range []string{"flush", "response"} {
 		t.Run(blockedAt, func(t *testing.T) {
 			conn, st, server, _, canceled := newDeferredExecutePipe(t)
+			conn.config.CleanupTimeout = cleanupTimeout
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			require.NoError(t, conn.lock())
@@ -298,12 +300,12 @@ func TestDeferredExecuteInternalReadCleanupTimeout(t *testing.T) {
 			select {
 			case result := <-done:
 				require.ErrorIs(t, result.Err, context.Canceled)
-				require.GreaterOrEqual(t, time.Since(start), cleanupGracePeriod,
+				require.GreaterOrEqual(t, time.Since(start), cleanupTimeout,
 					"cleanup must replace the original short cancellation deadline")
 				require.True(t, conn.IsClosed(), "a missing Execute response prevents reuse")
 				require.NoError(t, server.Close())
 				waitCleanupDone(t, conn)
-			case <-time.After(cleanupGracePeriod + 2*time.Second):
+			case <-time.After(cleanupTimeout + 2*time.Second):
 				t.Fatal("internal read cleanup exceeded its timeout")
 			}
 		})

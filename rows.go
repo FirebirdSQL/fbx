@@ -193,7 +193,7 @@ func (rows *baseRows) Close() {
 	var statementErr error
 	if rows.boundStatement != nil {
 		if rows.ownsStatement {
-			ctx, cancel := cleanupContext(rows.ctx)
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(rows.ctx), defaultGracePeriod)
 			statementErr = rows.boundStatement.Deallocate(ctx)
 			cancel()
 		} else {

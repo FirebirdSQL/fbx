@@ -17,6 +17,10 @@ type rollbackFailureTx struct {
 	bounded     bool
 }
 
+func (tx *rollbackFailureTx) Conn() *Conn {
+	return nil
+}
+
 func (tx *rollbackFailureTx) Rollback(ctx context.Context) error {
 	tx.contextErr = ctx.Err()
 	_, tx.bounded = ctx.Deadline()

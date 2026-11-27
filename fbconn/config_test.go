@@ -557,6 +557,46 @@ func TestParseConfigPageSize(t *testing.T) {
 	}
 }
 
+func TestParseConfigCleanupTimeout(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		value   string
+		want    time.Duration
+		wantErr bool
+	}{
+		{value: "10s", want: 10 * time.Second},
+		{value: "150ns", want: 150 * time.Nanosecond},
+		{value: "250ms", want: 250 * time.Millisecond},
+		{value: "0s", want: 5 * time.Second},
+		{value: "-100s", want: 5 * time.Second},
+		{value: "-250ms", want: 5 * time.Second},
+		{value: "250", wantErr: true},
+		{value: "invalid", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		for _, connString := range []string{
+			"cleanup_timeout=" + tt.value,
+			"firebird://localhost/testdb?cleanup_timeout=" + tt.value,
+		} {
+			t.Run(connString, func(t *testing.T) {
+				config, err := fbconn.ParseConfig(connString)
+				if tt.wantErr {
+					var parseErr *fbconn.ParseConfigError
+					require.ErrorAs(t, err, &parseErr)
+					require.ErrorContains(t, err, "invalid cleanup_timeout")
+					return
+				}
+
+				require.NoError(t, err)
+				assert.Equal(t, tt.want, config.CleanupTimeout)
+				require.NotContains(t, config.RuntimeParams, "cleanup_timeout")
+			})
+		}
+	}
+}
+
 func TestParseConfigKVTrailingWhitespace(t *testing.T) {
 	config, err := fbconn.ParseConfig("host=localhost port=3050 database=testdb   \t\n")
 	require.NoError(t, err)
