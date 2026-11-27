@@ -1,5 +1,36 @@
 # Change Log
 
+# [0.8.0] - TBD
+
+### Added
+
+- Add nbackup support in the service manager
+- Support the new database/sql scanning mechanism in Go 1.27 [#35](https://github.com/FirebirdSQL/fbx/pull/35)
+- Add pool_ping_timeout in the connection string [#32](https://github.com/FirebirdSQL/fbx/pull/32)
+- Add Rows.TypeMap to expose types used to decode values of row [#34](https://github.com/FirebirdSQL/fbx/pull/34)
+- Add server batch information support [#37](https://github.com/FirebirdSQL/fbx/pull/37)
+- Add comparable errors for target_session_attrs: ErrReplicaConnection, ErrPrimaryConnection [#33](https://github.com/FirebirdSQL/fbx/pull/33)
+- Add default transaction isolation setting, including autocommit [#44](https://github.com/FirebirdSQL/fbx/pull/44)
+- Allow to specify charset and page size when creating database [#52](https://github.com/FirebirdSQL/fbx/pull/52) [#53](https://github.com/FirebirdSQL/fbx/pull/53)
+- Add support for reading text BLOB to standard types in stdlib [#56](https://github.com/FirebirdSQL/fbx/pull/56)
+
+### Improved
+
+- Defer cursor Execute until the first Fetch when possible
+- Call user.Current only if system_user is not explicitly specified [#29](https://github.com/FirebirdSQL/fbx/pull/29)
+- Better password masking
+
+### Fixed
+
+- Fix the verification of URI parameters and alias resolution
+- Fix URI parsing with multiple servers when ports are omitted
+- Multiple fixes in batch operations and errors handling [#37](https://github.com/FirebirdSQL/fbx/pull/37)
+- Return an error instead of a panic for an unclosed quoted-KV [#31](https://github.com/FirebirdSQL/fbx/pull/31)
+- Fix calculation of number of affected rows [#30](https://github.com/FirebirdSQL/fbx/pull/30)
+- Fix cancel operation deadline error [#41](https://github.com/FirebirdSQL/fbx/pull/41)
+- Fix fixed-length CHAR encoding in batches [#58](https://github.com/FirebirdSQL/fbx/pull/58)
+- If a trace session is canceled, the test may receive nil instead of context.Canceled [#48](https://github.com/FirebirdSQL/fbx/pull/48)
+
 # [0.7.0] - 26.10.2026
 
 ### Added
